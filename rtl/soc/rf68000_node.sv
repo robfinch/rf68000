@@ -70,7 +70,6 @@ wire nic1_sack, nic2_sack;
 wire [31:0] nic1_sdato, nic2_sdato;
 wire [2:0] cpu1_irq, cpu2_irq;
 wire [7:0] cpu1_icause, cpu2_icause;
-reg [20*8-1:0] romname;
 
 packet_t packet_x;
 packet_t rpacket_x;

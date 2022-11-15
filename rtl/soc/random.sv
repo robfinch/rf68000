@@ -128,8 +128,8 @@ rand_ram u2 (clk_i, wrz, stream, z, m_zs);
 
 always_comb
 begin
-	next_m_z = (16'h36969 * m_zs[15:0]) + m_zs[31:16];
-	next_m_w = (16'h18000 * m_ws[15:0]) + m_ws[31:16];
+	next_m_z = (32'h36969 * m_zs[15:0]) + m_zs[31:16];
+	next_m_w = (32'h18000 * m_ws[15:0]) + m_ws[31:16];
 end
 
 // Register read path

@@ -66,9 +66,8 @@
 //	are assumed to be open collector.
 //		To read the keyboard, wait for bit 7 of the status
 //	register to be set, then read the transmit / recieve
-//	register. Reading the transmit / recieve register clears
-//	the keyboard reciever, and allows the next character to
-//	be recieved.
+//	register. The receive register is cleared by writing a
+//  zero to the status register.
 //
 //	Reg
 //	0	keyboard transmit/receive register
@@ -208,8 +207,6 @@ wire pe_cs;
 edge_det ed1 (.rst(rst_i), .clk(clk_i), .ce(1'b1), .i(cs), .pe(pe_cs), .ne(), .ee() );
 
 // register read path
-// Latches data on positive edge of the circuit select, as reading the keyboard
-// register triggers a clear of it.
 always_ff @(posedge clk_i)
 if (cs_i)
 	case(adr_i[1:0])

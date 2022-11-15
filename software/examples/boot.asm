@@ -239,13 +239,13 @@ CmdBufEnd:
 	code
 	align		2
 start:
-	move.w	#$2700,sr				* enable level 6 and higher interrupts
-	movec.l	coreno,d0				* get core number
+	move.w	#$2700,sr				; enable level 6 and higher interrupts
+	movec.l	coreno,d0				; get core number
 	cmpi.b	#2,d0
 	bne			start_other
-	move.l	#$4,IOFocus			* Set the IO focus map in global memory
+	move.l	#$4,IOFocus			; Set the IO focus map in global memory
 ;	bsr			InitSemaphores
-	bsr			Delay3s					* give devices time to reset
+	bsr			Delay3s					; give devices time to reset
 	bsr			clear_screen
 
 	; Write startup message to screen
@@ -272,10 +272,16 @@ loop1:
 	dbra		d0,loop1
 	bra			loop2
 start_other:
+	btst		#0,d0							; place the stack for the second core lower in memory
+	beq.s		.0003
+	move.l	#$1FBFC,sp
+.0003:
+	nop
+	bra.s		.0003
 	move.l	TextScr,d0
 	movec.l	coreno,d1					; get the core number
 	btst		#0,d1							; calc new screen address for even cores only
-	bne.s		.0001
+	bne.s		start_other
 	subi.l	#2,d1							; core numbers start at 2
 	asl.l		#8,d1							; * 16384 bytes per screen
 	asl.l		#6,d1
@@ -455,6 +461,7 @@ get_screen_address:
 	move.l	TextScr,a0
 	movec.l	coreno,d0
 	btst		#0,d0
+	bra.s		.0001
 	beq.s		.0001
 	lea			$4000(a0),a0
 .0001:
@@ -524,10 +531,10 @@ UpdateTextPos:
 
 CalcScreenLoc:
 	bsr			UpdateTextPos
-	ext.l		d0								* make it into a long
-	asl.l		#3,d0							* 8 bytes per char
+	ext.l		d0								; make it into a long
+	asl.l		#3,d0							; 8 bytes per char
 	bsr			get_screen_address
-	add.l		d0,a0							* a0 = screen location
+	add.l		d0,a0							; a0 = screen location
 	rts
 
 ;------------------------------------------------------------------------------
@@ -541,7 +548,9 @@ DisplayChar:
 	cmpi.b	#13,d1				; carriage return ?
 	bne.s		dccr
 	clr.b		CursorCol			; just set cursor column to zero on a CR
+dcx14:
 	bsr			SyncCursor		; set position in text controller
+dcx7:
 	movem.l	(a7)+,d1/d2/d3
 	rts
 dccr:
@@ -552,44 +561,40 @@ dccr:
 	sub.b		CursorCol,d2
 	beq.s		dcx7
 	addi.b	#1,CursorCol
-dcx14:
-	bsr		SyncCursor
-dcx7:
-	movem.l	(a7)+,d1/d2/d3
-	rts
+	bra.s		dcx14
 dcx6:
 	cmpi.b	#$90,d1			; cursor up ?
-	bne.s	dcx8
+	bne.s		dcx8
 	cmpi.b	#0,CursorRow
-	beq.s	dcx7
+	beq.s		dcx7
 	subi.b	#1,CursorRow
-	bra.s	dcx14
+	bra.s		dcx14
 dcx8:
 	cmpi.b	#$93,d1			; cursor left?
-	bne.s	dcx9
+	bne.s		dcx9
 	cmpi.b	#0,CursorCol
-	beq.s	dcx7
+	beq.s		dcx7
 	subi.b	#1,CursorCol
-	bra.s	dcx14
+	bra.s		dcx14
 dcx9:
 	cmpi.b	#$92,d1			; cursor down ?
-	bne.s	dcx10
+	bne.s		dcx10
 	move.b	TextRows,d2
-	sub.b	#1,d2
-	cmp.b	CursorRow,d2
-	beq.s	dcx7
+	sub.b		#1,d2
+	cmp.b		CursorRow,d2
+	beq.s		dcx7
 	addi.b	#1,CursorRow
-	bra.s	dcx14
+	bra.s		dcx14
 dcx10:
 	cmpi.b	#$94,d1			; cursor home ?
-	bne.s	dcx11
+	bne.s		dcx11
 	cmpi.b	#0,CursorCol
-	beq.s	dcx12
-	clr.b	CursorCol
-	bra.s	dcx14
+	beq.s		dcx12
+	clr.b		CursorCol
+	bra			dcx14
 dcx12:
-	clr.b	CursorRow
-	bra.s	dcx14
+	clr.b		CursorRow
+	bra			dcx14
 dcx11:
 	movem.l	d0/d1/d2/a0,-(a7)
 	cmpi.b	#$99,d1			; delete ?
@@ -707,25 +712,25 @@ icc1:
 ;------------------------------------------------------------------------------
 
 ScrollUp:
-	movem.l	d0/d1/a0/a5,-(a7)		* save off some regs
+	movem.l	d0/d1/a0/a5,-(a7)		; save off some regs
 	bsr			get_screen_address
-	move.l	a0,a5								* a5 = pointer to text screen
+	move.l	a0,a5								; a5 = pointer to text screen
 .0003:								
-	move.b	TextCols,d0					* d0 = columns
-	move.b	TextRows,d1					* d1 = rows
-	ext.w		d0									* make cols into a word value
-	ext.w		d1									* make rows into a word value
-	asl.w		#3,d0								* make into cell index
-	lea			0(a5,d0.w),a0				* a0 = pointer to second row of text screen
-	lsr.w		#3,d0								* get back d0
-	subq		#1,d1								* number of rows-1
-	mulu		d1,d0								* d0 = count of characters to move
+	move.b	TextCols,d0					; d0 = columns
+	move.b	TextRows,d1					; d1 = rows
+	ext.w		d0									; make cols into a word value
+	ext.w		d1									; make rows into a word value
+	asl.w		#3,d0								; make into cell index
+	lea			0(a5,d0.w),a0				; a0 = pointer to second row of text screen
+	lsr.w		#3,d0								; get back d0
+	subq		#1,d1								; number of rows-1
+	mulu		d1,d0								; d0 = count of characters to move
 .0001:
-	move.l	(a0)+,(a5)+					* each char is 64 bits
+	move.l	(a0)+,(a5)+					; each char is 64 bits
 	move.l	(a0)+,(a5)+	
 	dbra		d0,.0001
 	movem.l	(a7)+,d0/d1/a0/a5
-	* Fall through into blanking out last line
+	; Fall through into blanking out last line
 
 ;------------------------------------------------------------------------------
 ; Blank out the last line on the screen.
@@ -908,11 +913,11 @@ _KeybdGetStatus:
 	rts
 
 ; Get the scancode from the keyboard port
-;
+
 _KeybdGetScancode:
-	moveq	#0,d1
-	move.b	KEYBD,d1				; get the scan code
-	move.b	#0,KEYBD+1				; clear receive register
+	moveq		#0,d1
+	move.b	KEYBD,d1				* get the scan code
+	move.b	#0,KEYBD+1			* clear receive register
 	rts
 
 ; Recieve a byte from the keyboard, used after a command is sent to the
@@ -964,17 +969,18 @@ SetKeyboardEcho:
 	move.b	d1,KeybdEcho
 	rts
 
-;------------------------------------------------------------------------------
-; get key pending status into d1.b
-;------------------------------------------------------------------------------
+*------------------------------------------------------------------------------
+* Get key pending status into d1.b
+*
+* Returns:
+*		d1.b = 1 if a key is available, otherwise zero.
+*------------------------------------------------------------------------------
 
 CheckForKey:
-	move.b	KEYBD+1,d1
-	bpl.s		cfk1
-	move.b	#1,d1
-	rts
-cfk1:
-	clr.b		d1
+	moveq.l	#0,d1					* clear high order bits
+	move.b	KEYBD+1,d1		* get kyboard port status
+	smi.b		d1						* set true/false
+	andi.b	#1,d1					* return true (1) if key available, 0 otherwise
 	rts
 
 ;------------------------------------------------------------------------------
@@ -989,58 +995,60 @@ cfk1:
 ;------------------------------------------------------------------------------
 
 GetKey:
-	move.l	d0,-(a7)					* push d0
-	* Check for focus. Even if the core does not have the focus ALT-TAB still
-	* needs to be checked for.
-	move.l	IOFocus,d1				* Check if the core has the IO focus
+	move.l	d0,-(a7)					; push d0
+	; Check for focus. Even if the core does not have the focus ALT-TAB still
+	; needs to be checked for.
+	move.l	IOFocus,d1				; Check if the core has the IO focus
 	movec.l	coreno,d0
 	btst		d0,d1
-	bne.s		.0007
-	* If the core does not have the focus then the keyboard scan code buffer
-	* must be read directly to determine if a tab character is pressed. A non-
-	* destructive buffer read is needed.
+	bra.s		.0007							; should be a bne.s here
+	; If the core does not have the focus then the keyboard scan code buffer
+	; must be read directly to determine if a tab character is pressed. A non-
+	; destructive buffer read is needed.
 	moveq		#0,d1
-	move.b	KEYBD,d1					* get the scan code non destructively
-	cmpi.b	#SC_TAB,d1				* is it the TAB key?
-	bne.s		.0004							* if not return no key available
-	btst		#1,_KeyState2			* is ALT down?
-	beq.s		.0004							* if ALT-TAB goto switch screens
-	* Got here when a tab scan code was detected. We know there is a tab key
-	* available at the keyboard port. Get the key.
+	move.b	KEYBD,d1					; get the scan code non destructively
+	cmpi.b	#SC_TAB,d1				; is it the TAB key?
+	bne.s		.0004							; if not return no key available
+	btst		#1,_KeyState2			; is ALT down?
+	beq.s		.0004							; if ALT-TAB goto switch screens
+	; Got here when a tab scan code was detected. We know there is a tab key
+	; available at the keyboard port. Get the key.
+	move.b	#0,KEYBD+1				* clear keyboard
+	bra.s		.0008
 .0007:	
-	bsr			KeybdGetCharWait	* get a character
-	cmpi.b	#9,d1							* tab pressed?
+	bsr			KeybdGetCharWait	; get a character
+	cmpi.b	#9,d1							; tab pressed?
 	bne.s		.0006
-	btst		#1,_KeyState2			* is ALT down?
+	btst		#1,_KeyState2			; is ALT down?
 	beq.s		.0006
 .0008:
-	* Got alt-tab, switch screens
+	; Got alt-tab, switch screens
 	move.w	TEXTREG+$28,d0
-	rol.w		#8,d0							* swap byte order
-	add.w		#2048,d0					* increment to next screen page
-	cmp.w		#16384,d0					* hit max screen page?
+	rol.w		#8,d0							; swap byte order
+	add.w		#2048,d0					; increment to next screen page
+	cmp.w		#16384,d0					; hit max screen page?
 	blo.s		.0002
-	moveq		#0,d0							* wrap around
+	moveq		#0,d0							; wrap around
 .0002:
-	ror.w		#8,d0							* swap byte order
+	ror.w		#8,d0							; swap byte order
 	move.w	d0,TEXTREG+$28
-	bra.s		.0004							* eat Alt-tab, return no key available
+	bra.s		.0004							; eat Alt-tab, return no key available
 .0006:
-	cmpi.b	#0,KeybdEcho			* is keyboard echo on ?
-	beq.s		.0003							* no echo, just return the key
-	cmpi.b	#CR,d1						* convert CR keystroke into CRLF
+	cmpi.b	#0,KeybdEcho			; is keyboard echo on ?
+	beq.s		.0003							; no echo, just return the key
+	cmpi.b	#CR,d1						; convert CR keystroke into CRLF
 	bne.s		.0005
 	bsr			CRLF
 	bra.s		.0003
 .0005:
 	bsr			DisplayChar
 .0003:
-	move.l	(a7)+,d0					* pop d0
-	rts												* return key
-* Return -1 indicating no char was available
+	move.l	(a7)+,d0					; pop d0
+	rts												; return key
+; Return -1 indicating no char was available
 .0004:
-	move.l	(a7)+,d0					* pop d0
-	moveq		#-1,d1						* return no key available
+	move.l	(a7)+,d0					; pop d0
+	moveq		#-1,d1						; return no key available
 	rts
 
 CheckForCtrlC

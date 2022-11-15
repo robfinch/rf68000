@@ -148,15 +148,19 @@ typedef enum logic [7:0] {
 	STORE_WORD,
 	STORE_LWORD,
 	STORE_LWORDa,
+
 	LFETCH_BYTE,
-	
 	FETCH_BRDISP,
+	FETCH_BRDISPa,
 	FETCH_IMM16,
+	FETCH_IMM16a,
 	FETCH_IMM32,
 	FETCH_IMM32a,
+
+	// 20
+	FETCH_IMM32b,
 	JSR,
 	JMP,
-	//20
 	DBRA,
 	
 	ADDQ,
@@ -165,65 +169,68 @@ typedef enum logic [7:0] {
 	ADDI2,
 	ADDI3,
 	ADDI4,
+	
+	// 30
 	ADD,
 	ADD1,
 	
 	DIV1,
 	DIV2,
 
-	// 30
 	STORE_IN_DEST,
 	SHIFT,
 	SHIFT1,
 	BIT,
 	BIT1,
 	BIT2,
+	
+	// 40
 	RTD1,
 	RTD2,
 	
 	RTE1,
 	RTE2,
-	// 40
 	RTE3,
 	RTE4,
 	RTE5,
 	RTE6,
 	RTE7,
 	RTE8,
+	
+	// 50
 	RTE9,
 	RTE10,
 	RTE11,
 
 	RTS1,
-	// 50
 	RTS2,
 	
 	LINK,
+	LINK1,
+	LINK2,
 	UNLNK,
 	UNLNK2,
+	
+	// 60
 	JMP_VECTOR,
 	JMP_VECTOR2,
 	JMP_VECTOR3,
 	
-	LINK1,
-	LINK2,
-	
 	NEG,
-	
-	// 60
 	NEGX,
 	NEGX1,
 	NOT,
 	TAS,
 	LEA,
+	LEA2,
+	
+	//70
 	EXG1,
 
 	CMP,
 	CMP1,
 	CMPA,
 	CMPM,
-	
-	// 70
 	CMPM1,
 
 	AND,
@@ -231,28 +238,31 @@ typedef enum logic [7:0] {
 	EOR,
 	ANDI_CCR,
 	ANDI_CCR2,
+	
+	// 80
 	ANDI_SR,
 	ANDI_SRX,
 	EORI_CCR,
 	EORI_CCR2,
-	
-	//80
 	EORI_SR,
 	EORI_SRX,
 	ORI_CCR,
 	ORI_CCR2,
 	ORI_SR,
 	ORI_SRX,
+	
+	//90
 	FETCH_NOP_BYTE,
 	FETCH_NOP_WORD,
 	FETCH_NOP_LWORD,
 	FETCH_IMM8,
-	// 90
+	FETCH_IMM8a,
 	FETCH_D32,
 	FETCH_D32a,
 	FETCH_D32b,
 	FETCH_D16,
 	FETCH_D16a,
+	// 100
 	FETCH_NDX,
 	FETCH_NDXa,
 	
@@ -260,24 +270,25 @@ typedef enum logic [7:0] {
 	MOVE2SR,
 	MOVE2SRX,
 
-	// 100
 	TRAP,
 	TRAP3,
 	TRAP3a,
 	TRAP3b,
 	TRAP4,
+	
+	//110
 	TRAP5,
 	TRAP6,
 	TRAP7,
 	TRAP7a,
 	TRAP8,
-	
-	// 110
 	TRAP9,
 	TRAP10,
 	TRAP20,
 	TRAP21,
 	TRAP22,
+	
+	//120
 	TRAP23,
 	TRAP24,
 	TRAP25,
@@ -299,6 +310,7 @@ typedef enum logic [7:0] {
 	RESET5,
 	PEA1,
 	PEA2,
+	PEA3,
 	ABCD,
 	ABCD1,
 	SBCD,
@@ -603,6 +615,7 @@ reg [4:0] rst_cnt;
 reg [2:0] shift_op;
 reg rtr;
 reg bsr;
+reg lea;
 reg [31:0] dati_buf;	// input data from bus error
 reg [31:0] dato_buf;
 
@@ -820,6 +833,7 @@ if (rst_i) begin
 	MMMRRR <= 1'b0;
 	rtr <= 1'b0;
 	bsr <= 1'b0;
+	lea <= 1'b0;
 	divs <= 1'b0;
 	icnt <= 'd0;
 	is_bus_err <= 1'b0;
@@ -1373,6 +1387,7 @@ IFETCH:
 		MMMRRR <= 1'b0;
 		rtr <= 1'b0;
 		bsr <= 1'b0;
+		lea <= 1'b0;
 		is_illegal <= 1'b0;
 		if (!cyc_o) begin
 			is_nmi <= 1'b0;
@@ -1406,13 +1421,10 @@ IFETCH:
 			stb_o <= 1'b0;
 			sel_o <= 2'b00;
 			ir <= iri;
-			pc <= pc + 4'd2;
-			opc <= pc + 4'd2;
 			mmm <= iri[5:3];
 			rrr <= iri[2:0];
 			rrrr <= iri[3:0];
 			divs <= iri[8];
-			icnt <= icnt + 2'd1;
 			gosub (DECODE);
 		end
 	end
@@ -1420,6 +1432,10 @@ IFETCH:
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
 DECODE:
+	begin
+		pc <= pc + 4'd2;
+		opc <= pc + 4'd2;
+		icnt <= icnt + 2'd1;
 	case(ir[15:12])
 	4'h0:
 		case(ir[11:8])
@@ -1477,7 +1493,7 @@ DECODE:
 				fs_data(3'b101,rrr,FETCH_NOP_WORD,S);
 			end
 			else
-				state <= BIT;
+				goto (BIT);
 		endcase
 //-----------------------------------------------------------------------------
 // MOVE.B
@@ -1625,8 +1641,8 @@ DECODE:
 			end
 		9'b100001???:	// PEA
 			begin
-				push(PEA1);
-				fs_data(mmm,rrr,FETCH_NOP_LWORD,S);
+				lea <= 1'b1;
+				goto (PEA1);
 			end
 		9'b101011111:
 			case(ir[3:0])
@@ -1723,8 +1739,8 @@ DECODE:
 				call(FETCH_IMM16,MOVEM_Xn2D);
 		9'b???111???:
 			begin // LEA
-				push(LEA);
-				fs_data(mmm,rrr,FETCH_NOP_LWORD,S);
+				lea <= 1'b1;	// ToDo: fix this, lea needs to be set one cycle before fs_data is called
+				goto (LEA);
 			end
 		9'b???110???:
 			begin	// CHK
@@ -1754,7 +1770,7 @@ DECODE:
 					call(FETCH_IMM16,DBRA);
 				end
 				else begin
-					pc <= pc + 32'd2;	// skip over displacement
+					pc <= pc + 32'd4;	// skip over displacement
 					ret();
 				end
 `else
@@ -1813,14 +1829,14 @@ DECODE:
 					goto(FETCH_BRDISP);
 			end
 			else begin
-				d <= pc + {{24{ir[7]}},ir[7:1],1'b0};
-				opc <= pc;
+				d <= pc + {{24{ir[7]}},ir[7:1],1'b0} + 4'd2;
+				opc <= pc + 4'd2;
 				if (ir[15:8]==8'h61) begin
 					bsr <= 1'b1;
 					goto(JSR);
 				end
 				else begin
-					pc <= pc + {{24{ir[7]}},ir[7:1],1'b0};
+					pc <= pc + {{24{ir[7]}},ir[7:1],1'b0} + 4'd2;
 					ret();
 				end
 			end
@@ -1831,7 +1847,7 @@ DECODE:
 `else
 			if (ir[7:0]==8'h00)		// skip over long displacement
 `endif			
-				pc <= pc + 4'd2;
+				pc <= pc + 4'd4;
 			ret();
 		end
 
@@ -1914,15 +1930,11 @@ DECODE:
 //-----------------------------------------------------------------------------
 // LDT
 //-----------------------------------------------------------------------------
-    4'hA:
-      begin
-        if (ir[11:6]==6'h0)
-          state <= LDT1;
-        else if (ir[11:6]==6'h1)
-          state <= SDT1;
-        else
-        	tIllegal();
-      end
+  4'hA:
+    begin
+    	vecno <= `LINE10_VEC;
+    	goto (TRAP3);
+    end
 //-----------------------------------------------------------------------------
 // CMP / EOR
 //-----------------------------------------------------------------------------
@@ -2054,7 +2066,15 @@ DECODE:
 				resW <= rfoDnn[15:0];
 			end
 		end
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+  4'hF:
+    begin
+    	vecno <= `LINE15_VEC;
+    	goto (TRAP3);
+    end
 	endcase
+	end
 
 //-----------------------------------------------------------------------------
 // BCD arithmetic
@@ -2312,33 +2332,21 @@ TAS:
 // Link
 //-----------------------------------------------------------------------------
 LINK:
-	if (!cyc_o) begin
-		fc_o <= {sf,2'b01};
-		cyc_o <= 1'b1;
-		stb_o <= 1'b1;
-		sel_o <= 4'b1111;
-		we_o <= 1'b1;
-		adr_o <= sp - 32'd4;
-`ifdef BIG_ENDIAN
-    dat_o <= rbo(rfoAn);
-`else
-		dat_o <= rfoAn;
-`endif
+	begin
+		d <= rfoAn;
+		ea <= sp - 4'd4;
+		call (STORE_LWORD,LINK1);
 	end
-	else if (ack_i) begin
-		cyc_o <= 1'b0;
-		stb_o <= 1'b0;
-		we_o <= 1'b0;
-		sel_o <= 2'b00;
-		sp <= sp - 32'd4;
-		resL <= sp - 32'd4;
-		rfwrL <= 1'b1;
-		Rt <= {1'b1,rrr};
+LINK1:
+	begin
 		call(FETCH_IMM16,LINK2);
 	end
 LINK2:
 	begin
-		sp <= sp + imm;
+		resL <= sp - 32'd4;
+		rfwrL <= 1'b1;
+		Rt <= {1'b1,rrr};
+		sp <= sp + imm - 32'd4;
 		ret();		
 	end
 
@@ -2346,6 +2354,11 @@ LINK2:
 // LEA
 //-----------------------------------------------------------------------------
 LEA:
+	begin
+		push(LEA2);
+		fs_data(mmm,rrr,FETCH_NOP_LWORD,S);
+	end
+LEA2:
 	begin
 		Rt <= {1'b1,AAA};
 		rfwrL <= 1'b1;
@@ -2357,24 +2370,18 @@ LEA:
 // PEA
 //-----------------------------------------------------------------------------
 PEA1:
-	if (!cyc_o) begin
-		fc_o <= {sf,2'b01};
-		cyc_o <= 1'b1;
-		stb_o <= 1'b1;
-		we_o <= 1'b1;
-		sel_o <= 4'b1111;
-		adr_o <= sp - 32'd4;
-`ifdef BIG_ENDIAN
-    dat_o <= rbo(ea);
-`else		
-		dat_o <= ea;
-`endif		
+	begin
+		push(PEA2);
+		fs_data(mmm,rrr,FETCH_NOP_LWORD,S);
 	end
-	else if (ack_i) begin
-		cyc_o <= 1'b0;
-		stb_o <= 1'b0;
-		we_o <= 1'b0;
-		sel_o <= 4'b00;
+PEA2:
+	begin
+		d <= ea;
+		ea <= sp - 32'd4;
+		call (STORE_LWORD,PEA3);
+	end
+PEA3:
+	begin
 		sp <= sp - 32'd4;
 		ret();
 	end
@@ -2900,9 +2907,9 @@ ADDQ:
 //-----------------------------------------------------------------------------
 ADDI:
 	case(sz)
-	2'b00:	begin call(FETCH_IMM8,ADDI2); end
-	2'b01:	begin call(FETCH_IMM16,ADDI2); end
-	2'b10:	begin call(FETCH_IMM32,ADDI2); end
+	2'b00:	call(FETCH_IMM8,ADDI2);
+	2'b01:	call(FETCH_IMM16,ADDI2);
+	2'b10:	call(FETCH_IMM32,ADDI2);
 	default:	tIllegal();
 	endcase
 ADDI2:
@@ -2919,7 +2926,7 @@ ADDI3:
 	begin
 		flag_update <= FU_ADDI;
 		dd <= d;
-		s <= imm;
+		s <= immx;
 		// Odd numbers are BIT insns.
 		case(ir[11:8])
 		4'h0:	resL <= d | immx;	// ORI
@@ -3008,7 +3015,7 @@ BIT:
 	begin
 		mmm_save <= mmm;
 		if (ir[11:8]==4'h8) begin
-			call(FETCH_IMM8,BIT1);
+			call(FETCH_IMM16,BIT1);
 		end
 		else begin
 			imm <= rfoDn;
@@ -3029,38 +3036,69 @@ BIT1:
 			fs_data(mmm,rrr,FETCH_BYTE,D);
 		end
 	end
+// ToDo: Speed this up by a clock cycle by placing the update in IFETCH.
 BIT2:
 	begin
-		if (mmm_save==3'b000 && sz!=2'b00) begin
-			rfwrL <= 1'b1;
-			Rt <= {1'b0,rrr};
-			ret();
-		end
-		else begin
-			goto(STORE_BYTE);
-		end
-		case(sz)
-		2'b00:	begin zf <= ~d[bit2test[4:0]]; ret(); end
-		2'b01:	begin
+		// Targets a data register then the size is 32-bit, test is mod 32.
+		if (mmm_save==3'b000)
+			case(sz)
+			2'b00:	
+				begin
+					zf <= ~d[bit2test[4:0]];
+					ret();
+				end
+			2'b01:
+				begin
 					zf <= ~d[bit2test[4:0]];
 					resL <= d ^  (32'd1 << bit2test[4:0]);
-					resB <= d ^  (32'd1 << bit2test[4:0]);
-					d <= d ^  (32'd1 << bit2test[4:0]);
+					rfwrL <= 1'b1;
+					Rt <= {1'b0,rrr};
+					ret();
 				end
-		2'b10:	begin
+			2'b10:
+				begin
 					zf <= ~d[bit2test[4:0]];
 					resL <= d & ~(32'd1 << bit2test[4:0]);
-					resB <= d & ~(32'd1 << bit2test[4:0]);
-					d <= d & ~(32'd1 << bit2test[4:0]);
+					rfwrL <= 1'b1;
+					Rt <= {1'b0,rrr};
+					ret();
 				end
-		2'b11:	begin
+			2'b11:
+				begin
 					zf <= ~d[bit2test[4:0]];
 					resL <= d |  (32'd1 << bit2test[4:0]);
-					resB <= d |  (32'd1 << bit2test[4:0]);
-					d <= d |  (32'd1 << bit2test[4:0]);
+					rfwrL <= 1'b1;
+					Rt <= {1'b0,rrr};
+					ret();
 				end
-		default:	;
-		endcase
+			endcase
+		// Target is memory, size is byte, test is mod 8.
+		else
+			case(sz)
+			2'b00:
+				begin
+					zf <= ~d[bit2test[2:0]];
+					ret();
+				end
+			2'b01:	
+				begin
+					zf <= ~d[bit2test[2:0]];
+					d <= d ^  (32'd1 << bit2test[2:0]);
+					goto(STORE_BYTE);
+				end
+			2'b10:
+				begin
+					zf <= ~d[bit2test[2:0]];
+					d <= d & ~(32'd1 << bit2test[2:0]);
+					goto(STORE_BYTE);
+				end
+			2'b11:
+				begin
+					zf <= ~d[bit2test[2:0]];
+					d <= d |  (32'd1 << bit2test[2:0]);
+					goto(STORE_BYTE);
+				end
+			endcase
 	end
 
 //-----------------------------------------------------------------------------
@@ -3100,27 +3138,32 @@ FETCH_BRDISP:
 			cyc_o <= 1'b0;
 			stb_o <= 1'b0;
 			sel_o <= 4'b00;
-			// Record 'd' for bsr
-`ifdef SUPPORT_B24		
-			if (ir[0])
-				d <= pc + {{9{ir[7]}},ir[7:1],iri,1'b0};
-			else
-`endif		
-				d <= pc + {{16{iri[15]}},iri};
-			// Want to point PC to return after displacement, it will be stacked
-			if (bsr)
-				pc <= pc + 4'd2;
-			// else branch
-			else begin
-`ifdef SUPPORT_B24			
-				if (ir[0])
-					pc <= pc + {{9{ir[7]}},ir[7:1],iri,1'b0};
-				else
-`endif			
-					pc <= pc + {{16{iri[15]}},iri};
-			end
-			ret();
+			d <= {16'd0,iri};
+			goto (FETCH_BRDISPa);
 		end
+	end
+FETCH_BRDISPa:
+	begin
+		// Record 'd' for bsr
+`ifdef SUPPORT_B24		
+		if (ir[0])
+			d <= pc + {{9{ir[7]}},ir[7:1],d[15:0],1'b0};
+		else
+`endif		
+			d <= pc + {{16{d[15]}},d[15:0]};
+		// Want to point PC to return after displacement, it will be stacked
+		if (bsr)
+			pc <= pc + 4'd2;
+		// else branch
+		else begin
+`ifdef SUPPORT_B24			
+			if (ir[0])
+				pc <= pc + {{9{ir[7]}},ir[7:1],d[15:0],1'b0};
+			else
+`endif			
+				pc <= pc + {{16{d[15]}},d[15:0]};
+		end
+		ret();
 	end
 
 // Fetch 8 bit immediate
@@ -3142,6 +3185,10 @@ FETCH_IMM8:
 			d <= {{24{iri[7]}},iri[7:0]};
 		else
 			s <= {{24{iri[7]}},iri[7:0]};
+		goto (FETCH_IMM8a);
+	end
+FETCH_IMM8a:
+	begin
 		pc <= pc + 32'd2;
 		ret();
 	end
@@ -3165,6 +3212,10 @@ FETCH_IMM16:
 			d <= {{16{iri[15]}},iri};
 		else
 			s <= {{16{iri[15]}},iri};
+		goto (FETCH_IMM16a);
+	end
+FETCH_IMM16a:
+	begin
 		pc <= pc + 32'd2;
 		ret();
 	end
@@ -3196,7 +3247,6 @@ FETCH_IMM32:
      	else
       	s[15:0] <= dat_i[31:16];
 `endif      
-		  pc <= pc + 32'd2;
 		  goto(FETCH_IMM32a);
 		end
 		else begin
@@ -3214,20 +3264,19 @@ FETCH_IMM32:
       	s <= dat_i;
 `endif      
 		  cyc_o <= 1'b0;
-		  pc <= pc + 32'd4;
-		  ret();
+		  goto (FETCH_IMM32b);
 		end
 	end
 FETCH_IMM32a:
 	if (!stb_o) begin
 		stb_o <= 1'b1;
 		sel_o <= 4'b1111;
-		adr_o <= pc;
+		adr_o <= pc + 4'd2;
 	end
 	else if (ack_i) begin
 		cyc_o <= 1'b0;
 		stb_o <= 1'b0;
-		sel_o <= 2'b00;
+		sel_o <= 4'b00;
 `ifdef BIG_ENDIAN
 		imm[15:0] <= {dat_i[7:0],dat_i[15:8]};
 		if (ds==D)
@@ -3241,7 +3290,11 @@ FETCH_IMM32a:
 		else
 			s[31:26] <= dat_i[15:0];
 `endif
-		pc <= pc + 32'd2;
+		goto (FETCH_IMM32b);
+	end
+FETCH_IMM32b:
+	begin
+		pc <= pc + 32'd4;
 		ret();
 	end
 
@@ -3264,8 +3317,7 @@ FETCH_D32:
 `else
       disp[15:0] <= dat_i[31:16];
 `endif        
-      pc <= pc + 32'd2;
-  		state <= FETCH_D32a;
+  		goto (FETCH_D32a);
 		end
 		else begin
 	    cyc_o <= `LOW;
@@ -3276,15 +3328,14 @@ FETCH_D32:
 `else      
       disp <= dat_i;
 `endif      
-      pc <= pc + 32'd4;
-      state <= FETCH_D32b;
+      goto (FETCH_D32b);
 		end
 	end
 FETCH_D32a:
 	if (!stb_o) begin
 		stb_o <= 1'b1;
 		sel_o <= 4'b1111;
-		adr_o <= pc;
+		adr_o <= pc + 4'd2;
 	end
 	else if (ack_i) begin
     cyc_o <= `LOW;
@@ -3295,11 +3346,11 @@ FETCH_D32a:
 `else		
 		disp[31:16] <= dat_i[15:0];
 `endif		
-		pc <= pc + 32'd2;
-		state <= FETCH_D32b;
+		goto (FETCH_D32b);
 	end
 FETCH_D32b:
 	begin
+		pc <= pc + 4'd4;
 		ea <= ea + disp;
 		ret();
 	end
@@ -3319,11 +3370,11 @@ FETCH_D16:
 		stb_o <= 1'b0;
 		sel_o <= 4'b0;
 		disp <= {{16{iri[15]}},iri};
-		pc <= pc + 32'd2;
 		state <= FETCH_D16a;
 	end
 FETCH_D16a:
 	begin
+		pc <= pc + 32'd2;
 		ea <= ea + disp;
 		ret();
 	end
@@ -3346,11 +3397,11 @@ FETCH_NDX:
 		mmm <= {2'b00,iri[15]};	// to get reg
 		rrr <= iri[14:12];
 		wl <= iri[11];
-		pc <= pc + 32'd2;
 		state <= FETCH_NDXa;
 	end
 FETCH_NDXa:
 	begin
+		pc <= pc + 32'd2;
 		if (wl)
 			ea <= ea + rfob + disp;
 		else
@@ -3453,45 +3504,45 @@ FETCH_WORD:
 	end
 
 FETCH_LWORD:
-	  if (!cyc_o) begin
-			fc_o <= {sf,2'b01};
-			cyc_o <= 1'b1;
-			stb_o <= 1'b1;
-			adr_o <= ea;
-			sel_o <= 4'b1111;
-		end
-		else if (ack_i) begin
-			stb_o <= 1'b0;
-			sel_o <= 4'b00;
-			if (ea[1]) begin
+  if (!cyc_o) begin
+		fc_o <= {sf,2'b01};
+		cyc_o <= 1'b1;
+		stb_o <= 1'b1;
+		adr_o <= ea;
+		sel_o <= 4'b1111;
+	end
+	else if (ack_i) begin
+		stb_o <= 1'b0;
+		sel_o <= 4'b00;
+		if (ea[1]) begin
 `ifdef BIG_ENDIAN
-        if (ds==D)
-          d[31:16] <= {dat_i[23:16],dat_i[31:24]};
-        else
-          s[31:16] <= {dat_i[23:16],dat_i[31:24]};
+      if (ds==D)
+        d[31:16] <= {dat_i[23:16],dat_i[31:24]};
+      else
+        s[31:16] <= {dat_i[23:16],dat_i[31:24]};
 `else			
-        if (ds==D)
-          d[15:0] <= dat_i[31:16];
-        else
-          s[15:0] <= dat_i[31:16];
+      if (ds==D)
+        d[15:0] <= dat_i[31:16];
+      else
+        s[15:0] <= dat_i[31:16];
 `endif          
-    		state <= FETCH_LWORDa;
-	    end
-	    else begin
-        cyc_o <= `LOW;
+  		state <= FETCH_LWORDa;
+    end
+    else begin
+      cyc_o <= `LOW;
 `ifdef BIG_ENDIAN
-        if (ds==D)
-            d <= rbo(dat_i);
-        else
-            s <= rbo(dat_i);
+      if (ds==D)
+          d <= rbo(dat_i);
+      else
+          s <= rbo(dat_i);
 `else        
-        if (ds==D)
-            d <= dat_i;
-        else
-            s <= dat_i;
+      if (ds==D)
+          d <= dat_i;
+      else
+          s <= dat_i;
 `endif            
-        ret();
-	    end
+      ret();
+    end
 	end
 FETCH_LWORDa:
 	if (!stb_o) begin
@@ -4829,10 +4880,12 @@ endcase
 		sel_o <= 4'h0;
 		mac_cycle_type <= {state[6:0],sel_o,~we_o,1'b0,fc_o};
 		bad_addr <= adr_o;
-		is_bus_err <= 1'b1;
-		dati_buf <= dat_i;
-		dato_buf <= dat_o;
-		goto (TRAP);
+		if (state != INTA) begin
+			is_bus_err <= 1'b1;
+			dati_buf <= dat_i;
+			dato_buf <= dat_o;
+			goto (TRAP);
+		end
 	end
 
 `ifdef SUPPORT_RETRY
@@ -4915,8 +4968,10 @@ begin
 			end
 	3'd3:	begin	// (An)+
 				ea <= (MMMRRR ? rfoAna : rfoAn);
-				Rt <= {1'b1,rrr};
-				rfwrL <= 1'b1;
+				if (!lea) begin
+					Rt <= {1'b1,rrr};
+					rfwrL <= 1'b1;
+				end			
 				case(size_state)
 				LFETCH_BYTE,FETCH_BYTE,STORE_BYTE,USTORE_BYTE:	resL <= (MMMRRR ? rfoAna : rfoAn) + 4'd1;
 				FETCH_WORD,STORE_WORD:	resL <= (MMMRRR ? rfoAna : rfoAn) + 4'd2;
@@ -4925,8 +4980,10 @@ begin
 				goto(size_state);
 			end
 	3'd4:	begin	// -(An)
-				Rt <= {1'b1,rrr};
-				rfwrL <= 1'b1;
+				if (!lea) begin
+					Rt <= {1'b1,rrr};
+					rfwrL <= 1'b1;
+				end
 				case(size_state)
 				FETCH_NOP_BYTE,LFETCH_BYTE,FETCH_BYTE,STORE_BYTE,USTORE_BYTE:	ea <= (MMMRRR ? rfoAna : rfoAn) - 4'd1;
 				FETCH_NOP_WORD,FETCH_WORD,STORE_WORD:	ea <= (MMMRRR ? rfoAna : rfoAn) - 4'd2;
