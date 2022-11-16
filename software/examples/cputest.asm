@@ -4180,14 +4180,14 @@ op_RTR:
 
 *     Leventhal claims only 5 LSB's are popped from the stack to the CCR
 
-                lea RTR_DONE,a0
-                move.l a0,-(a7)     * push destination PC to the stack
-                move.l #$FF15,-(a7)       * push flags=0xFFFF to the stack
+                lea 		RTR_DONE,a0
+                move.l 	a0,-(a7)     * push destination PC to the stack
+                move.w 	#$FF15,-(a7)       * push flags=0xFFFF to the stack
                 rtr
 
 RTR_DONE:       move.w SR,d0
-                andi #$1F,d0
-                cmpi #$15,d0
+                andi.w #$1F,d0
+                cmpi.w #$15,d0
                 bne.s *
 
                 rts

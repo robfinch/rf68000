@@ -68,6 +68,7 @@ semamem		EQU	$FD050000
 ACIA			EQU	$FD060000
 ACIA_RX		EQU	0
 ACIA_STAT	EQU	4
+PLIC			EQU	$FD090000
 leds			EQU	$FD0FFF00
 keybd			EQU	$FD0FFE00
 KEYBD			EQU	$FD0FFE00
@@ -231,6 +232,18 @@ _KeyState1
 	dc.b		0
 _KeyState2
 	dc.b		0
+_KeybdHead
+	dc.b		0
+_KeybdTail
+	dc.b		0
+_KeybdCnt
+	dc.b		0
+	dc.b		0
+_KeybdBuf:
+	dc.b		0,0,0,0,0,0,0,0
+	dc.b		0,0,0,0,0,0,0,0
+	dc.b		0,0,0,0,0,0,0,0
+	dc.b		0,0,0,0,0,0,0,0
 CmdBuf:
 	dc.b		0
 CmdBufEnd:
@@ -243,7 +256,7 @@ start:
 	movec.l	coreno,d0				; get core number
 	cmpi.b	#2,d0
 	bne			start_other
-	move.l	#$4,IOFocus			; Set the IO focus map in global memory
+	move.b	d0,IOFocus			; Set the IO focus in global memory
 ;	bsr			InitSemaphores
 	bsr			Delay3s					; give devices time to reset
 	bsr			clear_screen
@@ -257,6 +270,7 @@ start:
 	moveq.l	#0,d1
 	bsr			UnlockSemaphore	; allow other cpus to proceed
 	move.w	#$A4A4,leds			; diagnostics
+	bsr			init_plic				; initialize platform level interrupt controller
 	bra			Monitor
 	bsr			cpu_test
 ;	lea			brdisp_trap,a0	; set brdisp trap vector
@@ -276,31 +290,28 @@ start_other:
 	beq.s		.0003
 	move.l	#$1FBFC,sp
 .0003:
-	nop
-	bra.s		.0003
 	move.l	TextScr,d0
 	movec.l	coreno,d1					; get the core number
 	btst		#0,d1							; calc new screen address for even cores only
-	bne.s		start_other
+	bne.s		.0001
 	subi.l	#2,d1							; core numbers start at 2
-	asl.l		#8,d1							; * 16384 bytes per screen
-	asl.l		#6,d1
+	mulu		#16384,d1					; * 16384 bytes per screen
 	add.l		d1,d0							; adjust index to screen
 	move.l	d0,TextScr				; set new text screen location
 .0001:
-	* Delay a bit before trying to access the screen. Need some time for the
-	* screen locations of other cores to update.
-	move.l	#300000,d1
+	; Delay a bit before trying to access the screen. Need some time for the
+	; screen locations of other cores to update.
+	move.l	#65535,d1
 .0002:
 	nop
 	dbra		d1,.0002
 	bsr			clear_screen
-	movec		coreno,d1
+	movec.l	coreno,d1
 	bsr			DisplayByte
 	lea			msg_core_start,a1
 	bsr			DisplayString
 do_nothing:	
-	nop
+	bra			Monitor
 	bra			do_nothing
 
 ;------------------------------------------------------------------------------
@@ -824,6 +835,9 @@ SyncCursor:
 
 ;==============================================================================
 ; TRAP #15 handler
+;
+; Parameters:
+;		d0.w = function number to perform
 ;==============================================================================
 
 TRAP15:
@@ -847,6 +861,7 @@ T15DispatchTable:
 	dc.l	CheckForKey
 	dc.l	StubRout
 	dc.l	StubRout
+	; 10
 	dc.l	StubRout
 	dc.l	Cursor1
 	dc.l	SetKeyboardEcho
@@ -857,6 +872,7 @@ T15DispatchTable:
 	dc.l	StubRout
 	dc.l	StubRout
 	dc.l	StubRout
+	; 20
 	dc.l	StubRout
 	dc.l	StubRout
 	dc.l	StubRout
@@ -867,10 +883,11 @@ T15DispatchTable:
 	dc.l	StubRout
 	dc.l	StubRout
 	dc.l	StubRout
+	; 30
 	dc.l	StubRout
 	dc.l	StubRout
-	dc.l	StubRout
-	dc.l	StubRout
+	dc.l	rotate_iofocus
+	dc.l	SerialPeekCharDirect
 	dc.l	StubRout
 	dc.l	StubRout
 	dc.l	StubRout
@@ -884,6 +901,51 @@ T15DispatchTable:
 
 Cursor1:
 StubRout:
+	rts
+
+;------------------------------------------------------------------------------
+; Rotate the IO focus, done when ALT-Tab is pressed.
+;
+; Modifies:
+;		d0, IOFocus BIOS variable
+;------------------------------------------------------------------------------
+
+rotate_iofocus:
+	move.b	IOFocus,d0				; d0 = focus, we can trash d0
+	add.b		#1,d0							; increment the focus
+	cmp.b		#9,d0							; limit to 2 to 9
+	bls.s		.0001
+	move.b	#2,d0
+.0001:
+	move.b	d0,IOFocus				; set IO focus
+	sub.b		#2,d0							; screen is 0 to 7, focus is 2 to 9
+	ext.w		d0								; make into long value
+	mulu		#2048,d0					; * 2048	cells per screen
+	rol.w		#8,d0							; swap byte order
+	move.w	d0,TEXTREG+$28		; update screen address in text controller
+	bra			SyncCursor				; set cursor position
+
+;==============================================================================
+; PLIC - platform level interrupt controller
+;
+; Register layout:
+;   bits 0 to 7  = cause code to issue
+;   bits 8 to 11 = irq level to issue
+;   bit 16 = irq enable
+;   bit 17 = edge sensitivity
+;		bit 24 to 29 target core
+;
+; Note byte order must be reversed for PLIC.
+;==============================================================================
+
+init_plic:
+	lea		PLIC,a0						; a0 points to PLIC
+	lea		$80+4*29(a0),a0		; point to timer registers (29)
+	move.l	#$00060302,(a0)	; initialize, core=2,edge sensitive,enabled,irq6
+	lea			4(a0),a0				; point to keyboard registers (30)
+	move.l	#$00060102,(a0)	; initialize, core=2,level sensitive,enabled,irq6
+	lea			4(a0),a0				; point to nmi button register (31)
+	move.l	#$00070302,(a0)	; initialize, core=2,edge sensitive,enabled,irq7
 	rts
 
 ;==============================================================================
@@ -909,6 +971,7 @@ _KeybdInit:
 	rts
 
 _KeybdGetStatus:
+	moveq		#0,d1
 	move.b	KEYBD+1,d1
 	rts
 
@@ -969,18 +1032,18 @@ SetKeyboardEcho:
 	move.b	d1,KeybdEcho
 	rts
 
-*------------------------------------------------------------------------------
-* Get key pending status into d1.b
-*
-* Returns:
-*		d1.b = 1 if a key is available, otherwise zero.
-*------------------------------------------------------------------------------
+;------------------------------------------------------------------------------
+; Get key pending status into d1.b
+;
+; Returns:
+;		d1.b = 1 if a key is available, otherwise zero.
+;------------------------------------------------------------------------------
 
 CheckForKey:
-	moveq.l	#0,d1					* clear high order bits
-	move.b	KEYBD+1,d1		* get kyboard port status
-	smi.b		d1						* set true/false
-	andi.b	#1,d1					* return true (1) if key available, 0 otherwise
+	moveq.l	#0,d1					; clear high order bits
+	move.b	KEYBD+1,d1		; get kyboard port status
+	smi.b		d1						; set true/false
+	andi.b	#1,d1					; return true (1) if key available, 0 otherwise
 	rts
 
 ;------------------------------------------------------------------------------
@@ -998,10 +1061,10 @@ GetKey:
 	move.l	d0,-(a7)					; push d0
 	; Check for focus. Even if the core does not have the focus ALT-TAB still
 	; needs to be checked for.
-	move.l	IOFocus,d1				; Check if the core has the IO focus
+	move.b	IOFocus,d1				; Check if the core has the IO focus
 	movec.l	coreno,d0
-	btst		d0,d1
-	bra.s		.0007							; should be a bne.s here
+	cmp.b		d0,d1
+	beq.s		.0007							; should be a beq.s here
 	; If the core does not have the focus then the keyboard scan code buffer
 	; must be read directly to determine if a tab character is pressed. A non-
 	; destructive buffer read is needed.
@@ -1013,7 +1076,7 @@ GetKey:
 	beq.s		.0004							; if ALT-TAB goto switch screens
 	; Got here when a tab scan code was detected. We know there is a tab key
 	; available at the keyboard port. Get the key.
-	move.b	#0,KEYBD+1				* clear keyboard
+	move.b	#0,KEYBD+1				; clear keyboard
 	bra.s		.0008
 .0007:	
 	bsr			KeybdGetCharWait	; get a character
@@ -1022,16 +1085,7 @@ GetKey:
 	btst		#1,_KeyState2			; is ALT down?
 	beq.s		.0006
 .0008:
-	; Got alt-tab, switch screens
-	move.w	TEXTREG+$28,d0
-	rol.w		#8,d0							; swap byte order
-	add.w		#2048,d0					; increment to next screen page
-	cmp.w		#16384,d0					; hit max screen page?
-	blo.s		.0002
-	moveq		#0,d0							; wrap around
-.0002:
-	ror.w		#8,d0							; swap byte order
-	move.w	d0,TEXTREG+$28
+	bsr			rotate_iofocus		; rotate IO focus
 	bra.s		.0004							; eat Alt-tab, return no key available
 .0006:
 	cmpi.b	#0,KeybdEcho			; is keyboard echo on ?
@@ -1073,12 +1127,26 @@ KeybdGetCharWait:
 KeybdGetChar:
 	movem.l	d2/d3/a0,-(a7)
 .0003:
-	bsr		_KeybdGetStatus			; check keyboard status for key available
-	bmi		.0006					; yes, go process
+	move.b	_KeybdCnt,d2		; get count of buffered scan codes
+	tst.b		d2
+	beq.s		.0014						; if no buffered scancodes goto regular testing
+	move.b	_KeybdHead,d2		; d2 = buffer head
+	ext.w		d2
+	lea			_KeybdBuf,a0		; a0 = pointer to keyboard buffer
+	clr.l		d1
+	move.b	(a0,d2.w),d1		; d1 = scan code from buffer
+	addi.b	#1,d2						; increment keyboard head index
+	andi.b	#31,d2					; and wrap around at buffer size
+	move.b	d2,_KeybdHead
+	subi.b	#1,_KeybdCnt		; decrement count of scan codes in buffer
+	bra			.0001
+.0014:
+	bsr		_KeybdGetStatus		; check keyboard status for key available
+	bmi		.0006							; yes, go process
 	tst.b	KeybdWaitFlag			; are we willing to wait for a key ?
-	bmi		.0003					; yes, branch back
+	bmi		.0003							; yes, branch back
 	movem.l	(a7)+,d2/d3/a0
-	moveq	#-1,d1					; flag no char available
+	moveq	#-1,d1						; flag no char available
 	rts
 .0006:
 	bsr		_KeybdGetScancode
@@ -1369,11 +1437,20 @@ FromScreen:
 	rts
 
 StartMon:
+	; Reset the stack pointer on entry into the monitor
 Monitor:
-	moveq	#1,d1
-	bsr		UnlockSemaphore
-;	lea		STACK,a7		; reset the stack pointer
-	clr.b	KeybdEcho		; turn off keyboard echo
+	movec.l	coreno,d1		; get core number
+	btst		#0,d1
+	beq.s		.0001
+	move.l	#$1FBFC,sp	; odd core's stack
+	bra			.0002
+.0001:
+	move.l	#$1FFFC,sp	; even core's stack
+.0002:
+	move.w	#$2500,sr		; enable level 6 and higher interrupts
+	moveq		#1,d1
+	bsr			UnlockSemaphore
+	clr.b		KeybdEcho		; turn off keyboard echo
 PromptLn:
 	bsr			CRLF
 	move.b	#'$',d1
@@ -2005,11 +2082,13 @@ S1932b:
 sGetChar:
 	bsr			CheckForKey
 	beq			.0001
-	bsr			GetKey
+	moveq		#5,d0					; GetKey
+	trap		#15
 	cmpi.b	#CTRLC,d1
 	beq			Monitor
 .0001:
-	bsr			AUXIN
+	moveq		#33,d0				; serial peek character direct
+	trap		#15
 	tst.l		d0
 	bmi			sGetChar
 	move.b	d0,d1
@@ -2044,23 +2123,42 @@ AUXIN:
 
 SerialPeekCharDirect:
 	; Disallow interrupts between status read and rx read.
-	move.w	sr,-(a7)					; save off SR
 	ori.w		#$7000,sr					; disable interrupts
 	move.l	ACIA+ACIA_STAT,d0	; get serial status
+	rol.w		#8,d0							; swap byte order
+	swap		d0
+	rol.w		#8,d0
 	btst		#3,d0							; look for Rx not empty
 	beq.s		.0001
 	moveq.l	#0,d0							; clear upper bits of return value
-	move.l	ACIA+ACIA_RX,d0		; get data from ACIA
-	rte												; restore SR and return
+	move.b	ACIA+ACIA_RX,d0		; get data from ACIA
+	rts												; restore SR and return
 .0001:
 	moveq		#-1,d0
-	rte
+	rts
 
 irq_rout:
-	move.l	a0,-(a7)
-	move.l	TextScr,a0
-	addi.l	#1,496(a0)
-	move.l	(a7)+,a0
+	movem.l	d0/d1/a0,-(a7)
+	bsr			_KeybdGetStatus		; check if timer or keyboard
+	bpl.s		.0001							; branch if not keyboard
+	bsr			_KeybdGetScancode	; grab the scan code
+	cmpi.b	#32,_KeybdCnt			; see if keyboard buffer full
+	bhs.s		.0002
+	move.b	_KeybdTail,d0			; keyboard buffer not full, add to tail
+	ext.w		d0
+	lea			_KeybdBuf,a0			; a0 = pointer to buffer
+	move.b	d1,(a0,d0.w)			; put scancode in buffer
+	addi.b	#1,d0							; increment tail index
+	andi.b	#31,d0						; wrap at buffer limit
+	move.b	d0,_KeybdTail			; update tail index
+	addi.b	#1,_KeybdCnt			; increment buffer count
+	bra			.0002
+.0001:
+	move.l	#$1D000000,PLIC+$14	; reset edge sense circuit
+	move.l	TextScr,a0				; a0 = screen address
+	addi.l	#1,496(a0)				; update onscreen IRQ flag
+.0002:	
+	movem.l	(a7)+,d0/d1/a0		; return
 	rte
 
 brdisp_trap:

@@ -108,8 +108,8 @@ if (rst_i) begin
 	m_adr_o <= {32{1'b0}};
 	m_dat_o <= 'd0;
 	s_ack <= 1'b0;
-	s1_dat_o <= 8'd0;
-	s2_dat_o <= 8'd0;
+	s1_dat_o <= 'd0;
+	s2_dat_o <= 'd0;
 	state <= IDLE;
 end
 else begin
@@ -172,7 +172,7 @@ IDLE:
 				m_dat_o <= s2_dat_i;
 	    end
 	  	else
-	  		m_dat_o <= 8'd0;
+	  		m_dat_o <= 'd0;
 		end
 	end
 WR_ACK:

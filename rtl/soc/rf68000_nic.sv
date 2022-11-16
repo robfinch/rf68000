@@ -167,13 +167,11 @@ else begin
 		rpacket_tx <= {$bits(packet_t){1'b0}};
 	end
 	
-	if (s_adr_i[31:20]!=12'h000) begin
-		// Look for slave cycle termination.
-		if (~(s_cyc_i & s_stb_i)) begin
-			rw_done <= TRUE;
-			s_ack1 <= FALSE;
-			s_rty_o <= FALSE;
-		end
+	// Look for slave cycle termination.
+	if (~(s_cyc_i & s_stb_i)) begin
+		rw_done <= TRUE;
+		s_ack1 <= FALSE;
+		s_rty_o <= FALSE;
 	end
 
 	if (firq_i| |irq_i) begin
@@ -368,14 +366,12 @@ begin
 			else begin
 				packet_tx <= {$bits(packet_t){1'b0}};
 				s_ack1 <= s_we_i;
-				rw_done <= TRUE;
 			end
 		/* I/O area */
 		8'hFD:
 			begin
 				packet_tx.did <= 6'd62;
 				s_ack1 <= s_we_i|burst;
-				rw_done <= TRUE;
 			end
 		// Global broadcast
 		8'hDF:
@@ -383,26 +379,22 @@ begin
 				packet_tx.did <= 6'd63;
 				packet_tx.age <= 6'd30;
 				s_ack1 <= s_we_i|burst;
-				rw_done <= TRUE;
 			end
 		// C0xyyyyy
 		8'hC0:
 			begin
 				packet_tx.did <= {2'd0,s_adr_i[23:20]};
 				s_ack1 <= s_we_i|burst;
-				rw_done <= TRUE;
 			end
 		8'h4?,8'h5?,8'h6?,8'h7?,8'h8?,8'h9?,8'hA?,8'hB?:
 			begin
 				packet_tx.did <= 6'd62;
 				s_ack1 <= s_we_i|burst;
-				rw_done <= TRUE;
 			end
 		8'h00:
 			if (s_adr_i[23:20]==4'h1) begin
 				packet_tx.did <= 6'd62;
 				s_ack1 <= s_we_i|burst;
-				rw_done <= TRUE;
 			end
 			else begin
 				packet_tx <= {$bits(packet_t){1'b0}};

@@ -171,6 +171,7 @@ wire [31:0] fb_dato;
 wire tc_ack;
 wire [31:0] tc_dato;
 wire kbd_ack;
+wire kbd_irq;
 wire [7:0] kbd_dato;
 wire rand_ack;
 wire [31:0] rand_dato;
@@ -180,6 +181,11 @@ wire scr_ack;
 wire [31:0] scr_dato;
 wire acia_ack;
 wire [31:0] acia_dato;
+wire plic_ack;
+wire [3:0] plic_irq;
+wire [31:0] plic_dato;
+wire [7:0] plic_cause;
+wire [5:0] plic_core;
 
 wire leds_ack;
 
@@ -268,6 +274,7 @@ wire cs_sema = ch7req.adr[31:16]==16'hFD05 && ch7req.stb;
 wire cs_acia = ch7req.adr[31:12]==20'hFD060 && ch7req.stb;
 wire cs_br3_acia = br3_adr[31:12]==20'hFD060 && br3_stb;
 wire cs_scr = ch7req.adr[31:20]==12'h001 && ch7req.stb;
+wire cs_br3_plic = br3_adr[31:12]==20'hFD090;
 
 rfFrameBuffer uframebuf1
 (
@@ -362,11 +369,11 @@ always_ff @(posedge node_clk)
 always_ff @(posedge node_clk)
 	br1_ack <= fb_ack|tc_ack;
 
-PS2kbd ukbd1
+PS2kbd #(.pClkFreq(40000000)) ukbd1
 (
 	// WISHBONE/SoC bus interface 
 	.rst_i(rst),
-	.clk_i(clk40),	// system clock
+	.clk_i(node_clk),	// system clock
 	.cs_i(cs_br3_kbd),
 	.cyc_i(br3_cyc),
 	.stb_i(br3_stb),	// core select (active high)
@@ -377,7 +384,7 @@ PS2kbd ukbd1
 	.dat_o(kbd_dato),	// data out
 	.db(),
 	//-------------
-	.irq(),	// interrupt request (active high)
+	.irq(kbd_irq),	// interrupt request (active high)
 	.kclk_i(kclk),	// keyboard clock from keyboard
 	.kclk_en(kclk_en),	// 1 = drive clock low
 	.kdat_i(kd),	// keyboard data
@@ -464,12 +471,12 @@ IOBridge ubridge3
 always_ff @(posedge node_clk)
 	casez({cs_br3_rand,cs_br3_kbd,cs_br3_leds})
 	3'b??1:	br3_dati <= led;
-	3'b??0:	br3_dati <= {4{kbd_dato}}|rand_dato|acia_dato;
+	3'b??0:	br3_dati <= {4{kbd_dato}}|rand_dato|acia_dato|plic_dato;
 	default:	br3_dati <= 'd0;
 	endcase
 
 always_ff @(posedge node_clk)
-	br3_ack <= leds_ack|kbd_ack|rand_ack|acia_ack;
+	br3_ack <= leds_ack|kbd_ack|rand_ack|acia_ack|plic_ack;
 
 assign leds_ack = cs_br3_leds;
 always_ff @(posedge node_clk)
@@ -618,22 +625,73 @@ packet_t [5:0] rpacket;
 ipacket_t [5:0] ipacket;
 
 reg [23:0] icnt;
-reg irq;
+reg tmr_irq;
 
 always @(posedge clk100)
 if (rst) begin
 	icnt <= 24'd1;
-	irq <= 1'b0;
+	tmr_irq <= 1'b0;
 end
 else begin
 	icnt <= icnt + 2'd1;
 	if (icnt==24'd150)
-		irq <= 1'b1;
+		tmr_irq <= 1'b1;
 	else if (icnt==24'd200)
-		irq <= 1'b0;
-	else if (icnt==24'd8192)
+		tmr_irq <= 1'b0;
+	else if (icnt==24'd100000)
 		icnt <= 24'd1;
 end
+
+rf68000_plic
+(
+	.rst_i(rst),		// reset
+	.clk_i(node_clk),		// system clock
+	.cs_i(cs_br3_plic),
+	.cyc_i(br3_cyc),
+	.stb_i(br3_stb),
+	.ack_o(plic_ack),       // controller is ready
+	.wr_i(br3_we),			// write
+	.adr_i(br3_adr[7:0]),	// address
+	.dat_i(br3_dato),
+	.dat_o(plic_dato),
+	.vol_o(),		// volatile register selected
+	.i1(1'b0),
+	.i2(1'b0),
+	.i3(1'b0),
+	.i4(1'b0),
+	.i5(1'b0),
+	.i6(1'b0),
+	.i7(1'b0),
+	.i8(1'b0),
+	.i9(1'b0),
+	.i10(1'b0),
+	.i11(1'b0),
+	.i12(1'b0),
+	.i13(1'b0),
+	.i14(1'b0),
+	.i15(1'b0),
+	.i16(acia_irq),
+	.i17(1'b0),
+	.i18(1'b0),
+	.i19(1'b0),
+	.i20(1'b0),
+	.i21(1'b0),
+	.i22(1'b0),
+	.i23(1'b0),
+	.i24(1'b0),
+	.i25(1'b0),
+	.i26(1'b0),
+	.i27(1'b0),
+	.i28(1'b0),
+	.i29(tmr_irq),
+	.i30(kbd_irq),
+	.i31(btnu_db),
+	.irqo(plic_irq),	// normally connected to the processor irq
+	.nmii(1'b0),		// nmi input connected to nmi requester
+	.nmio(),	// normally connected to the nmi of cpu
+	.causeo(plic_cause),
+	.core_o(plic_core)
+);
 
 rf68000_nic unic1
 (
@@ -666,10 +724,10 @@ rf68000_nic unic1
 	.ipacket_o(ipacket[4]),
 	.rpacket_i(rpacket[3]),
 	.rpacket_o(rpacket[4]),
-	.irq_i(/*irq ? 3'd6 :*/ 3'd0),
+	.irq_i(plic_irq[2:0]),
 	.firq_i(1'b0),
-	.cause_i(8'h00),
-	.iserver_i(6'd2),
+	.cause_i(plic_cause),
+	.iserver_i(plic_core),
 	.irq_o(),
 	.firq_o(),
 	.cause_o()
@@ -690,12 +748,14 @@ ila_0 your_instance_name (
 	.clk(node_clk), // input wire clk
 
 	.probe0(unode1.ucpu1.ir), // input wire [15:0]  probe0  
-	.probe1(br1_adr), // input wire [31:0]  probe1 
-	.probe2(br1_dato), // input wire [31:0]  probe2 
+	.probe1(br3_adr), // input wire [31:0]  probe1 
+	.probe2(br3_dato), // input wire [31:0]  probe2 
 	.probe3({ch7req.cyc,ch7req.we,irq,ack}), // input wire [7:0]  probe3
 	.probe4(unode1.ucpu1.pc),
 	.probe5(unode1.ucpu1.state),
-	.probe6(ipacket[4])
+	.probe6(ipacket[4]),
+	.probe7(br3_dati),
+	.probe8({kclk,kd})
 );
 
 assign ch7req.sel = sel << {ch7req.adr[3:2],2'b0};
