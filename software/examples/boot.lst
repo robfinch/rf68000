@@ -1,6 +1,6 @@
 Sections:
 00: "DATA" (0-443)
-01: "CODE" (0-4E46)
+01: "CODE" (0-4E4A)
 
 
 Source: "boot.asm"
@@ -85,9 +85,9 @@ Source: "boot.asm"
                             	    79: 	data
 00:00000000 0001FFFC        	    80: 	dc.l		$0001FFFC
 00:00000004 00000000        	    81: 	dc.l		start
-00:00000008 00000000        	    82: 	dc.l		0
+00:00000008 00004D72        	    82: 	dc.l		bus_err
 00:0000000C 00000000        	    83: 	dc.l		0
-00:00000010 00004DE4        	    84: 	dc.l		illegal_trap		* ILLEGAL instruction
+00:00000010 00004DE8        	    84: 	dc.l		illegal_trap		* ILLEGAL instruction
 00:00000014 00000000        	    85: 	dc.l		0
 00:00000018 00000250        	    86: 	dc.l		EXCEPTION_6			* CHK
 00:0000001C 00000260        	    87: 	dc.l		EXCEPTION_7			* TRAPV
@@ -119,7 +119,7 @@ Source: "boot.asm"
 00:00000074 00000000        	   113: 	dc.l		0
                             	   114: 	
                             	   115: 	; 30
-00:00000078 00004D72        	   116: 	dc.l		irq_rout					* IRQ 30 - timer
+00:00000078 00004D76        	   116: 	dc.l		irq_rout					* IRQ 30 - timer
 00:0000007C 00000000        	   117: 	dc.l		0
 00:00000080 00000000        	   118: 	dc.l		0
 00:00000084 00000000        	   119: 	dc.l		0
@@ -159,7 +159,7 @@ Source: "boot.asm"
 00:000000F4 00000000        	   153: 	dc.l		0
 00:000000F8 00000000        	   154: 	dc.l		0
 00:000000FC 00000000        	   155: 	dc.l		0
-00:00000100 00004DCA        	   156: 	dc.l		brdisp_trap
+00:00000100 00004DCE        	   156: 	dc.l		brdisp_trap
 00:00000104 00000000        	   157: 	dc.l		0
 00:00000108 00000000        	   158: 	dc.l		0
 00:0000010C 00000000        	   159: 	dc.l		0
@@ -297,7 +297,7 @@ Source: "boot.asm"
                             	   263: 
                             	   264: 	; Write startup message to screen
                             	   265: 
-01:0000001C 43FA4DDC        	   266: 	lea			msg_start,a1
+01:0000001C 43FA4DE0        	   266: 	lea			msg_start,a1
 01:00000020 61003F98        	   267: 	bsr			DisplayString
 01:00000024 7201            	   268: 	moveq.l	#1,d1
 01:00000026 610000FA        	   269: 	bsr			UnlockSemaphore	; allow another cpu access
@@ -342,7 +342,7 @@ Source: "boot.asm"
 01:0000008E 61003C6A        	   308: 	bsr			clear_screen
 01:00000092 4E7A1FE0        	   309: 	movec.l	coreno,d1
 01:00000096 61004B0E        	   310: 	bsr			DisplayByte
-01:0000009A 43FA4D76        	   311: 	lea			msg_core_start,a1
+01:0000009A 43FA4D7A        	   311: 	lea			msg_core_start,a1
 01:0000009E 61003F1A        	   312: 	bsr			DisplayString
                             	   313: do_nothing:	
 01:000000A2 600046F6        	   314: 	bra			Monitor
@@ -9615,80 +9615,85 @@ Source: "boot.asm"
 01:00004D6E 70FF            	  2137: 	moveq		#-1,d0
 01:00004D70 4E75            	  2138: 	rts
                             	  2139: 
-                            	  2140: irq_rout:
-01:00004D72 48E7C080        	  2141: 	movem.l	d0/d1/a0,-(a7)
-01:00004D76 6100F39E        	  2142: 	bsr			_KeybdGetStatus		; check if timer or keyboard
-01:00004D7A 6A34            	  2143: 	bpl.s		.0001							; branch if not keyboard
-01:00004D7C 6100F3A2        	  2144: 	bsr			_KeybdGetScancode	; grab the scan code
-01:00004D80 0C3900200000041F	  2145: 	cmpi.b	#32,_KeybdCnt			; see if keyboard buffer full
-01:00004D88 643A            	  2146: 	bhs.s		.0002
-01:00004D8A 10390000041E    	  2147: 	move.b	_KeybdTail,d0			; keyboard buffer not full, add to tail
-01:00004D90 4880            	  2148: 	ext.w		d0
-01:00004D92 41F900000421    	  2149: 	lea			_KeybdBuf,a0			; a0 = pointer to buffer
-01:00004D98 11810000        	  2150: 	move.b	d1,(a0,d0.w)			; put scancode in buffer
-01:00004D9C 5200            	  2151: 	addi.b	#1,d0							; increment tail index
-01:00004D9E 0200001F        	  2152: 	andi.b	#31,d0						; wrap at buffer limit
-01:00004DA2 13C00000041E    	  2153: 	move.b	d0,_KeybdTail			; update tail index
-01:00004DA8 52390000041F    	  2154: 	addi.b	#1,_KeybdCnt			; increment buffer count
-01:00004DAE 6014            	  2155: 	bra			.0002
-                            	  2156: .0001:
-01:00004DB0 23FC1D000000FD09	  2157: 	move.l	#$1D000000,PLIC+$14	; reset edge sense circuit
-01:00004DB8 0014
-01:00004DBA 207900000410    	  2158: 	move.l	TextScr,a0				; a0 = screen address
-01:00004DC0 52A801F0        	  2159: 	addi.l	#1,496(a0)				; update onscreen IRQ flag
-                            	  2160: .0002:	
-01:00004DC4 4CDF0103        	  2161: 	movem.l	(a7)+,d0/d1/a0		; return
-01:00004DC8 4E73            	  2162: 	rte
-                            	  2163: 
-                            	  2164: brdisp_trap:
-01:00004DCA 584F            	  2165: 	addq		#4,sp					; get rid of sr
-01:00004DCC 43FA0066        	  2166: 	lea			msg_bad_branch_disp,a1
-01:00004DD0 6100F1E8        	  2167: 	bsr			DisplayString
-01:00004DD4 6100FDBC        	  2168: 	bsr			DisplaySpace
-01:00004DD8 221F            	  2169: 	move.l	(sp)+,d1			; pop exception address
-01:00004DDA 6100FDBE        	  2170: 	bsr			DisplayTetra	; and display it
-01:00004DDE 221F            	  2171: 	move.l	(sp)+,d1			; pop format word
-01:00004DE0 6000F9B8        	  2172: 	bra			Monitor
-                            	  2173: 
-                            	  2174: illegal_trap:
-01:00004DE4 584F            	  2175: 	addq		#4,sp						; get rid of sr
-01:00004DE6 221F            	  2176: 	move.l	(sp)+,d1				; pop exception address
-01:00004DE8 6100FDB0        	  2177: 	bsr			DisplayTetra		; and display it
-01:00004DEC 43FA0034        	  2178: 	lea			msg_illegal,a1	; followed by message
-01:00004DF0 6100F1C8        	  2179: 	bsr			DisplayString
-                            	  2180: .0001:
-01:00004DF4 60FE            	  2181: 	bra			.0001
-01:00004DF6 6000F9A2        	  2182: 	bra			Monitor
-                            	  2183: 	
-                            	  2184: ; -----------------------------------------------------------------------------
-                            	  2185: ; -----------------------------------------------------------------------------
-                            	  2186: 
-                            	  2187: msg_start:
-01:00004DFA 726636386B205379	  2188: 	dc.b	"rf68k System Starting",CR,LF,0
-01:00004E02 7374656D20537461
-01:00004E0A 7274696E67
-01:00004E0F 0D
-01:00004E10 0A
-01:00004E11 00
-                            	  2189: msg_core_start:
-01:00004E12 20636F7265207374	  2190: 	dc.b	" core starting",CR,LF
-01:00004E1A 617274696E67
-01:00004E20 0D
-01:00004E21 0A
-                            	  2191: msg_illegal:
-01:00004E22 20696C6C6567616C	  2192: 	dc.b	" illegal opcode",CR,LF,0
-01:00004E2A 206F70636F6465
-01:00004E31 0D
-01:00004E32 0A
-01:00004E33 00
-                            	  2193: msg_bad_branch_disp:
-01:00004E34 206272616E636820	  2194: 	dc.b	" branch selfref: ",0
-01:00004E3C 73656C667265663A
-01:00004E44 20
-01:00004E45 00
-                            	  2195: 
-                            	  2196: 
-                            	  2197: 
+                            	  2140: bus_err:
+                            	  2141: .0001:
+01:00004D72 4E71            	  2142: 	nop
+01:00004D74 60FC            	  2143: 	bra			.0001
+                            	  2144: 
+                            	  2145: irq_rout:
+01:00004D76 48E7C080        	  2146: 	movem.l	d0/d1/a0,-(a7)
+01:00004D7A 6100F39A        	  2147: 	bsr			_KeybdGetStatus		; check if timer or keyboard
+01:00004D7E 6A34            	  2148: 	bpl.s		.0001							; branch if not keyboard
+01:00004D80 6100F39E        	  2149: 	bsr			_KeybdGetScancode	; grab the scan code
+01:00004D84 0C3900200000041F	  2150: 	cmpi.b	#32,_KeybdCnt			; see if keyboard buffer full
+01:00004D8C 643A            	  2151: 	bhs.s		.0002
+01:00004D8E 10390000041E    	  2152: 	move.b	_KeybdTail,d0			; keyboard buffer not full, add to tail
+01:00004D94 4880            	  2153: 	ext.w		d0
+01:00004D96 41F900000421    	  2154: 	lea			_KeybdBuf,a0			; a0 = pointer to buffer
+01:00004D9C 11810000        	  2155: 	move.b	d1,(a0,d0.w)			; put scancode in buffer
+01:00004DA0 5200            	  2156: 	addi.b	#1,d0							; increment tail index
+01:00004DA2 0200001F        	  2157: 	andi.b	#31,d0						; wrap at buffer limit
+01:00004DA6 13C00000041E    	  2158: 	move.b	d0,_KeybdTail			; update tail index
+01:00004DAC 52390000041F    	  2159: 	addi.b	#1,_KeybdCnt			; increment buffer count
+01:00004DB2 6014            	  2160: 	bra			.0002
+                            	  2161: .0001:
+01:00004DB4 23FC1D000000FD09	  2162: 	move.l	#$1D000000,PLIC+$14	; reset edge sense circuit
+01:00004DBC 0014
+01:00004DBE 207900000410    	  2163: 	move.l	TextScr,a0				; a0 = screen address
+01:00004DC4 52A80028        	  2164: 	addi.l	#1,40(a0)					; update onscreen IRQ flag
+                            	  2165: .0002:	
+01:00004DC8 4CDF0103        	  2166: 	movem.l	(a7)+,d0/d1/a0		; return
+01:00004DCC 4E73            	  2167: 	rte
+                            	  2168: 
+                            	  2169: brdisp_trap:
+01:00004DCE 584F            	  2170: 	addq		#4,sp					; get rid of sr
+01:00004DD0 43FA0066        	  2171: 	lea			msg_bad_branch_disp,a1
+01:00004DD4 6100F1E4        	  2172: 	bsr			DisplayString
+01:00004DD8 6100FDB8        	  2173: 	bsr			DisplaySpace
+01:00004DDC 221F            	  2174: 	move.l	(sp)+,d1			; pop exception address
+01:00004DDE 6100FDBA        	  2175: 	bsr			DisplayTetra	; and display it
+01:00004DE2 221F            	  2176: 	move.l	(sp)+,d1			; pop format word
+01:00004DE4 6000F9B4        	  2177: 	bra			Monitor
+                            	  2178: 
+                            	  2179: illegal_trap:
+01:00004DE8 584F            	  2180: 	addq		#4,sp						; get rid of sr
+01:00004DEA 221F            	  2181: 	move.l	(sp)+,d1				; pop exception address
+01:00004DEC 6100FDAC        	  2182: 	bsr			DisplayTetra		; and display it
+01:00004DF0 43FA0034        	  2183: 	lea			msg_illegal,a1	; followed by message
+01:00004DF4 6100F1C4        	  2184: 	bsr			DisplayString
+                            	  2185: .0001:
+01:00004DF8 60FE            	  2186: 	bra			.0001
+01:00004DFA 6000F99E        	  2187: 	bra			Monitor
+                            	  2188: 	
+                            	  2189: ; -----------------------------------------------------------------------------
+                            	  2190: ; -----------------------------------------------------------------------------
+                            	  2191: 
+                            	  2192: msg_start:
+01:00004DFE 726636386B205379	  2193: 	dc.b	"rf68k System Starting",CR,LF,0
+01:00004E06 7374656D20537461
+01:00004E0E 7274696E67
+01:00004E13 0D
+01:00004E14 0A
+01:00004E15 00
+                            	  2194: msg_core_start:
+01:00004E16 20636F7265207374	  2195: 	dc.b	" core starting",CR,LF
+01:00004E1E 617274696E67
+01:00004E24 0D
+01:00004E25 0A
+                            	  2196: msg_illegal:
+01:00004E26 20696C6C6567616C	  2197: 	dc.b	" illegal opcode",CR,LF,0
+01:00004E2E 206F70636F6465
+01:00004E35 0D
+01:00004E36 0A
+01:00004E37 00
+                            	  2198: msg_bad_branch_disp:
+01:00004E38 206272616E636820	  2199: 	dc.b	" branch selfref: ",0
+01:00004E40 73656C667265663A
+01:00004E48 20
+01:00004E49 00
+                            	  2200: 
+                            	  2201: 
+                            	  2202: 
 
 
 Symbols by name:
@@ -9934,7 +9939,8 @@ _keybdExtendedCodes             01:0000470E
 _shiftedScanCodes               01:0000458E
 _unshiftedScanCodes             01:0000448E
 bkcolor                         00:00000404
-brdisp_trap                     01:00004DCA
+brdisp_trap                     01:00004DCE
+bus_err                         01:00004D72
 clear_screen                    01:00003CFA
 const_tbl                       00:00000400
 cpu_test                        01:00000166
@@ -9973,17 +9979,17 @@ gthx5                           01:00004B58
 gthx6                           01:00004B6A
 icc1                            01:00003F44
 ignBlanks                       01:00004A26
-illegal_trap                    01:00004DE4
+illegal_trap                    01:00004DE8
 init_plic                       01:000040E6
-irq_rout                        01:00004D72
+irq_rout                        01:00004D76
 leds                             E:FD0FFF00
 loop1                           01:00000046
 loop2                           01:00000044
 loop3                           01:00003D20
-msg_bad_branch_disp             01:00004E34
-msg_core_start                  01:00004E12
-msg_illegal                     01:00004E22
-msg_start                       01:00004DFA
+msg_bad_branch_disp             01:00004E38
+msg_core_start                  01:00004E16
+msg_illegal                     01:00004E26
+msg_start                       01:00004DFE
 op_ABCD                         01:000024C6
 op_ADD                          01:00002E54
 op_ADDA                         01:00003028
@@ -10373,8 +10379,8 @@ FD0FFF00 leds
 00003FEA SyncCursor
 00004000 TRAP15
 00004018 T15DispatchTable
-000040B8 Cursor1
 000040B8 StubRout
+000040B8 Cursor1
 000040BA rotate_iofocus
 000040E6 init_plic
 00004108 _KeybdInit
@@ -10397,8 +10403,8 @@ FD0FFF00 leds
 0000468E _keybdControlCodes
 0000470E _keybdExtendedCodes
 0000478E FromScreen
-0000479A Monitor
 0000479A StartMon
+0000479A Monitor
 000047C2 PromptLn
 000047CE Prompt3
 000047DE Prompt1
@@ -10452,13 +10458,14 @@ FD0FFF00 leds
 00004D44 BouncingBalls
 00004D46 GraphicsDemo
 00004D48 ClearScreen
-00004D4E SerialPeekCharDirect
 00004D4E AUXIN
-00004D72 irq_rout
-00004DCA brdisp_trap
-00004DE4 illegal_trap
-00004DFA msg_start
-00004E12 msg_core_start
-00004E22 msg_illegal
-00004E34 msg_bad_branch_disp
+00004D4E SerialPeekCharDirect
+00004D72 bus_err
+00004D76 irq_rout
+00004DCE brdisp_trap
+00004DE8 illegal_trap
+00004DFE msg_start
+00004E16 msg_core_start
+00004E26 msg_illegal
+00004E38 msg_bad_branch_disp
 00100000 IOFocus

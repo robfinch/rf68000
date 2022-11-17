@@ -237,9 +237,9 @@ typedef enum logic [7:0] {
 	AND1,
 	EOR,
 	ANDI_CCR,
-	ANDI_CCR2,
 	
 	// 80
+	ANDI_CCR2,
 	ANDI_SR,
 	ANDI_SRX,
 	EORI_CCR,
@@ -249,9 +249,9 @@ typedef enum logic [7:0] {
 	ORI_CCR,
 	ORI_CCR2,
 	ORI_SR,
-	ORI_SRX,
-	
+
 	//90
+	ORI_SRX,
 	FETCH_NOP_BYTE,
 	FETCH_NOP_WORD,
 	FETCH_NOP_LWORD,
@@ -261,8 +261,9 @@ typedef enum logic [7:0] {
 	FETCH_D32a,
 	FETCH_D32b,
 	FETCH_D16,
+	
+	//100
 	FETCH_D16a,
-	// 100
 	FETCH_NDX,
 	FETCH_NDXa,
 	
@@ -274,9 +275,9 @@ typedef enum logic [7:0] {
 	TRAP3,
 	TRAP3a,
 	TRAP3b,
-	TRAP4,
 	
 	//110
+	TRAP4,
 	TRAP5,
 	TRAP6,
 	TRAP7,
@@ -286,9 +287,9 @@ typedef enum logic [7:0] {
 	TRAP10,
 	TRAP20,
 	TRAP21,
-	TRAP22,
 	
-	//120
+	// 120
+	TRAP22,
 	TRAP23,
 	TRAP24,
 	TRAP25,
@@ -300,6 +301,8 @@ typedef enum logic [7:0] {
 
 	TST,
 	MUL,
+	
+	// 130
 	MUL1,
 	STOP,
 	STOP1,
@@ -310,6 +313,8 @@ typedef enum logic [7:0] {
 	RESET5,
 	PEA1,
 	PEA2,
+	
+	// 140
 	PEA3,
 	ABCD,
 	ABCD1,
@@ -321,8 +326,10 @@ typedef enum logic [7:0] {
 	INT,
 	INT2,
 	INT3,
-	INT4,
 	
+	// 150
+	INT4,
+
 	MOVEM_Xn2D,
 	MOVEM_Xn2D2,
 	MOVEM_Xn2D3,
@@ -333,6 +340,8 @@ typedef enum logic [7:0] {
 	
 	TASK1,
 	THREAD2,
+
+	// 160
 	TASK3,
 	TASK4,
 	
@@ -1703,6 +1712,9 @@ DECODE:
 				end
 			3'b110:
 				if (vf) begin
+	    		isr <= srx;
+	    		tf <= 1'b0;
+	    		sf <= 1'b1;
 			    vecno <= `TRAPV_VEC;
     			goto (TRAP3);
 				end
@@ -1929,6 +1941,9 @@ DECODE:
 //-----------------------------------------------------------------------------
   4'hA:
     begin
+  		isr <= srx;
+  		tf <= 1'b0;
+  		sf <= 1'b1;
     	vecno <= `LINE10_VEC;
     	goto (TRAP3);
     end
@@ -2067,6 +2082,9 @@ DECODE:
 //-----------------------------------------------------------------------------
   4'hF:
     begin
+  		isr <= srx;
+  		tf <= 1'b0;
+  		sf <= 1'b1;
     	vecno <= `LINE15_VEC;
     	goto (TRAP3);
     end
@@ -2215,6 +2233,9 @@ NBCD:
 STOP:
 	begin
 		if (!sf) begin
+  		isr <= srx;
+  		tf <= 1'b0;
+  		sf <= 1'b1;
 			vecno <= `PRIV_VEC;
 			goto (TRAP3);
 		end
@@ -2263,6 +2284,9 @@ MUL:
 //-----------------------------------------------------------------------------
 DIV1:
 	if (s[15:0]==16'd0) begin
+		isr <= srx;
+		tf <= 1'b0;
+		sf <= 1'b1;
 		vecno <= `DBZ_VEC;
 		goto (TRAP3);
 	end
@@ -3153,6 +3177,9 @@ BIT2:
 CHK:
 	begin
 		if (d[15] || $signed(d[15:0]) > $signed(s[15:0])) begin
+  		isr <= srx;
+  		tf <= 1'b0;
+  		sf <= 1'b1;
 			vecno <= `CHK_VEC;
 	    state <= TRAP3;
 		end
@@ -3849,7 +3876,12 @@ TRAP:
       	goto (TRAP3);
     	end
     default:
-      vecno <= `TRAP_VEC + ir[3:0];
+    	begin
+    		isr <= srx;
+    		tf <= 1'b0;
+    		sf <= 1'b1;
+      	vecno <= `TRAP_VEC + ir[3:0];
+    	end
     endcase
   end
 INTA:
@@ -3864,7 +3896,6 @@ INTA:
     cyc_o <= `LOW;
     stb_o <= `LOW;
     sel_o <= 4'b0;
-    pc <= pc + 32'd2;
     if (err_i)
     	vecno <= `SPURIOUS_VEC;
     else if (!vpa_i)
@@ -3882,8 +3913,10 @@ TRAP3:
 		if (is_bus_err | is_adr_err)
 			goto (TRAP20);
 		else
+			goto (TRAP3a);
+`else
+		goto (TRAP3b);
 `endif		
-		goto (TRAP3a);
 	end
 // First 16 words of internal state are stored
 TRAP20:
@@ -4177,7 +4210,11 @@ RTE3:
 			call (FETCH_WORD,RTE4);
 		else
 			ret();
-`else		
+`else
+		if (!rtr && !sf) begin
+			ssp <= sp;
+			sp <= usp;
+		end		
 		ret();
 `endif		
 	end

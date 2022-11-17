@@ -70,6 +70,7 @@ wire nic1_sack, nic2_sack;
 wire [31:0] nic1_sdato, nic2_sdato;
 wire [2:0] cpu1_irq, cpu2_irq;
 wire [7:0] cpu1_icause, cpu2_icause;
+wire err1, err2;
 
 packet_t packet_x;
 packet_t rpacket_x;
@@ -109,6 +110,7 @@ rf68000_nic unic1
 	.s_ack_o(nic1_sack),
 	.s_aack_o(),
 	.s_rty_o(),
+	.s_err_o(err1),
 	.s_we_i(we1),
 	.s_sel_i(sel1),
 	.s_adr_i(adr1),
@@ -117,6 +119,7 @@ rf68000_nic unic1
 	.m_cyc_o(nic1_cyc),
 	.m_stb_o(nic1_stb),
 	.m_ack_i(nic1_ack),
+	.m_err_i(1'b0),
 	.m_we_o(nic1_we),
 	.m_sel_o(nic1_sel),
 	.m_adr_o(nic1_adr),
@@ -149,6 +152,7 @@ rf68000_nic unic2
 	.s_ack_o(nic2_sack),
 	.s_aack_o(),
 	.s_rty_o(),
+	.s_err_o(err2),
 	.s_we_i(we2),
 	.s_sel_i(sel2),
 	.s_adr_i(adr2),
@@ -157,6 +161,7 @@ rf68000_nic unic2
 	.m_cyc_o(nic2_cyc),
 	.m_stb_o(nic2_stb),
 	.m_ack_i(nic2_ack),
+	.m_err_i(1'b0),
 	.m_we_o(nic2_we),
 	.m_sel_o(nic2_sel),
 	.m_adr_o(nic2_adr),
@@ -248,7 +253,7 @@ rf68000 ucpu1
 	.cyc_o(cyc1),
 	.stb_o(stb1),
 	.ack_i(ack1),
-	.err_i(),
+	.err_i(err1),
 	.rty_i(1'b0),
 	.we_o(we1),
 	.sel_o(sel1),
@@ -271,7 +276,7 @@ rf68000 ucpu2
 	.cyc_o(cyc2),
 	.stb_o(stb2),
 	.ack_i(ack2),
-	.err_i(),
+	.err_i(err2),
 	.rty_i(1'b0),
 	.we_o(we2),
 	.sel_o(sel2),

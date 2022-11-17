@@ -156,7 +156,7 @@ IDLE:
 			    m_we_o <= s2_we_i;
 	      	state <= WAIT_ACK;
 	    	end
-		    m_adr_o <= {4'hE,s2_adr_i[19:0]};	// fix the upper 12 bits of the address to help trim cores
+		    m_adr_o <= {12'hFD0,s2_adr_i[19:0]};	// fix the upper 12 bits of the address to help trim cores
 	    end
 	    else begin
 	    	m_cyc_o <= 1'b0;

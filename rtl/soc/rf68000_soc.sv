@@ -693,6 +693,18 @@ rf68000_plic
 	.core_o(plic_core)
 );
 
+wire bus_err;
+BusError ube1
+(
+	.rst_i(rst),
+	.clk_i(node_clk),
+	.cyc_i(ch7req.cyc),
+	.ack_i(ack),
+	.stb_i(ch7req.stb),
+	.adr_i(ch7req.adr),
+	.err_o(bus_err)
+);
+
 rf68000_nic unic1
 (
 	.id(6'd62),			// system node id
@@ -713,6 +725,7 @@ rf68000_nic unic1
 	.m_cyc_o(ch7req.cyc),
 	.m_stb_o(ch7req.stb),
 	.m_ack_i(ack),
+	.m_err_i(bus_err),
 	.m_we_o(ch7req.we),
 	.m_sel_o(sel),
 	.m_adr_o(ch7req.adr),
@@ -755,7 +768,8 @@ ila_0 your_instance_name (
 	.probe5(unode1.ucpu1.state),
 	.probe6(ipacket[4]),
 	.probe7(br3_dati),
-	.probe8({kclk,kd})
+	.probe8({kclk,kd}),
+	.probe9(unode1.ucpu1.disp)
 );
 
 assign ch7req.sel = sel << {ch7req.adr[3:2],2'b0};

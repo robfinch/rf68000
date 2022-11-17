@@ -40,8 +40,8 @@
 import nic_pkg::*;
 
 module rf68000_nic(id, rst_i, clk_i, s_cti_i, s_atag_o,
-	s_cyc_i, s_stb_i, s_ack_o, s_aack_o, s_rty_o, s_we_i, s_sel_i, s_adr_i, s_dat_i, s_dat_o,
-	m_cyc_o, m_stb_o, m_ack_i, m_we_o, m_sel_o, m_adr_o, m_dat_o, m_dat_i,
+	s_cyc_i, s_stb_i, s_ack_o, s_aack_o, s_rty_o, s_err_o, s_we_i, s_sel_i, s_adr_i, s_dat_i, s_dat_o,
+	m_cyc_o, m_stb_o, m_ack_i, m_err_i, m_we_o, m_sel_o, m_adr_o, m_dat_o, m_dat_i,
 	packet_i, packet_o, ipacket_i, ipacket_o,
 	rpacket_i, rpacket_o,
 	irq_i, firq_i, cause_i, iserver_i, irq_o, firq_o, cause_o);
@@ -54,6 +54,7 @@ input s_cyc_i;
 input s_stb_i;
 output reg s_ack_o;
 output reg s_rty_o;
+output reg s_err_o;
 output reg s_aack_o;
 input s_we_i;
 input [3:0] s_sel_i;
@@ -63,6 +64,7 @@ output reg [31:0] s_dat_o;
 output reg m_cyc_o;
 output reg m_stb_o;
 input m_ack_i;
+input m_err_i;
 output reg m_we_o;
 output reg [3:0] m_sel_o;
 output reg [31:0] m_adr_o;
@@ -94,6 +96,7 @@ parameter ST_WRITE_ACK = 6'd6;
 parameter ST_XMIT = 6'd7;
 parameter ST_AACK = 6'd8;
 parameter ST_RETRY = 6'd9;
+parameter ST_ERR = 6'd10;
 
 packet_t packet_rx, packet_tx;
 packet_t rpacket_rx, rpacket_tx;
@@ -126,6 +129,8 @@ if (rst_i) begin
 	s_aack_o <= FALSE;
 	s_dat_o <= 12'h00;
 	s_atag_o <= 4'h0;
+	s_err_o <= FALSE;
+	s_rty_o <= FALSE;
 	packet_o <= {$bits(packet_t){1'b0}};
 	rpacket_o <= {$bits(packet_t){1'b0}};
 	ipacket_o <= {$bits(ipacket_t){1'b0}};
@@ -172,6 +177,7 @@ else begin
 		rw_done <= TRUE;
 		s_ack1 <= FALSE;
 		s_rty_o <= FALSE;
+		s_err_o <= FALSE;
 	end
 
 	if (firq_i| |irq_i) begin
@@ -188,6 +194,11 @@ else begin
 		firq_o <= ipacket_i.firq;
 		cause_o <= ipacket_i.cause;
 	end
+	else begin
+		irq_o <= 'd0;
+		firq_o <= 'd0;
+		cause_o <= 'd0;
+	end
 
 	case(state)
 	ST_IDLE:
@@ -197,6 +208,11 @@ else begin
 				// Remove packet only if not a broadcast packet
 				if (rpacket_i.did!=6'd63) begin
 					case (rpacket_i.typ)
+					PT_ERR:
+						begin
+							rpacket_o <= {$bits(packet_t){1'b0}};
+							state <= ST_RETRY;
+						end
 					PT_RETRY:
 						begin
 							rpacket_o <= {$bits(packet_t){1'b0}};
@@ -280,6 +296,21 @@ else begin
 			rpacket_tx.dat <= m_dat_i;
 			state <= ST_IDLE;
 		end
+		else if (m_err_i) begin
+			m_cyc_o <= FALSE;
+			m_stb_o <= FALSE;
+			m_we_o <= FALSE;
+			m_sel_o <= 4'h0;
+			rpacket_tx <= {$bits(packet_t){1'b0}};
+			rpacket_tx.sid <= id;
+			rpacket_tx.did <= packet_rx.sid;
+			rpacket_tx.age <= 6'd0;
+			rpacket_tx.typ <= PT_ERR;
+			rpacket_tx.ack <= TRUE;
+			rpacket_tx.adr <= m_adr_o;
+			rpacket_tx.dat <= m_dat_i;
+			state <= ST_IDLE;
+		end
 
 	ST_WRITE:
 		if (!m_ack_i) begin
@@ -293,6 +324,13 @@ else begin
 		end
 	ST_WRITE_ACK:
 		if (m_ack_i) begin
+			m_cyc_o <= FALSE;
+			m_stb_o <= FALSE;
+			m_we_o <= FALSE;
+			m_sel_o <= 4'h0;
+			state <= ST_IDLE;
+		end
+		else if (m_err_i) begin
 			m_cyc_o <= FALSE;
 			m_stb_o <= FALSE;
 			m_we_o <= FALSE;
@@ -322,6 +360,12 @@ else begin
 	ST_RETRY:
 		begin
 			s_rty_o <= TRUE;
+			s_atag_o <= rpacket_rx.adr[3:0];
+			state <= ST_IDLE;
+		end
+	ST_RETRY:
+		begin
+			s_err_o <= TRUE;
 			s_atag_o <= rpacket_rx.adr[3:0];
 			state <= ST_IDLE;
 		end

@@ -79,7 +79,7 @@ Keybuf		EQU	$00100004
 	data
 	dc.l		$0001FFFC
 	dc.l		start
-	dc.l		0
+	dc.l		bus_err
 	dc.l		0
 	dc.l		illegal_trap		* ILLEGAL instruction
 	dc.l		0
@@ -2137,6 +2137,11 @@ SerialPeekCharDirect:
 	moveq		#-1,d0
 	rts
 
+bus_err:
+.0001:
+	nop
+	bra			.0001
+
 irq_rout:
 	movem.l	d0/d1/a0,-(a7)
 	bsr			_KeybdGetStatus		; check if timer or keyboard
@@ -2156,7 +2161,7 @@ irq_rout:
 .0001:
 	move.l	#$1D000000,PLIC+$14	; reset edge sense circuit
 	move.l	TextScr,a0				; a0 = screen address
-	addi.l	#1,496(a0)				; update onscreen IRQ flag
+	addi.l	#1,40(a0)					; update onscreen IRQ flag
 .0002:	
 	movem.l	(a7)+,d0/d1/a0		; return
 	rte
