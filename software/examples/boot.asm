@@ -114,7 +114,7 @@ Keybuf		EQU	$00100004
 	
 	; 30
 	dc.l		irq_rout					* IRQ 30 - timer
-	dc.l		0
+	dc.l		nmi_rout
 	dc.l		0
 	dc.l		0
 	dc.l		0
@@ -152,8 +152,8 @@ Keybuf		EQU	$00100004
 	dc.l		0
 	dc.l		0
 	dc.l		0
-	dc.l		0
 	dc.l		brdisp_trap
+	dc.l		0
 	dc.l		0
 	dc.l		0
 	dc.l		0
@@ -1041,9 +1041,11 @@ SetKeyboardEcho:
 
 CheckForKey:
 	moveq.l	#0,d1					; clear high order bits
-	move.b	KEYBD+1,d1		; get kyboard port status
-	smi.b		d1						; set true/false
-	andi.b	#1,d1					; return true (1) if key available, 0 otherwise
+;	move.b	KEYBD+1,d1		; get keyboard port status
+;	smi.b		d1						; set true/false
+;	andi.b	#1,d1					; return true (1) if key available, 0 otherwise
+	tst.b		_KeybdCnt
+	sne.b		d1
 	rts
 
 ;------------------------------------------------------------------------------
@@ -1068,25 +1070,25 @@ GetKey:
 	; If the core does not have the focus then the keyboard scan code buffer
 	; must be read directly to determine if a tab character is pressed. A non-
 	; destructive buffer read is needed.
-	moveq		#0,d1
-	move.b	KEYBD,d1					; get the scan code non destructively
-	cmpi.b	#SC_TAB,d1				; is it the TAB key?
-	bne.s		.0004							; if not return no key available
-	btst		#1,_KeyState2			; is ALT down?
-	beq.s		.0004							; if ALT-TAB goto switch screens
+;	moveq		#0,d1
+;	move.b	KEYBD,d1					; get the scan code non destructively
+;	cmpi.b	#SC_TAB,d1				; is it the TAB key?
+;	bne.s		.0004							; if not return no key available
+;	btst		#1,_KeyState2			; is ALT down?
+;	beq.s		.0004							; if ALT-TAB goto switch screens
 	; Got here when a tab scan code was detected. We know there is a tab key
 	; available at the keyboard port. Get the key.
-	move.b	#0,KEYBD+1				; clear keyboard
-	bra.s		.0008
+;	move.b	#0,KEYBD+1				; clear keyboard
+;	bra.s		.0008
 .0007:	
 	bsr			KeybdGetCharWait	; get a character
-	cmpi.b	#9,d1							; tab pressed?
-	bne.s		.0006
-	btst		#1,_KeyState2			; is ALT down?
-	beq.s		.0006
-.0008:
-	bsr			rotate_iofocus		; rotate IO focus
-	bra.s		.0004							; eat Alt-tab, return no key available
+;	cmpi.b	#9,d1							; tab pressed?
+;	bne.s		.0006
+;	btst		#1,_KeyState2			; is ALT down?
+;	beq.s		.0006
+;.0008:
+;	bsr			rotate_iofocus		; rotate IO focus
+;	bra.s		.0004							; eat Alt-tab, return no key available
 .0006:
 	cmpi.b	#0,KeybdEcho			; is keyboard echo on ?
 	beq.s		.0003							; no echo, just return the key
@@ -1105,7 +1107,7 @@ GetKey:
 	moveq		#-1,d1						; return no key available
 	rts
 
-CheckForCtrlC
+CheckForCtrlC:
 	bsr			CheckForKey
 	beq.s		.0001
 	bsr			KeybdGetChar
@@ -1128,8 +1130,7 @@ KeybdGetChar:
 	movem.l	d2/d3/a0,-(a7)
 .0003:
 	move.b	_KeybdCnt,d2		; get count of buffered scan codes
-	tst.b		d2
-	beq.s		.0014						; if no buffered scancodes goto regular testing
+	beq.s		.0015						;
 	move.b	_KeybdHead,d2		; d2 = buffer head
 	ext.w		d2
 	lea			_KeybdBuf,a0		; a0 = pointer to keyboard buffer
@@ -1139,10 +1140,11 @@ KeybdGetChar:
 	andi.b	#31,d2					; and wrap around at buffer size
 	move.b	d2,_KeybdHead
 	subi.b	#1,_KeybdCnt		; decrement count of scan codes in buffer
-	bra			.0001
+	bra			.0001						; go process scan code
 .0014:
 	bsr		_KeybdGetStatus		; check keyboard status for key available
 	bmi		.0006							; yes, go process
+.0015:
 	tst.b	KeybdWaitFlag			; are we willing to wait for a key ?
 	bmi		.0003							; yes, branch back
 	movem.l	(a7)+,d2/d3/a0
@@ -1235,7 +1237,7 @@ KeybdGetChar:
 .doTab:
 	move.l	d1,-(a7)
   move.b  _KeyState2,d1
-  btst	#0,d1                 ; is ALT down ?
+  btst	#1,d1                 ; is ALT down ?
   beq     .0012
 ;    	inc     _iof_switch
   move.l	(a7)+,d1
@@ -1505,6 +1507,8 @@ Prompt2:
 	cmpi.b	#'T',d1			; $T - run cpu test program
 	bne.s		.0002
 	bsr			cpu_test
+	lea			msg_test_done,a1
+	bsr			DisplayStringCRLF
 .0002:
 	bra			Monitor
 
@@ -2146,7 +2150,15 @@ irq_rout:
 	movem.l	d0/d1/a0,-(a7)
 	bsr			_KeybdGetStatus		; check if timer or keyboard
 	bpl.s		.0001							; branch if not keyboard
-	bsr			_KeybdGetScancode	; grab the scan code
+	btst		#1,_KeyState2			; Is Alt down?
+	beq.s		.0003
+	move.b	KEYBD,d0					; get scan code
+	cmpi.b	#SC_TAB,d0				; is Alt-Tab?
+	bne.s		.0003
+	bsr			rotate_iofocus
+.0003:
+	; Insert keyboard scan code into raw keyboard buffer
+	bsr			_KeybdGetScancode	; grab the scan code (clears interrupt)
 	cmpi.b	#32,_KeybdCnt			; see if keyboard buffer full
 	bhs.s		.0002
 	move.b	_KeybdTail,d0			; keyboard buffer not full, add to tail
@@ -2166,6 +2178,13 @@ irq_rout:
 	movem.l	(a7)+,d0/d1/a0		; return
 	rte
 
+nmi_rout:
+	movem.l	d0/d1/a0,-(a7)
+	move.b	#'N',d1
+	bsr			DisplayChar
+	movem.l	(a7)+,d0/d1/a0		; return
+	rte
+
 brdisp_trap:
 	addq		#4,sp					; get rid of sr
 	lea			msg_bad_branch_disp,a1
@@ -2173,7 +2192,7 @@ brdisp_trap:
 	bsr			DisplaySpace
 	move.l	(sp)+,d1			; pop exception address
 	bsr			DisplayTetra	; and display it
-	move.l	(sp)+,d1			; pop format word
+;	move.l	(sp)+,d1			; pop format word 68010 mode only
 	bra			Monitor
 
 illegal_trap:
@@ -2197,5 +2216,8 @@ msg_illegal:
 	dc.b	" illegal opcode",CR,LF,0
 msg_bad_branch_disp:
 	dc.b	" branch selfref: ",0
+msg_test_done:
+	dc.b	" CPU test done.",0
+
 
 

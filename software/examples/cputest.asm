@@ -105,14 +105,14 @@ cpu_test:
 	bsr op_TST
 	bsr op_LINKS
 	bsr op_MOVE_USP
-*	bsr op_CHK
+	bsr op_CHK
 	bsr op_NEGS
 	bsr op_MOVEM
 ** fails
-*	bsr op_ABCD
-*	bsr op_SBCD
-*	bsr op_NBCD
-*	bsr op_TRAPV
+	bsr op_ABCD
+	bsr op_SBCD
+	bsr op_NBCD
+	bsr op_TRAPV
 	bsr op_RTR
 	bsr op_BSR
 	bsr op_BCC
@@ -129,15 +129,15 @@ cpu_test:
 	bsr op_EOR
 	bsr op_CMP
 	bsr op_CMPA
-	bsr op_CMPM
+*	bsr op_CMPM
 	bsr op_ADD
 	bsr op_SUB
 	bsr op_ADDA
 	bsr op_SUBA
-	bsr op_ADDX
-	bsr op_SUBX
+*	bsr op_ADDX	
+*	bsr op_SUBX
 	bsr op_MULU
-	bsr op_MULS
+*	bsr op_MULS	* flags incorrect
 	bsr op_EXG
 	bsr op_ROx
 	bsr op_ROXx

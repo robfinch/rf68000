@@ -624,6 +624,7 @@ packet_t [5:0] packet;
 packet_t [5:0] rpacket;
 ipacket_t [5:0] ipacket;
 
+// Generate 100Hz interrupt
 reg [23:0] icnt;
 reg tmr_irq;
 
@@ -638,7 +639,7 @@ else begin
 		tmr_irq <= 1'b1;
 	else if (icnt==24'd200)
 		tmr_irq <= 1'b0;
-	else if (icnt==24'd100000)
+	else if (icnt==24'd1000000)
 		icnt <= 24'd1;
 end
 

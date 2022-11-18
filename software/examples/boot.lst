@@ -1,6 +1,6 @@
 Sections:
 00: "DATA" (0-443)
-01: "CODE" (0-4E4A)
+01: "CODE" (0-4E50)
 
 
 Source: "boot.asm"
@@ -85,9 +85,9 @@ Source: "boot.asm"
                             	    79: 	data
 00:00000000 0001FFFC        	    80: 	dc.l		$0001FFFC
 00:00000004 00000000        	    81: 	dc.l		start
-00:00000008 00004D72        	    82: 	dc.l		bus_err
+00:00000008 00004D3E        	    82: 	dc.l		bus_err
 00:0000000C 00000000        	    83: 	dc.l		0
-00:00000010 00004DE8        	    84: 	dc.l		illegal_trap		* ILLEGAL instruction
+00:00000010 00004DDE        	    84: 	dc.l		illegal_trap		* ILLEGAL instruction
 00:00000014 00000000        	    85: 	dc.l		0
 00:00000018 00000250        	    86: 	dc.l		EXCEPTION_6			* CHK
 00:0000001C 00000260        	    87: 	dc.l		EXCEPTION_7			* TRAPV
@@ -119,8 +119,8 @@ Source: "boot.asm"
 00:00000074 00000000        	   113: 	dc.l		0
                             	   114: 	
                             	   115: 	; 30
-00:00000078 00004D76        	   116: 	dc.l		irq_rout					* IRQ 30 - timer
-00:0000007C 00000000        	   117: 	dc.l		0
+00:00000078 00004D42        	   116: 	dc.l		irq_rout					* IRQ 30 - timer
+00:0000007C 00004DB4        	   117: 	dc.l		nmi_rout
 00:00000080 00000000        	   118: 	dc.l		0
 00:00000084 00000000        	   119: 	dc.l		0
 00:00000088 00000000        	   120: 	dc.l		0
@@ -158,8 +158,8 @@ Source: "boot.asm"
 00:000000F0 00000000        	   152: 	dc.l		0
 00:000000F4 00000000        	   153: 	dc.l		0
 00:000000F8 00000000        	   154: 	dc.l		0
-00:000000FC 00000000        	   155: 	dc.l		0
-00:00000100 00004DCE        	   156: 	dc.l		brdisp_trap
+00:000000FC 00004DC6        	   155: 	dc.l		brdisp_trap
+00:00000100 00000000        	   156: 	dc.l		0
 00:00000104 00000000        	   157: 	dc.l		0
 00:00000108 00000000        	   158: 	dc.l		0
 00:0000010C 00000000        	   159: 	dc.l		0
@@ -297,7 +297,7 @@ Source: "boot.asm"
                             	   263: 
                             	   264: 	; Write startup message to screen
                             	   265: 
-01:0000001C 43FA4DE0        	   266: 	lea			msg_start,a1
+01:0000001C 43FA4DD6        	   266: 	lea			msg_start,a1
 01:00000020 61003F98        	   267: 	bsr			DisplayString
 01:00000024 7201            	   268: 	moveq.l	#1,d1
 01:00000026 610000FA        	   269: 	bsr			UnlockSemaphore	; allow another cpu access
@@ -305,7 +305,7 @@ Source: "boot.asm"
 01:0000002C 610000F4        	   271: 	bsr			UnlockSemaphore	; allow other cpus to proceed
 01:00000030 33FCA4A4FD0FFF00	   272: 	move.w	#$A4A4,leds			; diagnostics
 01:00000038 610040AC        	   273: 	bsr			init_plic				; initialize platform level interrupt controller
-01:0000003C 6000475C        	   274: 	bra			Monitor
+01:0000003C 60004720        	   274: 	bra			Monitor
 01:00000040 61000124        	   275: 	bsr			cpu_test
                             	   276: ;	lea			brdisp_trap,a0	; set brdisp trap vector
                             	   277: ;	move.l	a0,64*4
@@ -341,11 +341,11 @@ Source: "boot.asm"
 01:0000008A 51C9FFFC        	   307: 	dbra		d1,.0002
 01:0000008E 61003C6A        	   308: 	bsr			clear_screen
 01:00000092 4E7A1FE0        	   309: 	movec.l	coreno,d1
-01:00000096 61004B0E        	   310: 	bsr			DisplayByte
-01:0000009A 43FA4D7A        	   311: 	lea			msg_core_start,a1
+01:00000096 61004ADA        	   310: 	bsr			DisplayByte
+01:0000009A 43FA4D70        	   311: 	lea			msg_core_start,a1
 01:0000009E 61003F1A        	   312: 	bsr			DisplayString
                             	   313: do_nothing:	
-01:000000A2 600046F6        	   314: 	bra			Monitor
+01:000000A2 600046BA        	   314: 	bra			Monitor
 01:000000A6 60FA            	   315: 	bra			do_nothing
                             	   316: 
                             	   317: ;------------------------------------------------------------------------------
@@ -588,55 +588,55 @@ Source: "cputest.asm"
 01:000001BA 61001BB8        	   105: 	bsr op_TST
 01:000001BE 61001BF2        	   106: 	bsr op_LINKS
 01:000001C2 61001C0C        	   107: 	bsr op_MOVE_USP
-                            	   108: *	bsr op_CHK
-01:000001C6 61001C52        	   109: 	bsr op_NEGS
-01:000001CA 61001FDC        	   110: 	bsr op_MOVEM
+01:000001C6 61001C18        	   108: 	bsr op_CHK
+01:000001CA 61001C4E        	   109: 	bsr op_NEGS
+01:000001CE 61001FD8        	   110: 	bsr op_MOVEM
                             	   111: ** fails
-                            	   112: *	bsr op_ABCD
-                            	   113: *	bsr op_SBCD
-                            	   114: *	bsr op_NBCD
-                            	   115: *	bsr op_TRAPV
-01:000001CE 61002594        	   116: 	bsr op_RTR
-01:000001D2 61001162        	   117: 	bsr op_BSR
-01:000001D6 610025AE        	   118: 	bsr op_BCC
-01:000001DA 6100262A        	   119: 	bsr op_DBCC
-01:000001DE 6100264C        	   120: 	bsr op_SCC
-01:000001E2 61002670        	   121: 	bsr op_ADDQ
-01:000001E6 61002726        	   122: 	bsr op_SUBQ
-01:000001EA 610027DC        	   123: 	bsr op_MOVEQ
+01:000001D2 610022F2        	   112: 	bsr op_ABCD
+01:000001D6 610023E6        	   113: 	bsr op_SBCD
+01:000001DA 610024DA        	   114: 	bsr op_NBCD
+01:000001DE 61002568        	   115: 	bsr op_TRAPV
+01:000001E2 61002580        	   116: 	bsr op_RTR
+01:000001E6 6100114E        	   117: 	bsr op_BSR
+01:000001EA 6100259A        	   118: 	bsr op_BCC
+01:000001EE 61002616        	   119: 	bsr op_DBCC
+01:000001F2 61002638        	   120: 	bsr op_SCC
+01:000001F6 6100265C        	   121: 	bsr op_ADDQ
+01:000001FA 61002712        	   122: 	bsr op_SUBQ
+01:000001FE 610027C8        	   123: 	bsr op_MOVEQ
                             	   124: *** fails
                             	   125: *	bsr op_DIVU
                             	   126: *	bsr op_DIVS
-01:000001EE 61002898        	   127: 	bsr op_OR
-01:000001F2 6100297E        	   128: 	bsr op_AND
-01:000001F6 61002A64        	   129: 	bsr op_EOR
-01:000001FA 61002AD6        	   130: 	bsr op_CMP
-01:000001FE 61002B48        	   131: 	bsr op_CMPA
-01:00000202 61002BAA        	   132: 	bsr op_CMPM
-01:00000206 61002C4C        	   133: 	bsr op_ADD
-01:0000020A 61002D32        	   134: 	bsr op_SUB
-01:0000020E 61002E18        	   135: 	bsr op_ADDA
-01:00000212 61002E60        	   136: 	bsr op_SUBA
-01:00000216 61002EA8        	   137: 	bsr op_ADDX
-01:0000021A 61002FB4        	   138: 	bsr op_SUBX
-01:0000021E 610030C0        	   139: 	bsr op_MULU
-01:00000222 61003108        	   140: 	bsr op_MULS
-01:00000226 61003150        	   141: 	bsr op_EXG
-01:0000022A 610031BA        	   142: 	bsr op_ROx
-01:0000022E 610033EC        	   143: 	bsr op_ROXx
-01:00000232 6100361E        	   144: 	bsr op_SHIFTS
-01:00000236 6100385C        	   145: 	bsr op_SHIFTS2
+01:00000202 61002884        	   127: 	bsr op_OR
+01:00000206 6100296A        	   128: 	bsr op_AND
+01:0000020A 61002A50        	   129: 	bsr op_EOR
+01:0000020E 61002AC2        	   130: 	bsr op_CMP
+01:00000212 61002B34        	   131: 	bsr op_CMPA
+                            	   132: *	bsr op_CMPM
+01:00000216 61002C3C        	   133: 	bsr op_ADD
+01:0000021A 61002D22        	   134: 	bsr op_SUB
+01:0000021E 61002E08        	   135: 	bsr op_ADDA
+01:00000222 61002E50        	   136: 	bsr op_SUBA
+                            	   137: *	bsr op_ADDX	
+                            	   138: *	bsr op_SUBX
+01:00000226 610030B8        	   139: 	bsr op_MULU
+                            	   140: *	bsr op_MULS	* flags incorrect
+01:0000022A 6100314C        	   141: 	bsr op_EXG
+01:0000022E 610031B6        	   142: 	bsr op_ROx
+01:00000232 610033E8        	   143: 	bsr op_ROXx
+01:00000236 6100361A        	   144: 	bsr op_SHIFTS
+01:0000023A 61003858        	   145: 	bsr op_SHIFTS2
                             	   146: 
-01:0000023A 4E75            	   147: 	rts
+01:0000023E 4E75            	   147: 	rts
                             	   148: 	bra ALL_DONE
                             	   149: 
                             	   150: * Loop here when all tests pass
                             	   151: *
                             	   152: 
-01:0000023C 60FE            	   153: ALL_DONE: bra.s ALL_DONE
+01:00000240 60FE            	   153: ALL_DONE: bra.s ALL_DONE
                             	   154: 
-01:0000023E 263C33333333    	   155: BSR_FAR1:       move.l #$33333333,d3
-01:00000244 4E75            	   156:                 rts
+01:00000242 263C33333333    	   155: BSR_FAR1:       move.l #$33333333,d3
+01:00000248 4E75            	   156:                 rts
                             	   157: 
                             	   158: ;	moveq		#-1,d0
                             	   159: ;	move.l	d0,$FD0FFF00
@@ -2422,7 +2422,7 @@ Source: "cputest.asm"
                             	  1939: 
 01:00001336 61F6            	  1940: op_BSR:         bsr BSR_CLOSE1        * Negative 8-bit.s displacement
 01:00001338 612A            	  1941:                 bsr BSR_CLOSE2        * Positive 8-bit.s displacement
-01:0000133A 6100EF02        	  1942:                 bsr.w BSR_FAR1          * Negative 16-bit.s displacement
+01:0000133A 6100EF06        	  1942:                 bsr.w BSR_FAR1          * Negative 16-bit.s displacement
 01:0000133E 6100143E        	  1943:                 bsr.w BSR_FAR2          * Positive 16-bit.s displacement
                             	  1944: 
 01:00001342 0C8111111111    	  1945:                 cmpi.l #$11111111,d1
@@ -7629,7 +7629,7 @@ Source: "boot.asm"
 01:00004020 000040B8        	   856: 	dc.l	StubRout
 01:00004024 000040B8        	   857: 	dc.l	StubRout
 01:00004028 000040B8        	   858: 	dc.l	StubRout
-01:0000402C 0000418E        	   859: 	dc.l	GetKey
+01:0000402C 0000418A        	   859: 	dc.l	GetKey
 01:00004030 00003D82        	   860: 	dc.l	DisplayChar
 01:00004034 0000417E        	   861: 	dc.l	CheckForKey
 01:00004038 000040B8        	   862: 	dc.l	StubRout
@@ -7660,7 +7660,7 @@ Source: "boot.asm"
 01:00004090 000040B8        	   887: 	dc.l	StubRout
 01:00004094 000040B8        	   888: 	dc.l	StubRout
 01:00004098 000040BA        	   889: 	dc.l	rotate_iofocus
-01:0000409C 00004D4E        	   890: 	dc.l	SerialPeekCharDirect
+01:0000409C 00004D1A        	   890: 	dc.l	SerialPeekCharDirect
 01:000040A0 000040B8        	   891: 	dc.l	StubRout
 01:000040A4 000040B8        	   892: 	dc.l	StubRout
 01:000040A8 000040B8        	   893: 	dc.l	StubRout
@@ -7766,7 +7766,7 @@ Source: "boot.asm"
 01:00004136 61DE            	   993: 	bsr		_KeybdGetStatus	; wait for response from keyboard
 01:00004138 4A01            	   994: 	tst.b	d1
 01:0000413A 6B0E            	   995: 	bmi		.0004		; is input buffer full ? yes, branch
-01:0000413C 61000340        	   996: 	bsr		Wait10ms		; wait a bit
+01:0000413C 61000304        	   996: 	bsr		Wait10ms		; wait a bit
 01:00004140 51CBFFF4        	   997: 	dbra	d3,.0003	; go back and try again
 01:00004144 261F            	   998: 	move.l	(a7)+,d3
 01:00004146 72FF            	   999: 	moveq	#-1,d1			; return -1
@@ -7787,7 +7787,7 @@ Source: "boot.asm"
 01:00004156 61BE            	  1014: 	bsr		_KeybdGetStatus
 01:00004158 08010006        	  1015: 	btst	#6,d1		; check for transmit complete bit
 01:0000415C 6610            	  1016: 	bne	    .0002		; branch if bit set
-01:0000415E 6100031E        	  1017: 	bsr		Wait10ms		; delay a little bit
+01:0000415E 610002E2        	  1017: 	bsr		Wait10ms		; delay a little bit
 01:00004162 51CBFFF2        	  1018: 	dbra	d3,.0001	; go back and try again
 01:00004166 4CDF000C        	  1019: 	movem.l	(a7)+,d2/d3
 01:0000416A 72FF            	  1020: 	moveq	#-1,d1		; return -1
@@ -7814,1886 +7814,1910 @@ Source: "boot.asm"
                             	  1041: 
                             	  1042: CheckForKey:
 01:0000417E 7200            	  1043: 	moveq.l	#0,d1					; clear high order bits
-01:00004180 1239FD0FFE01    	  1044: 	move.b	KEYBD+1,d1		; get kyboard port status
-01:00004186 5BC1            	  1045: 	smi.b		d1						; set true/false
-01:00004188 02010001        	  1046: 	andi.b	#1,d1					; return true (1) if key available, 0 otherwise
-01:0000418C 4E75            	  1047: 	rts
-                            	  1048: 
-                            	  1049: ;------------------------------------------------------------------------------
-                            	  1050: ; GetKey
-                            	  1051: ; 	Get a character from the keyboard. If Alt-tab is pressed then the screen
-                            	  1052: ; is switched to the next screen and -1 is returned.
-                            	  1053: ;
-                            	  1054: ; Modifies:
-                            	  1055: ;		d1
-                            	  1056: ; Returns:
-                            	  1057: ;		d1 = -1 if no key available or not in focus, otherwise key
-                            	  1058: ;------------------------------------------------------------------------------
-                            	  1059: 
-                            	  1060: GetKey:
-01:0000418E 2F00            	  1061: 	move.l	d0,-(a7)					; push d0
-                            	  1062: 	; Check for focus. Even if the core does not have the focus ALT-TAB still
-                            	  1063: 	; needs to be checked for.
-01:00004190 123900100000    	  1064: 	move.b	IOFocus,d1				; Check if the core has the IO focus
-01:00004196 4E7A0FE0        	  1065: 	movec.l	coreno,d0
-01:0000419A B200            	  1066: 	cmp.b		d0,d1
-01:0000419C 6720            	  1067: 	beq.s		.0007							; should be a beq.s here
-                            	  1068: 	; If the core does not have the focus then the keyboard scan code buffer
-                            	  1069: 	; must be read directly to determine if a tab character is pressed. A non-
-                            	  1070: 	; destructive buffer read is needed.
-01:0000419E 7200            	  1071: 	moveq		#0,d1
-01:000041A0 1239FD0FFE00    	  1072: 	move.b	KEYBD,d1					; get the scan code non destructively
-01:000041A6 0C01000D        	  1073: 	cmpi.b	#SC_TAB,d1				; is it the TAB key?
-01:000041AA 6646            	  1074: 	bne.s		.0004							; if not return no key available
-01:000041AC 083900010000041C	  1075: 	btst		#1,_KeyState2			; is ALT down?
-01:000041B4 673C            	  1076: 	beq.s		.0004							; if ALT-TAB goto switch screens
-                            	  1077: 	; Got here when a tab scan code was detected. We know there is a tab key
-                            	  1078: 	; available at the keyboard port. Get the key.
-01:000041B6 4239FD0FFE01    	  1079: 	move.b	#0,KEYBD+1				; clear keyboard
-01:000041BC 6012            	  1080: 	bra.s		.0008
-                            	  1081: .0007:	
-01:000041BE 6150            	  1082: 	bsr			KeybdGetCharWait	; get a character
-01:000041C0 0C010009        	  1083: 	cmpi.b	#9,d1							; tab pressed?
-01:000041C4 6610            	  1084: 	bne.s		.0006
-01:000041C6 083900010000041C	  1085: 	btst		#1,_KeyState2			; is ALT down?
-01:000041CE 6706            	  1086: 	beq.s		.0006
-                            	  1087: .0008:
-01:000041D0 6100FEE8        	  1088: 	bsr			rotate_iofocus		; rotate IO focus
-01:000041D4 601C            	  1089: 	bra.s		.0004							; eat Alt-tab, return no key available
-                            	  1090: .0006:
-01:000041D6 4A3900000418    	  1091: 	cmpi.b	#0,KeybdEcho			; is keyboard echo on ?
-01:000041DC 6710            	  1092: 	beq.s		.0003							; no echo, just return the key
-01:000041DE 0C01000D        	  1093: 	cmpi.b	#CR,d1						; convert CR keystroke into CRLF
-01:000041E2 6606            	  1094: 	bne.s		.0005
-01:000041E4 6100FB54        	  1095: 	bsr			CRLF
-01:000041E8 6004            	  1096: 	bra.s		.0003
-                            	  1097: .0005:
-01:000041EA 6100FB96        	  1098: 	bsr			DisplayChar
-                            	  1099: .0003:
-01:000041EE 201F            	  1100: 	move.l	(a7)+,d0					; pop d0
-01:000041F0 4E75            	  1101: 	rts												; return key
-                            	  1102: ; Return -1 indicating no char was available
-                            	  1103: .0004:
-01:000041F2 201F            	  1104: 	move.l	(a7)+,d0					; pop d0
-01:000041F4 72FF            	  1105: 	moveq		#-1,d1						; return no key available
-01:000041F6 4E75            	  1106: 	rts
-                            	  1107: 
-                            	  1108: CheckForCtrlC
-01:000041F8 6184            	  1109: 	bsr			CheckForKey
-01:000041FA 670A            	  1110: 	beq.s		.0001
-01:000041FC 611A            	  1111: 	bsr			KeybdGetChar
-01:000041FE B23C0003        	  1112: 	cmp.b		#CTRLC,d1
-01:00004202 67000596        	  1113: 	beq			Monitor
-                            	  1114: .0001:
-01:00004206 4E75            	  1115: 	rts
-                            	  1116: 
-                            	  1117: ;------------------------------------------------------------------------------
-                            	  1118: ;------------------------------------------------------------------------------
-                            	  1119: 
-                            	  1120: KeybdGetCharNoWait:
-01:00004208 423900000419    	  1121: 	clr.b	KeybdWaitFlag
-01:0000420E 6008            	  1122: 	bra		KeybdGetChar
-                            	  1123: 
-                            	  1124: KeybdGetCharWait:
-01:00004210 13FC00FF00000419	  1125: 	move.b	#-1,KeybdWaitFlag
-                            	  1126: 
-                            	  1127: KeybdGetChar:
-01:00004218 48E73080        	  1128: 	movem.l	d2/d3/a0,-(a7)
-                            	  1129: .0003:
-01:0000421C 14390000041F    	  1130: 	move.b	_KeybdCnt,d2		; get count of buffered scan codes
-01:00004222 4A02            	  1131: 	tst.b		d2
-01:00004224 6728            	  1132: 	beq.s		.0014						; if no buffered scancodes goto regular testing
-01:00004226 14390000041D    	  1133: 	move.b	_KeybdHead,d2		; d2 = buffer head
-01:0000422C 4882            	  1134: 	ext.w		d2
-01:0000422E 41F900000421    	  1135: 	lea			_KeybdBuf,a0		; a0 = pointer to keyboard buffer
-01:00004234 7200            	  1136: 	clr.l		d1
-01:00004236 12302000        	  1137: 	move.b	(a0,d2.w),d1		; d1 = scan code from buffer
-01:0000423A 5202            	  1138: 	addi.b	#1,d2						; increment keyboard head index
-01:0000423C 0202001F        	  1139: 	andi.b	#31,d2					; and wrap around at buffer size
-01:00004240 13C20000041D    	  1140: 	move.b	d2,_KeybdHead
-01:00004246 53390000041F    	  1141: 	subi.b	#1,_KeybdCnt		; decrement count of scan codes in buffer
-01:0000424C 601A            	  1142: 	bra			.0001
-                            	  1143: .0014:
-01:0000424E 6100FEC6        	  1144: 	bsr		_KeybdGetStatus		; check keyboard status for key available
-01:00004252 6B10            	  1145: 	bmi		.0006							; yes, go process
-01:00004254 4A3900000419    	  1146: 	tst.b	KeybdWaitFlag			; are we willing to wait for a key ?
-01:0000425A 6BC0            	  1147: 	bmi		.0003							; yes, branch back
-01:0000425C 4CDF010C        	  1148: 	movem.l	(a7)+,d2/d3/a0
-01:00004260 72FF            	  1149: 	moveq	#-1,d1						; flag no char available
-01:00004262 4E75            	  1150: 	rts
-                            	  1151: .0006:
-01:00004264 6100FEBA        	  1152: 	bsr		_KeybdGetScancode
-                            	  1153: .0001:
-01:00004268 33FC0001FD0FFF00	  1154: 	move.w	#1,leds
-01:00004270 B23C00F0        	  1155: 	cmp.b	#SC_KEYUP,d1
-01:00004274 670000C0        	  1156: 	beq		.doKeyup
-01:00004278 B23C00E0        	  1157: 	cmp.b	#SC_EXTEND,d1
-01:0000427C 670000C4        	  1158: 	beq		.doExtend
-01:00004280 B23C0014        	  1159: 	cmp.b	#SC_CTRL,d1
-01:00004284 670000C8        	  1160: 	beq		.doCtrl
-01:00004288 B23C0012        	  1161: 	cmp.b	#SC_LSHIFT,d1
-01:0000428C 6700012A        	  1162: 	beq		.doShift
-01:00004290 B23C0059        	  1163: 	cmp.b	#SC_RSHIFT,d1
-01:00004294 67000122        	  1164: 	beq		.doShift
-01:00004298 B23C0077        	  1165: 	cmp.b	#SC_NUMLOCK,d1
-01:0000429C 67000142        	  1166: 	beq		.doNumLock
-01:000042A0 B23C0058        	  1167: 	cmp.b	#SC_CAPSLOCK,d1
-01:000042A4 67000148        	  1168: 	beq		.doCapsLock
-01:000042A8 B23C007E        	  1169: 	cmp.b	#SC_SCROLLLOCK,d1
-01:000042AC 6700014E        	  1170: 	beq		.doScrollLock
-01:000042B0 B23C0011        	  1171: 	cmp.b   #SC_ALT,d1
-01:000042B4 670000C0        	  1172: 	beq     .doAlt
-01:000042B8 14390000041B    	  1173: 	move.b	_KeyState1,d2			; check key up/down
-01:000042BE 42390000041B    	  1174: 	move.b	#0,_KeyState1			; clear keyup status
-01:000042C4 4A02            	  1175: 	tst.b	d2
-01:000042C6 6600FF54        	  1176: 	bne	    .0003					; ignore key up
-01:000042CA B23C000D        	  1177: 	cmp.b   #SC_TAB,d1
-01:000042CE 670000CE        	  1178: 	beq     .doTab
-                            	  1179: .0013:
-01:000042D2 14390000041C    	  1180: 	move.b	_KeyState2,d2
-01:000042D8 6A1A            	  1181: 	bpl		.0010					; is it extended code ?
-01:000042DA C43C007F        	  1182: 	and.b	#$7F,d2					; clear extended bit
-01:000042DE 13C20000041C    	  1183: 	move.b	d2,_KeyState2
-01:000042E4 42390000041B    	  1184: 	move.b	#0,_KeyState1			; clear keyup
-01:000042EA 41FA0422        	  1185: 	lea		_keybdExtendedCodes,a0
-01:000042EE 12301000        	  1186: 	move.b	(a0,d1.w),d1
-01:000042F2 6034            	  1187: 	bra		.0008
-                            	  1188: .0010:
-01:000042F4 08020002        	  1189: 	btst	#2,d2					; is it CTRL code ?
-01:000042F8 670E            	  1190: 	beq		.0009
-01:000042FA C27C007F        	  1191: 	and.w	#$7F,d1
-01:000042FE 41FA038E        	  1192: 	lea		_keybdControlCodes,a0
-01:00004302 12301000        	  1193: 	move.b	(a0,d1.w),d1
-01:00004306 6020            	  1194: 	bra		.0008
-                            	  1195: .0009:
-01:00004308 08020000        	  1196: 	btst	#0,d2					; is it shift down ?
-01:0000430C 670A            	  1197: 	beq  	.0007
-01:0000430E 41FA027E        	  1198: 	lea		_shiftedScanCodes,a0
-01:00004312 12301000        	  1199: 	move.b	(a0,d1.w),d1
-01:00004316 6010            	  1200: 	bra		.0008
-                            	  1201: .0007:
-01:00004318 41FA0174        	  1202: 	lea		_unshiftedScanCodes,a0
-01:0000431C 12301000        	  1203: 	move.b	(a0,d1.w),d1
-01:00004320 33FC0202FD0FFF00	  1204: 	move.w	#$0202,leds
-                            	  1205: .0008:
-01:00004328 33FC0303FD0FFF00	  1206: 	move.w	#$0303,leds
-01:00004330 4CDF010C        	  1207: 	movem.l	(a7)+,d2/d3/a0
-01:00004334 4E75            	  1208: 	rts
-                            	  1209: .doKeyup:
-01:00004336 13FC00FF0000041B	  1210: 	move.b	#-1,_KeyState1
-01:0000433E 6000FEDC        	  1211: 	bra		.0003
-                            	  1212: .doExtend:
-01:00004342 003900800000041C	  1213: 	or.b	#$80,_KeyState2
-01:0000434A 6000FED0        	  1214: 	bra		.0003
-                            	  1215: .doCtrl:
-01:0000434E 12390000041B    	  1216: 	move.b	_KeyState1,d1
-01:00004354 42390000041B    	  1217: 	clr.b	_KeyState1
-01:0000435A 4A01            	  1218: 	tst.b	d1
-01:0000435C 6A0C            	  1219: 	bpl.s	.0004
-01:0000435E 08B900020000041C	  1220: 	bclr	#2,_KeyState2
-01:00004366 6000FEB4        	  1221: 	bra		.0003
-                            	  1222: .0004:
-01:0000436A 08F900020000041C	  1223: 	bset	#2,_KeyState2
-01:00004372 6000FEA8        	  1224: 	bra		.0003
-                            	  1225: .doAlt:
-01:00004376 12390000041B    	  1226: 	move.b	_KeyState1,d1
-01:0000437C 42390000041B    	  1227: 	clr.b	_KeyState1
-01:00004382 4A01            	  1228: 	tst.b	d1
-01:00004384 6A0C            	  1229: 	bpl		.0011
-01:00004386 08B900010000041C	  1230: 	bclr	#1,_KeyState2
-01:0000438E 6000FE8C        	  1231: 	bra		.0003
-                            	  1232: .0011:
-01:00004392 08F900010000041C	  1233: 	bset	#1,_KeyState2
-01:0000439A 6000FE80        	  1234: 	bra		.0003
-                            	  1235: .doTab:
-01:0000439E 2F01            	  1236: 	move.l	d1,-(a7)
-01:000043A0 12390000041C    	  1237:   move.b  _KeyState2,d1
-01:000043A6 08010000        	  1238:   btst	#0,d1                 ; is ALT down ?
-01:000043AA 6706            	  1239:   beq     .0012
-                            	  1240: ;    	inc     _iof_switch
-01:000043AC 221F            	  1241:   move.l	(a7)+,d1
-01:000043AE 6000FE6C        	  1242:   bra     .0003
-                            	  1243: .0012:
-01:000043B2 221F            	  1244:   move.l	(a7)+,d1
-01:000043B4 6000FF1C        	  1245:   bra     .0013
-                            	  1246: .doShift:
-01:000043B8 12390000041B    	  1247: 	move.b	_KeyState1,d1
-01:000043BE 42390000041B    	  1248: 	clr.b	_KeyState1
-01:000043C4 4A01            	  1249: 	tst.b	d1
-01:000043C6 6A0C            	  1250: 	bpl.s	.0005
-01:000043C8 08B900000000041C	  1251: 	bclr	#0,_KeyState2
-01:000043D0 6000FE4A        	  1252: 	bra		.0003
-                            	  1253: .0005:
-01:000043D4 08F900000000041C	  1254: 	bset	#0,_KeyState2
-01:000043DC 6000FE3E        	  1255: 	bra		.0003
-                            	  1256: .doNumLock:
-01:000043E0 087900040000041C	  1257: 	bchg	#4,_KeyState2
-01:000043E8 6120            	  1258: 	bsr		KeybdSetLEDStatus
-01:000043EA 6000FE30        	  1259: 	bra		.0003
-                            	  1260: .doCapsLock:
-01:000043EE 087900050000041C	  1261: 	bchg	#5,_KeyState2
-01:000043F6 6112            	  1262: 	bsr		KeybdSetLEDStatus
-01:000043F8 6000FE22        	  1263: 	bra		.0003
-                            	  1264: .doScrollLock:
-01:000043FC 087900060000041C	  1265: 	bchg	#6,_KeyState2
-01:00004404 6104            	  1266: 	bsr		KeybdSetLEDStatus
-01:00004406 6000FE14        	  1267: 	bra		.0003
-                            	  1268: 
-                            	  1269: KeybdSetLEDStatus:
-01:0000440A 48E73000        	  1270: 	movem.l	d2/d3,-(a7)
-01:0000440E 42390000041A    	  1271: 	clr.b	KeybdLEDs
-01:00004414 083900040000041C	  1272: 	btst	#4,_KeyState2
-01:0000441C 6708            	  1273: 	beq.s	.0002
-01:0000441E 13FC00020000041A	  1274: 	move.b	#2,KeybdLEDs
-                            	  1275: .0002:
-01:00004426 083900050000041C	  1276: 	btst	#5,_KeyState2
-01:0000442E 6708            	  1277: 	beq.s	.0003
-01:00004430 08F900020000041A	  1278: 	bset	#2,KeybdLEDs
-                            	  1279: .0003:
-01:00004438 083900060000041C	  1280: 	btst	#6,_KeyState2
-01:00004440 6708            	  1281: 	beq.s	.0004
-01:00004442 08F900000000041A	  1282: 	bset	#0,KeybdLEDs
-                            	  1283: .0004:
-01:0000444A 123C00ED        	  1284: 	move.b	#$ED,d1
-01:0000444E 6126            	  1285: 	bsr		KeybdSendByte
-01:00004450 6100FCFE        	  1286: 	bsr		KeybdWaitTx
-01:00004454 6100FCDA        	  1287: 	bsr		KeybdRecvByte
-01:00004458 4A01            	  1288: 	tst.b	d1
-01:0000445A 6B14            	  1289: 	bmi		.0001
-01:0000445C B27C00FA        	  1290: 	cmp		#$FA,d1
-01:00004460 12390000041A    	  1291: 	move.b	KeybdLEDs,d1
-01:00004466 610E            	  1292: 	bsr		KeybdSendByte
-01:00004468 6100FCE6        	  1293: 	bsr		KeybdWaitTx
-01:0000446C 6100FCC2        	  1294: 	bsr		KeybdRecvByte
-                            	  1295: .0001:
-01:00004470 4CDF000C        	  1296: 	movem.l	(a7)+,d2/d3
-01:00004474 4E75            	  1297: 	rts
-                            	  1298: 
-                            	  1299: KeybdSendByte:
-01:00004476 13C1FD0FFE00    	  1300: 	move.b	d1,KEYBD
-01:0000447C 4E75            	  1301: 	rts
-                            	  1302: 	
-                            	  1303: Wait10ms:
-01:0000447E 2F03            	  1304: 	move.l	d3,-(a7)
-01:00004480 263C000003E8    	  1305: 	move.l	#1000,d3
-                            	  1306: .0001:
-01:00004486 51CBFFFE        	  1307: 	dbra	d3,.0001
-01:0000448A 261F            	  1308: 	move.l	(a7)+,d3
-01:0000448C 4E75            	  1309: 	rts
-                            	  1310: 
-                            	  1311: 
-                            	  1312: ;--------------------------------------------------------------------------
-                            	  1313: ; PS2 scan codes to ascii conversion tables.
+                            	  1044: ;	move.b	KEYBD+1,d1		; get keyboard port status
+                            	  1045: ;	smi.b		d1						; set true/false
+                            	  1046: ;	andi.b	#1,d1					; return true (1) if key available, 0 otherwise
+01:00004180 4A390000041F    	  1047: 	tst.b		_KeybdCnt
+01:00004186 56C1            	  1048: 	sne.b		d1
+01:00004188 4E75            	  1049: 	rts
+                            	  1050: 
+                            	  1051: ;------------------------------------------------------------------------------
+                            	  1052: ; GetKey
+                            	  1053: ; 	Get a character from the keyboard. If Alt-tab is pressed then the screen
+                            	  1054: ; is switched to the next screen and -1 is returned.
+                            	  1055: ;
+                            	  1056: ; Modifies:
+                            	  1057: ;		d1
+                            	  1058: ; Returns:
+                            	  1059: ;		d1 = -1 if no key available or not in focus, otherwise key
+                            	  1060: ;------------------------------------------------------------------------------
+                            	  1061: 
+                            	  1062: GetKey:
+01:0000418A 2F00            	  1063: 	move.l	d0,-(a7)					; push d0
+                            	  1064: 	; Check for focus. Even if the core does not have the focus ALT-TAB still
+                            	  1065: 	; needs to be checked for.
+01:0000418C 123900100000    	  1066: 	move.b	IOFocus,d1				; Check if the core has the IO focus
+01:00004192 4E7A0FE0        	  1067: 	movec.l	coreno,d0
+01:00004196 B200            	  1068: 	cmp.b		d0,d1
+01:00004198 4DD6            	  1069: 	beq.s		.0007							; should be a beq.s here
+                            	  1070: 	; If the core does not have the focus then the keyboard scan code buffer
+                            	  1071: 	; must be read directly to determine if a tab character is pressed. A non-
+                            	  1072: 	; destructive buffer read is needed.
+                            	  1073: ;	moveq		#0,d1
+                            	  1074: ;	move.b	KEYBD,d1					; get the scan code non destructively
+                            	  1075: ;	cmpi.b	#SC_TAB,d1				; is it the TAB key?
+                            	  1076: ;	bne.s		.0004							; if not return no key available
+                            	  1077: ;	btst		#1,_KeyState2			; is ALT down?
+                            	  1078: ;	beq.s		.0004							; if ALT-TAB goto switch screens
+                            	  1079: 	; Got here when a tab scan code was detected. We know there is a tab key
+                            	  1080: 	; available at the keyboard port. Get the key.
+                            	  1081: ;	move.b	#0,KEYBD+1				; clear keyboard
+                            	  1082: ;	bra.s		.0008
+                            	  1083: .0007:	
+01:0000419A 613A            	  1084: 	bsr			KeybdGetCharWait	; get a character
+                            	  1085: ;	cmpi.b	#9,d1							; tab pressed?
+                            	  1086: ;	bne.s		.0006
+                            	  1087: ;	btst		#1,_KeyState2			; is ALT down?
+                            	  1088: ;	beq.s		.0006
+                            	  1089: ;.0008:
+                            	  1090: ;	bsr			rotate_iofocus		; rotate IO focus
+                            	  1091: ;	bra.s		.0004							; eat Alt-tab, return no key available
+                            	  1092: .0006:
+01:0000419C 4A3900000418    	  1093: 	cmpi.b	#0,KeybdEcho			; is keyboard echo on ?
+01:000041A2 6710            	  1094: 	beq.s		.0003							; no echo, just return the key
+01:000041A4 0C01000D        	  1095: 	cmpi.b	#CR,d1						; convert CR keystroke into CRLF
+01:000041A8 6606            	  1096: 	bne.s		.0005
+01:000041AA 6100FB8E        	  1097: 	bsr			CRLF
+01:000041AE 6004            	  1098: 	bra.s		.0003
+                            	  1099: .0005:
+01:000041B0 6100FBD0        	  1100: 	bsr			DisplayChar
+                            	  1101: .0003:
+01:000041B4 201F            	  1102: 	move.l	(a7)+,d0					; pop d0
+01:000041B6 4E75            	  1103: 	rts												; return key
+                            	  1104: ; Return -1 indicating no char was available
+                            	  1105: .0004:
+01:000041B8 201F            	  1106: 	move.l	(a7)+,d0					; pop d0
+01:000041BA 72FF            	  1107: 	moveq		#-1,d1						; return no key available
+01:000041BC 4E75            	  1108: 	rts
+                            	  1109: 
+                            	  1110: CheckForCtrlC:
+01:000041BE 61BE            	  1111: 	bsr			CheckForKey
+01:000041C0 670A            	  1112: 	beq.s		.0001
+01:000041C2 611A            	  1113: 	bsr			KeybdGetChar
+01:000041C4 B23C0003        	  1114: 	cmp.b		#CTRLC,d1
+01:000041C8 67000594        	  1115: 	beq			Monitor
+                            	  1116: .0001:
+01:000041CC 4E75            	  1117: 	rts
+                            	  1118: 
+                            	  1119: ;------------------------------------------------------------------------------
+                            	  1120: ;------------------------------------------------------------------------------
+                            	  1121: 
+                            	  1122: KeybdGetCharNoWait:
+01:000041CE 423900000419    	  1123: 	clr.b	KeybdWaitFlag
+01:000041D4 6008            	  1124: 	bra		KeybdGetChar
+                            	  1125: 
+                            	  1126: KeybdGetCharWait:
+01:000041D6 13FC00FF00000419	  1127: 	move.b	#-1,KeybdWaitFlag
+                            	  1128: 
+                            	  1129: KeybdGetChar:
+01:000041DE 48E73080        	  1130: 	movem.l	d2/d3/a0,-(a7)
+                            	  1131: .0003:
+01:000041E2 14390000041F    	  1132: 	move.b	_KeybdCnt,d2		; get count of buffered scan codes
+01:000041E8 672E            	  1133: 	beq.s		.0015						;
+01:000041EA 14390000041D    	  1134: 	move.b	_KeybdHead,d2		; d2 = buffer head
+01:000041F0 4882            	  1135: 	ext.w		d2
+01:000041F2 41F900000421    	  1136: 	lea			_KeybdBuf,a0		; a0 = pointer to keyboard buffer
+01:000041F8 7200            	  1137: 	clr.l		d1
+01:000041FA 12302000        	  1138: 	move.b	(a0,d2.w),d1		; d1 = scan code from buffer
+01:000041FE 5202            	  1139: 	addi.b	#1,d2						; increment keyboard head index
+01:00004200 0202001F        	  1140: 	andi.b	#31,d2					; and wrap around at buffer size
+01:00004204 13C20000041D    	  1141: 	move.b	d2,_KeybdHead
+01:0000420A 53390000041F    	  1142: 	subi.b	#1,_KeybdCnt		; decrement count of scan codes in buffer
+01:00004210 601A            	  1143: 	bra			.0001						; go process scan code
+                            	  1144: .0014:
+01:00004212 6100FF02        	  1145: 	bsr		_KeybdGetStatus		; check keyboard status for key available
+01:00004216 6B10            	  1146: 	bmi		.0006							; yes, go process
+                            	  1147: .0015:
+01:00004218 4A3900000419    	  1148: 	tst.b	KeybdWaitFlag			; are we willing to wait for a key ?
+01:0000421E 6BC2            	  1149: 	bmi		.0003							; yes, branch back
+01:00004220 4CDF010C        	  1150: 	movem.l	(a7)+,d2/d3/a0
+01:00004224 72FF            	  1151: 	moveq	#-1,d1						; flag no char available
+01:00004226 4E75            	  1152: 	rts
+                            	  1153: .0006:
+01:00004228 6100FEF6        	  1154: 	bsr		_KeybdGetScancode
+                            	  1155: .0001:
+01:0000422C 33FC0001FD0FFF00	  1156: 	move.w	#1,leds
+01:00004234 B23C00F0        	  1157: 	cmp.b	#SC_KEYUP,d1
+01:00004238 670000C0        	  1158: 	beq		.doKeyup
+01:0000423C B23C00E0        	  1159: 	cmp.b	#SC_EXTEND,d1
+01:00004240 670000C4        	  1160: 	beq		.doExtend
+01:00004244 B23C0014        	  1161: 	cmp.b	#SC_CTRL,d1
+01:00004248 670000C8        	  1162: 	beq		.doCtrl
+01:0000424C B23C0012        	  1163: 	cmp.b	#SC_LSHIFT,d1
+01:00004250 6700012A        	  1164: 	beq		.doShift
+01:00004254 B23C0059        	  1165: 	cmp.b	#SC_RSHIFT,d1
+01:00004258 67000122        	  1166: 	beq		.doShift
+01:0000425C B23C0077        	  1167: 	cmp.b	#SC_NUMLOCK,d1
+01:00004260 67000142        	  1168: 	beq		.doNumLock
+01:00004264 B23C0058        	  1169: 	cmp.b	#SC_CAPSLOCK,d1
+01:00004268 67000148        	  1170: 	beq		.doCapsLock
+01:0000426C B23C007E        	  1171: 	cmp.b	#SC_SCROLLLOCK,d1
+01:00004270 6700014E        	  1172: 	beq		.doScrollLock
+01:00004274 B23C0011        	  1173: 	cmp.b   #SC_ALT,d1
+01:00004278 670000C0        	  1174: 	beq     .doAlt
+01:0000427C 14390000041B    	  1175: 	move.b	_KeyState1,d2			; check key up/down
+01:00004282 42390000041B    	  1176: 	move.b	#0,_KeyState1			; clear keyup status
+01:00004288 4A02            	  1177: 	tst.b	d2
+01:0000428A 6600FF56        	  1178: 	bne	    .0003					; ignore key up
+01:0000428E B23C000D        	  1179: 	cmp.b   #SC_TAB,d1
+01:00004292 670000CE        	  1180: 	beq     .doTab
+                            	  1181: .0013:
+01:00004296 14390000041C    	  1182: 	move.b	_KeyState2,d2
+01:0000429C 6A1A            	  1183: 	bpl		.0010					; is it extended code ?
+01:0000429E C43C007F        	  1184: 	and.b	#$7F,d2					; clear extended bit
+01:000042A2 13C20000041C    	  1185: 	move.b	d2,_KeyState2
+01:000042A8 42390000041B    	  1186: 	move.b	#0,_KeyState1			; clear keyup
+01:000042AE 41FA0422        	  1187: 	lea		_keybdExtendedCodes,a0
+01:000042B2 12301000        	  1188: 	move.b	(a0,d1.w),d1
+01:000042B6 6034            	  1189: 	bra		.0008
+                            	  1190: .0010:
+01:000042B8 08020002        	  1191: 	btst	#2,d2					; is it CTRL code ?
+01:000042BC 670E            	  1192: 	beq		.0009
+01:000042BE C27C007F        	  1193: 	and.w	#$7F,d1
+01:000042C2 41FA038E        	  1194: 	lea		_keybdControlCodes,a0
+01:000042C6 12301000        	  1195: 	move.b	(a0,d1.w),d1
+01:000042CA 6020            	  1196: 	bra		.0008
+                            	  1197: .0009:
+01:000042CC 08020000        	  1198: 	btst	#0,d2					; is it shift down ?
+01:000042D0 670A            	  1199: 	beq  	.0007
+01:000042D2 41FA027E        	  1200: 	lea		_shiftedScanCodes,a0
+01:000042D6 12301000        	  1201: 	move.b	(a0,d1.w),d1
+01:000042DA 6010            	  1202: 	bra		.0008
+                            	  1203: .0007:
+01:000042DC 41FA0174        	  1204: 	lea		_unshiftedScanCodes,a0
+01:000042E0 12301000        	  1205: 	move.b	(a0,d1.w),d1
+01:000042E4 33FC0202FD0FFF00	  1206: 	move.w	#$0202,leds
+                            	  1207: .0008:
+01:000042EC 33FC0303FD0FFF00	  1208: 	move.w	#$0303,leds
+01:000042F4 4CDF010C        	  1209: 	movem.l	(a7)+,d2/d3/a0
+01:000042F8 4E75            	  1210: 	rts
+                            	  1211: .doKeyup:
+01:000042FA 13FC00FF0000041B	  1212: 	move.b	#-1,_KeyState1
+01:00004302 6000FEDE        	  1213: 	bra		.0003
+                            	  1214: .doExtend:
+01:00004306 003900800000041C	  1215: 	or.b	#$80,_KeyState2
+01:0000430E 6000FED2        	  1216: 	bra		.0003
+                            	  1217: .doCtrl:
+01:00004312 12390000041B    	  1218: 	move.b	_KeyState1,d1
+01:00004318 42390000041B    	  1219: 	clr.b	_KeyState1
+01:0000431E 4A01            	  1220: 	tst.b	d1
+01:00004320 6A0C            	  1221: 	bpl.s	.0004
+01:00004322 08B900020000041C	  1222: 	bclr	#2,_KeyState2
+01:0000432A 6000FEB6        	  1223: 	bra		.0003
+                            	  1224: .0004:
+01:0000432E 08F900020000041C	  1225: 	bset	#2,_KeyState2
+01:00004336 6000FEAA        	  1226: 	bra		.0003
+                            	  1227: .doAlt:
+01:0000433A 12390000041B    	  1228: 	move.b	_KeyState1,d1
+01:00004340 42390000041B    	  1229: 	clr.b	_KeyState1
+01:00004346 4A01            	  1230: 	tst.b	d1
+01:00004348 6A0C            	  1231: 	bpl		.0011
+01:0000434A 08B900010000041C	  1232: 	bclr	#1,_KeyState2
+01:00004352 6000FE8E        	  1233: 	bra		.0003
+                            	  1234: .0011:
+01:00004356 08F900010000041C	  1235: 	bset	#1,_KeyState2
+01:0000435E 6000FE82        	  1236: 	bra		.0003
+                            	  1237: .doTab:
+01:00004362 2F01            	  1238: 	move.l	d1,-(a7)
+01:00004364 12390000041C    	  1239:   move.b  _KeyState2,d1
+01:0000436A 08010001        	  1240:   btst	#1,d1                 ; is ALT down ?
+01:0000436E 6706            	  1241:   beq     .0012
+                            	  1242: ;    	inc     _iof_switch
+01:00004370 221F            	  1243:   move.l	(a7)+,d1
+01:00004372 6000FE6E        	  1244:   bra     .0003
+                            	  1245: .0012:
+01:00004376 221F            	  1246:   move.l	(a7)+,d1
+01:00004378 6000FF1C        	  1247:   bra     .0013
+                            	  1248: .doShift:
+01:0000437C 12390000041B    	  1249: 	move.b	_KeyState1,d1
+01:00004382 42390000041B    	  1250: 	clr.b	_KeyState1
+01:00004388 4A01            	  1251: 	tst.b	d1
+01:0000438A 6A0C            	  1252: 	bpl.s	.0005
+01:0000438C 08B900000000041C	  1253: 	bclr	#0,_KeyState2
+01:00004394 6000FE4C        	  1254: 	bra		.0003
+                            	  1255: .0005:
+01:00004398 08F900000000041C	  1256: 	bset	#0,_KeyState2
+01:000043A0 6000FE40        	  1257: 	bra		.0003
+                            	  1258: .doNumLock:
+01:000043A4 087900040000041C	  1259: 	bchg	#4,_KeyState2
+01:000043AC 6120            	  1260: 	bsr		KeybdSetLEDStatus
+01:000043AE 6000FE32        	  1261: 	bra		.0003
+                            	  1262: .doCapsLock:
+01:000043B2 087900050000041C	  1263: 	bchg	#5,_KeyState2
+01:000043BA 6112            	  1264: 	bsr		KeybdSetLEDStatus
+01:000043BC 6000FE24        	  1265: 	bra		.0003
+                            	  1266: .doScrollLock:
+01:000043C0 087900060000041C	  1267: 	bchg	#6,_KeyState2
+01:000043C8 6104            	  1268: 	bsr		KeybdSetLEDStatus
+01:000043CA 6000FE16        	  1269: 	bra		.0003
+                            	  1270: 
+                            	  1271: KeybdSetLEDStatus:
+01:000043CE 48E73000        	  1272: 	movem.l	d2/d3,-(a7)
+01:000043D2 42390000041A    	  1273: 	clr.b	KeybdLEDs
+01:000043D8 083900040000041C	  1274: 	btst	#4,_KeyState2
+01:000043E0 6708            	  1275: 	beq.s	.0002
+01:000043E2 13FC00020000041A	  1276: 	move.b	#2,KeybdLEDs
+                            	  1277: .0002:
+01:000043EA 083900050000041C	  1278: 	btst	#5,_KeyState2
+01:000043F2 6708            	  1279: 	beq.s	.0003
+01:000043F4 08F900020000041A	  1280: 	bset	#2,KeybdLEDs
+                            	  1281: .0003:
+01:000043FC 083900060000041C	  1282: 	btst	#6,_KeyState2
+01:00004404 6708            	  1283: 	beq.s	.0004
+01:00004406 08F900000000041A	  1284: 	bset	#0,KeybdLEDs
+                            	  1285: .0004:
+01:0000440E 123C00ED        	  1286: 	move.b	#$ED,d1
+01:00004412 6126            	  1287: 	bsr		KeybdSendByte
+01:00004414 6100FD3A        	  1288: 	bsr		KeybdWaitTx
+01:00004418 6100FD16        	  1289: 	bsr		KeybdRecvByte
+01:0000441C 4A01            	  1290: 	tst.b	d1
+01:0000441E 6B14            	  1291: 	bmi		.0001
+01:00004420 B27C00FA        	  1292: 	cmp		#$FA,d1
+01:00004424 12390000041A    	  1293: 	move.b	KeybdLEDs,d1
+01:0000442A 610E            	  1294: 	bsr		KeybdSendByte
+01:0000442C 6100FD22        	  1295: 	bsr		KeybdWaitTx
+01:00004430 6100FCFE        	  1296: 	bsr		KeybdRecvByte
+                            	  1297: .0001:
+01:00004434 4CDF000C        	  1298: 	movem.l	(a7)+,d2/d3
+01:00004438 4E75            	  1299: 	rts
+                            	  1300: 
+                            	  1301: KeybdSendByte:
+01:0000443A 13C1FD0FFE00    	  1302: 	move.b	d1,KEYBD
+01:00004440 4E75            	  1303: 	rts
+                            	  1304: 	
+                            	  1305: Wait10ms:
+01:00004442 2F03            	  1306: 	move.l	d3,-(a7)
+01:00004444 263C000003E8    	  1307: 	move.l	#1000,d3
+                            	  1308: .0001:
+01:0000444A 51CBFFFE        	  1309: 	dbra	d3,.0001
+01:0000444E 261F            	  1310: 	move.l	(a7)+,d3
+01:00004450 4E75            	  1311: 	rts
+                            	  1312: 
+                            	  1313: 
                             	  1314: ;--------------------------------------------------------------------------
-                            	  1315: ;
-                            	  1316: _unshiftedScanCodes:
-01:0000448E 2E              	  1317: 	dc.b	$2e,$a9,$2e,$a5,$a3,$a1,$a2,$ac
-01:0000448F A9
-01:00004490 2E
-01:00004491 A5
-01:00004492 A3
-01:00004493 A1
-01:00004494 A2
-01:00004495 AC
-01:00004496 2E              	  1318: 	dc.b	$2e,$aa,$a8,$a6,$a4,$09,$60,$2e
-01:00004497 AA
-01:00004498 A8
-01:00004499 A6
-01:0000449A A4
-01:0000449B 09
-01:0000449C 60
-01:0000449D 2E
-01:0000449E 2E              	  1319: 	dc.b	$2e,$2e,$2e,$2e,$2e,$71,$31,$2e
-01:0000449F 2E
-01:000044A0 2E
+                            	  1315: ; PS2 scan codes to ascii conversion tables.
+                            	  1316: ;--------------------------------------------------------------------------
+                            	  1317: ;
+                            	  1318: _unshiftedScanCodes:
+01:00004452 2E              	  1319: 	dc.b	$2e,$a9,$2e,$a5,$a3,$a1,$a2,$ac
+01:00004453 A9
+01:00004454 2E
+01:00004455 A5
+01:00004456 A3
+01:00004457 A1
+01:00004458 A2
+01:00004459 AC
+01:0000445A 2E              	  1320: 	dc.b	$2e,$aa,$a8,$a6,$a4,$09,$60,$2e
+01:0000445B AA
+01:0000445C A8
+01:0000445D A6
+01:0000445E A4
+01:0000445F 09
+01:00004460 60
+01:00004461 2E
+01:00004462 2E              	  1321: 	dc.b	$2e,$2e,$2e,$2e,$2e,$71,$31,$2e
+01:00004463 2E
+01:00004464 2E
+01:00004465 2E
+01:00004466 2E
+01:00004467 71
+01:00004468 31
+01:00004469 2E
+01:0000446A 2E              	  1322: 	dc.b	$2e,$2e,$7a,$73,$61,$77,$32,$2e
+01:0000446B 2E
+01:0000446C 7A
+01:0000446D 73
+01:0000446E 61
+01:0000446F 77
+01:00004470 32
+01:00004471 2E
+01:00004472 2E              	  1323: 	dc.b	$2e,$63,$78,$64,$65,$34,$33,$2e
+01:00004473 63
+01:00004474 78
+01:00004475 64
+01:00004476 65
+01:00004477 34
+01:00004478 33
+01:00004479 2E
+01:0000447A 2E              	  1324: 	dc.b	$2e,$20,$76,$66,$74,$72,$35,$2e
+01:0000447B 20
+01:0000447C 76
+01:0000447D 66
+01:0000447E 74
+01:0000447F 72
+01:00004480 35
+01:00004481 2E
+01:00004482 2E              	  1325: 	dc.b	$2e,$6e,$62,$68,$67,$79,$36,$2e
+01:00004483 6E
+01:00004484 62
+01:00004485 68
+01:00004486 67
+01:00004487 79
+01:00004488 36
+01:00004489 2E
+01:0000448A 2E              	  1326: 	dc.b	$2e,$2e,$6d,$6a,$75,$37,$38,$2e
+01:0000448B 2E
+01:0000448C 6D
+01:0000448D 6A
+01:0000448E 75
+01:0000448F 37
+01:00004490 38
+01:00004491 2E
+01:00004492 2E              	  1327: 	dc.b	$2e,$2c,$6b,$69,$6f,$30,$39,$2e
+01:00004493 2C
+01:00004494 6B
+01:00004495 69
+01:00004496 6F
+01:00004497 30
+01:00004498 39
+01:00004499 2E
+01:0000449A 2E              	  1328: 	dc.b	$2e,$2e,$2f,$6c,$3b,$70,$2d,$2e
+01:0000449B 2E
+01:0000449C 2F
+01:0000449D 6C
+01:0000449E 3B
+01:0000449F 70
+01:000044A0 2D
 01:000044A1 2E
-01:000044A2 2E
-01:000044A3 71
-01:000044A4 31
+01:000044A2 2E              	  1329: 	dc.b	$2e,$2e,$27,$2e,$5b,$3d,$2e,$2e
+01:000044A3 2E
+01:000044A4 27
 01:000044A5 2E
-01:000044A6 2E              	  1320: 	dc.b	$2e,$2e,$7a,$73,$61,$77,$32,$2e
-01:000044A7 2E
-01:000044A8 7A
-01:000044A9 73
-01:000044AA 61
-01:000044AB 77
-01:000044AC 32
-01:000044AD 2E
-01:000044AE 2E              	  1321: 	dc.b	$2e,$63,$78,$64,$65,$34,$33,$2e
-01:000044AF 63
-01:000044B0 78
-01:000044B1 64
-01:000044B2 65
-01:000044B3 34
-01:000044B4 33
+01:000044A6 5B
+01:000044A7 3D
+01:000044A8 2E
+01:000044A9 2E
+01:000044AA AD              	  1330: 	dc.b	$ad,$2e,$0d,$5d,$2e,$5c,$2e,$2e
+01:000044AB 2E
+01:000044AC 0D
+01:000044AD 5D
+01:000044AE 2E
+01:000044AF 5C
+01:000044B0 2E
+01:000044B1 2E
+01:000044B2 2E              	  1331: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$08,$2e
+01:000044B3 2E
+01:000044B4 2E
 01:000044B5 2E
-01:000044B6 2E              	  1322: 	dc.b	$2e,$20,$76,$66,$74,$72,$35,$2e
-01:000044B7 20
-01:000044B8 76
-01:000044B9 66
-01:000044BA 74
-01:000044BB 72
-01:000044BC 35
-01:000044BD 2E
-01:000044BE 2E              	  1323: 	dc.b	$2e,$6e,$62,$68,$67,$79,$36,$2e
-01:000044BF 6E
-01:000044C0 62
-01:000044C1 68
-01:000044C2 67
-01:000044C3 79
-01:000044C4 36
+01:000044B6 2E
+01:000044B7 2E
+01:000044B8 08
+01:000044B9 2E
+01:000044BA 2E              	  1332: 	dc.b	$2e,$95,$2e,$93,$94,$2e,$2e,$2e
+01:000044BB 95
+01:000044BC 2E
+01:000044BD 93
+01:000044BE 94
+01:000044BF 2E
+01:000044C0 2E
+01:000044C1 2E
+01:000044C2 98              	  1333: 	dc.b	$98,$7f,$92,$2e,$91,$90,$1b,$af
+01:000044C3 7F
+01:000044C4 92
 01:000044C5 2E
-01:000044C6 2E              	  1324: 	dc.b	$2e,$2e,$6d,$6a,$75,$37,$38,$2e
-01:000044C7 2E
-01:000044C8 6D
-01:000044C9 6A
-01:000044CA 75
-01:000044CB 37
-01:000044CC 38
+01:000044C6 91
+01:000044C7 90
+01:000044C8 1B
+01:000044C9 AF
+01:000044CA AB              	  1334: 	dc.b	$ab,$2e,$97,$2e,$2e,$96,$ae,$2e
+01:000044CB 2E
+01:000044CC 97
 01:000044CD 2E
-01:000044CE 2E              	  1325: 	dc.b	$2e,$2c,$6b,$69,$6f,$30,$39,$2e
-01:000044CF 2C
-01:000044D0 6B
-01:000044D1 69
-01:000044D2 6F
-01:000044D3 30
-01:000044D4 39
-01:000044D5 2E
-01:000044D6 2E              	  1326: 	dc.b	$2e,$2e,$2f,$6c,$3b,$70,$2d,$2e
+01:000044CE 2E
+01:000044CF 96
+01:000044D0 AE
+01:000044D1 2E
+                            	  1335: 
+01:000044D2 2E              	  1336: 	dc.b	$2e,$2e,$2e,$a7,$2e,$2e,$2e,$2e
+01:000044D3 2E
+01:000044D4 2E
+01:000044D5 A7
+01:000044D6 2E
 01:000044D7 2E
-01:000044D8 2F
-01:000044D9 6C
-01:000044DA 3B
-01:000044DB 70
-01:000044DC 2D
+01:000044D8 2E
+01:000044D9 2E
+01:000044DA 2E              	  1337: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
+01:000044DB 2E
+01:000044DC 2E
 01:000044DD 2E
-01:000044DE 2E              	  1327: 	dc.b	$2e,$2e,$27,$2e,$5b,$3d,$2e,$2e
+01:000044DE 2E
 01:000044DF 2E
-01:000044E0 27
+01:000044E0 2E
 01:000044E1 2E
-01:000044E2 5B
-01:000044E3 3D
+01:000044E2 2E              	  1338: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
+01:000044E3 2E
 01:000044E4 2E
 01:000044E5 2E
-01:000044E6 AD              	  1328: 	dc.b	$ad,$2e,$0d,$5d,$2e,$5c,$2e,$2e
+01:000044E6 2E
 01:000044E7 2E
-01:000044E8 0D
-01:000044E9 5D
-01:000044EA 2E
-01:000044EB 5C
+01:000044E8 2E
+01:000044E9 2E
+01:000044EA 2E              	  1339: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
+01:000044EB 2E
 01:000044EC 2E
 01:000044ED 2E
-01:000044EE 2E              	  1329: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$08,$2e
+01:000044EE 2E
 01:000044EF 2E
 01:000044F0 2E
 01:000044F1 2E
-01:000044F2 2E
+01:000044F2 2E              	  1340: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
 01:000044F3 2E
-01:000044F4 08
+01:000044F4 2E
 01:000044F5 2E
-01:000044F6 2E              	  1330: 	dc.b	$2e,$95,$2e,$93,$94,$2e,$2e,$2e
-01:000044F7 95
+01:000044F6 2E
+01:000044F7 2E
 01:000044F8 2E
-01:000044F9 93
-01:000044FA 94
+01:000044F9 2E
+01:000044FA 2E              	  1341: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
 01:000044FB 2E
 01:000044FC 2E
 01:000044FD 2E
-01:000044FE 98              	  1331: 	dc.b	$98,$7f,$92,$2e,$91,$90,$1b,$af
-01:000044FF 7F
-01:00004500 92
+01:000044FE 2E
+01:000044FF 2E
+01:00004500 2E
 01:00004501 2E
-01:00004502 91
-01:00004503 90
-01:00004504 1B
-01:00004505 AF
-01:00004506 AB              	  1332: 	dc.b	$ab,$2e,$97,$2e,$2e,$96,$ae,$2e
+01:00004502 2E              	  1342: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
+01:00004503 2E
+01:00004504 2E
+01:00004505 2E
+01:00004506 2E
 01:00004507 2E
-01:00004508 97
+01:00004508 2E
 01:00004509 2E
-01:0000450A 2E
-01:0000450B 96
-01:0000450C AE
+01:0000450A 2E              	  1343: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
+01:0000450B 2E
+01:0000450C 2E
 01:0000450D 2E
-                            	  1333: 
-01:0000450E 2E              	  1334: 	dc.b	$2e,$2e,$2e,$a7,$2e,$2e,$2e,$2e
+01:0000450E 2E
 01:0000450F 2E
 01:00004510 2E
-01:00004511 A7
-01:00004512 2E
+01:00004511 2E
+01:00004512 2E              	  1344: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
 01:00004513 2E
 01:00004514 2E
 01:00004515 2E
-01:00004516 2E              	  1335: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
+01:00004516 2E
 01:00004517 2E
 01:00004518 2E
 01:00004519 2E
-01:0000451A 2E
+01:0000451A 2E              	  1345: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
 01:0000451B 2E
 01:0000451C 2E
 01:0000451D 2E
-01:0000451E 2E              	  1336: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
+01:0000451E 2E
 01:0000451F 2E
 01:00004520 2E
 01:00004521 2E
-01:00004522 2E
+01:00004522 2E              	  1346: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
 01:00004523 2E
 01:00004524 2E
 01:00004525 2E
-01:00004526 2E              	  1337: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
+01:00004526 2E
 01:00004527 2E
 01:00004528 2E
 01:00004529 2E
-01:0000452A 2E
+01:0000452A 2E              	  1347: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
 01:0000452B 2E
 01:0000452C 2E
 01:0000452D 2E
-01:0000452E 2E              	  1338: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
+01:0000452E 2E
 01:0000452F 2E
 01:00004530 2E
 01:00004531 2E
-01:00004532 2E
+01:00004532 2E              	  1348: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
 01:00004533 2E
 01:00004534 2E
 01:00004535 2E
-01:00004536 2E              	  1339: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
+01:00004536 2E
 01:00004537 2E
 01:00004538 2E
 01:00004539 2E
-01:0000453A 2E
+01:0000453A 2E              	  1349: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
 01:0000453B 2E
 01:0000453C 2E
 01:0000453D 2E
-01:0000453E 2E              	  1340: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
+01:0000453E 2E
 01:0000453F 2E
 01:00004540 2E
 01:00004541 2E
-01:00004542 2E
+01:00004542 2E              	  1350: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
 01:00004543 2E
 01:00004544 2E
 01:00004545 2E
-01:00004546 2E              	  1341: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
+01:00004546 2E
 01:00004547 2E
 01:00004548 2E
 01:00004549 2E
-01:0000454A 2E
+01:0000454A 2E              	  1351: 	dc.b	$2e,$2e,$fa,$2e,$2e,$2e,$2e,$2e
 01:0000454B 2E
-01:0000454C 2E
+01:0000454C FA
 01:0000454D 2E
-01:0000454E 2E              	  1342: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
+01:0000454E 2E
 01:0000454F 2E
 01:00004550 2E
 01:00004551 2E
-01:00004552 2E
+                            	  1352: 
+                            	  1353: _shiftedScanCodes:
+01:00004552 2E              	  1354: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
 01:00004553 2E
 01:00004554 2E
 01:00004555 2E
-01:00004556 2E              	  1343: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
+01:00004556 2E
 01:00004557 2E
 01:00004558 2E
 01:00004559 2E
-01:0000455A 2E
+01:0000455A 2E              	  1355: 	dc.b	$2e,$2e,$2e,$2e,$2e,$09,$7e,$2e
 01:0000455B 2E
 01:0000455C 2E
 01:0000455D 2E
-01:0000455E 2E              	  1344: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
-01:0000455F 2E
-01:00004560 2E
+01:0000455E 2E
+01:0000455F 09
+01:00004560 7E
 01:00004561 2E
-01:00004562 2E
+01:00004562 2E              	  1356: 	dc.b	$2e,$2e,$2e,$2e,$2e,$51,$21,$2e
 01:00004563 2E
 01:00004564 2E
 01:00004565 2E
-01:00004566 2E              	  1345: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
-01:00004567 2E
-01:00004568 2E
+01:00004566 2E
+01:00004567 51
+01:00004568 21
 01:00004569 2E
-01:0000456A 2E
+01:0000456A 2E              	  1357: 	dc.b	$2e,$2e,$5a,$53,$41,$57,$40,$2e
 01:0000456B 2E
-01:0000456C 2E
-01:0000456D 2E
-01:0000456E 2E              	  1346: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
-01:0000456F 2E
-01:00004570 2E
+01:0000456C 5A
+01:0000456D 53
+01:0000456E 41
+01:0000456F 57
+01:00004570 40
 01:00004571 2E
-01:00004572 2E
-01:00004573 2E
-01:00004574 2E
-01:00004575 2E
-01:00004576 2E              	  1347: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
-01:00004577 2E
-01:00004578 2E
+01:00004572 2E              	  1358: 	dc.b	$2e,$43,$58,$44,$45,$24,$23,$2e
+01:00004573 43
+01:00004574 58
+01:00004575 44
+01:00004576 45
+01:00004577 24
+01:00004578 23
 01:00004579 2E
-01:0000457A 2E
-01:0000457B 2E
-01:0000457C 2E
-01:0000457D 2E
-01:0000457E 2E              	  1348: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
-01:0000457F 2E
-01:00004580 2E
+01:0000457A 2E              	  1359: 	dc.b	$2e,$20,$56,$46,$54,$52,$25,$2e
+01:0000457B 20
+01:0000457C 56
+01:0000457D 46
+01:0000457E 54
+01:0000457F 52
+01:00004580 25
 01:00004581 2E
-01:00004582 2E
-01:00004583 2E
-01:00004584 2E
-01:00004585 2E
-01:00004586 2E              	  1349: 	dc.b	$2e,$2e,$fa,$2e,$2e,$2e,$2e,$2e
-01:00004587 2E
-01:00004588 FA
+01:00004582 2E              	  1360: 	dc.b	$2e,$4e,$42,$48,$47,$59,$5e,$2e
+01:00004583 4E
+01:00004584 42
+01:00004585 48
+01:00004586 47
+01:00004587 59
+01:00004588 5E
 01:00004589 2E
-01:0000458A 2E
+01:0000458A 2E              	  1361: 	dc.b	$2e,$2e,$4d,$4a,$55,$26,$2a,$2e
 01:0000458B 2E
-01:0000458C 2E
-01:0000458D 2E
-                            	  1350: 
-                            	  1351: _shiftedScanCodes:
-01:0000458E 2E              	  1352: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
-01:0000458F 2E
-01:00004590 2E
+01:0000458C 4D
+01:0000458D 4A
+01:0000458E 55
+01:0000458F 26
+01:00004590 2A
 01:00004591 2E
-01:00004592 2E
-01:00004593 2E
-01:00004594 2E
-01:00004595 2E
-01:00004596 2E              	  1353: 	dc.b	$2e,$2e,$2e,$2e,$2e,$09,$7e,$2e
-01:00004597 2E
-01:00004598 2E
+01:00004592 2E              	  1362: 	dc.b	$2e,$3c,$4b,$49,$4f,$29,$28,$2e
+01:00004593 3C
+01:00004594 4B
+01:00004595 49
+01:00004596 4F
+01:00004597 29
+01:00004598 28
 01:00004599 2E
-01:0000459A 2E
-01:0000459B 09
-01:0000459C 7E
-01:0000459D 2E
-01:0000459E 2E              	  1354: 	dc.b	$2e,$2e,$2e,$2e,$2e,$51,$21,$2e
-01:0000459F 2E
-01:000045A0 2E
+01:0000459A 2E              	  1363: 	dc.b	$2e,$3e,$3f,$4c,$3a,$50,$5f,$2e
+01:0000459B 3E
+01:0000459C 3F
+01:0000459D 4C
+01:0000459E 3A
+01:0000459F 50
+01:000045A0 5F
 01:000045A1 2E
-01:000045A2 2E
-01:000045A3 51
-01:000045A4 21
+01:000045A2 2E              	  1364: 	dc.b	$2e,$2e,$22,$2e,$7b,$2b,$2e,$2e
+01:000045A3 2E
+01:000045A4 22
 01:000045A5 2E
-01:000045A6 2E              	  1355: 	dc.b	$2e,$2e,$5a,$53,$41,$57,$40,$2e
-01:000045A7 2E
-01:000045A8 5A
-01:000045A9 53
-01:000045AA 41
-01:000045AB 57
-01:000045AC 40
-01:000045AD 2E
-01:000045AE 2E              	  1356: 	dc.b	$2e,$43,$58,$44,$45,$24,$23,$2e
-01:000045AF 43
-01:000045B0 58
-01:000045B1 44
-01:000045B2 45
-01:000045B3 24
-01:000045B4 23
+01:000045A6 7B
+01:000045A7 2B
+01:000045A8 2E
+01:000045A9 2E
+01:000045AA 2E              	  1365: 	dc.b	$2e,$2e,$0d,$7d,$2e,$7c,$2e,$2e
+01:000045AB 2E
+01:000045AC 0D
+01:000045AD 7D
+01:000045AE 2E
+01:000045AF 7C
+01:000045B0 2E
+01:000045B1 2E
+01:000045B2 2E              	  1366: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$08,$2e
+01:000045B3 2E
+01:000045B4 2E
 01:000045B5 2E
-01:000045B6 2E              	  1357: 	dc.b	$2e,$20,$56,$46,$54,$52,$25,$2e
-01:000045B7 20
-01:000045B8 56
-01:000045B9 46
-01:000045BA 54
-01:000045BB 52
-01:000045BC 25
+01:000045B6 2E
+01:000045B7 2E
+01:000045B8 08
+01:000045B9 2E
+01:000045BA 2E              	  1367: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
+01:000045BB 2E
+01:000045BC 2E
 01:000045BD 2E
-01:000045BE 2E              	  1358: 	dc.b	$2e,$4e,$42,$48,$47,$59,$5e,$2e
-01:000045BF 4E
-01:000045C0 42
-01:000045C1 48
-01:000045C2 47
-01:000045C3 59
-01:000045C4 5E
+01:000045BE 2E
+01:000045BF 2E
+01:000045C0 2E
+01:000045C1 2E
+01:000045C2 2E              	  1368: 	dc.b	$2e,$7f,$2e,$2e,$2e,$2e,$1b,$2e
+01:000045C3 7F
+01:000045C4 2E
 01:000045C5 2E
-01:000045C6 2E              	  1359: 	dc.b	$2e,$2e,$4d,$4a,$55,$26,$2a,$2e
+01:000045C6 2E
 01:000045C7 2E
-01:000045C8 4D
-01:000045C9 4A
-01:000045CA 55
-01:000045CB 26
-01:000045CC 2A
+01:000045C8 1B
+01:000045C9 2E
+01:000045CA 2E              	  1369: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
+01:000045CB 2E
+01:000045CC 2E
 01:000045CD 2E
-01:000045CE 2E              	  1360: 	dc.b	$2e,$3c,$4b,$49,$4f,$29,$28,$2e
-01:000045CF 3C
-01:000045D0 4B
-01:000045D1 49
-01:000045D2 4F
-01:000045D3 29
-01:000045D4 28
+01:000045CE 2E
+01:000045CF 2E
+01:000045D0 2E
+01:000045D1 2E
+                            	  1370: 
+01:000045D2 2E              	  1371: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
+01:000045D3 2E
+01:000045D4 2E
 01:000045D5 2E
-01:000045D6 2E              	  1361: 	dc.b	$2e,$3e,$3f,$4c,$3a,$50,$5f,$2e
-01:000045D7 3E
-01:000045D8 3F
-01:000045D9 4C
-01:000045DA 3A
-01:000045DB 50
-01:000045DC 5F
+01:000045D6 2E
+01:000045D7 2E
+01:000045D8 2E
+01:000045D9 2E
+01:000045DA 2E              	  1372: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
+01:000045DB 2E
+01:000045DC 2E
 01:000045DD 2E
-01:000045DE 2E              	  1362: 	dc.b	$2e,$2e,$22,$2e,$7b,$2b,$2e,$2e
+01:000045DE 2E
 01:000045DF 2E
-01:000045E0 22
+01:000045E0 2E
 01:000045E1 2E
-01:000045E2 7B
-01:000045E3 2B
+01:000045E2 2E              	  1373: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
+01:000045E3 2E
 01:000045E4 2E
 01:000045E5 2E
-01:000045E6 2E              	  1363: 	dc.b	$2e,$2e,$0d,$7d,$2e,$7c,$2e,$2e
+01:000045E6 2E
 01:000045E7 2E
-01:000045E8 0D
-01:000045E9 7D
-01:000045EA 2E
-01:000045EB 7C
+01:000045E8 2E
+01:000045E9 2E
+01:000045EA 2E              	  1374: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
+01:000045EB 2E
 01:000045EC 2E
 01:000045ED 2E
-01:000045EE 2E              	  1364: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$08,$2e
+01:000045EE 2E
 01:000045EF 2E
 01:000045F0 2E
 01:000045F1 2E
-01:000045F2 2E
+01:000045F2 2E              	  1375: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
 01:000045F3 2E
-01:000045F4 08
+01:000045F4 2E
 01:000045F5 2E
-01:000045F6 2E              	  1365: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
+01:000045F6 2E
 01:000045F7 2E
 01:000045F8 2E
 01:000045F9 2E
-01:000045FA 2E
+01:000045FA 2E              	  1376: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
 01:000045FB 2E
 01:000045FC 2E
 01:000045FD 2E
-01:000045FE 2E              	  1366: 	dc.b	$2e,$7f,$2e,$2e,$2e,$2e,$1b,$2e
-01:000045FF 7F
+01:000045FE 2E
+01:000045FF 2E
 01:00004600 2E
 01:00004601 2E
-01:00004602 2E
+01:00004602 2E              	  1377: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
 01:00004603 2E
-01:00004604 1B
+01:00004604 2E
 01:00004605 2E
-01:00004606 2E              	  1367: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
+01:00004606 2E
 01:00004607 2E
 01:00004608 2E
 01:00004609 2E
-01:0000460A 2E
+01:0000460A 2E              	  1378: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
 01:0000460B 2E
 01:0000460C 2E
 01:0000460D 2E
-                            	  1368: 
-01:0000460E 2E              	  1369: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
+01:0000460E 2E
 01:0000460F 2E
 01:00004610 2E
 01:00004611 2E
-01:00004612 2E
+01:00004612 2E              	  1379: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
 01:00004613 2E
 01:00004614 2E
 01:00004615 2E
-01:00004616 2E              	  1370: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
+01:00004616 2E
 01:00004617 2E
 01:00004618 2E
 01:00004619 2E
-01:0000461A 2E
+01:0000461A 2E              	  1380: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
 01:0000461B 2E
 01:0000461C 2E
 01:0000461D 2E
-01:0000461E 2E              	  1371: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
+01:0000461E 2E
 01:0000461F 2E
 01:00004620 2E
 01:00004621 2E
-01:00004622 2E
+01:00004622 2E              	  1381: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
 01:00004623 2E
 01:00004624 2E
 01:00004625 2E
-01:00004626 2E              	  1372: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
+01:00004626 2E
 01:00004627 2E
 01:00004628 2E
 01:00004629 2E
-01:0000462A 2E
+01:0000462A 2E              	  1382: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
 01:0000462B 2E
 01:0000462C 2E
 01:0000462D 2E
-01:0000462E 2E              	  1373: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
+01:0000462E 2E
 01:0000462F 2E
 01:00004630 2E
 01:00004631 2E
-01:00004632 2E
+01:00004632 2E              	  1383: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
 01:00004633 2E
 01:00004634 2E
 01:00004635 2E
-01:00004636 2E              	  1374: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
+01:00004636 2E
 01:00004637 2E
 01:00004638 2E
 01:00004639 2E
-01:0000463A 2E
+01:0000463A 2E              	  1384: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
 01:0000463B 2E
 01:0000463C 2E
 01:0000463D 2E
-01:0000463E 2E              	  1375: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
+01:0000463E 2E
 01:0000463F 2E
 01:00004640 2E
 01:00004641 2E
-01:00004642 2E
+01:00004642 2E              	  1385: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
 01:00004643 2E
 01:00004644 2E
 01:00004645 2E
-01:00004646 2E              	  1376: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
+01:00004646 2E
 01:00004647 2E
 01:00004648 2E
 01:00004649 2E
-01:0000464A 2E
+01:0000464A 2E              	  1386: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
 01:0000464B 2E
 01:0000464C 2E
 01:0000464D 2E
-01:0000464E 2E              	  1377: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
+01:0000464E 2E
 01:0000464F 2E
 01:00004650 2E
 01:00004651 2E
-01:00004652 2E
+                            	  1387: 
+                            	  1388: ; control
+                            	  1389: _keybdControlCodes:
+01:00004652 2E              	  1390: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
 01:00004653 2E
 01:00004654 2E
 01:00004655 2E
-01:00004656 2E              	  1378: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
+01:00004656 2E
 01:00004657 2E
 01:00004658 2E
 01:00004659 2E
-01:0000465A 2E
+01:0000465A 2E              	  1391: 	dc.b	$2e,$2e,$2e,$2e,$2e,$09,$7e,$2e
 01:0000465B 2E
 01:0000465C 2E
 01:0000465D 2E
-01:0000465E 2E              	  1379: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
-01:0000465F 2E
-01:00004660 2E
+01:0000465E 2E
+01:0000465F 09
+01:00004660 7E
 01:00004661 2E
-01:00004662 2E
+01:00004662 2E              	  1392: 	dc.b	$2e,$2e,$2e,$2e,$2e,$11,$21,$2e
 01:00004663 2E
 01:00004664 2E
 01:00004665 2E
-01:00004666 2E              	  1380: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
-01:00004667 2E
-01:00004668 2E
+01:00004666 2E
+01:00004667 11
+01:00004668 21
 01:00004669 2E
-01:0000466A 2E
+01:0000466A 2E              	  1393: 	dc.b	$2e,$2e,$1a,$13,$01,$17,$40,$2e
 01:0000466B 2E
-01:0000466C 2E
-01:0000466D 2E
-01:0000466E 2E              	  1381: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
-01:0000466F 2E
-01:00004670 2E
+01:0000466C 1A
+01:0000466D 13
+01:0000466E 01
+01:0000466F 17
+01:00004670 40
 01:00004671 2E
-01:00004672 2E
-01:00004673 2E
-01:00004674 2E
-01:00004675 2E
-01:00004676 2E              	  1382: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
-01:00004677 2E
-01:00004678 2E
+01:00004672 2E              	  1394: 	dc.b	$2e,$03,$18,$04,$05,$24,$23,$2e
+01:00004673 03
+01:00004674 18
+01:00004675 04
+01:00004676 05
+01:00004677 24
+01:00004678 23
 01:00004679 2E
-01:0000467A 2E
-01:0000467B 2E
-01:0000467C 2E
-01:0000467D 2E
-01:0000467E 2E              	  1383: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
-01:0000467F 2E
-01:00004680 2E
+01:0000467A 2E              	  1395: 	dc.b	$2e,$20,$16,$06,$14,$12,$25,$2e
+01:0000467B 20
+01:0000467C 16
+01:0000467D 06
+01:0000467E 14
+01:0000467F 12
+01:00004680 25
 01:00004681 2E
-01:00004682 2E
-01:00004683 2E
-01:00004684 2E
-01:00004685 2E
-01:00004686 2E              	  1384: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
-01:00004687 2E
-01:00004688 2E
+01:00004682 2E              	  1396: 	dc.b	$2e,$0e,$02,$08,$07,$19,$5e,$2e
+01:00004683 0E
+01:00004684 02
+01:00004685 08
+01:00004686 07
+01:00004687 19
+01:00004688 5E
 01:00004689 2E
-01:0000468A 2E
+01:0000468A 2E              	  1397: 	dc.b	$2e,$2e,$0d,$0a,$15,$26,$2a,$2e
 01:0000468B 2E
-01:0000468C 2E
-01:0000468D 2E
-                            	  1385: 
-                            	  1386: ; control
-                            	  1387: _keybdControlCodes:
-01:0000468E 2E              	  1388: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
-01:0000468F 2E
-01:00004690 2E
+01:0000468C 0D
+01:0000468D 0A
+01:0000468E 15
+01:0000468F 26
+01:00004690 2A
 01:00004691 2E
-01:00004692 2E
-01:00004693 2E
-01:00004694 2E
-01:00004695 2E
-01:00004696 2E              	  1389: 	dc.b	$2e,$2e,$2e,$2e,$2e,$09,$7e,$2e
-01:00004697 2E
-01:00004698 2E
+01:00004692 2E              	  1398: 	dc.b	$2e,$3c,$0b,$09,$0f,$29,$28,$2e
+01:00004693 3C
+01:00004694 0B
+01:00004695 09
+01:00004696 0F
+01:00004697 29
+01:00004698 28
 01:00004699 2E
-01:0000469A 2E
-01:0000469B 09
-01:0000469C 7E
-01:0000469D 2E
-01:0000469E 2E              	  1390: 	dc.b	$2e,$2e,$2e,$2e,$2e,$11,$21,$2e
-01:0000469F 2E
-01:000046A0 2E
+01:0000469A 2E              	  1399: 	dc.b	$2e,$3e,$3f,$0c,$3a,$10,$5f,$2e
+01:0000469B 3E
+01:0000469C 3F
+01:0000469D 0C
+01:0000469E 3A
+01:0000469F 10
+01:000046A0 5F
 01:000046A1 2E
-01:000046A2 2E
-01:000046A3 11
-01:000046A4 21
+01:000046A2 2E              	  1400: 	dc.b	$2e,$2e,$22,$2e,$7b,$2b,$2e,$2e
+01:000046A3 2E
+01:000046A4 22
 01:000046A5 2E
-01:000046A6 2E              	  1391: 	dc.b	$2e,$2e,$1a,$13,$01,$17,$40,$2e
-01:000046A7 2E
-01:000046A8 1A
-01:000046A9 13
-01:000046AA 01
-01:000046AB 17
-01:000046AC 40
-01:000046AD 2E
-01:000046AE 2E              	  1392: 	dc.b	$2e,$03,$18,$04,$05,$24,$23,$2e
-01:000046AF 03
-01:000046B0 18
-01:000046B1 04
-01:000046B2 05
-01:000046B3 24
-01:000046B4 23
+01:000046A6 7B
+01:000046A7 2B
+01:000046A8 2E
+01:000046A9 2E
+01:000046AA 2E              	  1401: 	dc.b	$2e,$2e,$0d,$7d,$2e,$7c,$2e,$2e
+01:000046AB 2E
+01:000046AC 0D
+01:000046AD 7D
+01:000046AE 2E
+01:000046AF 7C
+01:000046B0 2E
+01:000046B1 2E
+01:000046B2 2E              	  1402: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$08,$2e
+01:000046B3 2E
+01:000046B4 2E
 01:000046B5 2E
-01:000046B6 2E              	  1393: 	dc.b	$2e,$20,$16,$06,$14,$12,$25,$2e
-01:000046B7 20
-01:000046B8 16
-01:000046B9 06
-01:000046BA 14
-01:000046BB 12
-01:000046BC 25
+01:000046B6 2E
+01:000046B7 2E
+01:000046B8 08
+01:000046B9 2E
+01:000046BA 2E              	  1403: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
+01:000046BB 2E
+01:000046BC 2E
 01:000046BD 2E
-01:000046BE 2E              	  1394: 	dc.b	$2e,$0e,$02,$08,$07,$19,$5e,$2e
-01:000046BF 0E
-01:000046C0 02
-01:000046C1 08
-01:000046C2 07
-01:000046C3 19
-01:000046C4 5E
+01:000046BE 2E
+01:000046BF 2E
+01:000046C0 2E
+01:000046C1 2E
+01:000046C2 2E              	  1404: 	dc.b	$2e,$7f,$2e,$2e,$2e,$2e,$1b,$2e
+01:000046C3 7F
+01:000046C4 2E
 01:000046C5 2E
-01:000046C6 2E              	  1395: 	dc.b	$2e,$2e,$0d,$0a,$15,$26,$2a,$2e
+01:000046C6 2E
 01:000046C7 2E
-01:000046C8 0D
-01:000046C9 0A
-01:000046CA 15
-01:000046CB 26
-01:000046CC 2A
+01:000046C8 1B
+01:000046C9 2E
+01:000046CA 2E              	  1405: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
+01:000046CB 2E
+01:000046CC 2E
 01:000046CD 2E
-01:000046CE 2E              	  1396: 	dc.b	$2e,$3c,$0b,$09,$0f,$29,$28,$2e
-01:000046CF 3C
-01:000046D0 0B
-01:000046D1 09
-01:000046D2 0F
-01:000046D3 29
-01:000046D4 28
+01:000046CE 2E
+01:000046CF 2E
+01:000046D0 2E
+01:000046D1 2E
+                            	  1406: 
+                            	  1407: _keybdExtendedCodes:
+01:000046D2 2E              	  1408: 	dc.b	$2e,$2e,$2e,$2e,$a3,$a1,$a2,$2e
+01:000046D3 2E
+01:000046D4 2E
 01:000046D5 2E
-01:000046D6 2E              	  1397: 	dc.b	$2e,$3e,$3f,$0c,$3a,$10,$5f,$2e
-01:000046D7 3E
-01:000046D8 3F
-01:000046D9 0C
-01:000046DA 3A
-01:000046DB 10
-01:000046DC 5F
+01:000046D6 A3
+01:000046D7 A1
+01:000046D8 A2
+01:000046D9 2E
+01:000046DA 2E              	  1409: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
+01:000046DB 2E
+01:000046DC 2E
 01:000046DD 2E
-01:000046DE 2E              	  1398: 	dc.b	$2e,$2e,$22,$2e,$7b,$2b,$2e,$2e
+01:000046DE 2E
 01:000046DF 2E
-01:000046E0 22
+01:000046E0 2E
 01:000046E1 2E
-01:000046E2 7B
-01:000046E3 2B
+01:000046E2 2E              	  1410: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
+01:000046E3 2E
 01:000046E4 2E
 01:000046E5 2E
-01:000046E6 2E              	  1399: 	dc.b	$2e,$2e,$0d,$7d,$2e,$7c,$2e,$2e
+01:000046E6 2E
 01:000046E7 2E
-01:000046E8 0D
-01:000046E9 7D
-01:000046EA 2E
-01:000046EB 7C
+01:000046E8 2E
+01:000046E9 2E
+01:000046EA 2E              	  1411: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
+01:000046EB 2E
 01:000046EC 2E
 01:000046ED 2E
-01:000046EE 2E              	  1400: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$08,$2e
+01:000046EE 2E
 01:000046EF 2E
 01:000046F0 2E
 01:000046F1 2E
-01:000046F2 2E
+01:000046F2 2E              	  1412: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
 01:000046F3 2E
-01:000046F4 08
+01:000046F4 2E
 01:000046F5 2E
-01:000046F6 2E              	  1401: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
+01:000046F6 2E
 01:000046F7 2E
 01:000046F8 2E
 01:000046F9 2E
-01:000046FA 2E
+01:000046FA 2E              	  1413: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
 01:000046FB 2E
 01:000046FC 2E
 01:000046FD 2E
-01:000046FE 2E              	  1402: 	dc.b	$2e,$7f,$2e,$2e,$2e,$2e,$1b,$2e
-01:000046FF 7F
+01:000046FE 2E
+01:000046FF 2E
 01:00004700 2E
 01:00004701 2E
-01:00004702 2E
+01:00004702 2E              	  1414: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
 01:00004703 2E
-01:00004704 1B
+01:00004704 2E
 01:00004705 2E
-01:00004706 2E              	  1403: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
+01:00004706 2E
 01:00004707 2E
 01:00004708 2E
 01:00004709 2E
-01:0000470A 2E
+01:0000470A 2E              	  1415: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
 01:0000470B 2E
 01:0000470C 2E
 01:0000470D 2E
-                            	  1404: 
-                            	  1405: _keybdExtendedCodes:
-01:0000470E 2E              	  1406: 	dc.b	$2e,$2e,$2e,$2e,$a3,$a1,$a2,$2e
+01:0000470E 2E
 01:0000470F 2E
 01:00004710 2E
 01:00004711 2E
-01:00004712 A3
-01:00004713 A1
-01:00004714 A2
+01:00004712 2E              	  1416: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
+01:00004713 2E
+01:00004714 2E
 01:00004715 2E
-01:00004716 2E              	  1407: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
+01:00004716 2E
 01:00004717 2E
 01:00004718 2E
 01:00004719 2E
-01:0000471A 2E
+01:0000471A 2E              	  1417: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
 01:0000471B 2E
 01:0000471C 2E
 01:0000471D 2E
-01:0000471E 2E              	  1408: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
+01:0000471E 2E
 01:0000471F 2E
 01:00004720 2E
 01:00004721 2E
-01:00004722 2E
+01:00004722 2E              	  1418: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
 01:00004723 2E
 01:00004724 2E
 01:00004725 2E
-01:00004726 2E              	  1409: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
+01:00004726 2E
 01:00004727 2E
 01:00004728 2E
 01:00004729 2E
-01:0000472A 2E
+01:0000472A 2E              	  1419: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
 01:0000472B 2E
 01:0000472C 2E
 01:0000472D 2E
-01:0000472E 2E              	  1410: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
+01:0000472E 2E
 01:0000472F 2E
 01:00004730 2E
 01:00004731 2E
-01:00004732 2E
+01:00004732 2E              	  1420: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
 01:00004733 2E
 01:00004734 2E
 01:00004735 2E
-01:00004736 2E              	  1411: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
+01:00004736 2E
 01:00004737 2E
 01:00004738 2E
 01:00004739 2E
-01:0000473A 2E
-01:0000473B 2E
+01:0000473A 2E              	  1421: 	dc.b	$2e,$95,$2e,$93,$94,$2e,$2e,$2e
+01:0000473B 95
 01:0000473C 2E
-01:0000473D 2E
-01:0000473E 2E              	  1412: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
+01:0000473D 93
+01:0000473E 94
 01:0000473F 2E
 01:00004740 2E
 01:00004741 2E
-01:00004742 2E
-01:00004743 2E
-01:00004744 2E
+01:00004742 98              	  1422: 	dc.b	$98,$99,$92,$2e,$91,$90,$2e,$2e
+01:00004743 99
+01:00004744 92
 01:00004745 2E
-01:00004746 2E              	  1413: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
-01:00004747 2E
+01:00004746 91
+01:00004747 90
 01:00004748 2E
 01:00004749 2E
-01:0000474A 2E
+01:0000474A 2E              	  1423: 	dc.b	$2e,$2e,$97,$2e,$2e,$96,$2e,$2e
 01:0000474B 2E
-01:0000474C 2E
+01:0000474C 97
 01:0000474D 2E
-01:0000474E 2E              	  1414: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
-01:0000474F 2E
+01:0000474E 2E
+01:0000474F 96
 01:00004750 2E
 01:00004751 2E
-01:00004752 2E
-01:00004753 2E
-01:00004754 2E
-01:00004755 2E
-01:00004756 2E              	  1415: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
-01:00004757 2E
-01:00004758 2E
-01:00004759 2E
-01:0000475A 2E
-01:0000475B 2E
-01:0000475C 2E
-01:0000475D 2E
-01:0000475E 2E              	  1416: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
-01:0000475F 2E
-01:00004760 2E
-01:00004761 2E
-01:00004762 2E
-01:00004763 2E
-01:00004764 2E
-01:00004765 2E
-01:00004766 2E              	  1417: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
-01:00004767 2E
-01:00004768 2E
-01:00004769 2E
-01:0000476A 2E
-01:0000476B 2E
-01:0000476C 2E
-01:0000476D 2E
-01:0000476E 2E              	  1418: 	dc.b	$2e,$2e,$2e,$2e,$2e,$2e,$2e,$2e
-01:0000476F 2E
-01:00004770 2E
-01:00004771 2E
-01:00004772 2E
-01:00004773 2E
-01:00004774 2E
-01:00004775 2E
-01:00004776 2E              	  1419: 	dc.b	$2e,$95,$2e,$93,$94,$2e,$2e,$2e
-01:00004777 95
-01:00004778 2E
-01:00004779 93
-01:0000477A 94
-01:0000477B 2E
-01:0000477C 2E
-01:0000477D 2E
-01:0000477E 98              	  1420: 	dc.b	$98,$99,$92,$2e,$91,$90,$2e,$2e
-01:0000477F 99
-01:00004780 92
-01:00004781 2E
-01:00004782 91
-01:00004783 90
-01:00004784 2E
-01:00004785 2E
-01:00004786 2E              	  1421: 	dc.b	$2e,$2e,$97,$2e,$2e,$96,$2e,$2e
-01:00004787 2E
-01:00004788 97
-01:00004789 2E
-01:0000478A 2E
-01:0000478B 96
-01:0000478C 2E
-01:0000478D 2E
-                            	  1422: 
-                            	  1423: ;==============================================================================
-                            	  1424: ;==============================================================================
-                            	  1425: ; Monitor
+                            	  1424: 
+                            	  1425: ;==============================================================================
                             	  1426: ;==============================================================================
-                            	  1427: ;==============================================================================
-                            	  1428: ;
-                            	  1429: ; Get a word from screen memory and swap byte order
-                            	  1430: 
-                            	  1431: FromScreen:
-01:0000478E 2210            	  1432: 	move.l	(a0),d1
-01:00004790 E159            	  1433: 	rol.w		#8,d1
-01:00004792 4841            	  1434: 	swap		d1
-01:00004794 E159            	  1435: 	rol.w		#8,d1
-01:00004796 5088            	  1436: 	lea			8(a0),a0	; increment screen pointer
-01:00004798 4E75            	  1437: 	rts
-                            	  1438: 
-                            	  1439: StartMon:
-                            	  1440: 	; Reset the stack pointer on entry into the monitor
-                            	  1441: Monitor:
-01:0000479A 4E7A1FE0        	  1442: 	movec.l	coreno,d1		; get core number
-01:0000479E 08010000        	  1443: 	btst		#0,d1
-01:000047A2 6708            	  1444: 	beq.s		.0001
-01:000047A4 2E7C0001FBFC    	  1445: 	move.l	#$1FBFC,sp	; odd core's stack
-01:000047AA 6006            	  1446: 	bra			.0002
-                            	  1447: .0001:
-01:000047AC 2E7C0001FFFC    	  1448: 	move.l	#$1FFFC,sp	; even core's stack
-                            	  1449: .0002:
-01:000047B2 46FC2500        	  1450: 	move.w	#$2500,sr		; enable level 6 and higher interrupts
-01:000047B6 7201            	  1451: 	moveq		#1,d1
-01:000047B8 6100B968        	  1452: 	bsr			UnlockSemaphore
-01:000047BC 423900000418    	  1453: 	clr.b		KeybdEcho		; turn off keyboard echo
-                            	  1454: PromptLn:
-01:000047C2 6100F576        	  1455: 	bsr			CRLF
-01:000047C6 123C0024        	  1456: 	move.b	#'$',d1
-01:000047CA 6100F5B6        	  1457: 	bsr			DisplayChar
-                            	  1458: 
-                            	  1459: ; Get characters until a CR is keyed
-                            	  1460: ;
-                            	  1461: Prompt3:
-01:000047CE 6100F9BE        	  1462: 	bsr			GetKey
-01:000047D2 0C01000D        	  1463: 	cmpi.b	#CR,d1
-01:000047D6 6706            	  1464: 	beq.s		Prompt1
-01:000047D8 6100F5A8        	  1465: 	bsr			DisplayChar
-01:000047DC 60F0            	  1466: 	bra.s		Prompt3
-                            	  1467: 
-                            	  1468: ; Process the screen line that the CR was keyed on
-                            	  1469: ;
-                            	  1470: Prompt1:
-01:000047DE 423900000409    	  1471: 	clr.b		CursorCol			; go back to the start of the line
-01:000047E4 6100F58E        	  1472: 	bsr			CalcScreenLoc	; a0 = screen memory location
-                            	  1473: .0001:
-01:000047E8 61A4            	  1474: 	bsr			FromScreen		; grab character off screen
-01:000047EA 0C010024        	  1475: 	cmpi.b	#'$',d1				; skip over '$' prompt character
-01:000047EE 67F8            	  1476: 	beq.s		.0001
-                            	  1477: 	
-                            	  1478: ; Dispatch based on command character
-                            	  1479: ;
-                            	  1480: Prompt2:
-01:000047F0 0C010061        	  1481: 	cmpi.b	#'a',d1
-01:000047F4 6700054C        	  1482: 	beq			AudioInputTest
-01:000047F8 0C010062        	  1483: 	cmpi.b	#'b',d1
-01:000047FC 67000546        	  1484: 	beq			BouncingBalls
-01:00004800 0C010067        	  1485: 	cmpi.b	#'g',d1
-01:00004804 67000540        	  1486: 	beq			GraphicsDemo
-01:00004808 0C01003A        	  1487: 	cmpi.b	#':',d1			; $: - edit memory
-01:0000480C 6700022A        	  1488: 	beq			EditMem
-01:00004810 0C010044        	  1489: 	cmpi.b	#'D',d1			; $D - dump memory
-01:00004814 6700027C        	  1490: 	beq			DumpMem
-01:00004818 0C010046        	  1491: 	cmpi.b	#'F',d1
-01:0000481C 670001C2        	  1492: 	beq			FillMem
-01:00004820 0C010042        	  1493: 	cmpi.b	#'B',d1			; $B - start tiny basic
-01:00004824 6606            	  1494: 	bne.s	.0001
-01:00004826 4EF9FFFCC000    	  1495: 	jmp			$FFFCC000
-                            	  1496: .0001:
-01:0000482C 0C01004A        	  1497: 	cmpi.b	#'J',d1			; $J - execute code
-01:00004830 67000252        	  1498: 	beq			ExecuteCode
-01:00004834 0C01004C        	  1499: 	cmpi.b	#'L',d1			; $L - load S19 file
-01:00004838 6700038C        	  1500: 	beq			LoadS19
-01:0000483C 0C01003F        	  1501: 	cmpi.b	#'?',d1			; $? - display help
-01:00004840 673C            	  1502: 	beq			DisplayHelp
-01:00004842 0C010043        	  1503: 	cmpi.b	#'C',d1			; $C - clear screen
-01:00004846 670E            	  1504: 	beq			TestCLS
-01:00004848 0C010054        	  1505: 	cmpi.b	#'T',d1			; $T - run cpu test program
-01:0000484C 6604            	  1506: 	bne.s		.0002
-01:0000484E 6100B916        	  1507: 	bsr			cpu_test
-                            	  1508: .0002:
-01:00004852 6000FF46        	  1509: 	bra			Monitor
-                            	  1510: 
-                            	  1511: TestCLS:
-01:00004856 6100FF36        	  1512: 	bsr			FromScreen
-01:0000485A 5242            	  1513: 	addq		#1,d2
-01:0000485C 0C01004C        	  1514: 	cmpi.b	#'L',d1
-01:00004860 6600FF38        	  1515: 	bne			Monitor
-01:00004864 6100FF28        	  1516: 	bsr			FromScreen
-01:00004868 5242            	  1517: 	addq		#1,d2
-01:0000486A 0C010053        	  1518: 	cmpi.b	#'S',d1
-01:0000486E 6600FF2A        	  1519: 	bne			Monitor
-01:00004872 610004D4        	  1520: 	bsr			ClearScreen
-01:00004876 6100F760        	  1521: 	bsr			HomeCursor
-01:0000487A 6000FF1E        	  1522: 	bra			Monitor
-                            	  1523: 	
-                            	  1524: DisplayHelp:
-01:0000487E 43FA000A        	  1525: 	lea			HelpMsg,a1
-01:00004882 6100F736        	  1526: 	bsr			DisplayString
-01:00004886 6000FF12        	  1527: 	bra			Monitor
-                            	  1528: 
-                            	  1529: HelpMsg:
-01:0000488A 3F203D2044697370	  1530: 	dc.b	"? = Display help",CR,LF
-01:00004892 6C61792068656C70
-01:0000489A 0D
-01:0000489B 0A
-01:0000489C 434C53203D20636C	  1531: 	dc.b	"CLS = clear screen",CR,LF
-01:000048A4 6561722073637265
-01:000048AC 656E
-01:000048AE 0D
-01:000048AF 0A
-01:000048B0 3A203D2045646974	  1532: 	dc.b	": = Edit memory bytes",CR,LF
-01:000048B8 206D656D6F727920
-01:000048C0 6279746573
-01:000048C5 0D
-01:000048C6 0A
-01:000048C7 46203D2046696C6C	  1533: 	dc.b	"F = Fill memory",CR,LF
-01:000048CF 206D656D6F7279
-01:000048D6 0D
-01:000048D7 0A
-01:000048D8 4C203D204C6F6164	  1534: 	dc.b	"L = Load S19 file",CR,LF
-01:000048E0 205331392066696C
-01:000048E8 65
-01:000048E9 0D
-01:000048EA 0A
-01:000048EB 44203D2044756D70	  1535: 	dc.b	"D = Dump memory",CR,LF
-01:000048F3 206D656D6F7279
-01:000048FA 0D
-01:000048FB 0A
-01:000048FC 42203D2073746172	  1536: 	dc.b	"B = start tiny basic",CR,LF
-01:00004904 742074696E792062
-01:0000490C 61736963
-01:00004910 0D
-01:00004911 0A
-01:00004912 4A203D204A756D70	  1537: 	dc.b	"J = Jump to code",CR,LF
-01:0000491A 20746F20636F6465
-01:00004922 0D
-01:00004923 0A
-01:00004924 54203D2063707520	  1538: 	dc.b	"T = cpu test program",CR,LF,0
-01:0000492C 746573742070726F
-01:00004934 6772616D
-01:00004938 0D
-01:00004939 0A
-01:0000493A 00
-                            	  1539: 	even
-                            	  1540: 
-                            	  1541: ;------------------------------------------------------------------------------
-                            	  1542: ; This routine borrowed from Gordo's Tiny Basic interpreter.
-                            	  1543: ; Used to fetch a command line. (Not currently used).
-                            	  1544: ;
-                            	  1545: ; d0.b	- command prompt
-                            	  1546: ;------------------------------------------------------------------------------
-                            	  1547: 
-                            	  1548: GetCmdLine:
-01:0000493C 6100F444        	  1549: 		bsr		DisplayChar		; display prompt
-01:00004940 103C0020        	  1550: 		move.b	#' ',d0
-01:00004944 6100F43C        	  1551: 		bsr		DisplayChar
-01:00004948 41F900000441    	  1552: 		lea		CmdBuf,a0
-                            	  1553: .0001:
-01:0000494E 6100F83E        	  1554: 		bsr		GetKey
-01:00004952 B03C0008        	  1555: 		cmp.b	#CTRLH,d0
-01:00004956 6728            	  1556: 		beq.s	.0003
-01:00004958 B03C0018        	  1557: 		cmp.b	#CTRLX,d0
-01:0000495C 6746            	  1558: 		beq.s	.0004
-01:0000495E B03C000D        	  1559: 		cmp.b	#CR,d0
-01:00004962 6706            	  1560: 		beq.s	.0002
-01:00004964 B03C0020        	  1561: 		cmp.b	#' ',d0
-01:00004968 65E4            	  1562: 		bcs.s	.0001
-                            	  1563: .0002:
-01:0000496A 1080            	  1564: 		move.b	d0,(a0)
-01:0000496C 5088            	  1565: 		lea			8(a0),a0
-01:0000496E 6100F412        	  1566: 		bsr		DisplayChar
-01:00004972 B03C000D        	  1567: 		cmp.b	#CR,d0
-01:00004976 675E            	  1568: 		beq		.0007
-01:00004978 B1FC00000441    	  1569: 		cmp.l	#CmdBufEnd-1,a0
-01:0000497E 65CE            	  1570: 		bcs.s	.0001
-                            	  1571: .0003:
-01:00004980 103C0008        	  1572: 		move.b	#CTRLH,d0
-01:00004984 6100F3FC        	  1573: 		bsr		DisplayChar
-01:00004988 103C0020        	  1574: 		move.b	#' ',d0
-01:0000498C 6100F3F4        	  1575: 		bsr		DisplayChar
-01:00004990 B1FC00000441    	  1576: 		cmp.l	#CmdBuf,a0
-01:00004996 63B6            	  1577: 		bls.s	.0001
-01:00004998 103C0008        	  1578: 		move.b	#CTRLH,d0
-01:0000499C 6100F3E4        	  1579: 		bsr		DisplayChar
-01:000049A0 5388            	  1580: 		subq.l	#1,a0
-01:000049A2 60AA            	  1581: 		bra.s	.0001
-                            	  1582: .0004:
-01:000049A4 2208            	  1583: 		move.l	a0,d1
-01:000049A6 92BC00000441    	  1584: 		sub.l	#CmdBuf,d1
-01:000049AC 671E            	  1585: 		beq.s	.0006
-01:000049AE 5341            	  1586: 		subq	#1,d1
-                            	  1587: .0005:
-01:000049B0 103C0008        	  1588: 		move.b	#CTRLH,d0
-01:000049B4 6100F3CC        	  1589: 		bsr		DisplayChar
-01:000049B8 103C0020        	  1590: 		move.b	#' ',d0
-01:000049BC 6100F3C4        	  1591: 		bsr		DisplayChar
-01:000049C0 103C0008        	  1592: 		move.b	#CTRLH,d0
-01:000049C4 6100F3BC        	  1593: 		bsr		DisplayChar
-01:000049C8 51C9FFE6        	  1594: 		dbra	d1,.0005
-                            	  1595: .0006:
-01:000049CC 41F900000441    	  1596: 		lea		CmdBuf,a0
-01:000049D2 6000FF7A        	  1597: 		bra		.0001
-                            	  1598: .0007:
-01:000049D6 103C000A        	  1599: 		move.b	#LF,d0
-01:000049DA 6100F3A6        	  1600: 		bsr		DisplayChar
-01:000049DE 4E75            	  1601: 		rts
-                            	  1602: 
-                            	  1603: 		
-                            	  1604: ;------------------------------------------------------------------------------
-                            	  1605: ; Fill memory
-                            	  1606: ; FB = fill bytes		FB 00000010 100 FF	; fill starting at 10 for 256 bytes
-                            	  1607: ; FW = fill words
-                            	  1608: ; FL = fill longs
-                            	  1609: ; F = fill bytes
-                            	  1610: ;------------------------------------------------------------------------------
-                            	  1611: ;
-                            	  1612: FillMem:
-01:000049E0 6100FDAC        	  1613: 	bsr			FromScreen
-                            	  1614: 	;bsr		ScreenToAscii
-01:000049E4 1801            	  1615: 	move.b	d1,d4			; d4 = fill size
-01:000049E6 613E            	  1616: 	bsr			ignBlanks
-01:000049E8 61000130        	  1617: 	bsr			GetHexNumber
-01:000049EC 2241            	  1618: 	move.l	d1,a1			; a1 = start
-01:000049EE 6136            	  1619: 	bsr			ignBlanks
-01:000049F0 61000128        	  1620: 	bsr			GetHexNumber
-01:000049F4 2601            	  1621: 	move.l	d1,d3			; d3 = count
-01:000049F6 612E            	  1622: 	bsr			ignBlanks
-01:000049F8 61000120        	  1623: 	bsr			GetHexNumber	; fill value
-01:000049FC 0C04004C        	  1624: 	cmpi.b	#'L',d4
-01:00004A00 660A            	  1625: 	bne			fmem1
-                            	  1626: fmemL:
-01:00004A02 22C1            	  1627: 	move.l	d1,(a1)+
-01:00004A04 5383            	  1628: 	sub.l	#1,d3
-01:00004A06 66FA            	  1629: 	bne.s	fmemL
-01:00004A08 6000FD90        	  1630: 	bra		Monitor
-                            	  1631: fmem1
-01:00004A0C 0C040057        	  1632: 	cmpi.b	#'W',d4
-01:00004A10 660A            	  1633: 	bne		fmemB
-                            	  1634: fmemW:
-01:00004A12 32C1            	  1635: 	move.w	d1,(a1)+
-01:00004A14 5383            	  1636: 	sub.l	#1,d3
-01:00004A16 66FA            	  1637: 	bne.s	fmemW
-01:00004A18 6000FD80        	  1638: 	bra		Monitor
-                            	  1639: fmemB:
-01:00004A1C 12C1            	  1640: 	move.b	d1,(a1)+
-01:00004A1E 5383            	  1641: 	sub.l	#1,d3
-01:00004A20 66FA            	  1642: 	bne.s	fmemB
-01:00004A22 6000FD76        	  1643: 	bra		Monitor
-                            	  1644: 
-                            	  1645: ;------------------------------------------------------------------------------
-                            	  1646: ; Modifies:
-                            	  1647: ;	a0	- text pointer
-                            	  1648: ;------------------------------------------------------------------------------
-                            	  1649: ;
-                            	  1650: ignBlanks:
-01:00004A26 2F01            	  1651: 	move.l	d1,-(a7)
-                            	  1652: .0001:
-01:00004A28 6100FD64        	  1653: 	bsr			FromScreen
-01:00004A2C 0C010020        	  1654: 	cmpi.b	#' ',d1
-01:00004A30 67F6            	  1655: 	beq.s		.0001
-01:00004A32 5188            	  1656: 	lea			-8(a0),a0
-01:00004A34 221F            	  1657: 	move.l	(a7)+,d1
-01:00004A36 4E75            	  1658: 	rts
-                            	  1659: 
-                            	  1660: ;------------------------------------------------------------------------------
-                            	  1661: ; Edit memory byte.
-                            	  1662: ;------------------------------------------------------------------------------
-                            	  1663: ;
-                            	  1664: EditMem:
-01:00004A38 61EC            	  1665: 	bsr		ignBlanks
-01:00004A3A 610000DE        	  1666: 	bsr		GetHexNumber
-01:00004A3E 2241            	  1667: 	move.l	d1,a1
-                            	  1668: edtmem1:
-01:00004A40 61E4            	  1669: 	bsr		ignBlanks
-01:00004A42 610000D6        	  1670: 	bsr		GetHexNumber
-01:00004A46 12C1            	  1671: 	move.b	d1,(a1)+
-01:00004A48 61DC            	  1672: 	bsr		ignBlanks
-01:00004A4A 610000CE        	  1673: 	bsr		GetHexNumber
-01:00004A4E 12C1            	  1674: 	move.b	d1,(a1)+
-01:00004A50 61D4            	  1675: 	bsr		ignBlanks
-01:00004A52 610000C6        	  1676: 	bsr		GetHexNumber
-01:00004A56 12C1            	  1677: 	move.b	d1,(a1)+
-01:00004A58 61CC            	  1678: 	bsr		ignBlanks
-01:00004A5A 610000BE        	  1679: 	bsr		GetHexNumber
-01:00004A5E 12C1            	  1680: 	move.b	d1,(a1)+
-01:00004A60 61C4            	  1681: 	bsr		ignBlanks
-01:00004A62 610000B6        	  1682: 	bsr		GetHexNumber
-01:00004A66 12C1            	  1683: 	move.b	d1,(a1)+
-01:00004A68 61BC            	  1684: 	bsr		ignBlanks
-01:00004A6A 610000AE        	  1685: 	bsr		GetHexNumber
-01:00004A6E 12C1            	  1686: 	move.b	d1,(a1)+
-01:00004A70 61B4            	  1687: 	bsr		ignBlanks
-01:00004A72 610000A6        	  1688: 	bsr		GetHexNumber
-01:00004A76 12C1            	  1689: 	move.b	d1,(a1)+
-01:00004A78 61AC            	  1690: 	bsr		ignBlanks
-01:00004A7A 6100009E        	  1691: 	bsr		GetHexNumber
-01:00004A7E 12C1            	  1692: 	move.b	d1,(a1)+
-01:00004A80 6000FD18        	  1693: 	bra		Monitor
-                            	  1694: 
-                            	  1695: ;------------------------------------------------------------------------------
-                            	  1696: ; Execute code at the specified address.
-                            	  1697: ;------------------------------------------------------------------------------
+                            	  1427: ; Monitor
+                            	  1428: ;==============================================================================
+                            	  1429: ;==============================================================================
+                            	  1430: ;
+                            	  1431: ; Get a word from screen memory and swap byte order
+                            	  1432: 
+                            	  1433: FromScreen:
+01:00004752 2210            	  1434: 	move.l	(a0),d1
+01:00004754 E159            	  1435: 	rol.w		#8,d1
+01:00004756 4841            	  1436: 	swap		d1
+01:00004758 E159            	  1437: 	rol.w		#8,d1
+01:0000475A 5088            	  1438: 	lea			8(a0),a0	; increment screen pointer
+01:0000475C 4E75            	  1439: 	rts
+                            	  1440: 
+                            	  1441: StartMon:
+                            	  1442: 	; Reset the stack pointer on entry into the monitor
+                            	  1443: Monitor:
+01:0000475E 4E7A1FE0        	  1444: 	movec.l	coreno,d1		; get core number
+01:00004762 08010000        	  1445: 	btst		#0,d1
+01:00004766 6708            	  1446: 	beq.s		.0001
+01:00004768 2E7C0001FBFC    	  1447: 	move.l	#$1FBFC,sp	; odd core's stack
+01:0000476E 6006            	  1448: 	bra			.0002
+                            	  1449: .0001:
+01:00004770 2E7C0001FFFC    	  1450: 	move.l	#$1FFFC,sp	; even core's stack
+                            	  1451: .0002:
+01:00004776 46FC2500        	  1452: 	move.w	#$2500,sr		; enable level 6 and higher interrupts
+01:0000477A 7201            	  1453: 	moveq		#1,d1
+01:0000477C 6100B9A4        	  1454: 	bsr			UnlockSemaphore
+01:00004780 423900000418    	  1455: 	clr.b		KeybdEcho		; turn off keyboard echo
+                            	  1456: PromptLn:
+01:00004786 6100F5B2        	  1457: 	bsr			CRLF
+01:0000478A 123C0024        	  1458: 	move.b	#'$',d1
+01:0000478E 6100F5F2        	  1459: 	bsr			DisplayChar
+                            	  1460: 
+                            	  1461: ; Get characters until a CR is keyed
+                            	  1462: ;
+                            	  1463: Prompt3:
+01:00004792 6100F9F6        	  1464: 	bsr			GetKey
+01:00004796 0C01000D        	  1465: 	cmpi.b	#CR,d1
+01:0000479A 6706            	  1466: 	beq.s		Prompt1
+01:0000479C 6100F5E4        	  1467: 	bsr			DisplayChar
+01:000047A0 60F0            	  1468: 	bra.s		Prompt3
+                            	  1469: 
+                            	  1470: ; Process the screen line that the CR was keyed on
+                            	  1471: ;
+                            	  1472: Prompt1:
+01:000047A2 423900000409    	  1473: 	clr.b		CursorCol			; go back to the start of the line
+01:000047A8 6100F5CA        	  1474: 	bsr			CalcScreenLoc	; a0 = screen memory location
+                            	  1475: .0001:
+01:000047AC 61A4            	  1476: 	bsr			FromScreen		; grab character off screen
+01:000047AE 0C010024        	  1477: 	cmpi.b	#'$',d1				; skip over '$' prompt character
+01:000047B2 67F8            	  1478: 	beq.s		.0001
+                            	  1479: 	
+                            	  1480: ; Dispatch based on command character
+                            	  1481: ;
+                            	  1482: Prompt2:
+01:000047B4 0C010061        	  1483: 	cmpi.b	#'a',d1
+01:000047B8 67000554        	  1484: 	beq			AudioInputTest
+01:000047BC 0C010062        	  1485: 	cmpi.b	#'b',d1
+01:000047C0 6700054E        	  1486: 	beq			BouncingBalls
+01:000047C4 0C010067        	  1487: 	cmpi.b	#'g',d1
+01:000047C8 67000548        	  1488: 	beq			GraphicsDemo
+01:000047CC 0C01003A        	  1489: 	cmpi.b	#':',d1			; $: - edit memory
+01:000047D0 67000232        	  1490: 	beq			EditMem
+01:000047D4 0C010044        	  1491: 	cmpi.b	#'D',d1			; $D - dump memory
+01:000047D8 67000284        	  1492: 	beq			DumpMem
+01:000047DC 0C010046        	  1493: 	cmpi.b	#'F',d1
+01:000047E0 670001CA        	  1494: 	beq			FillMem
+01:000047E4 0C010042        	  1495: 	cmpi.b	#'B',d1			; $B - start tiny basic
+01:000047E8 6606            	  1496: 	bne.s	.0001
+01:000047EA 4EF9FFFCC000    	  1497: 	jmp			$FFFCC000
+                            	  1498: .0001:
+01:000047F0 0C01004A        	  1499: 	cmpi.b	#'J',d1			; $J - execute code
+01:000047F4 6700025A        	  1500: 	beq			ExecuteCode
+01:000047F8 0C01004C        	  1501: 	cmpi.b	#'L',d1			; $L - load S19 file
+01:000047FC 67000394        	  1502: 	beq			LoadS19
+01:00004800 0C01003F        	  1503: 	cmpi.b	#'?',d1			; $? - display help
+01:00004804 6744            	  1504: 	beq			DisplayHelp
+01:00004806 0C010043        	  1505: 	cmpi.b	#'C',d1			; $C - clear screen
+01:0000480A 6716            	  1506: 	beq			TestCLS
+01:0000480C 0C010054        	  1507: 	cmpi.b	#'T',d1			; $T - run cpu test program
+01:00004810 660C            	  1508: 	bne.s		.0002
+01:00004812 6100B952        	  1509: 	bsr			cpu_test
+01:00004816 43FA0628        	  1510: 	lea			msg_test_done,a1
+01:0000481A 6100F7B6        	  1511: 	bsr			DisplayStringCRLF
+                            	  1512: .0002:
+01:0000481E 6000FF3E        	  1513: 	bra			Monitor
+                            	  1514: 
+                            	  1515: TestCLS:
+01:00004822 6100FF2E        	  1516: 	bsr			FromScreen
+01:00004826 5242            	  1517: 	addq		#1,d2
+01:00004828 0C01004C        	  1518: 	cmpi.b	#'L',d1
+01:0000482C 6600FF30        	  1519: 	bne			Monitor
+01:00004830 6100FF20        	  1520: 	bsr			FromScreen
+01:00004834 5242            	  1521: 	addq		#1,d2
+01:00004836 0C010053        	  1522: 	cmpi.b	#'S',d1
+01:0000483A 6600FF22        	  1523: 	bne			Monitor
+01:0000483E 610004D4        	  1524: 	bsr			ClearScreen
+01:00004842 6100F794        	  1525: 	bsr			HomeCursor
+01:00004846 6000FF16        	  1526: 	bra			Monitor
+                            	  1527: 	
+                            	  1528: DisplayHelp:
+01:0000484A 43FA000A        	  1529: 	lea			HelpMsg,a1
+01:0000484E 6100F76A        	  1530: 	bsr			DisplayString
+01:00004852 6000FF0A        	  1531: 	bra			Monitor
+                            	  1532: 
+                            	  1533: HelpMsg:
+01:00004856 3F203D2044697370	  1534: 	dc.b	"? = Display help",CR,LF
+01:0000485E 6C61792068656C70
+01:00004866 0D
+01:00004867 0A
+01:00004868 434C53203D20636C	  1535: 	dc.b	"CLS = clear screen",CR,LF
+01:00004870 6561722073637265
+01:00004878 656E
+01:0000487A 0D
+01:0000487B 0A
+01:0000487C 3A203D2045646974	  1536: 	dc.b	": = Edit memory bytes",CR,LF
+01:00004884 206D656D6F727920
+01:0000488C 6279746573
+01:00004891 0D
+01:00004892 0A
+01:00004893 46203D2046696C6C	  1537: 	dc.b	"F = Fill memory",CR,LF
+01:0000489B 206D656D6F7279
+01:000048A2 0D
+01:000048A3 0A
+01:000048A4 4C203D204C6F6164	  1538: 	dc.b	"L = Load S19 file",CR,LF
+01:000048AC 205331392066696C
+01:000048B4 65
+01:000048B5 0D
+01:000048B6 0A
+01:000048B7 44203D2044756D70	  1539: 	dc.b	"D = Dump memory",CR,LF
+01:000048BF 206D656D6F7279
+01:000048C6 0D
+01:000048C7 0A
+01:000048C8 42203D2073746172	  1540: 	dc.b	"B = start tiny basic",CR,LF
+01:000048D0 742074696E792062
+01:000048D8 61736963
+01:000048DC 0D
+01:000048DD 0A
+01:000048DE 4A203D204A756D70	  1541: 	dc.b	"J = Jump to code",CR,LF
+01:000048E6 20746F20636F6465
+01:000048EE 0D
+01:000048EF 0A
+01:000048F0 54203D2063707520	  1542: 	dc.b	"T = cpu test program",CR,LF,0
+01:000048F8 746573742070726F
+01:00004900 6772616D
+01:00004904 0D
+01:00004905 0A
+01:00004906 00
+                            	  1543: 	even
+                            	  1544: 
+                            	  1545: ;------------------------------------------------------------------------------
+                            	  1546: ; This routine borrowed from Gordo's Tiny Basic interpreter.
+                            	  1547: ; Used to fetch a command line. (Not currently used).
+                            	  1548: ;
+                            	  1549: ; d0.b	- command prompt
+                            	  1550: ;------------------------------------------------------------------------------
+                            	  1551: 
+                            	  1552: GetCmdLine:
+01:00004908 6100F478        	  1553: 		bsr		DisplayChar		; display prompt
+01:0000490C 103C0020        	  1554: 		move.b	#' ',d0
+01:00004910 6100F470        	  1555: 		bsr		DisplayChar
+01:00004914 41F900000441    	  1556: 		lea		CmdBuf,a0
+                            	  1557: .0001:
+01:0000491A 6100F86E        	  1558: 		bsr		GetKey
+01:0000491E B03C0008        	  1559: 		cmp.b	#CTRLH,d0
+01:00004922 6728            	  1560: 		beq.s	.0003
+01:00004924 B03C0018        	  1561: 		cmp.b	#CTRLX,d0
+01:00004928 6746            	  1562: 		beq.s	.0004
+01:0000492A B03C000D        	  1563: 		cmp.b	#CR,d0
+01:0000492E 6706            	  1564: 		beq.s	.0002
+01:00004930 B03C0020        	  1565: 		cmp.b	#' ',d0
+01:00004934 65E4            	  1566: 		bcs.s	.0001
+                            	  1567: .0002:
+01:00004936 1080            	  1568: 		move.b	d0,(a0)
+01:00004938 5088            	  1569: 		lea			8(a0),a0
+01:0000493A 6100F446        	  1570: 		bsr		DisplayChar
+01:0000493E B03C000D        	  1571: 		cmp.b	#CR,d0
+01:00004942 675E            	  1572: 		beq		.0007
+01:00004944 B1FC00000441    	  1573: 		cmp.l	#CmdBufEnd-1,a0
+01:0000494A 65CE            	  1574: 		bcs.s	.0001
+                            	  1575: .0003:
+01:0000494C 103C0008        	  1576: 		move.b	#CTRLH,d0
+01:00004950 6100F430        	  1577: 		bsr		DisplayChar
+01:00004954 103C0020        	  1578: 		move.b	#' ',d0
+01:00004958 6100F428        	  1579: 		bsr		DisplayChar
+01:0000495C B1FC00000441    	  1580: 		cmp.l	#CmdBuf,a0
+01:00004962 63B6            	  1581: 		bls.s	.0001
+01:00004964 103C0008        	  1582: 		move.b	#CTRLH,d0
+01:00004968 6100F418        	  1583: 		bsr		DisplayChar
+01:0000496C 5388            	  1584: 		subq.l	#1,a0
+01:0000496E 60AA            	  1585: 		bra.s	.0001
+                            	  1586: .0004:
+01:00004970 2208            	  1587: 		move.l	a0,d1
+01:00004972 92BC00000441    	  1588: 		sub.l	#CmdBuf,d1
+01:00004978 671E            	  1589: 		beq.s	.0006
+01:0000497A 5341            	  1590: 		subq	#1,d1
+                            	  1591: .0005:
+01:0000497C 103C0008        	  1592: 		move.b	#CTRLH,d0
+01:00004980 6100F400        	  1593: 		bsr		DisplayChar
+01:00004984 103C0020        	  1594: 		move.b	#' ',d0
+01:00004988 6100F3F8        	  1595: 		bsr		DisplayChar
+01:0000498C 103C0008        	  1596: 		move.b	#CTRLH,d0
+01:00004990 6100F3F0        	  1597: 		bsr		DisplayChar
+01:00004994 51C9FFE6        	  1598: 		dbra	d1,.0005
+                            	  1599: .0006:
+01:00004998 41F900000441    	  1600: 		lea		CmdBuf,a0
+01:0000499E 6000FF7A        	  1601: 		bra		.0001
+                            	  1602: .0007:
+01:000049A2 103C000A        	  1603: 		move.b	#LF,d0
+01:000049A6 6100F3DA        	  1604: 		bsr		DisplayChar
+01:000049AA 4E75            	  1605: 		rts
+                            	  1606: 
+                            	  1607: 		
+                            	  1608: ;------------------------------------------------------------------------------
+                            	  1609: ; Fill memory
+                            	  1610: ; FB = fill bytes		FB 00000010 100 FF	; fill starting at 10 for 256 bytes
+                            	  1611: ; FW = fill words
+                            	  1612: ; FL = fill longs
+                            	  1613: ; F = fill bytes
+                            	  1614: ;------------------------------------------------------------------------------
+                            	  1615: ;
+                            	  1616: FillMem:
+01:000049AC 6100FDA4        	  1617: 	bsr			FromScreen
+                            	  1618: 	;bsr		ScreenToAscii
+01:000049B0 1801            	  1619: 	move.b	d1,d4			; d4 = fill size
+01:000049B2 613E            	  1620: 	bsr			ignBlanks
+01:000049B4 61000130        	  1621: 	bsr			GetHexNumber
+01:000049B8 2241            	  1622: 	move.l	d1,a1			; a1 = start
+01:000049BA 6136            	  1623: 	bsr			ignBlanks
+01:000049BC 61000128        	  1624: 	bsr			GetHexNumber
+01:000049C0 2601            	  1625: 	move.l	d1,d3			; d3 = count
+01:000049C2 612E            	  1626: 	bsr			ignBlanks
+01:000049C4 61000120        	  1627: 	bsr			GetHexNumber	; fill value
+01:000049C8 0C04004C        	  1628: 	cmpi.b	#'L',d4
+01:000049CC 660A            	  1629: 	bne			fmem1
+                            	  1630: fmemL:
+01:000049CE 22C1            	  1631: 	move.l	d1,(a1)+
+01:000049D0 5383            	  1632: 	sub.l	#1,d3
+01:000049D2 66FA            	  1633: 	bne.s	fmemL
+01:000049D4 6000FD88        	  1634: 	bra		Monitor
+                            	  1635: fmem1
+01:000049D8 0C040057        	  1636: 	cmpi.b	#'W',d4
+01:000049DC 660A            	  1637: 	bne		fmemB
+                            	  1638: fmemW:
+01:000049DE 32C1            	  1639: 	move.w	d1,(a1)+
+01:000049E0 5383            	  1640: 	sub.l	#1,d3
+01:000049E2 66FA            	  1641: 	bne.s	fmemW
+01:000049E4 6000FD78        	  1642: 	bra		Monitor
+                            	  1643: fmemB:
+01:000049E8 12C1            	  1644: 	move.b	d1,(a1)+
+01:000049EA 5383            	  1645: 	sub.l	#1,d3
+01:000049EC 66FA            	  1646: 	bne.s	fmemB
+01:000049EE 6000FD6E        	  1647: 	bra		Monitor
+                            	  1648: 
+                            	  1649: ;------------------------------------------------------------------------------
+                            	  1650: ; Modifies:
+                            	  1651: ;	a0	- text pointer
+                            	  1652: ;------------------------------------------------------------------------------
+                            	  1653: ;
+                            	  1654: ignBlanks:
+01:000049F2 2F01            	  1655: 	move.l	d1,-(a7)
+                            	  1656: .0001:
+01:000049F4 6100FD5C        	  1657: 	bsr			FromScreen
+01:000049F8 0C010020        	  1658: 	cmpi.b	#' ',d1
+01:000049FC 67F6            	  1659: 	beq.s		.0001
+01:000049FE 5188            	  1660: 	lea			-8(a0),a0
+01:00004A00 221F            	  1661: 	move.l	(a7)+,d1
+01:00004A02 4E75            	  1662: 	rts
+                            	  1663: 
+                            	  1664: ;------------------------------------------------------------------------------
+                            	  1665: ; Edit memory byte.
+                            	  1666: ;------------------------------------------------------------------------------
+                            	  1667: ;
+                            	  1668: EditMem:
+01:00004A04 61EC            	  1669: 	bsr		ignBlanks
+01:00004A06 610000DE        	  1670: 	bsr		GetHexNumber
+01:00004A0A 2241            	  1671: 	move.l	d1,a1
+                            	  1672: edtmem1:
+01:00004A0C 61E4            	  1673: 	bsr		ignBlanks
+01:00004A0E 610000D6        	  1674: 	bsr		GetHexNumber
+01:00004A12 12C1            	  1675: 	move.b	d1,(a1)+
+01:00004A14 61DC            	  1676: 	bsr		ignBlanks
+01:00004A16 610000CE        	  1677: 	bsr		GetHexNumber
+01:00004A1A 12C1            	  1678: 	move.b	d1,(a1)+
+01:00004A1C 61D4            	  1679: 	bsr		ignBlanks
+01:00004A1E 610000C6        	  1680: 	bsr		GetHexNumber
+01:00004A22 12C1            	  1681: 	move.b	d1,(a1)+
+01:00004A24 61CC            	  1682: 	bsr		ignBlanks
+01:00004A26 610000BE        	  1683: 	bsr		GetHexNumber
+01:00004A2A 12C1            	  1684: 	move.b	d1,(a1)+
+01:00004A2C 61C4            	  1685: 	bsr		ignBlanks
+01:00004A2E 610000B6        	  1686: 	bsr		GetHexNumber
+01:00004A32 12C1            	  1687: 	move.b	d1,(a1)+
+01:00004A34 61BC            	  1688: 	bsr		ignBlanks
+01:00004A36 610000AE        	  1689: 	bsr		GetHexNumber
+01:00004A3A 12C1            	  1690: 	move.b	d1,(a1)+
+01:00004A3C 61B4            	  1691: 	bsr		ignBlanks
+01:00004A3E 610000A6        	  1692: 	bsr		GetHexNumber
+01:00004A42 12C1            	  1693: 	move.b	d1,(a1)+
+01:00004A44 61AC            	  1694: 	bsr		ignBlanks
+01:00004A46 6100009E        	  1695: 	bsr		GetHexNumber
+01:00004A4A 12C1            	  1696: 	move.b	d1,(a1)+
+01:00004A4C 6000FD10        	  1697: 	bra		Monitor
                             	  1698: 
-                            	  1699: ExecuteCode:
-01:00004A84 61A0            	  1700: 	bsr			ignBlanks
-01:00004A86 61000092        	  1701: 	bsr			GetHexNumber
-01:00004A8A 2041            	  1702: 	move.l	d1,a0
-01:00004A8C 4E90            	  1703: 	jsr			(a0)
-01:00004A8E 6000FD0A        	  1704: 	bra     Monitor
-                            	  1705: 
-                            	  1706: ;------------------------------------------------------------------------------
-                            	  1707: ; Do a memory dump of the requested location.
-                            	  1708: ; D 0800 0850
-                            	  1709: ;------------------------------------------------------------------------------
-                            	  1710: 
-                            	  1711: DumpMem:
-01:00004A92 6192            	  1712: 	bsr			ignBlanks
-01:00004A94 61000084        	  1713: 	bsr			GetHexNumber
-01:00004A98 6700FD00        	  1714: 	beq			Monitor			; was there a number ? no, other garbage, just ignore
-01:00004A9C 2601            	  1715: 	move.l	d1,d3				; save off start of range
-01:00004A9E 6186            	  1716: 	bsr			ignBlanks
-01:00004AA0 6178            	  1717: 	bsr			GetHexNumber
-01:00004AA2 6608            	  1718: 	bne.s		DumpMem1
-01:00004AA4 2203            	  1719: 	move.l	d3,d1
-01:00004AA6 068100000040    	  1720: 	addi.l	#64,d1			; no end specified, just dump 64 bytes
-                            	  1721: DumpMem1:
-01:00004AAC 2043            	  1722: 	move.l	d3,a0
-01:00004AAE 2241            	  1723: 	move.l	d1,a1
-01:00004AB0 6100F288        	  1724: 	bsr			CRLF
-                            	  1725: .0001:
-01:00004AB4 B3C8            	  1726: 	cmpa.l	a0,a1
-01:00004AB6 6300FCE2        	  1727: 	bls			Monitor
-01:00004ABA 6102            	  1728: 	bsr			DisplayMem
-01:00004ABC 60F6            	  1729: 	bra.s		.0001
-                            	  1730: 
-                            	  1731: ;------------------------------------------------------------------------------
-                            	  1732: ; Display memory dump in a format suitable for edit.
-                            	  1733: ;
-                            	  1734: ;	:12345678 00 11 22 33 44 55 66 77  "........"
-                            	  1735: ;
-                            	  1736: ; Modifies:
-                            	  1737: ;		d1,d2,a0
-                            	  1738: ;------------------------------------------------------------------------------
-                            	  1739: 
-                            	  1740: DisplayMem:
-01:00004ABE 123C003A        	  1741: 	move.b	#':',d1
-01:00004AC2 6100F2BE        	  1742: 	bsr			DisplayChar
-01:00004AC6 2208            	  1743: 	move.l	a0,d1
-01:00004AC8 610000D0        	  1744: 	bsr			DisplayTetra
-01:00004ACC 7407            	  1745: 	moveq		#7,d2
-                            	  1746: dspmem1:
-01:00004ACE 123C0020        	  1747: 	move.b	#' ',d1
-01:00004AD2 6100F2AE        	  1748: 	bsr			DisplayChar
-01:00004AD6 1218            	  1749: 	move.b	(a0)+,d1
-01:00004AD8 610000CC        	  1750: 	bsr			DisplayByte
-01:00004ADC 51CAFFF0        	  1751: 	dbra		d2,dspmem1
-01:00004AE0 6100009E        	  1752: 	bsr			DisplayTwoSpaces
-01:00004AE4 123C0022        	  1753: 	move.b	#34,d1
-01:00004AE8 6100F298        	  1754: 	bsr			DisplayChar
-01:00004AEC 5188            	  1755: 	lea			-8(a0),a0
-01:00004AEE 7407            	  1756: 	moveq		#7,d2
-                            	  1757: .0002:	
-01:00004AF0 1218            	  1758: 	move.b	(a0)+,d1
-01:00004AF2 B23C0020        	  1759: 	cmp.b		#' ',d1
-01:00004AF6 6506            	  1760: 	blo.s		.0003
-01:00004AF8 B23C007F        	  1761: 	cmp.b		#127,d1
-01:00004AFC 6304            	  1762: 	bls.s		.0001
-                            	  1763: .0003:
-01:00004AFE 123C002E        	  1764: 	move.b	#'.',d1
-                            	  1765: .0001:
-01:00004B02 6100F27E        	  1766: 	bsr			DisplayChar
-01:00004B06 51CAFFE8        	  1767: 	dbra		d2,.0002
-01:00004B0A 123C0022        	  1768: 	move.b	#34,d1
-01:00004B0E 6100F272        	  1769: 	bsr			DisplayChar
-01:00004B12 6100F6E4        	  1770: 	bsr			CheckForCtrlC
-01:00004B16 6000F222        	  1771: 	bra			CRLF
-                            	  1772: 
-                            	  1773: ;------------------------------------------------------------------------------
-                            	  1774: ; Get a hexidecimal number. Maximum of eight digits.
-                            	  1775: ;
-                            	  1776: ; Returns:
-                            	  1777: ;		d0 = number of digits
-                            	  1778: ;		d1 = value of number
-                            	  1779: ;		zf = number of digits == 0
-                            	  1780: ;------------------------------------------------------------------------------
-                            	  1781: ;
-                            	  1782: GetHexNumber:
-01:00004B1A 2F02            	  1783: 	move.l	d2,-(a7)
-01:00004B1C 7400            	  1784: 	clr.l		d2
-01:00004B1E 7000            	  1785: 	moveq		#0,d0
-                            	  1786: .0002:
-01:00004B20 6100FC6C        	  1787: 	bsr			FromScreen
-01:00004B24 6120            	  1788: 	bsr			AsciiToHexNybble
-01:00004B26 B23C00FF        	  1789: 	cmp.b		#$ff,d1
-01:00004B2A 6712            	  1790: 	beq.s		.0001
-01:00004B2C E98A            	  1791: 	lsl.l		#4,d2
-01:00004B2E 02810000000F    	  1792: 	andi.l	#$0f,d1
-01:00004B34 8481            	  1793: 	or.l		d1,d2
-01:00004B36 5240            	  1794: 	addq		#1,d0
-01:00004B38 0C000008        	  1795: 	cmpi.b	#8,d0
-01:00004B3C 65E2            	  1796: 	blo.s		.0002
-                            	  1797: .0001:
-01:00004B3E 2202            	  1798: 	move.l	d2,d1
-01:00004B40 241F            	  1799: 	move.l	(a7)+,d2
-01:00004B42 4A00            	  1800: 	tst.b		d0
-01:00004B44 4E75            	  1801: 	rts	
-                            	  1802: 
-                            	  1803: ;------------------------------------------------------------------------------
-                            	  1804: ; Convert ASCII character in the range '0' to '9', 'a' tr 'f' or 'A' to 'F'
-                            	  1805: ; to a hex nybble.
-                            	  1806: ;------------------------------------------------------------------------------
-                            	  1807: 
-                            	  1808: AsciiToHexNybble:
-01:00004B46 0C010030        	  1809: 	cmpi.b	#'0',d1
-01:00004B4A 6530            	  1810: 	blo.s		gthx3
-01:00004B4C 0C010039        	  1811: 	cmpi.b	#'9',d1
-01:00004B50 6206            	  1812: 	bhi.s		gthx5
-01:00004B52 04010030        	  1813: 	subi.b	#'0',d1
-01:00004B56 4E75            	  1814: 	rts
-                            	  1815: gthx5:
-01:00004B58 0C010041        	  1816: 	cmpi.b	#'A',d1
-01:00004B5C 651E            	  1817: 	blo.s		gthx3
-01:00004B5E 0C010046        	  1818: 	cmpi.b	#'F',d1
-01:00004B62 6206            	  1819: 	bhi.s		gthx6
-01:00004B64 060100C9        	  1820: 	addi.b	#10-'A',d1
-01:00004B68 4E75            	  1821: 	rts
-                            	  1822: gthx6:
-01:00004B6A 0C010061        	  1823: 	cmpi.b	#'a',d1
-01:00004B6E 650C            	  1824: 	blo.s		gthx3
-01:00004B70 0C010066        	  1825: 	cmpi.b	#'f',d1
-01:00004B74 6206            	  1826: 	bhi.s		gthx3
-01:00004B76 060100A9        	  1827: 	addi.b	#10-'a',d1
-01:00004B7A 4E75            	  1828: 	rts
-                            	  1829: gthx3:
-01:00004B7C 72FF            	  1830: 	moveq	#-1,d1		; not a hex number
-01:00004B7E 4E75            	  1831: 	rts
-                            	  1832: 
-                            	  1833: ;------------------------------------------------------------------------------
-                            	  1834: ;------------------------------------------------------------------------------
-                            	  1835: 
-                            	  1836: DisplayTwoSpaces:
-01:00004B80 2F01            	  1837: 	move.l	d1,-(a7)
-01:00004B82 123C0020        	  1838: 	move.b	#' ',d1
-01:00004B86 6100F1FA        	  1839: 	bsr			DisplayChar
-                            	  1840: dspspc1:
-01:00004B8A 6100F1F6        	  1841: 	bsr			DisplayChar
-01:00004B8E 221F            	  1842: 	move.l	(a7)+,d1
-01:00004B90 4E75            	  1843: 	rts
-                            	  1844: 
-                            	  1845: DisplaySpace:
-01:00004B92 2F01            	  1846: 	move.l	d1,-(a7)
-01:00004B94 123C0020        	  1847: 	move.b	#' ',d1
-01:00004B98 60F0            	  1848: 	bra			dspspc1
-                            	  1849: 
-                            	  1850: ;------------------------------------------------------------------------------
-                            	  1851: ; Display the 32 bit word in D1.L
-                            	  1852: ;------------------------------------------------------------------------------
+                            	  1699: ;------------------------------------------------------------------------------
+                            	  1700: ; Execute code at the specified address.
+                            	  1701: ;------------------------------------------------------------------------------
+                            	  1702: 
+                            	  1703: ExecuteCode:
+01:00004A50 61A0            	  1704: 	bsr			ignBlanks
+01:00004A52 61000092        	  1705: 	bsr			GetHexNumber
+01:00004A56 2041            	  1706: 	move.l	d1,a0
+01:00004A58 4E90            	  1707: 	jsr			(a0)
+01:00004A5A 6000FD02        	  1708: 	bra     Monitor
+                            	  1709: 
+                            	  1710: ;------------------------------------------------------------------------------
+                            	  1711: ; Do a memory dump of the requested location.
+                            	  1712: ; D 0800 0850
+                            	  1713: ;------------------------------------------------------------------------------
+                            	  1714: 
+                            	  1715: DumpMem:
+01:00004A5E 6192            	  1716: 	bsr			ignBlanks
+01:00004A60 61000084        	  1717: 	bsr			GetHexNumber
+01:00004A64 6700FCF8        	  1718: 	beq			Monitor			; was there a number ? no, other garbage, just ignore
+01:00004A68 2601            	  1719: 	move.l	d1,d3				; save off start of range
+01:00004A6A 6186            	  1720: 	bsr			ignBlanks
+01:00004A6C 6178            	  1721: 	bsr			GetHexNumber
+01:00004A6E 6608            	  1722: 	bne.s		DumpMem1
+01:00004A70 2203            	  1723: 	move.l	d3,d1
+01:00004A72 068100000040    	  1724: 	addi.l	#64,d1			; no end specified, just dump 64 bytes
+                            	  1725: DumpMem1:
+01:00004A78 2043            	  1726: 	move.l	d3,a0
+01:00004A7A 2241            	  1727: 	move.l	d1,a1
+01:00004A7C 6100F2BC        	  1728: 	bsr			CRLF
+                            	  1729: .0001:
+01:00004A80 B3C8            	  1730: 	cmpa.l	a0,a1
+01:00004A82 6300FCDA        	  1731: 	bls			Monitor
+01:00004A86 6102            	  1732: 	bsr			DisplayMem
+01:00004A88 60F6            	  1733: 	bra.s		.0001
+                            	  1734: 
+                            	  1735: ;------------------------------------------------------------------------------
+                            	  1736: ; Display memory dump in a format suitable for edit.
+                            	  1737: ;
+                            	  1738: ;	:12345678 00 11 22 33 44 55 66 77  "........"
+                            	  1739: ;
+                            	  1740: ; Modifies:
+                            	  1741: ;		d1,d2,a0
+                            	  1742: ;------------------------------------------------------------------------------
+                            	  1743: 
+                            	  1744: DisplayMem:
+01:00004A8A 123C003A        	  1745: 	move.b	#':',d1
+01:00004A8E 6100F2F2        	  1746: 	bsr			DisplayChar
+01:00004A92 2208            	  1747: 	move.l	a0,d1
+01:00004A94 610000D0        	  1748: 	bsr			DisplayTetra
+01:00004A98 7407            	  1749: 	moveq		#7,d2
+                            	  1750: dspmem1:
+01:00004A9A 123C0020        	  1751: 	move.b	#' ',d1
+01:00004A9E 6100F2E2        	  1752: 	bsr			DisplayChar
+01:00004AA2 1218            	  1753: 	move.b	(a0)+,d1
+01:00004AA4 610000CC        	  1754: 	bsr			DisplayByte
+01:00004AA8 51CAFFF0        	  1755: 	dbra		d2,dspmem1
+01:00004AAC 6100009E        	  1756: 	bsr			DisplayTwoSpaces
+01:00004AB0 123C0022        	  1757: 	move.b	#34,d1
+01:00004AB4 6100F2CC        	  1758: 	bsr			DisplayChar
+01:00004AB8 5188            	  1759: 	lea			-8(a0),a0
+01:00004ABA 7407            	  1760: 	moveq		#7,d2
+                            	  1761: .0002:	
+01:00004ABC 1218            	  1762: 	move.b	(a0)+,d1
+01:00004ABE B23C0020        	  1763: 	cmp.b		#' ',d1
+01:00004AC2 6506            	  1764: 	blo.s		.0003
+01:00004AC4 B23C007F        	  1765: 	cmp.b		#127,d1
+01:00004AC8 6304            	  1766: 	bls.s		.0001
+                            	  1767: .0003:
+01:00004ACA 123C002E        	  1768: 	move.b	#'.',d1
+                            	  1769: .0001:
+01:00004ACE 6100F2B2        	  1770: 	bsr			DisplayChar
+01:00004AD2 51CAFFE8        	  1771: 	dbra		d2,.0002
+01:00004AD6 123C0022        	  1772: 	move.b	#34,d1
+01:00004ADA 6100F2A6        	  1773: 	bsr			DisplayChar
+01:00004ADE 6100F6DE        	  1774: 	bsr			CheckForCtrlC
+01:00004AE2 6000F256        	  1775: 	bra			CRLF
+                            	  1776: 
+                            	  1777: ;------------------------------------------------------------------------------
+                            	  1778: ; Get a hexidecimal number. Maximum of eight digits.
+                            	  1779: ;
+                            	  1780: ; Returns:
+                            	  1781: ;		d0 = number of digits
+                            	  1782: ;		d1 = value of number
+                            	  1783: ;		zf = number of digits == 0
+                            	  1784: ;------------------------------------------------------------------------------
+                            	  1785: ;
+                            	  1786: GetHexNumber:
+01:00004AE6 2F02            	  1787: 	move.l	d2,-(a7)
+01:00004AE8 7400            	  1788: 	clr.l		d2
+01:00004AEA 7000            	  1789: 	moveq		#0,d0
+                            	  1790: .0002:
+01:00004AEC 6100FC64        	  1791: 	bsr			FromScreen
+01:00004AF0 6120            	  1792: 	bsr			AsciiToHexNybble
+01:00004AF2 B23C00FF        	  1793: 	cmp.b		#$ff,d1
+01:00004AF6 6712            	  1794: 	beq.s		.0001
+01:00004AF8 E98A            	  1795: 	lsl.l		#4,d2
+01:00004AFA 02810000000F    	  1796: 	andi.l	#$0f,d1
+01:00004B00 8481            	  1797: 	or.l		d1,d2
+01:00004B02 5240            	  1798: 	addq		#1,d0
+01:00004B04 0C000008        	  1799: 	cmpi.b	#8,d0
+01:00004B08 65E2            	  1800: 	blo.s		.0002
+                            	  1801: .0001:
+01:00004B0A 2202            	  1802: 	move.l	d2,d1
+01:00004B0C 241F            	  1803: 	move.l	(a7)+,d2
+01:00004B0E 4A00            	  1804: 	tst.b		d0
+01:00004B10 4E75            	  1805: 	rts	
+                            	  1806: 
+                            	  1807: ;------------------------------------------------------------------------------
+                            	  1808: ; Convert ASCII character in the range '0' to '9', 'a' tr 'f' or 'A' to 'F'
+                            	  1809: ; to a hex nybble.
+                            	  1810: ;------------------------------------------------------------------------------
+                            	  1811: 
+                            	  1812: AsciiToHexNybble:
+01:00004B12 0C010030        	  1813: 	cmpi.b	#'0',d1
+01:00004B16 6530            	  1814: 	blo.s		gthx3
+01:00004B18 0C010039        	  1815: 	cmpi.b	#'9',d1
+01:00004B1C 6206            	  1816: 	bhi.s		gthx5
+01:00004B1E 04010030        	  1817: 	subi.b	#'0',d1
+01:00004B22 4E75            	  1818: 	rts
+                            	  1819: gthx5:
+01:00004B24 0C010041        	  1820: 	cmpi.b	#'A',d1
+01:00004B28 651E            	  1821: 	blo.s		gthx3
+01:00004B2A 0C010046        	  1822: 	cmpi.b	#'F',d1
+01:00004B2E 6206            	  1823: 	bhi.s		gthx6
+01:00004B30 060100C9        	  1824: 	addi.b	#10-'A',d1
+01:00004B34 4E75            	  1825: 	rts
+                            	  1826: gthx6:
+01:00004B36 0C010061        	  1827: 	cmpi.b	#'a',d1
+01:00004B3A 650C            	  1828: 	blo.s		gthx3
+01:00004B3C 0C010066        	  1829: 	cmpi.b	#'f',d1
+01:00004B40 6206            	  1830: 	bhi.s		gthx3
+01:00004B42 060100A9        	  1831: 	addi.b	#10-'a',d1
+01:00004B46 4E75            	  1832: 	rts
+                            	  1833: gthx3:
+01:00004B48 72FF            	  1834: 	moveq	#-1,d1		; not a hex number
+01:00004B4A 4E75            	  1835: 	rts
+                            	  1836: 
+                            	  1837: ;------------------------------------------------------------------------------
+                            	  1838: ;------------------------------------------------------------------------------
+                            	  1839: 
+                            	  1840: DisplayTwoSpaces:
+01:00004B4C 2F01            	  1841: 	move.l	d1,-(a7)
+01:00004B4E 123C0020        	  1842: 	move.b	#' ',d1
+01:00004B52 6100F22E        	  1843: 	bsr			DisplayChar
+                            	  1844: dspspc1:
+01:00004B56 6100F22A        	  1845: 	bsr			DisplayChar
+01:00004B5A 221F            	  1846: 	move.l	(a7)+,d1
+01:00004B5C 4E75            	  1847: 	rts
+                            	  1848: 
+                            	  1849: DisplaySpace:
+01:00004B5E 2F01            	  1850: 	move.l	d1,-(a7)
+01:00004B60 123C0020        	  1851: 	move.b	#' ',d1
+01:00004B64 60F0            	  1852: 	bra			dspspc1
                             	  1853: 
-                            	  1854: DisplayTetra:
-01:00004B9A 4841            	  1855: 	swap	d1
-01:00004B9C 6102            	  1856: 	bsr		DisplayWyde
-01:00004B9E 4841            	  1857: 	swap	d1
-                            	  1858: 
-                            	  1859: ;------------------------------------------------------------------------------
-                            	  1860: ; Display the byte in D1.W
-                            	  1861: ;------------------------------------------------------------------------------
+                            	  1854: ;------------------------------------------------------------------------------
+                            	  1855: ; Display the 32 bit word in D1.L
+                            	  1856: ;------------------------------------------------------------------------------
+                            	  1857: 
+                            	  1858: DisplayTetra:
+01:00004B66 4841            	  1859: 	swap	d1
+01:00004B68 6102            	  1860: 	bsr		DisplayWyde
+01:00004B6A 4841            	  1861: 	swap	d1
                             	  1862: 
-                            	  1863: DisplayWyde:
-01:00004BA0 E059            	  1864: 	ror.w		#8,d1
-01:00004BA2 6102            	  1865: 	bsr			DisplayByte
-01:00004BA4 E159            	  1866: 	rol.w		#8,d1
-                            	  1867: 
-                            	  1868: ;------------------------------------------------------------------------------
-                            	  1869: ; Display the byte in D1.B
-                            	  1870: ;------------------------------------------------------------------------------
+                            	  1863: ;------------------------------------------------------------------------------
+                            	  1864: ; Display the byte in D1.W
+                            	  1865: ;------------------------------------------------------------------------------
+                            	  1866: 
+                            	  1867: DisplayWyde:
+01:00004B6C E059            	  1868: 	ror.w		#8,d1
+01:00004B6E 6102            	  1869: 	bsr			DisplayByte
+01:00004B70 E159            	  1870: 	rol.w		#8,d1
                             	  1871: 
-                            	  1872: DisplayByte:
-01:00004BA6 E819            	  1873: 	ror.b		#4,d1
-01:00004BA8 6102            	  1874: 	bsr			DisplayNybble
-01:00004BAA E919            	  1875: 	rol.b		#4,d1
-                            	  1876: 
-                            	  1877: ;------------------------------------------------------------------------------
-                            	  1878: ; Display nybble in D1.B
-                            	  1879: ;------------------------------------------------------------------------------
+                            	  1872: ;------------------------------------------------------------------------------
+                            	  1873: ; Display the byte in D1.B
+                            	  1874: ;------------------------------------------------------------------------------
+                            	  1875: 
+                            	  1876: DisplayByte:
+01:00004B72 E819            	  1877: 	ror.b		#4,d1
+01:00004B74 6102            	  1878: 	bsr			DisplayNybble
+01:00004B76 E919            	  1879: 	rol.b		#4,d1
                             	  1880: 
-                            	  1881: DisplayNybble:
-01:00004BAC 2F01            	  1882: 	move.l	d1,-(a7)
-01:00004BAE 0201000F        	  1883: 	andi.b	#$F,d1
-01:00004BB2 06010030        	  1884: 	addi.b	#'0',d1
-01:00004BB6 0C010039        	  1885: 	cmpi.b	#'9',d1
-01:00004BBA 6302            	  1886: 	bls.s		.0001
-01:00004BBC 5E01            	  1887: 	addi.b	#7,d1
-                            	  1888: .0001:
-01:00004BBE 6100F1C2        	  1889: 	bsr			DisplayChar
-01:00004BC2 221F            	  1890: 	move.l	(a7)+,d1
-01:00004BC4 4E75            	  1891: 	rts
-                            	  1892: 
-                            	  1893: ;------------------------------------------------------------------------------
-                            	  1894: ;------------------------------------------------------------------------------
-                            	  1895: ;
-                            	  1896: ;DisplayHexNumber:
-                            	  1897: ;	move.w	#$A6A6,leds		; diagnostics
-                            	  1898: ;	move.l	#VDGREG,a6
-                            	  1899: ;	move.w	#7,d2		; number-1 of digits to display
-                            	  1900: ;disphnum1:
-                            	  1901: ;	move.b	d1,d0		; get digit into d0.b
-                            	  1902: ;	andi.w	#$0f,d0
-                            	  1903: ;	cmpi.w	#$09,d0
-                            	  1904: ;	bls.s	disphnum2
-                            	  1905: ;	addi.w	#7,d0
-                            	  1906: ;disphnum2:
-                            	  1907: ;	addi.w	#$30,d0	; convert to display char
-                            	  1908: ;	move.w	d2,d3		; char count into d3
-                            	  1909: ;	asl.w	#3,d3		; scale * 8
-                            	  1910: ;disphnum3:
-                            	  1911: ;	move.w	$42C(a6),d4			; read character queue index into d4
-                            	  1912: ;	cmp.w	#28,d4					; allow up 28 entries to be in progress
-                            	  1913: ;	bhs.s	disphnum3				; branch if too many chars queued
-                            	  1914: ;	ext.w	d0						; zero out high order bits
-                            	  1915: ;	move.w	d0,$420(a6)			; set char code
-                            	  1916: ;	move.w	#WHITE,$422(a6)		; set fg color
-                            	  1917: ;	move.w	#DARK_BLUE,$424(a6)	; set bk color
-                            	  1918: ;	move.w	d3,$426(a6)			; set x pos
-                            	  1919: ;	move.w	#8,$428(a6)			; set y pos
-                            	  1920: ;	move.w	#$0707,$42A(a6)		; set font x,y extent
-                            	  1921: ;	move.w	#0,$42E(a6)			; pulse character queue write signal
-                            	  1922: ;	ror.l	#4,d1					; rot to next digit
-                            	  1923: ;	dbeq	d2,disphnum1
-                            	  1924: ;	jmp		(a5)
-                            	  1925: 
-                            	  1926: ;==============================================================================
-                            	  1927: ; Load an S19 format file
-                            	  1928: ;==============================================================================
-                            	  1929: ;
-                            	  1930: LoadS19:
-01:00004BC6 600A            	  1931: 	bra			ProcessRec
-                            	  1932: NextRec:
-01:00004BC8 6100015A        	  1933: 	bsr			sGetChar
-01:00004BCC 0C00000A        	  1934: 	cmpi.b	#LF,d0
-01:00004BD0 66F6            	  1935: 	bne			NextRec
-                            	  1936: ProcessRec
-01:00004BD2 61000150        	  1937: 	bsr			sGetChar
-01:00004BD6 1800            	  1938: 	move.b	d0,d4
-01:00004BD8 0C04001A        	  1939: 	cmpi.b	#26,d4		; CTRL-Z ?
-01:00004BDC 6700FBBC        	  1940: 	beq			Monitor
-01:00004BE0 0C040053        	  1941: 	cmpi.b	#'S',d4
-01:00004BE4 66E2            	  1942: 	bne			NextRec
-01:00004BE6 6100013C        	  1943: 	bsr			sGetChar
-01:00004BEA 1800            	  1944: 	move.b	d0,d4
-01:00004BEC 0C040030        	  1945: 	cmpi.b	#'0',d4
-01:00004BF0 65D6            	  1946: 	blo			NextRec
-01:00004BF2 0C040039        	  1947: 	cmpi.b	#'9',d4		; d4 = record type
-01:00004BF6 62D0            	  1948: 	bhi			NextRec
-01:00004BF8 6100012A        	  1949: 	bsr			sGetChar
-01:00004BFC 6100FF48        	  1950: 	bsr			AsciiToHexNybble
-01:00004C00 1401            	  1951: 	move.b	d1,d2
-01:00004C02 61000120        	  1952: 	bsr		sGetChar
-01:00004C06 6100FF3E        	  1953: 	bsr		AsciiToHexNybble
-01:00004C0A E90A            	  1954: 	lsl.b	#4,d2
-01:00004C0C 8202            	  1955: 	or.b	d2,d1		; d1 = byte count
-01:00004C0E 1601            	  1956: 	move.b	d1,d3		; d3 = byte count
-01:00004C10 0C040030        	  1957: 	cmpi.b	#'0',d4		; manufacturer ID record, ignore
-01:00004C14 67B2            	  1958: 	beq		NextRec
-01:00004C16 0C040031        	  1959: 	cmpi.b	#'1',d4
-01:00004C1A 676A            	  1960: 	beq		ProcessS1
-01:00004C1C 0C040032        	  1961: 	cmpi.b	#'2',d4
-01:00004C20 6768            	  1962: 	beq		ProcessS2
-01:00004C22 0C040033        	  1963: 	cmpi.b	#'3',d4
-01:00004C26 6766            	  1964: 	beq		ProcessS3
-01:00004C28 0C040035        	  1965: 	cmpi.b	#'5',d4		; record count record, ignore
-01:00004C2C 679A            	  1966: 	beq		NextRec
-01:00004C2E 0C040037        	  1967: 	cmpi.b	#'7',d4
-01:00004C32 675E            	  1968: 	beq		ProcessS7
-01:00004C34 0C040038        	  1969: 	cmpi.b	#'8',d4
-01:00004C38 6764            	  1970: 	beq		ProcessS8
-01:00004C3A 0C040039        	  1971: 	cmpi.b	#'9',d4
-01:00004C3E 676A            	  1972: 	beq		ProcessS9
-01:00004C40 6086            	  1973: 	bra		NextRec
-                            	  1974: 
-                            	  1975: pcssxa
-01:00004C42 024300FF        	  1976: 	andi.w	#$ff,d3
-01:00004C46 5343            	  1977: 	subi.w	#1,d3			; one less for dbra
-                            	  1978: .0001
-01:00004C48 7400            	  1979: 	clr.l		d2
-01:00004C4A 610000D8        	  1980: 	bsr			sGetChar
-01:00004C4E 6100FEF6        	  1981: 	bsr			AsciiToHexNybble
-01:00004C52 E98A            	  1982: 	lsl.l		#4,d2
-01:00004C54 8401            	  1983: 	or.b		d1,d2
-01:00004C56 610000CC        	  1984: 	bsr			sGetChar
-01:00004C5A 6100FEEA        	  1985: 	bsr			AsciiToHexNybble
-01:00004C5E E98A            	  1986: 	lsl.l		#4,d2
-01:00004C60 8401            	  1987: 	or.b		d1,d2
-01:00004C62 12C2            	  1988: 	move.b	d2,(a1)+
-01:00004C64 51CBFFE2        	  1989: 	dbra		d3,.0001
-                            	  1990: ; Get the checksum byte
-01:00004C68 7400            	  1991: 	clr.l		d2
-01:00004C6A 610000B8        	  1992: 	bsr			sGetChar
-01:00004C6E 6100FED6        	  1993: 	bsr			AsciiToHexNybble
-01:00004C72 E98A            	  1994: 	lsl.l		#4,d2
-01:00004C74 8401            	  1995: 	or.b		d1,d2
-01:00004C76 610000AC        	  1996: 	bsr			sGetChar
-01:00004C7A 6100FECA        	  1997: 	bsr			AsciiToHexNybble
-01:00004C7E E98A            	  1998: 	lsl.l		#4,d2
-01:00004C80 8401            	  1999: 	or.b		d1,d2
-01:00004C82 6000FF44        	  2000: 	bra			NextRec
-                            	  2001: 
-                            	  2002: ProcessS1:
-01:00004C86 612E            	  2003: 	bsr			S19Get16BitAddress
-01:00004C88 60B8            	  2004: 	bra			pcssxa
-                            	  2005: ProcessS2:
-01:00004C8A 6136            	  2006: 	bsr			S19Get24BitAddress
-01:00004C8C 60B4            	  2007: 	bra			pcssxa
-                            	  2008: ProcessS3:
-01:00004C8E 613E            	  2009: 	bsr			S19Get32BitAddress
-01:00004C90 60B0            	  2010: 	bra			pcssxa
-                            	  2011: ProcessS7:
-01:00004C92 613A            	  2012: 	bsr			S19Get32BitAddress
-01:00004C94 23C900000414    	  2013: 	move.l	a1,S19StartAddress
-01:00004C9A 6000FAFE        	  2014: 	bra			Monitor
-                            	  2015: ProcessS8:
-01:00004C9E 6122            	  2016: 	bsr			S19Get24BitAddress
-01:00004CA0 23C900000414    	  2017: 	move.l	a1,S19StartAddress
-01:00004CA6 6000FAF2        	  2018: 	bra			Monitor
-                            	  2019: ProcessS9:
-01:00004CAA 610A            	  2020: 	bsr			S19Get16BitAddress
-01:00004CAC 23C900000414    	  2021: 	move.l	a1,S19StartAddress
-01:00004CB2 6000FAE6        	  2022: 	bra			Monitor
-                            	  2023: 
-                            	  2024: S19Get16BitAddress:
-01:00004CB6 7400            	  2025: 	clr.l		d2
-01:00004CB8 616A            	  2026: 	bsr			sGetChar
-01:00004CBA 6100FE8A        	  2027: 	bsr			AsciiToHexNybble
-01:00004CBE 1401            	  2028: 	move.b	d1,d2
-01:00004CC0 603E            	  2029: 	bra			S1932b
-                            	  2030: 
-                            	  2031: S19Get24BitAddress:
-01:00004CC2 7400            	  2032: 	clr.l	d2
-01:00004CC4 615E            	  2033: 	bsr		sGetChar
-01:00004CC6 6100FE7E        	  2034: 	bsr		AsciiToHexNybble
-01:00004CCA 1401            	  2035: 	move.b	d1,d2
-01:00004CCC 601E            	  2036: 	bra		S1932a
-                            	  2037: 
-                            	  2038: S19Get32BitAddress:
-01:00004CCE 7400            	  2039: 	clr.l	d2
-01:00004CD0 6152            	  2040: 	bsr			sGetChar
-01:00004CD2 6100FE72        	  2041: 	bsr			AsciiToHexNybble
-01:00004CD6 1401            	  2042: 	move.b	d1,d2
-01:00004CD8 614A            	  2043: 	bsr			sGetChar
-01:00004CDA 6100FE6A        	  2044: 	bsr			AsciiToHexNybble
-01:00004CDE E98A            	  2045: 	lsl.l		#4,d2
-01:00004CE0 8401            	  2046: 	or.b		d1,d2
-01:00004CE2 6140            	  2047: 	bsr			sGetChar
-01:00004CE4 6100FE60        	  2048: 	bsr			AsciiToHexNybble
-01:00004CE8 E98A            	  2049: 	lsl.l		#4,d2
-01:00004CEA 8401            	  2050: 	or.b		d1,d2
-                            	  2051: S1932a:
-01:00004CEC 6136            	  2052: 	bsr			sGetChar
-01:00004CEE 6100FE56        	  2053: 	bsr			AsciiToHexNybble
-01:00004CF2 E98A            	  2054: 	lsl.l		#4,d2
-01:00004CF4 8401            	  2055: 	or.b		d1,d2
-01:00004CF6 612C            	  2056: 	bsr			sGetChar
-01:00004CF8 6100FE4C        	  2057: 	bsr			AsciiToHexNybble
-01:00004CFC E98A            	  2058: 	lsl.l		#4,d2
-01:00004CFE 8401            	  2059: 	or.b		d1,d2
-                            	  2060: S1932b:
-01:00004D00 6122            	  2061: 	bsr			sGetChar
-01:00004D02 6100FE42        	  2062: 	bsr			AsciiToHexNybble
-01:00004D06 E98A            	  2063: 	lsl.l		#4,d2
-01:00004D08 8401            	  2064: 	or.b		d1,d2
-01:00004D0A 6118            	  2065: 	bsr			sGetChar
-01:00004D0C 6100FE38        	  2066: 	bsr			AsciiToHexNybble
-01:00004D10 E98A            	  2067: 	lsl.l		#4,d2
-01:00004D12 8401            	  2068: 	or.b		d1,d2
-01:00004D14 610E            	  2069: 	bsr			sGetChar
-01:00004D16 6100FE2E        	  2070: 	bsr			AsciiToHexNybble
-01:00004D1A E98A            	  2071: 	lsl.l		#4,d2
-01:00004D1C 8401            	  2072: 	or.b		d1,d2
-01:00004D1E 7800            	  2073: 	clr.l		d4
-01:00004D20 2242            	  2074: 	move.l	d2,a1
-01:00004D22 4E75            	  2075: 	rts
-                            	  2076: 
-                            	  2077: ;------------------------------------------------------------------------------
-                            	  2078: ; Get a character from auxillary input, checking the keyboard status for a
-                            	  2079: ; CTRL-C
-                            	  2080: ;------------------------------------------------------------------------------
-                            	  2081: ;
-                            	  2082: sGetChar:
-01:00004D24 6100F458        	  2083: 	bsr			CheckForKey
-01:00004D28 670C            	  2084: 	beq			.0001
-01:00004D2A 7005            	  2085: 	moveq		#5,d0					; GetKey
-01:00004D2C 4E4F            	  2086: 	trap		#15
-01:00004D2E 0C010003        	  2087: 	cmpi.b	#CTRLC,d1
-01:00004D32 6700FA66        	  2088: 	beq			Monitor
-                            	  2089: .0001:
-01:00004D36 7021            	  2090: 	moveq		#33,d0				; serial peek character direct
-01:00004D38 4E4F            	  2091: 	trap		#15
-01:00004D3A 4A80            	  2092: 	tst.l		d0
-01:00004D3C 6BE6            	  2093: 	bmi			sGetChar
-01:00004D3E 1200            	  2094: 	move.b	d0,d1
-01:00004D40 4E75            	  2095: 	rts
-                            	  2096: 
-                            	  2097: AudioInputTest:
-01:00004D42 4E75            	  2098: 	rts
-                            	  2099: BouncingBalls:
-01:00004D44 4E75            	  2100: 	rts
-                            	  2101: GraphicsDemo:
-01:00004D46 4E75            	  2102: 	rts
-                            	  2103: ClearScreen:
-01:00004D48 6000EFB0        	  2104: 	bra		clear_screen
-01:00004D4C 4E75            	  2105: 	rts
-                            	  2106: 
-                            	  2107: AUXIN:
-                            	  2108: 
-                            	  2109: ;------------------------------------------------------------------------------
-                            	  2110: ; SerialPeekChar
-                            	  2111: ;		Get a character directly from the I/O port. This bypasses the input
-                            	  2112: ; buffer.
-                            	  2113: ;
-                            	  2114: ; Stack Space:
-                            	  2115: ;		0 words
-                            	  2116: ; Parameters:
-                            	  2117: ;		none
-                            	  2118: ; Modifies:
-                            	  2119: ;		d
-                            	  2120: ; Returns:
-                            	  2121: ;		d0 = character or -1
-                            	  2122: ;------------------------------------------------------------------------------
-                            	  2123: 
-                            	  2124: SerialPeekCharDirect:
-                            	  2125: 	; Disallow interrupts between status read and rx read.
-01:00004D4E 007C7000        	  2126: 	ori.w		#$7000,sr					; disable interrupts
-01:00004D52 2039FD060004    	  2127: 	move.l	ACIA+ACIA_STAT,d0	; get serial status
-01:00004D58 E158            	  2128: 	rol.w		#8,d0							; swap byte order
-01:00004D5A 4840            	  2129: 	swap		d0
-01:00004D5C E158            	  2130: 	rol.w		#8,d0
-01:00004D5E 08000003        	  2131: 	btst		#3,d0							; look for Rx not empty
-01:00004D62 670A            	  2132: 	beq.s		.0001
-01:00004D64 7000            	  2133: 	moveq.l	#0,d0							; clear upper bits of return value
-01:00004D66 1039FD060000    	  2134: 	move.b	ACIA+ACIA_RX,d0		; get data from ACIA
-01:00004D6C 4E75            	  2135: 	rts												; restore SR and return
-                            	  2136: .0001:
-01:00004D6E 70FF            	  2137: 	moveq		#-1,d0
-01:00004D70 4E75            	  2138: 	rts
-                            	  2139: 
-                            	  2140: bus_err:
-                            	  2141: .0001:
-01:00004D72 4E71            	  2142: 	nop
-01:00004D74 60FC            	  2143: 	bra			.0001
-                            	  2144: 
-                            	  2145: irq_rout:
-01:00004D76 48E7C080        	  2146: 	movem.l	d0/d1/a0,-(a7)
-01:00004D7A 6100F39A        	  2147: 	bsr			_KeybdGetStatus		; check if timer or keyboard
-01:00004D7E 6A34            	  2148: 	bpl.s		.0001							; branch if not keyboard
-01:00004D80 6100F39E        	  2149: 	bsr			_KeybdGetScancode	; grab the scan code
-01:00004D84 0C3900200000041F	  2150: 	cmpi.b	#32,_KeybdCnt			; see if keyboard buffer full
-01:00004D8C 643A            	  2151: 	bhs.s		.0002
-01:00004D8E 10390000041E    	  2152: 	move.b	_KeybdTail,d0			; keyboard buffer not full, add to tail
-01:00004D94 4880            	  2153: 	ext.w		d0
-01:00004D96 41F900000421    	  2154: 	lea			_KeybdBuf,a0			; a0 = pointer to buffer
-01:00004D9C 11810000        	  2155: 	move.b	d1,(a0,d0.w)			; put scancode in buffer
-01:00004DA0 5200            	  2156: 	addi.b	#1,d0							; increment tail index
-01:00004DA2 0200001F        	  2157: 	andi.b	#31,d0						; wrap at buffer limit
-01:00004DA6 13C00000041E    	  2158: 	move.b	d0,_KeybdTail			; update tail index
-01:00004DAC 52390000041F    	  2159: 	addi.b	#1,_KeybdCnt			; increment buffer count
-01:00004DB2 6014            	  2160: 	bra			.0002
-                            	  2161: .0001:
-01:00004DB4 23FC1D000000FD09	  2162: 	move.l	#$1D000000,PLIC+$14	; reset edge sense circuit
-01:00004DBC 0014
-01:00004DBE 207900000410    	  2163: 	move.l	TextScr,a0				; a0 = screen address
-01:00004DC4 52A80028        	  2164: 	addi.l	#1,40(a0)					; update onscreen IRQ flag
-                            	  2165: .0002:	
-01:00004DC8 4CDF0103        	  2166: 	movem.l	(a7)+,d0/d1/a0		; return
-01:00004DCC 4E73            	  2167: 	rte
-                            	  2168: 
-                            	  2169: brdisp_trap:
-01:00004DCE 584F            	  2170: 	addq		#4,sp					; get rid of sr
-01:00004DD0 43FA0066        	  2171: 	lea			msg_bad_branch_disp,a1
-01:00004DD4 6100F1E4        	  2172: 	bsr			DisplayString
-01:00004DD8 6100FDB8        	  2173: 	bsr			DisplaySpace
-01:00004DDC 221F            	  2174: 	move.l	(sp)+,d1			; pop exception address
-01:00004DDE 6100FDBA        	  2175: 	bsr			DisplayTetra	; and display it
-01:00004DE2 221F            	  2176: 	move.l	(sp)+,d1			; pop format word
-01:00004DE4 6000F9B4        	  2177: 	bra			Monitor
-                            	  2178: 
-                            	  2179: illegal_trap:
-01:00004DE8 584F            	  2180: 	addq		#4,sp						; get rid of sr
-01:00004DEA 221F            	  2181: 	move.l	(sp)+,d1				; pop exception address
-01:00004DEC 6100FDAC        	  2182: 	bsr			DisplayTetra		; and display it
-01:00004DF0 43FA0034        	  2183: 	lea			msg_illegal,a1	; followed by message
-01:00004DF4 6100F1C4        	  2184: 	bsr			DisplayString
-                            	  2185: .0001:
-01:00004DF8 60FE            	  2186: 	bra			.0001
-01:00004DFA 6000F99E        	  2187: 	bra			Monitor
-                            	  2188: 	
-                            	  2189: ; -----------------------------------------------------------------------------
-                            	  2190: ; -----------------------------------------------------------------------------
-                            	  2191: 
-                            	  2192: msg_start:
-01:00004DFE 726636386B205379	  2193: 	dc.b	"rf68k System Starting",CR,LF,0
-01:00004E06 7374656D20537461
-01:00004E0E 7274696E67
-01:00004E13 0D
-01:00004E14 0A
-01:00004E15 00
-                            	  2194: msg_core_start:
-01:00004E16 20636F7265207374	  2195: 	dc.b	" core starting",CR,LF
-01:00004E1E 617274696E67
-01:00004E24 0D
-01:00004E25 0A
-                            	  2196: msg_illegal:
-01:00004E26 20696C6C6567616C	  2197: 	dc.b	" illegal opcode",CR,LF,0
-01:00004E2E 206F70636F6465
-01:00004E35 0D
-01:00004E36 0A
-01:00004E37 00
-                            	  2198: msg_bad_branch_disp:
-01:00004E38 206272616E636820	  2199: 	dc.b	" branch selfref: ",0
-01:00004E40 73656C667265663A
-01:00004E48 20
-01:00004E49 00
-                            	  2200: 
-                            	  2201: 
-                            	  2202: 
+                            	  1881: ;------------------------------------------------------------------------------
+                            	  1882: ; Display nybble in D1.B
+                            	  1883: ;------------------------------------------------------------------------------
+                            	  1884: 
+                            	  1885: DisplayNybble:
+01:00004B78 2F01            	  1886: 	move.l	d1,-(a7)
+01:00004B7A 0201000F        	  1887: 	andi.b	#$F,d1
+01:00004B7E 06010030        	  1888: 	addi.b	#'0',d1
+01:00004B82 0C010039        	  1889: 	cmpi.b	#'9',d1
+01:00004B86 6302            	  1890: 	bls.s		.0001
+01:00004B88 5E01            	  1891: 	addi.b	#7,d1
+                            	  1892: .0001:
+01:00004B8A 6100F1F6        	  1893: 	bsr			DisplayChar
+01:00004B8E 221F            	  1894: 	move.l	(a7)+,d1
+01:00004B90 4E75            	  1895: 	rts
+                            	  1896: 
+                            	  1897: ;------------------------------------------------------------------------------
+                            	  1898: ;------------------------------------------------------------------------------
+                            	  1899: ;
+                            	  1900: ;DisplayHexNumber:
+                            	  1901: ;	move.w	#$A6A6,leds		; diagnostics
+                            	  1902: ;	move.l	#VDGREG,a6
+                            	  1903: ;	move.w	#7,d2		; number-1 of digits to display
+                            	  1904: ;disphnum1:
+                            	  1905: ;	move.b	d1,d0		; get digit into d0.b
+                            	  1906: ;	andi.w	#$0f,d0
+                            	  1907: ;	cmpi.w	#$09,d0
+                            	  1908: ;	bls.s	disphnum2
+                            	  1909: ;	addi.w	#7,d0
+                            	  1910: ;disphnum2:
+                            	  1911: ;	addi.w	#$30,d0	; convert to display char
+                            	  1912: ;	move.w	d2,d3		; char count into d3
+                            	  1913: ;	asl.w	#3,d3		; scale * 8
+                            	  1914: ;disphnum3:
+                            	  1915: ;	move.w	$42C(a6),d4			; read character queue index into d4
+                            	  1916: ;	cmp.w	#28,d4					; allow up 28 entries to be in progress
+                            	  1917: ;	bhs.s	disphnum3				; branch if too many chars queued
+                            	  1918: ;	ext.w	d0						; zero out high order bits
+                            	  1919: ;	move.w	d0,$420(a6)			; set char code
+                            	  1920: ;	move.w	#WHITE,$422(a6)		; set fg color
+                            	  1921: ;	move.w	#DARK_BLUE,$424(a6)	; set bk color
+                            	  1922: ;	move.w	d3,$426(a6)			; set x pos
+                            	  1923: ;	move.w	#8,$428(a6)			; set y pos
+                            	  1924: ;	move.w	#$0707,$42A(a6)		; set font x,y extent
+                            	  1925: ;	move.w	#0,$42E(a6)			; pulse character queue write signal
+                            	  1926: ;	ror.l	#4,d1					; rot to next digit
+                            	  1927: ;	dbeq	d2,disphnum1
+                            	  1928: ;	jmp		(a5)
+                            	  1929: 
+                            	  1930: ;==============================================================================
+                            	  1931: ; Load an S19 format file
+                            	  1932: ;==============================================================================
+                            	  1933: ;
+                            	  1934: LoadS19:
+01:00004B92 600A            	  1935: 	bra			ProcessRec
+                            	  1936: NextRec:
+01:00004B94 6100015A        	  1937: 	bsr			sGetChar
+01:00004B98 0C00000A        	  1938: 	cmpi.b	#LF,d0
+01:00004B9C 66F6            	  1939: 	bne			NextRec
+                            	  1940: ProcessRec
+01:00004B9E 61000150        	  1941: 	bsr			sGetChar
+01:00004BA2 1800            	  1942: 	move.b	d0,d4
+01:00004BA4 0C04001A        	  1943: 	cmpi.b	#26,d4		; CTRL-Z ?
+01:00004BA8 6700FBB4        	  1944: 	beq			Monitor
+01:00004BAC 0C040053        	  1945: 	cmpi.b	#'S',d4
+01:00004BB0 66E2            	  1946: 	bne			NextRec
+01:00004BB2 6100013C        	  1947: 	bsr			sGetChar
+01:00004BB6 1800            	  1948: 	move.b	d0,d4
+01:00004BB8 0C040030        	  1949: 	cmpi.b	#'0',d4
+01:00004BBC 65D6            	  1950: 	blo			NextRec
+01:00004BBE 0C040039        	  1951: 	cmpi.b	#'9',d4		; d4 = record type
+01:00004BC2 62D0            	  1952: 	bhi			NextRec
+01:00004BC4 6100012A        	  1953: 	bsr			sGetChar
+01:00004BC8 6100FF48        	  1954: 	bsr			AsciiToHexNybble
+01:00004BCC 1401            	  1955: 	move.b	d1,d2
+01:00004BCE 61000120        	  1956: 	bsr		sGetChar
+01:00004BD2 6100FF3E        	  1957: 	bsr		AsciiToHexNybble
+01:00004BD6 E90A            	  1958: 	lsl.b	#4,d2
+01:00004BD8 8202            	  1959: 	or.b	d2,d1		; d1 = byte count
+01:00004BDA 1601            	  1960: 	move.b	d1,d3		; d3 = byte count
+01:00004BDC 0C040030        	  1961: 	cmpi.b	#'0',d4		; manufacturer ID record, ignore
+01:00004BE0 67B2            	  1962: 	beq		NextRec
+01:00004BE2 0C040031        	  1963: 	cmpi.b	#'1',d4
+01:00004BE6 676A            	  1964: 	beq		ProcessS1
+01:00004BE8 0C040032        	  1965: 	cmpi.b	#'2',d4
+01:00004BEC 6768            	  1966: 	beq		ProcessS2
+01:00004BEE 0C040033        	  1967: 	cmpi.b	#'3',d4
+01:00004BF2 6766            	  1968: 	beq		ProcessS3
+01:00004BF4 0C040035        	  1969: 	cmpi.b	#'5',d4		; record count record, ignore
+01:00004BF8 679A            	  1970: 	beq		NextRec
+01:00004BFA 0C040037        	  1971: 	cmpi.b	#'7',d4
+01:00004BFE 675E            	  1972: 	beq		ProcessS7
+01:00004C00 0C040038        	  1973: 	cmpi.b	#'8',d4
+01:00004C04 6764            	  1974: 	beq		ProcessS8
+01:00004C06 0C040039        	  1975: 	cmpi.b	#'9',d4
+01:00004C0A 676A            	  1976: 	beq		ProcessS9
+01:00004C0C 6086            	  1977: 	bra		NextRec
+                            	  1978: 
+                            	  1979: pcssxa
+01:00004C0E 024300FF        	  1980: 	andi.w	#$ff,d3
+01:00004C12 5343            	  1981: 	subi.w	#1,d3			; one less for dbra
+                            	  1982: .0001
+01:00004C14 7400            	  1983: 	clr.l		d2
+01:00004C16 610000D8        	  1984: 	bsr			sGetChar
+01:00004C1A 6100FEF6        	  1985: 	bsr			AsciiToHexNybble
+01:00004C1E E98A            	  1986: 	lsl.l		#4,d2
+01:00004C20 8401            	  1987: 	or.b		d1,d2
+01:00004C22 610000CC        	  1988: 	bsr			sGetChar
+01:00004C26 6100FEEA        	  1989: 	bsr			AsciiToHexNybble
+01:00004C2A E98A            	  1990: 	lsl.l		#4,d2
+01:00004C2C 8401            	  1991: 	or.b		d1,d2
+01:00004C2E 12C2            	  1992: 	move.b	d2,(a1)+
+01:00004C30 51CBFFE2        	  1993: 	dbra		d3,.0001
+                            	  1994: ; Get the checksum byte
+01:00004C34 7400            	  1995: 	clr.l		d2
+01:00004C36 610000B8        	  1996: 	bsr			sGetChar
+01:00004C3A 6100FED6        	  1997: 	bsr			AsciiToHexNybble
+01:00004C3E E98A            	  1998: 	lsl.l		#4,d2
+01:00004C40 8401            	  1999: 	or.b		d1,d2
+01:00004C42 610000AC        	  2000: 	bsr			sGetChar
+01:00004C46 6100FECA        	  2001: 	bsr			AsciiToHexNybble
+01:00004C4A E98A            	  2002: 	lsl.l		#4,d2
+01:00004C4C 8401            	  2003: 	or.b		d1,d2
+01:00004C4E 6000FF44        	  2004: 	bra			NextRec
+                            	  2005: 
+                            	  2006: ProcessS1:
+01:00004C52 612E            	  2007: 	bsr			S19Get16BitAddress
+01:00004C54 60B8            	  2008: 	bra			pcssxa
+                            	  2009: ProcessS2:
+01:00004C56 6136            	  2010: 	bsr			S19Get24BitAddress
+01:00004C58 60B4            	  2011: 	bra			pcssxa
+                            	  2012: ProcessS3:
+01:00004C5A 613E            	  2013: 	bsr			S19Get32BitAddress
+01:00004C5C 60B0            	  2014: 	bra			pcssxa
+                            	  2015: ProcessS7:
+01:00004C5E 613A            	  2016: 	bsr			S19Get32BitAddress
+01:00004C60 23C900000414    	  2017: 	move.l	a1,S19StartAddress
+01:00004C66 6000FAF6        	  2018: 	bra			Monitor
+                            	  2019: ProcessS8:
+01:00004C6A 6122            	  2020: 	bsr			S19Get24BitAddress
+01:00004C6C 23C900000414    	  2021: 	move.l	a1,S19StartAddress
+01:00004C72 6000FAEA        	  2022: 	bra			Monitor
+                            	  2023: ProcessS9:
+01:00004C76 610A            	  2024: 	bsr			S19Get16BitAddress
+01:00004C78 23C900000414    	  2025: 	move.l	a1,S19StartAddress
+01:00004C7E 6000FADE        	  2026: 	bra			Monitor
+                            	  2027: 
+                            	  2028: S19Get16BitAddress:
+01:00004C82 7400            	  2029: 	clr.l		d2
+01:00004C84 616A            	  2030: 	bsr			sGetChar
+01:00004C86 6100FE8A        	  2031: 	bsr			AsciiToHexNybble
+01:00004C8A 1401            	  2032: 	move.b	d1,d2
+01:00004C8C 603E            	  2033: 	bra			S1932b
+                            	  2034: 
+                            	  2035: S19Get24BitAddress:
+01:00004C8E 7400            	  2036: 	clr.l	d2
+01:00004C90 615E            	  2037: 	bsr		sGetChar
+01:00004C92 6100FE7E        	  2038: 	bsr		AsciiToHexNybble
+01:00004C96 1401            	  2039: 	move.b	d1,d2
+01:00004C98 601E            	  2040: 	bra		S1932a
+                            	  2041: 
+                            	  2042: S19Get32BitAddress:
+01:00004C9A 7400            	  2043: 	clr.l	d2
+01:00004C9C 6152            	  2044: 	bsr			sGetChar
+01:00004C9E 6100FE72        	  2045: 	bsr			AsciiToHexNybble
+01:00004CA2 1401            	  2046: 	move.b	d1,d2
+01:00004CA4 614A            	  2047: 	bsr			sGetChar
+01:00004CA6 6100FE6A        	  2048: 	bsr			AsciiToHexNybble
+01:00004CAA E98A            	  2049: 	lsl.l		#4,d2
+01:00004CAC 8401            	  2050: 	or.b		d1,d2
+01:00004CAE 6140            	  2051: 	bsr			sGetChar
+01:00004CB0 6100FE60        	  2052: 	bsr			AsciiToHexNybble
+01:00004CB4 E98A            	  2053: 	lsl.l		#4,d2
+01:00004CB6 8401            	  2054: 	or.b		d1,d2
+                            	  2055: S1932a:
+01:00004CB8 6136            	  2056: 	bsr			sGetChar
+01:00004CBA 6100FE56        	  2057: 	bsr			AsciiToHexNybble
+01:00004CBE E98A            	  2058: 	lsl.l		#4,d2
+01:00004CC0 8401            	  2059: 	or.b		d1,d2
+01:00004CC2 612C            	  2060: 	bsr			sGetChar
+01:00004CC4 6100FE4C        	  2061: 	bsr			AsciiToHexNybble
+01:00004CC8 E98A            	  2062: 	lsl.l		#4,d2
+01:00004CCA 8401            	  2063: 	or.b		d1,d2
+                            	  2064: S1932b:
+01:00004CCC 6122            	  2065: 	bsr			sGetChar
+01:00004CCE 6100FE42        	  2066: 	bsr			AsciiToHexNybble
+01:00004CD2 E98A            	  2067: 	lsl.l		#4,d2
+01:00004CD4 8401            	  2068: 	or.b		d1,d2
+01:00004CD6 6118            	  2069: 	bsr			sGetChar
+01:00004CD8 6100FE38        	  2070: 	bsr			AsciiToHexNybble
+01:00004CDC E98A            	  2071: 	lsl.l		#4,d2
+01:00004CDE 8401            	  2072: 	or.b		d1,d2
+01:00004CE0 610E            	  2073: 	bsr			sGetChar
+01:00004CE2 6100FE2E        	  2074: 	bsr			AsciiToHexNybble
+01:00004CE6 E98A            	  2075: 	lsl.l		#4,d2
+01:00004CE8 8401            	  2076: 	or.b		d1,d2
+01:00004CEA 7800            	  2077: 	clr.l		d4
+01:00004CEC 2242            	  2078: 	move.l	d2,a1
+01:00004CEE 4E75            	  2079: 	rts
+                            	  2080: 
+                            	  2081: ;------------------------------------------------------------------------------
+                            	  2082: ; Get a character from auxillary input, checking the keyboard status for a
+                            	  2083: ; CTRL-C
+                            	  2084: ;------------------------------------------------------------------------------
+                            	  2085: ;
+                            	  2086: sGetChar:
+01:00004CF0 6100F48C        	  2087: 	bsr			CheckForKey
+01:00004CF4 670C            	  2088: 	beq			.0001
+01:00004CF6 7005            	  2089: 	moveq		#5,d0					; GetKey
+01:00004CF8 4E4F            	  2090: 	trap		#15
+01:00004CFA 0C010003        	  2091: 	cmpi.b	#CTRLC,d1
+01:00004CFE 6700FA5E        	  2092: 	beq			Monitor
+                            	  2093: .0001:
+01:00004D02 7021            	  2094: 	moveq		#33,d0				; serial peek character direct
+01:00004D04 4E4F            	  2095: 	trap		#15
+01:00004D06 4A80            	  2096: 	tst.l		d0
+01:00004D08 6BE6            	  2097: 	bmi			sGetChar
+01:00004D0A 1200            	  2098: 	move.b	d0,d1
+01:00004D0C 4E75            	  2099: 	rts
+                            	  2100: 
+                            	  2101: AudioInputTest:
+01:00004D0E 4E75            	  2102: 	rts
+                            	  2103: BouncingBalls:
+01:00004D10 4E75            	  2104: 	rts
+                            	  2105: GraphicsDemo:
+01:00004D12 4E75            	  2106: 	rts
+                            	  2107: ClearScreen:
+01:00004D14 6000EFE4        	  2108: 	bra		clear_screen
+01:00004D18 4E75            	  2109: 	rts
+                            	  2110: 
+                            	  2111: AUXIN:
+                            	  2112: 
+                            	  2113: ;------------------------------------------------------------------------------
+                            	  2114: ; SerialPeekChar
+                            	  2115: ;		Get a character directly from the I/O port. This bypasses the input
+                            	  2116: ; buffer.
+                            	  2117: ;
+                            	  2118: ; Stack Space:
+                            	  2119: ;		0 words
+                            	  2120: ; Parameters:
+                            	  2121: ;		none
+                            	  2122: ; Modifies:
+                            	  2123: ;		d
+                            	  2124: ; Returns:
+                            	  2125: ;		d0 = character or -1
+                            	  2126: ;------------------------------------------------------------------------------
+                            	  2127: 
+                            	  2128: SerialPeekCharDirect:
+                            	  2129: 	; Disallow interrupts between status read and rx read.
+01:00004D1A 007C7000        	  2130: 	ori.w		#$7000,sr					; disable interrupts
+01:00004D1E 2039FD060004    	  2131: 	move.l	ACIA+ACIA_STAT,d0	; get serial status
+01:00004D24 E158            	  2132: 	rol.w		#8,d0							; swap byte order
+01:00004D26 4840            	  2133: 	swap		d0
+01:00004D28 E158            	  2134: 	rol.w		#8,d0
+01:00004D2A 08000003        	  2135: 	btst		#3,d0							; look for Rx not empty
+01:00004D2E 670A            	  2136: 	beq.s		.0001
+01:00004D30 7000            	  2137: 	moveq.l	#0,d0							; clear upper bits of return value
+01:00004D32 1039FD060000    	  2138: 	move.b	ACIA+ACIA_RX,d0		; get data from ACIA
+01:00004D38 4E75            	  2139: 	rts												; restore SR and return
+                            	  2140: .0001:
+01:00004D3A 70FF            	  2141: 	moveq		#-1,d0
+01:00004D3C 4E75            	  2142: 	rts
+                            	  2143: 
+                            	  2144: bus_err:
+                            	  2145: .0001:
+01:00004D3E 4E71            	  2146: 	nop
+01:00004D40 60FC            	  2147: 	bra			.0001
+                            	  2148: 
+                            	  2149: irq_rout:
+01:00004D42 48E7C080        	  2150: 	movem.l	d0/d1/a0,-(a7)
+01:00004D46 6100F3CE        	  2151: 	bsr			_KeybdGetStatus		; check if timer or keyboard
+01:00004D4A 6A4E            	  2152: 	bpl.s		.0001							; branch if not keyboard
+01:00004D4C 083900010000041C	  2153: 	btst		#1,_KeyState2			; Is Alt down?
+01:00004D54 6710            	  2154: 	beq.s		.0003
+01:00004D56 1039FD0FFE00    	  2155: 	move.b	KEYBD,d0					; get scan code
+01:00004D5C 0C00000D        	  2156: 	cmpi.b	#SC_TAB,d0				; is Alt-Tab?
+01:00004D60 6604            	  2157: 	bne.s		.0003
+01:00004D62 6100F356        	  2158: 	bsr			rotate_iofocus
+                            	  2159: .0003:
+                            	  2160: 	; Insert keyboard scan code into raw keyboard buffer
+01:00004D66 6100F3B8        	  2161: 	bsr			_KeybdGetScancode	; grab the scan code (clears interrupt)
+01:00004D6A 0C3900200000041F	  2162: 	cmpi.b	#32,_KeybdCnt			; see if keyboard buffer full
+01:00004D72 643A            	  2163: 	bhs.s		.0002
+01:00004D74 10390000041E    	  2164: 	move.b	_KeybdTail,d0			; keyboard buffer not full, add to tail
+01:00004D7A 4880            	  2165: 	ext.w		d0
+01:00004D7C 41F900000421    	  2166: 	lea			_KeybdBuf,a0			; a0 = pointer to buffer
+01:00004D82 11810000        	  2167: 	move.b	d1,(a0,d0.w)			; put scancode in buffer
+01:00004D86 5200            	  2168: 	addi.b	#1,d0							; increment tail index
+01:00004D88 0200001F        	  2169: 	andi.b	#31,d0						; wrap at buffer limit
+01:00004D8C 13C00000041E    	  2170: 	move.b	d0,_KeybdTail			; update tail index
+01:00004D92 52390000041F    	  2171: 	addi.b	#1,_KeybdCnt			; increment buffer count
+01:00004D98 6014            	  2172: 	bra			.0002
+                            	  2173: .0001:
+01:00004D9A 23FC1D000000FD09	  2174: 	move.l	#$1D000000,PLIC+$14	; reset edge sense circuit
+01:00004DA2 0014
+01:00004DA4 207900000410    	  2175: 	move.l	TextScr,a0				; a0 = screen address
+01:00004DAA 52A80028        	  2176: 	addi.l	#1,40(a0)					; update onscreen IRQ flag
+                            	  2177: .0002:	
+01:00004DAE 4CDF0103        	  2178: 	movem.l	(a7)+,d0/d1/a0		; return
+01:00004DB2 4E73            	  2179: 	rte
+                            	  2180: 
+                            	  2181: nmi_rout:
+01:00004DB4 48E7C080        	  2182: 	movem.l	d0/d1/a0,-(a7)
+01:00004DB8 123C004E        	  2183: 	move.b	#'N',d1
+01:00004DBC 6100EFC4        	  2184: 	bsr			DisplayChar
+01:00004DC0 4CDF0103        	  2185: 	movem.l	(a7)+,d0/d1/a0		; return
+01:00004DC4 4E73            	  2186: 	rte
+                            	  2187: 
+                            	  2188: brdisp_trap:
+01:00004DC6 584F            	  2189: 	addq		#4,sp					; get rid of sr
+01:00004DC8 43FA0064        	  2190: 	lea			msg_bad_branch_disp,a1
+01:00004DCC 6100F1EC        	  2191: 	bsr			DisplayString
+01:00004DD0 6100FD8C        	  2192: 	bsr			DisplaySpace
+01:00004DD4 221F            	  2193: 	move.l	(sp)+,d1			; pop exception address
+01:00004DD6 6100FD8E        	  2194: 	bsr			DisplayTetra	; and display it
+                            	  2195: ;	move.l	(sp)+,d1			; pop format word 68010 mode only
+01:00004DDA 6000F982        	  2196: 	bra			Monitor
+                            	  2197: 
+                            	  2198: illegal_trap:
+01:00004DDE 584F            	  2199: 	addq		#4,sp						; get rid of sr
+01:00004DE0 221F            	  2200: 	move.l	(sp)+,d1				; pop exception address
+01:00004DE2 6100FD82        	  2201: 	bsr			DisplayTetra		; and display it
+01:00004DE6 43FA0034        	  2202: 	lea			msg_illegal,a1	; followed by message
+01:00004DEA 6100F1CE        	  2203: 	bsr			DisplayString
+                            	  2204: .0001:
+01:00004DEE 60FE            	  2205: 	bra			.0001
+01:00004DF0 6000F96C        	  2206: 	bra			Monitor
+                            	  2207: 	
+                            	  2208: ; -----------------------------------------------------------------------------
+                            	  2209: ; -----------------------------------------------------------------------------
+                            	  2210: 
+                            	  2211: msg_start:
+01:00004DF4 726636386B205379	  2212: 	dc.b	"rf68k System Starting",CR,LF,0
+01:00004DFC 7374656D20537461
+01:00004E04 7274696E67
+01:00004E09 0D
+01:00004E0A 0A
+01:00004E0B 00
+                            	  2213: msg_core_start:
+01:00004E0C 20636F7265207374	  2214: 	dc.b	" core starting",CR,LF
+01:00004E14 617274696E67
+01:00004E1A 0D
+01:00004E1B 0A
+                            	  2215: msg_illegal:
+01:00004E1C 20696C6C6567616C	  2216: 	dc.b	" illegal opcode",CR,LF,0
+01:00004E24 206F70636F6465
+01:00004E2B 0D
+01:00004E2C 0A
+01:00004E2D 00
+                            	  2217: msg_bad_branch_disp:
+01:00004E2E 206272616E636820	  2218: 	dc.b	" branch selfref: ",0
+01:00004E36 73656C667265663A
+01:00004E3E 20
+01:00004E3F 00
+                            	  2219: msg_test_done:
+01:00004E40 2043505520746573	  2220: 	dc.b	" CPU test done.",0
+01:00004E48 7420646F6E652E
+01:00004E4F 00
+                            	  2221: 
+                            	  2222: 
+                            	  2223: 
+                            	  2224: 
 
 
 Symbols by name:
@@ -9718,12 +9742,12 @@ ADDX_LOOP5                      01:000031AC
 ADDX_OUTER1                     01:000030E0
 ADD_OUTER1                      01:00002E74
 ADD_OUTER2                      01:00002EE8
-ALL_DONE                        01:0000023C
+ALL_DONE                        01:00000240
 AND_OUTER1                      01:00002B92
 AND_OUTER2                      01:00002C06
-AUXIN                           01:00004D4E
-AsciiToHexNybble                01:00004B46
-AudioInputTest                  01:00004D42
+AUXIN                           01:00004D1A
+AsciiToHexNybble                01:00004B12
+AudioInputTest                  01:00004D0E
 BCC1                            01:0000278E
 BCC10                           01:000027E0
 BCC11                           01:000027E8
@@ -9740,10 +9764,10 @@ BCC8                            01:000027CE
 BCC9                            01:000027D6
 BSR_CLOSE1                      01:0000132E
 BSR_CLOSE2                      01:00001364
-BSR_FAR1                        01:0000023E
+BSR_FAR1                        01:00000242
 BSR_FAR2                        01:0000277E
 BlankLastLine                   01:00003F78
-BouncingBalls                   01:00004D44
+BouncingBalls                   01:00004D10
 CMPA_OUTER1                     01:00002D68
 CMPM_LOOP1                      01:00002DF6
 CMPM_LOOP2                      01:00002E10
@@ -9755,9 +9779,9 @@ CTRLC                            E:00000003
 CTRLH                            E:00000008
 CTRLX                            E:00000018
 CalcScreenLoc                   01:00003D74
-CheckForCtrlC                   01:000041F8
+CheckForCtrlC                   01:000041BE
 CheckForKey                     01:0000417E
-ClearScreen                     01:00004D48
+ClearScreen                     01:00004D14
 CmdBuf                          00:00000441
 CmdBufEnd                       00:00000442
 Cursor1                         01:000040B8
@@ -9769,31 +9793,31 @@ DIVS_OUTER1                     01:00002A52
 DIVU_OUTER1                     01:00002A00
 DecrementSemaphore              01:00000102
 Delay3s                         01:00000142
-DisplayByte                     01:00004BA6
+DisplayByte                     01:00004B72
 DisplayChar                     01:00003D82
-DisplayHelp                     01:0000487E
-DisplayMem                      01:00004ABE
-DisplayNybble                   01:00004BAC
-DisplaySpace                    01:00004B92
+DisplayHelp                     01:0000484A
+DisplayMem                      01:00004A8A
+DisplayNybble                   01:00004B78
+DisplaySpace                    01:00004B5E
 DisplayString                   01:00003FBA
 DisplayStringCRLF               01:00003FD2
-DisplayTetra                    01:00004B9A
-DisplayTwoSpaces                01:00004B80
-DisplayWyde                     01:00004BA0
-DumpMem                         01:00004A92
-DumpMem1                        01:00004AAC
+DisplayTetra                    01:00004B66
+DisplayTwoSpaces                01:00004B4C
+DisplayWyde                     01:00004B6C
+DumpMem                         01:00004A5E
+DumpMem1                        01:00004A78
 EOR_OUTER2                      01:00002C7C
 EXCEPTION_6                     01:00000250
 EXCEPTION_7                     01:00000260
-EditMem                         01:00004A38
-ExecuteCode                     01:00004A84
-FillMem                         01:000049E0
-FromScreen                      01:0000478E
-GetCmdLine                      01:0000493C
-GetHexNumber                    01:00004B1A
-GetKey                          01:0000418E
-GraphicsDemo                    01:00004D46
-HelpMsg                         01:0000488A
+EditMem                         01:00004A04
+ExecuteCode                     01:00004A50
+FillMem                         01:000049AC
+FromScreen                      01:00004752
+GetCmdLine                      01:00004908
+GetHexNumber                    01:00004AE6
+GetKey                          01:0000418A
+GraphicsDemo                    01:00004D12
+HelpMsg                         01:00004856
 HomeCursor                      01:00003FD8
 IOFocus                          E:00100000
 IncCursorPos                    01:00003EF2
@@ -9802,18 +9826,18 @@ IncrementSemaphore              01:000000EA
 InitSemaphores                  01:000000A8
 KEYBD                            E:FD0FFE00
 KeybdEcho                       00:00000418
-KeybdGetChar                    01:00004218
-KeybdGetCharNoWait              01:00004208
-KeybdGetCharWait                01:00004210
+KeybdGetChar                    01:000041DE
+KeybdGetCharNoWait              01:000041CE
+KeybdGetCharWait                01:000041D6
 KeybdLEDs                       00:0000041A
 KeybdRecvByte                   01:00004130
-KeybdSendByte                   01:00004476
-KeybdSetLEDStatus               01:0000440A
+KeybdSendByte                   01:0000443A
+KeybdSetLEDStatus               01:000043CE
 KeybdWaitFlag                   00:00000419
 KeybdWaitTx                     01:00004150
 LEA1                            01:00001D3A
 LF                               E:0000000A
-LoadS19                         01:00004BC6
+LoadS19                         01:00004B92
 LockSemaphore                   01:0000011C
 MOVE1                           01:000019A8
 MOVE2                           01:0000192C
@@ -9821,28 +9845,28 @@ MOVE3                           01:00001A28
 MOVE4                           01:00001B82
 MULS_OUTER1                     01:00003348
 MULU_OUTER1                     01:000032FC
-Monitor                         01:0000479A
+Monitor                         01:0000475E
 NBCD_LOOP                       01:000026CE
 NBCD_LOOP1                      01:00002714
 NBCD_NO_C                       01:000026DA
 NBCD_NO_C1                      01:00002728
 NBCD_NO_Z                       01:000026DE
 NBCD_NO_Z1                      01:0000272C
-NextRec                         01:00004BC8
+NextRec                         01:00004B94
 OR_OUTER1                       01:00002AA8
 OR_OUTER2                       01:00002B1C
 PLIC                             E:FD090000
-ProcessRec                      01:00004BD2
-ProcessS1                       01:00004C86
-ProcessS2                       01:00004C8A
-ProcessS3                       01:00004C8E
-ProcessS7                       01:00004C92
-ProcessS8                       01:00004C9E
-ProcessS9                       01:00004CAA
-Prompt1                         01:000047DE
-Prompt2                         01:000047F0
-Prompt3                         01:000047CE
-PromptLn                        01:000047C2
+ProcessRec                      01:00004B9E
+ProcessS1                       01:00004C52
+ProcessS2                       01:00004C56
+ProcessS3                       01:00004C5A
+ProcessS7                       01:00004C5E
+ProcessS8                       01:00004C6A
+ProcessS9                       01:00004C76
+Prompt1                         01:000047A2
+Prompt2                         01:000047B4
+Prompt3                         01:00004792
+PromptLn                        01:00004786
 ROXx_FLAGS                      01:00003610
 ROXx_LOOP1                      01:00003626
 ROXx_LOOP2                      01:00003646
@@ -9858,11 +9882,11 @@ ROx_LOOP4                       01:00003450
 ROx_LOOP5                       01:00003470
 ROx_LOOP6                       01:00003492
 RTR_DONE                        01:00002770
-S1932a                          01:00004CEC
-S1932b                          01:00004D00
-S19Get16BitAddress              01:00004CB6
-S19Get24BitAddress              01:00004CC2
-S19Get32BitAddress              01:00004CCE
+S1932a                          01:00004CB8
+S1932b                          01:00004CCC
+S19Get16BitAddress              01:00004C82
+S19Get24BitAddress              01:00004C8E
+S19Get32BitAddress              01:00004C9A
 S19StartAddress                 00:00000414
 SBCD_INNER1                     01:000025E0
 SBCD_INNER2                     01:0000264E
@@ -9907,15 +9931,15 @@ SUBX_OUTER1                     01:000031F0
 SUB_OUTER1                      01:00002F5E
 SUB_OUTER2                      01:00002FD2
 ScrollUp                        01:00003F46
-SerialPeekCharDirect            01:00004D4E
+SerialPeekCharDirect            01:00004D1A
 SetKeyboardEcho                 01:00004176
-StartMon                        01:0000479A
+StartMon                        01:0000475E
 StubRout                        01:000040B8
 SyncCursor                      01:00003FEA
 T15DispatchTable                01:00004018
 TEXTREG                          E:FD03FF00
 TRAP15                          01:00004000
-TestCLS                         01:00004856
+TestCLS                         01:00004822
 TestSemaphore                   01:000000CE
 TextCols                        00:0000040B
 TextCurpos                      00:0000040C
@@ -9924,7 +9948,7 @@ TextRows                        00:0000040A
 TextScr                         00:00000410
 UnlockSemaphore                 01:00000122
 UpdateTextPos                   01:00003D4C
-Wait10ms                        01:0000447E
+Wait10ms                        01:00004442
 _KeyState1                      00:0000041B
 _KeyState2                      00:0000041C
 _KeybdBuf                       00:00000421
@@ -9934,13 +9958,13 @@ _KeybdGetStatus                 01:00004116
 _KeybdHead                      00:0000041D
 _KeybdInit                      01:00004108
 _KeybdTail                      00:0000041E
-_keybdControlCodes              01:0000468E
-_keybdExtendedCodes             01:0000470E
-_shiftedScanCodes               01:0000458E
-_unshiftedScanCodes             01:0000448E
+_keybdControlCodes              01:00004652
+_keybdExtendedCodes             01:000046D2
+_shiftedScanCodes               01:00004552
+_unshiftedScanCodes             01:00004452
 bkcolor                         00:00000404
-brdisp_trap                     01:00004DCE
-bus_err                         01:00004D72
+brdisp_trap                     01:00004DC6
+bus_err                         01:00004D3E
 clear_screen                    01:00003CFA
 const_tbl                       00:00000400
 cpu_test                        01:00000166
@@ -9963,33 +9987,35 @@ doCtrlX                         01:00003ECE
 doDelete                        01:00003E92
 do_nothing                      01:000000A2
 dspj1                           01:00003FBE
-dspmem1                         01:00004ACE
-dspspc1                         01:00004B8A
+dspmem1                         01:00004A9A
+dspspc1                         01:00004B56
 dsret                           01:00003FCC
-edtmem1                         01:00004A40
+edtmem1                         01:00004A0C
 fgcolor                         00:00000400
-fmem1                           01:00004A0C
-fmemB                           01:00004A1C
-fmemL                           01:00004A02
-fmemW                           01:00004A12
+fmem1                           01:000049D8
+fmemB                           01:000049E8
+fmemL                           01:000049CE
+fmemW                           01:000049DE
 get_screen_address              01:00003CDE
 get_screen_color                01:00003CB2
-gthx3                           01:00004B7C
-gthx5                           01:00004B58
-gthx6                           01:00004B6A
+gthx3                           01:00004B48
+gthx5                           01:00004B24
+gthx6                           01:00004B36
 icc1                            01:00003F44
-ignBlanks                       01:00004A26
-illegal_trap                    01:00004DE8
+ignBlanks                       01:000049F2
+illegal_trap                    01:00004DDE
 init_plic                       01:000040E6
-irq_rout                        01:00004D76
+irq_rout                        01:00004D42
 leds                             E:FD0FFF00
 loop1                           01:00000046
 loop2                           01:00000044
 loop3                           01:00003D20
-msg_bad_branch_disp             01:00004E38
-msg_core_start                  01:00004E16
-msg_illegal                     01:00004E26
-msg_start                       01:00004DFE
+msg_bad_branch_disp             01:00004E2E
+msg_core_start                  01:00004E0C
+msg_illegal                     01:00004E1C
+msg_start                       01:00004DF4
+msg_test_done                   01:00004E40
+nmi_rout                        01:00004DB4
 op_ABCD                         01:000024C6
 op_ADD                          01:00002E54
 op_ADDA                         01:00003028
@@ -10076,9 +10102,9 @@ op_SWAP                         01:00001C8C
 op_TAS                          01:00001D4E
 op_TRAPV                        01:00002748
 op_TST                          01:00001D74
-pcssxa                          01:00004C42
+pcssxa                          01:00004C0E
 rotate_iofocus                  01:000040BA
-sGetChar                        01:00004D24
+sGetChar                        01:00004CF0
 semamem                          E:FD050000
 start                           01:00000000
 start_other                     01:00000058
@@ -10122,8 +10148,8 @@ FD0FFF00 leds
 00000150 dly3s2
 00000152 dly3s1
 00000166 cpu_test
-0000023C ALL_DONE
-0000023E BSR_FAR1
+00000240 ALL_DONE
+00000242 BSR_FAR1
 00000250 EXCEPTION_6
 00000260 EXCEPTION_7
 00000268 op_ORI_TO_CCR
@@ -10390,82 +10416,84 @@ FD0FFF00 leds
 00004150 KeybdWaitTx
 00004176 SetKeyboardEcho
 0000417E CheckForKey
-0000418E GetKey
-000041F8 CheckForCtrlC
-00004208 KeybdGetCharNoWait
-00004210 KeybdGetCharWait
-00004218 KeybdGetChar
-0000440A KeybdSetLEDStatus
-00004476 KeybdSendByte
-0000447E Wait10ms
-0000448E _unshiftedScanCodes
-0000458E _shiftedScanCodes
-0000468E _keybdControlCodes
-0000470E _keybdExtendedCodes
-0000478E FromScreen
-0000479A StartMon
-0000479A Monitor
-000047C2 PromptLn
-000047CE Prompt3
-000047DE Prompt1
-000047F0 Prompt2
-00004856 TestCLS
-0000487E DisplayHelp
-0000488A HelpMsg
-0000493C GetCmdLine
-000049E0 FillMem
-00004A02 fmemL
-00004A0C fmem1
-00004A12 fmemW
-00004A1C fmemB
-00004A26 ignBlanks
-00004A38 EditMem
-00004A40 edtmem1
-00004A84 ExecuteCode
-00004A92 DumpMem
-00004AAC DumpMem1
-00004ABE DisplayMem
-00004ACE dspmem1
-00004B1A GetHexNumber
-00004B46 AsciiToHexNybble
-00004B58 gthx5
-00004B6A gthx6
-00004B7C gthx3
-00004B80 DisplayTwoSpaces
-00004B8A dspspc1
-00004B92 DisplaySpace
-00004B9A DisplayTetra
-00004BA0 DisplayWyde
-00004BA6 DisplayByte
-00004BAC DisplayNybble
-00004BC6 LoadS19
-00004BC8 NextRec
-00004BD2 ProcessRec
-00004C42 pcssxa
-00004C86 ProcessS1
-00004C8A ProcessS2
-00004C8E ProcessS3
-00004C92 ProcessS7
-00004C9E ProcessS8
-00004CAA ProcessS9
-00004CB6 S19Get16BitAddress
-00004CC2 S19Get24BitAddress
-00004CCE S19Get32BitAddress
-00004CEC S1932a
-00004D00 S1932b
-00004D24 sGetChar
-00004D42 AudioInputTest
-00004D44 BouncingBalls
-00004D46 GraphicsDemo
-00004D48 ClearScreen
-00004D4E AUXIN
-00004D4E SerialPeekCharDirect
-00004D72 bus_err
-00004D76 irq_rout
-00004DCE brdisp_trap
-00004DE8 illegal_trap
-00004DFE msg_start
-00004E16 msg_core_start
-00004E26 msg_illegal
-00004E38 msg_bad_branch_disp
+0000418A GetKey
+000041BE CheckForCtrlC
+000041CE KeybdGetCharNoWait
+000041D6 KeybdGetCharWait
+000041DE KeybdGetChar
+000043CE KeybdSetLEDStatus
+0000443A KeybdSendByte
+00004442 Wait10ms
+00004452 _unshiftedScanCodes
+00004552 _shiftedScanCodes
+00004652 _keybdControlCodes
+000046D2 _keybdExtendedCodes
+00004752 FromScreen
+0000475E Monitor
+0000475E StartMon
+00004786 PromptLn
+00004792 Prompt3
+000047A2 Prompt1
+000047B4 Prompt2
+00004822 TestCLS
+0000484A DisplayHelp
+00004856 HelpMsg
+00004908 GetCmdLine
+000049AC FillMem
+000049CE fmemL
+000049D8 fmem1
+000049DE fmemW
+000049E8 fmemB
+000049F2 ignBlanks
+00004A04 EditMem
+00004A0C edtmem1
+00004A50 ExecuteCode
+00004A5E DumpMem
+00004A78 DumpMem1
+00004A8A DisplayMem
+00004A9A dspmem1
+00004AE6 GetHexNumber
+00004B12 AsciiToHexNybble
+00004B24 gthx5
+00004B36 gthx6
+00004B48 gthx3
+00004B4C DisplayTwoSpaces
+00004B56 dspspc1
+00004B5E DisplaySpace
+00004B66 DisplayTetra
+00004B6C DisplayWyde
+00004B72 DisplayByte
+00004B78 DisplayNybble
+00004B92 LoadS19
+00004B94 NextRec
+00004B9E ProcessRec
+00004C0E pcssxa
+00004C52 ProcessS1
+00004C56 ProcessS2
+00004C5A ProcessS3
+00004C5E ProcessS7
+00004C6A ProcessS8
+00004C76 ProcessS9
+00004C82 S19Get16BitAddress
+00004C8E S19Get24BitAddress
+00004C9A S19Get32BitAddress
+00004CB8 S1932a
+00004CCC S1932b
+00004CF0 sGetChar
+00004D0E AudioInputTest
+00004D10 BouncingBalls
+00004D12 GraphicsDemo
+00004D14 ClearScreen
+00004D1A AUXIN
+00004D1A SerialPeekCharDirect
+00004D3E bus_err
+00004D42 irq_rout
+00004DB4 nmi_rout
+00004DC6 brdisp_trap
+00004DDE illegal_trap
+00004DF4 msg_start
+00004E0C msg_core_start
+00004E1C msg_illegal
+00004E2E msg_bad_branch_disp
+00004E40 msg_test_done
 00100000 IOFocus

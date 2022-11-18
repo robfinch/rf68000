@@ -9,12 +9,12 @@ There is some 68010 compatibility. The movec instruction and vector base registe
 movec was desired to allow access to additional control registers. tick-tick count, coreno-the multi-core core number
 
 ## Status
-The core fails to complete the Easy68k test suite. It gets about halfway through. So there are some bugs yet. Most common instructions are working.
+The core fails to complete the Easy68k test suite. It gets about 3/4 of the way through. So there are some bugs yet. Most common instructions are working. The following instructions are not working correctly: ABCD, SBCD, NBCD, DIVU, DIVS, CMPM, ADDX, SUBX, MULS. Several of the instructions are failing to set flags correctly but otherwise work.
 The core works well enough to run a small monitor program that allows dumping and editing memory.
 It is used in a multi-core network-on-chip.
 
 ## History
-Work started on the core in 2008. It was set aside for a long time, and work resumed in 2022.
+Work started on the core in 2008. It was set aside for a long time, and work resumed in November 2022.
 
 ## Supported Bus Interface
 The core is *WISHBONE* B.3 master compatible.
