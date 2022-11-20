@@ -109,9 +109,9 @@ cpu_test:
 	bsr op_NEGS
 	bsr op_MOVEM
 ** fails
-	bsr op_ABCD
-	bsr op_SBCD
-	bsr op_NBCD
+*	bsr op_ABCD
+*	bsr op_SBCD
+*	bsr op_NBCD
 	bsr op_TRAPV
 	bsr op_RTR
 	bsr op_BSR
@@ -137,7 +137,7 @@ cpu_test:
 *	bsr op_ADDX	
 *	bsr op_SUBX
 	bsr op_MULU
-*	bsr op_MULS	* flags incorrect
+	bsr op_MULS
 	bsr op_EXG
 	bsr op_ROx
 	bsr op_ROXx

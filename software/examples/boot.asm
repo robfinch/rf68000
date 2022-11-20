@@ -3,15 +3,23 @@
 ; system memory map
 ;
 ;
-; 00000000 +----------------+
-;          | startup sp,pc  | 8 B
-; 00000008 +----------------+
-;					 |    vectors     |
-; 00000400 +----------------+
-;					 |   bios mem     |
-; 00000800 +----------------+
-;					 |   bios code    |
-; 00008000 +----------------+
+; 00000000 +----------------+      <+
+;          | startup sp,pc  | 8 B   |
+; 00000008 +----------------+       |
+;					 |    vectors     | pair shared+
+; 00000400 +----------------+       |
+;					 |   bios mem     |       |
+; 00001000 +----------------+       |
+;					 |   bios code    |       |
+; 00008000 +----------------+      <+
+;					 |    unused      |
+; 00040000 +----------------+
+;					 |   local ram    |
+; 00041000 +----------------+
+;					 |    unused      |
+; 00100000 +----------------+
+;					 |   global ram   |
+; 00101000 +----------------+
 ;					 |    unused      |
 ; 20000000 +----------------+
 ;          |                |
@@ -33,8 +41,6 @@
 ;          |                |
 ;          :     unused     :
 ;          |                |
-; FFFFFFE0 +----------------+
-;          | special regs   |
 ; FFFFFFFF +----------------+
 ;
 ;-------------------------------------------------------------------------------
@@ -67,6 +73,7 @@ txtscreen	EQU	$FD000000
 semamem		EQU	$FD050000
 ACIA			EQU	$FD060000
 ACIA_RX		EQU	0
+ACIA_TX		EQU	0
 ACIA_STAT	EQU	4
 PLIC			EQU	$FD090000
 leds			EQU	$FD0FFF00
@@ -74,10 +81,9 @@ keybd			EQU	$FD0FFE00
 KEYBD			EQU	$FD0FFE00
 rand			EQU	$FD0FFD00
 IOFocus		EQU	$00100000
-Keybuf		EQU	$00100004
 
 	data
-	dc.l		$0001FFFC
+	dc.l		$00040FFC
 	dc.l		start
 	dc.l		bus_err
 	dc.l		0
@@ -118,7 +124,7 @@ Keybuf		EQU	$00100004
 	dc.l		0
 	dc.l		0
 	dc.l		0
-	dc.l		0
+	dc.l		trap3							; breakpoint
 	dc.l		0
 	dc.l		0
 	dc.l		0
@@ -161,104 +167,66 @@ Keybuf		EQU	$00100004
 	dc.l		0
 
 
-	align		10
-;fgcolor:
-;	ds.l		1
-;bkcolor:
-;	ds.l		1
-;CursorRow
-;	ds.b		1
-;CursorCol
-;	ds.b		1
-;TextRows
-;	ds.b		1
-;TextCols
-;	ds.b		1
-;TextPos
-;TextCurpos
-;	ds.w		1
-;	ds.w		1
-;TextScr
-;	ds.l		1
-;S19StartAddress
-;	ds.l		1
-;KeybdEcho
-;	ds.b		1
-;KeybdWaitFlag
-;	ds.b		1
-;KeybdLEDs
-;	ds.b		1
-;_KeyState1
-;	ds.b		1
-;_KeyState2
-;	ds.b		1
-;CmdBuf:
-;	ds.b		1
-;CmdBufEnd:
-;	ds.b		1
-
-
 ;-------------------------------------------------------------------------------
 ;-------------------------------------------------------------------------------
 
-const_tbl:
-fgcolor:
-	dc.l		$1fffff					; white
-bkcolor:
-	dc.l		$00003f					; dark blue
-CursorRow
-	dc.b		$00
-CursorCol
-	dc.b		$00
-TextRows
-	dc.b		32
-TextCols
-	dc.b		64
-TextPos
-TextCurpos
-	dc.w		$00
-	dc.w		0
-TextScr
-	dc.l		$FD000000
-S19StartAddress
-	dc.l		$10000000
-KeybdEcho
-	dc.b		0
-KeybdWaitFlag
-	dc.b		0
-KeybdLEDs
-	dc.b		0
-_KeyState1
-	dc.b		0
-_KeyState2
-	dc.b		0
-_KeybdHead
-	dc.b		0
-_KeybdTail
-	dc.b		0
-_KeybdCnt
-	dc.b		0
-	dc.b		0
-_KeybdBuf:
-	dc.b		0,0,0,0,0,0,0,0
-	dc.b		0,0,0,0,0,0,0,0
-	dc.b		0,0,0,0,0,0,0,0
-	dc.b		0,0,0,0,0,0,0,0
-CmdBuf:
-	dc.b		0
-CmdBufEnd:
-	dc.b		0
+; BIOS variables which must be local (not shared) to each core
+
+CursorRow	equ		$40000
+CursorCol	equ		$40001
+TextPos		equ		$40002
+TextCurpos	equ	$40002
+TextScr			equ	$40004
+S19StartAddress	equ	$40008
+KeybdEcho		equ	$4000C
+KeybdWaitFlag	equ	$4000D
+CmdBuf			equ $40040
+CmdBufEnd		equ	$40080
+fgColor			equ	$40084
+bkColor			equ	$40088
+TextRows		equ	$4008C
+TextCols		equ	$4008D
+Regsave			equ	$40100
+numBreakpoints	equ		8
+BreakpointFlag	equ		$40200
+NumSetBreakpoints	equ	$40202	; to $40203
+Breakpoints			equ		$40220	; to $40240
+BreakpointWords	equ		$40280	; to $402A0
+
+; Keyboard buffer is in shared memory
+KeybdLEDs		equ	$0010000E
+_KeyState1	equ	$0010000F
+_KeyState2	equ	$00100010
+_KeybdHead	equ	$00100011
+_KeybdTail	equ	$00100012
+_KeybdCnt		equ	$00100013
+_KeybdBuf		equ	$00100020
 
 	code
 	align		2
 start:
 	move.w	#$2700,sr				; enable level 6 and higher interrupts
-	movec.l	coreno,d0				; get core number
+	; Prepare local variable storage
+	move.w	#1023,d0					; 1024 longs to clear
+	lea			$40000,a0					; non shared local memory address
+.0111:
+	clr.l		(a0)+							; clear the memory area
+	dbra		d0,.0111
+	move.l	#$1fffff,fgColor	; set foreground / background color
+	move.l	#$00003f,bkColor
+	movec.l	coreno,d0					; get core number (2 to 9)
+	subi.b	#2,d0							; adjust (0 to 7)
+	mulu		#16384,d0					; compute screen location
+	addi.l	#$FD000000,d0
+	move.l	d0,TextScr
+	move.b	#64,TextCols			; set rows and columns
+	move.b	#32,TextRows
+	movec.l	coreno,d0					; get core number
 	cmpi.b	#2,d0
 	bne			start_other
-	move.b	d0,IOFocus			; Set the IO focus in global memory
+	move.b	d0,IOFocus				; Set the IO focus in global memory
 ;	bsr			InitSemaphores
-	bsr			Delay3s					; give devices time to reset
+	bsr			Delay3s						; give devices time to reset
 	bsr			clear_screen
 
 	; Write startup message to screen
@@ -271,7 +239,7 @@ start:
 	bsr			UnlockSemaphore	; allow other cpus to proceed
 	move.w	#$A4A4,leds			; diagnostics
 	bsr			init_plic				; initialize platform level interrupt controller
-	bra			Monitor
+	bra			StartMon
 	bsr			cpu_test
 ;	lea			brdisp_trap,a0	; set brdisp trap vector
 ;	move.l	a0,64*4
@@ -285,33 +253,15 @@ loop1:
 	move.b	d1,leds
 	dbra		d0,loop1
 	bra			loop2
+
 start_other:
-	btst		#0,d0							; place the stack for the second core lower in memory
-	beq.s		.0003
-	move.l	#$1FBFC,sp
-.0003:
-	move.l	TextScr,d0
-	movec.l	coreno,d1					; get the core number
-	btst		#0,d1							; calc new screen address for even cores only
-	bne.s		.0001
-	subi.l	#2,d1							; core numbers start at 2
-	mulu		#16384,d1					; * 16384 bytes per screen
-	add.l		d1,d0							; adjust index to screen
-	move.l	d0,TextScr				; set new text screen location
-.0001:
-	; Delay a bit before trying to access the screen. Need some time for the
-	; screen locations of other cores to update.
-	move.l	#65535,d1
-.0002:
-	nop
-	dbra		d1,.0002
 	bsr			clear_screen
 	movec.l	coreno,d1
 	bsr			DisplayByte
 	lea			msg_core_start,a1
 	bsr			DisplayString
 do_nothing:	
-	bra			Monitor
+	bra			StartMon
 	bra			do_nothing
 
 ;------------------------------------------------------------------------------
@@ -451,15 +401,15 @@ dly3s1:
 ; -----------------------------------------------------------------------------
 
 get_screen_color:
-	move.l	fgcolor,d0			; get foreground color
+	move.l	fgColor,d0			; get foreground color
 	asl.l		#5,d0						; shift into position
 	ori.l		#$40000000,d0		; set priority
-	move.l	bkcolor,d1
+	move.l	bkColor,d1
 	lsr.l		#8,d1
 	lsr.l		#8,d1
 	andi.l	#31,d1					; mask off extra bits
 	or.l		d1,d0						; set background color bits in upper long word
-	move.l	bkcolor,d1			; get background color
+	move.l	bkColor,d1			; get background color
 	asl.l		#8,d1						; shift into position for display ram
 	asl.l		#8,d1
 	rts
@@ -468,21 +418,14 @@ get_screen_color:
 ; -----------------------------------------------------------------------------
 
 get_screen_address:
-	move.l	d0,-(a7)
 	move.l	TextScr,a0
-	movec.l	coreno,d0
-	btst		#0,d0
-	bra.s		.0001
-	beq.s		.0001
-	lea			$4000(a0),a0
-.0001:
-	move.l	(a7)+,d0
 	rts
 	
 ; -----------------------------------------------------------------------------
 ; -----------------------------------------------------------------------------
 
 clear_screen:
+	movem.l	d0/d1/d2/a0,-(a7)
 	bsr			get_screen_address	; a0 = pointer to screen area
 	move.b	TextRows,d0					; d0 = rows
 	move.b	TextCols,d2					; d2 = cols
@@ -509,6 +452,7 @@ loop3:
 	nop	
 	nop
 	dbra		d2,loop3
+	movem.l	(a7)+,d0/d1/d2/a0
 	rts
 
 CRLF:
@@ -529,6 +473,7 @@ UpdateTextPos:
 	move.b	TextCols,d2
 	ext.w		d2
 	mulu.w	d2,d0
+	move.l	d0,d3
 	move.b	CursorCol,d2
 	andi.w	#$ff,d2
 	add.w		d2,d0
@@ -555,6 +500,11 @@ CalcScreenLoc:
 
 DisplayChar:
 	movem.l	d1/d2/d3,-(a7)
+	movec		coreno,d2
+	cmpi.b	#2,d2
+	bne.s		.0001
+	bsr			SerialPutChar
+.0001:
 	andi.l	#$ff,d1				; zero out upper bytes of d1
 	cmpi.b	#13,d1				; carriage return ?
 	bne.s		dccr
@@ -763,9 +713,15 @@ BlankLastLine:
 	subi.w	#1,d2								; count must be one less than desired
 	bsr			get_screen_color		; d0,d1 = screen color
 	move.w	#32,d1							; set the character for display in low 16 bits
+	rol.w		#8,d1								; reverse the byte order
+	swap		d1
+	rol.w		#8,d1
+	rol.w		#8,d0
+	swap		d0
+	rol.w		#8,d0
 .0001:
-	move.l	d1,(a0)+
 	move.l	d0,(a0)+
+	move.l	d1,(a0)+
 	dbra		d2,.0001
 	movem.l	(a7)+,d0/d1/d2/a0
 	rts
@@ -777,12 +733,11 @@ BlankLastLine:
 DisplayString:
 	movem.l	d0/d1/a1,-(a7)
 dspj1:
-	clr.l		d1				; clear upper bits of d1
-	move.b	(a1)+,d1		; move string char into d1
-	cmpi.b	#0,d1			; is it end of string ?
-	beq.s		dsret			
+	clr.l		d1						; clear upper bits of d1
+	move.b	(a1)+,d1			; move string char into d1
+	beq.s		dsret					; is it end of string ?
 	bsr			DisplayChar		; display character
-	bra.s		dspj1			; go back for next character
+	bra.s		dspj1					; go back for next character
 dsret:
 	movem.l	(a7)+,d0/d1/a1
 	rts
@@ -795,6 +750,30 @@ DisplayStringCRLF:
 	bsr		DisplayString
 	bra		CRLF
 
+;------------------------------------------------------------------------------
+; Display a string on the screen limited to 255 chars max.
+;------------------------------------------------------------------------------
+
+DisplayStringLimited:
+	movem.l	d0/d1/d2/a1,-(a7)
+	move.w	d1,d2					; d2 = max count
+	andi.w	#$00FF,d2			; limit to 255 chars
+	bra.s		.0003					; enter loop at bottom
+.0001:
+	clr.l		d1						; clear upper bits of d1
+	move.b	(a1)+,d1			; move string char into d1
+	beq.s		.0002					; is it end of string ?
+	bsr			DisplayChar		; display character
+.0003:
+	dbra		d2,.0001			; go back for next character
+.0002:
+	movem.l	(a7)+,d0/d1/d2/a1
+	rts
+
+DisplayStringLimitedCRLF:
+	bsr		DisplayStringLimited
+	bra		CRLF
+	
 ;------------------------------------------------------------------------------
 ; Set cursor position to top left of screen.
 ;
@@ -815,7 +794,8 @@ HomeCursor:
 ;------------------------------------------------------------------------------
 ; SyncCursor:
 ;
-; Sync the hardware cursor's position to the text cursor position.
+; Sync the hardware cursor's position to the text cursor position but only for
+; the core with the IO focus.
 ;
 ; Parameters:
 ;		<none>
@@ -828,8 +808,12 @@ HomeCursor:
 SyncCursor:
 	movem.l	d0/d2,-(a7)
 	bsr			UpdateTextPos
+	movec		coreno,d2
+	cmp.b		IOFocus,d2
+	bne.s		.0001
 	rol.w		#8,d0						; swap byte order
 	move.w	d0,TEXTREG+$24
+.0001:	
 	movem.l	(a7)+,d0/d2
 	rts
 
@@ -851,8 +835,8 @@ TRAP15:
 
 		align	2
 T15DispatchTable:
-	dc.l	StubRout
-	dc.l	StubRout
+	dc.l	DisplayStringLimitedCRLF
+	dc.l	DisplayStringLimited
 	dc.l	StubRout
 	dc.l	StubRout
 	dc.l	StubRout
@@ -888,18 +872,47 @@ T15DispatchTable:
 	dc.l	StubRout
 	dc.l	rotate_iofocus
 	dc.l	SerialPeekCharDirect
+	dc.l	SerialPutChar
 	dc.l	StubRout
 	dc.l	StubRout
 	dc.l	StubRout
 	dc.l	StubRout
 	dc.l	StubRout
-	dc.l	StubRout
+
+;------------------------------------------------------------------------------
+; Cursor positioning / Clear screen
+; - out of range settings are ignored
+;
+; Parameters:
+;		d1.w cursor position, bits 0 to 7 are row, bits 8 to 15 are column.
+;	Returns:
+;		none
+;------------------------------------------------------------------------------
+
+Cursor1:
+	move.l		d1,-(a7)
+	cmpi.w		#$FF00,d1
+	bne.s			.0002
+	bsr				clear_screen
+	bra				HomeCursor
+.0002:
+	cmp.b			TextRows,d1		; if cursor pos out of range, ignore setting
+	bhs.s			.0003
+	move.b		d1,CursorRow
+.0003:
+	ror.w			#8,d1
+	cmp.b			TextCols,d1
+	bhs.s			.0001
+	move.b		d1,CursorCol
+.0001:
+	bsr				SyncCursor		; update hardware cursor
+	move.l		(a7)+,d1
+	rts
 
 ;------------------------------------------------------------------------------
 ; Stub routine for unimplemented functionality.
 ;------------------------------------------------------------------------------
 
-Cursor1:
 StubRout:
 	rts
 
@@ -918,7 +931,7 @@ rotate_iofocus:
 	move.b	#2,d0
 .0001:
 	move.b	d0,IOFocus				; set IO focus
-	sub.b		#2,d0							; screen is 0 to 7, focus is 2 to 9
+	subi.b	#2,d0							; screen is 0 to 7, focus is 2 to 9
 	ext.w		d0								; make into long value
 	mulu		#2048,d0					; * 2048	cells per screen
 	rol.w		#8,d0							; swap byte order
@@ -1050,8 +1063,7 @@ CheckForKey:
 
 ;------------------------------------------------------------------------------
 ; GetKey
-; 	Get a character from the keyboard. If Alt-tab is pressed then the screen
-; is switched to the next screen and -1 is returned.
+; 	Get a character from the keyboard. 
 ;
 ; Modifies:
 ;		d1
@@ -1061,36 +1073,14 @@ CheckForKey:
 
 GetKey:
 	move.l	d0,-(a7)					; push d0
-	; Check for focus. Even if the core does not have the focus ALT-TAB still
-	; needs to be checked for.
 	move.b	IOFocus,d1				; Check if the core has the IO focus
 	movec.l	coreno,d0
 	cmp.b		d0,d1
-	beq.s		.0007							; should be a beq.s here
-	; If the core does not have the focus then the keyboard scan code buffer
-	; must be read directly to determine if a tab character is pressed. A non-
-	; destructive buffer read is needed.
-;	moveq		#0,d1
-;	move.b	KEYBD,d1					; get the scan code non destructively
-;	cmpi.b	#SC_TAB,d1				; is it the TAB key?
-;	bne.s		.0004							; if not return no key available
-;	btst		#1,_KeyState2			; is ALT down?
-;	beq.s		.0004							; if ALT-TAB goto switch screens
-	; Got here when a tab scan code was detected. We know there is a tab key
-	; available at the keyboard port. Get the key.
-;	move.b	#0,KEYBD+1				; clear keyboard
-;	bra.s		.0008
-.0007:	
-	bsr			KeybdGetCharWait	; get a character
-;	cmpi.b	#9,d1							; tab pressed?
-;	bne.s		.0006
-;	btst		#1,_KeyState2			; is ALT down?
-;	beq.s		.0006
-;.0008:
-;	bsr			rotate_iofocus		; rotate IO focus
-;	bra.s		.0004							; eat Alt-tab, return no key available
-.0006:
-	cmpi.b	#0,KeybdEcho			; is keyboard echo on ?
+	bne.s		.0004							; go return no key available, if not in focus
+	bsr			KeybdGetCharNoWait	; get a character
+	cmpi.b	#-1,d1						; was a key available?
+	beq.s		.0004
+	tst.b		KeybdEcho					; is keyboard echo on ?
 	beq.s		.0003							; no echo, just return the key
 	cmpi.b	#CR,d1						; convert CR keystroke into CRLF
 	bne.s		.0005
@@ -1129,6 +1119,8 @@ KeybdGetCharWait:
 KeybdGetChar:
 	movem.l	d2/d3/a0,-(a7)
 .0003:
+	moveq		#1,d1
+;	bsr			LockSemaphore
 	move.b	_KeybdCnt,d2		; get count of buffered scan codes
 	beq.s		.0015						;
 	move.b	_KeybdHead,d2		; d2 = buffer head
@@ -1140,11 +1132,17 @@ KeybdGetChar:
 	andi.b	#31,d2					; and wrap around at buffer size
 	move.b	d2,_KeybdHead
 	subi.b	#1,_KeybdCnt		; decrement count of scan codes in buffer
+	exg			d1,d2						; save scancode value in d2
+	moveq		#1,d1
+	bsr			UnlockSemaphore
+	exg			d2,d1						; restore scancode value
 	bra			.0001						; go process scan code
 .0014:
 	bsr		_KeybdGetStatus		; check keyboard status for key available
 	bmi		.0006							; yes, go process
 .0015:
+	moveq	#1,d1
+	bsr		UnlockSemaphore
 	tst.b	KeybdWaitFlag			; are we willing to wait for a key ?
 	bmi		.0003							; yes, branch back
 	movem.l	(a7)+,d2/d3/a0
@@ -1439,16 +1437,11 @@ FromScreen:
 	rts
 
 StartMon:
-	; Reset the stack pointer on entry into the monitor
+	clr.w		NumSetBreakpoints
+	bsr			ClearBreakpointList
 Monitor:
-	movec.l	coreno,d1		; get core number
-	btst		#0,d1
-	beq.s		.0001
-	move.l	#$1FBFC,sp	; odd core's stack
-	bra			.0002
-.0001:
-	move.l	#$1FFFC,sp	; even core's stack
-.0002:
+	; Reset the stack pointer on each entry into the monitor
+	move.l	#$40FFC,sp	; reset core's stack
 	move.w	#$2500,sr		; enable level 6 and higher interrupts
 	moveq		#1,d1
 	bsr			UnlockSemaphore
@@ -1462,6 +1455,8 @@ PromptLn:
 ;
 Prompt3:
 	bsr			GetKey
+	cmpi.b	#-1,d1
+	beq.s		Prompt3
 	cmpi.b	#CR,d1
 	beq.s		Prompt1
 	bsr			DisplayChar
@@ -1489,11 +1484,30 @@ Prompt2:
 	cmpi.b	#':',d1			; $: - edit memory
 	beq			EditMem
 	cmpi.b	#'D',d1			; $D - dump memory
-	beq			DumpMem
+	bne.s		.0003
+	bsr			FromScreen
+	cmpi.b	#'R',d1			; $DR - dump registers
+	beq			DumpRegs
+	lea			-8(a0),a0
+	bra			DumpMem
+.0003:
 	cmpi.b	#'F',d1
 	beq			FillMem
 	cmpi.b	#'B',d1			; $B - start tiny basic
 	bne.s	.0001
+	bsr			FromScreen
+	cmpi.b	#'R',d1
+	bne.s		.0004
+	bsr			ignBlanks
+	bsr			FromScreen
+	cmpi.b	#'+',d1
+	beq			ArmBreakpoint
+	cmpi.b	#'-',d1
+	beq			DisarmBreakpoint
+	cmpi.b	#'L',d1
+	beq			ListBreakpoints
+	bra			Monitor
+.0004:
 	jmp			$FFFCC000
 .0001:
 	cmpi.b	#'J',d1			; $J - execute code
@@ -1538,6 +1552,7 @@ HelpMsg:
 	dc.b	"L = Load S19 file",CR,LF
 	dc.b	"D = Dump memory",CR,LF
 	dc.b	"B = start tiny basic",CR,LF
+	dc.b  "BR = set breakpoint",CR,LF
 	dc.b	"J = Jump to code",CR,LF
 	dc.b	"T = cpu test program",CR,LF,0
 	even
@@ -1775,6 +1790,59 @@ dspmem1:
 	bra			CRLF
 
 ;------------------------------------------------------------------------------
+; Dump Registers
+;    The dump is in a format that allows the register value to be edited.
+;
+; RegD0 12345678
+; RegD1 77777777
+;	... etc
+;------------------------------------------------------------------------------
+
+DumpRegs:
+	bsr			CRLF
+	move.w	#15,d0					; number of registers-1
+	lea			msg_reglist,a0	;
+	lea			msg_regs,a1
+	lea			Regsave,a2			; a2 points to register save area
+.0001:
+	bsr			DisplayString
+	move.b	(a0)+,d1
+	bsr			DisplayChar
+	move.b	(a0)+,d1
+	bsr			DisplayChar
+	bsr			DisplaySpace
+	move.l	(a2)+,d1
+	bsr			DisplayTetra
+	bsr			CRLF
+	dbra		d0,.0001
+	bsr			DisplayString
+	move.b	(a0)+,d1
+	bsr			DisplayChar
+	move.b	(a0)+,d1
+	bsr			DisplayChar
+	bsr			DisplaySpace
+	move.l	Regsave+$44,d1
+	bsr			DisplayTetra
+	bsr			CRLF
+	bsr			DisplayString
+	move.b	(a0)+,d1
+	bsr			DisplayChar
+	move.b	(a0)+,d1
+	bsr			DisplayChar
+	bsr			DisplaySpace
+	move.w	Regsave+$40,d1
+	bsr			DisplayWyde
+	bsr			CRLF
+	bra			Monitor
+
+msg_regs:
+	dc.b	"Reg",0
+msg_reglist:
+	dc.b	"D0D1D2D3D4D5D6D7A0A1A2A3A4A5A6A7PCSR",0
+
+	align	1
+
+;------------------------------------------------------------------------------
 ; Get a hexidecimal number. Maximum of eight digits.
 ;
 ; Returns:
@@ -1782,7 +1850,7 @@ dspmem1:
 ;		d1 = value of number
 ;		zf = number of digits == 0
 ;------------------------------------------------------------------------------
-;
+
 GetHexNumber:
 	move.l	d2,-(a7)
 	clr.l		d2
@@ -2126,8 +2194,6 @@ AUXIN:
 ;------------------------------------------------------------------------------
 
 SerialPeekCharDirect:
-	; Disallow interrupts between status read and rx read.
-	ori.w		#$7000,sr					; disable interrupts
 	move.l	ACIA+ACIA_STAT,d0	; get serial status
 	rol.w		#8,d0							; swap byte order
 	swap		d0
@@ -2146,8 +2212,220 @@ bus_err:
 	nop
 	bra			.0001
 
+;------------------------------------------------------------------------------
+; SerialPutChar
+;    Put a character to the serial transmitter. This routine blocks until the
+; transmitter is empty. 
+;
+; Stack Space
+;		0 words
+; Parameters:
+;		d1.b = character to put
+; Modifies:
+;		none
+;------------------------------------------------------------------------------
+
+SerialPutChar:
+	movem.l	d0/d1,-(a7)				; push d0,d1
+.0001:
+	move.l	ACIA+ACIA_STAT,d0	; wait until the uart indicates tx empty
+	rol.w		#8,d0
+	swap		d0
+	rol.w		#8,d0
+	btst		#4,d0							; bit #4 of the status reg
+	beq.s		.0001			    		; branch if transmitter is not empty
+	rol.w		#8,d1
+	swap		d1
+	rol.w		#8,d1
+	move.l	d1,ACIA+ACIA_TX		; send the byte
+	movem.l	(a7)+,d0/d1				; pop d0,d1
+	rts
+;------------------------------------------------------------------------------
+;------------------------------------------------------------------------------
+
+trap3:
+	; First save all registers
+	movem.l		d0/d1/d2/d3/d4/d5/d6/d7/a0/a1/a2/a3/a4/a5/a6/a7,Regsave
+	move.w		(a7)+,Regsave+$40
+	move.l		(a7)+,Regsave+$44
+	move.l		#$40FFC,a7			; reset stack pointer
+	move.w		#$2500,sr				; enable interrupts
+	move.w		NumSetBreakpoints,d0
+	subi.w		#1,d0
+	lea				Breakpoints,a0
+	move.l		Regsave+$44,d1
+.0001:
+	cmp.l			(a0)+,d1
+	beq.s			ProcessBreakpoint
+	dbra			d0,.0001
+	bra				Monitor					; not a breakpoint
+ProcessBreakpoint:
+	bsr				DisarmAllBreakpoints
+	bra				DumpRegs
+
+;------------------------------------------------------------------------------
+; DisarmAllBreakpoints, used when entering the monitor.
+;------------------------------------------------------------------------------
+
+DisarmAllBreakpoints:
+	movem.l	d0/a0/a1/a2,-(a7)			; stack some regs
+	move.w	NumSetBreakpoints,d0	; d0 = number of breakpoints that are set
+	cmpi.w	#numBreakpoints,d0		; check for valid number
+	bhs.s		.0001
+	lea			Breakpoints,a2				; a2 = pointer to breakpoint address table
+	lea			BreakpointWords,a0		; a0 = pointer to breakpoint instruction word table
+	bra.s		.0003									; enter loop at bottom
+.0002:
+	move.l	(a2)+,a1							; a1 = address of breakpoint
+	move.w	(a0)+,(a1)						; copy instruction word back to code
+.0003:
+	dbra		d0,.0002
+	movem.l	(a7)+,d0/a0/a1/a2			; restore regs
+.0001:
+	rts	
+
+;------------------------------------------------------------------------------
+; ArmAllBreakpoints, used when entering the monitor.
+;------------------------------------------------------------------------------
+
+ArmAllBreakpoints:
+	movem.l		d0/a0/a1/a2,-(a7)			; stack some regs
+	move.w		NumSetBreakpoints,d0	; d0 = number of breakpoints
+	cmpi.w		#numBreakpoints,d0		; is the number valid?
+	bhs.s			.0001
+	lea				Breakpoints,a2				; a2 = pointer to breakpoint address table
+	lea				BreakpointWords,a0		; a0 = pointer to instruction word table
+	bra.s			.0003									; enter loop at bottom
+.0002:
+	move.l		(a2)+,a1							; a1 = address of breakpoint
+	move.w		(a1),(a0)							; copy instruction word to table
+	move.w		#$4E43,(a0)+					; set instruction = TRAP3
+.0003:
+	dbra			d0,.0002
+	movem.l		(a7)+,d0/a0/a1/a2			; restore regs
+.0001:
+	rts	
+
+;------------------------------------------------------------------------------
+;------------------------------------------------------------------------------
+
+ArmBreakpoint:
+	movem.l		d0/d1/d2/a0/a1/a2,-(a7)
+	move.w		NumSetBreakpoints,d0	; d0 = number of breakpoints
+	cmpi.w		#numBreakpoints,d0		; check if too many
+	bhs.s			.0001
+	addi.w		#1,NumSetBreakpoints	; increment number of breakpoints
+	move.l		d0,d2
+	bsr				ignBlanks
+	bsr				GetHexNumber
+	beq.s			.0001									; was there an address?
+	btst			#0,d1									; address value must be even
+	bne.s			.0001
+	; See if the breakpoint is in the table already
+	lea				Breakpoints,a1				; a1 points to breakpoint table
+	subi.w		#1,d2
+.0002:
+	cmp.l			(a1)+,d1
+	beq.s			.0003									; breakpoint is in table already
+	dbra			d2,.0002
+	; Add breakpoint to table
+	; Search for empty entry
+	lea				Breakpoints,a1				; a1 = pointer to breakpoint address table
+	clr.w			d2										; d2 = count
+.0006:
+	tst.l			(a1)									; is the entry empty?
+	beq.s			.0005									; branch if found empty entry
+	lea				4(a1),a1							; point to next entry
+	addi.w		#1,d2									; increment count
+	cmpi.w		#numBreakpoints,d2		; safety: check against max number
+	blo.s			.0006
+	bra.s			.0001									; what? no empty entries found, table corrupt?
+.0005:
+	asl.w			#2,d2									; d2 = long word index
+	move.l		d1,(a1,d2.w)					; move breakpoint address to table
+	move.l		d1,a2
+	lsr.w			#1,d2									; d2 = word index
+.0004:
+	lea				BreakpointWords,a1
+	move.w		(a2),(a1,d2.w)				; copy instruction word to table
+	move.w		#$4E43,(a2)						; replace word with TRAP3
+.0001:
+	movem.l		(a7)+,d0/d1/d2/a0/a1/a2
+	rts
+.0003:
+	move.l		-4(a1),a2							; a2 = pointer to breakpoint address from table
+	cmpi.w		#$4E43,(a2)						; see if breakpoint already armed
+	beq.s			.0001
+	asl.l			#1,d2									; d2 = word index
+	bra.s			.0004
+
+
+;------------------------------------------------------------------------------
+;------------------------------------------------------------------------------
+
+DisarmBreakpoint:
+	movem.l		d0/d1/d2/a0/a1/a2,-(a7)
+	move.w		NumSetBreakpoints,d0	; d0 = number of breakpoints
+	cmpi.w		#numBreakpoints,d0		; check if too many
+	bhi.s			.0001
+	move.l		d0,d2
+	bsr				ignBlanks
+	bsr				GetHexNumber
+	beq.s			.0001									; was there an address?
+	btst			#0,d1									; address value must be even
+	bne.s			.0001
+	; See if the breakpoint is in the table already
+	lea				Breakpoints,a1				; a1 points to breakpoint table
+	subi.w		#1,d2
+.0002:
+	cmp.l			(a1)+,d1
+	beq.s			.0003									; breakpoint is in table already
+	dbra			d2,.0002
+	bra				.0001									; breakpoint was not in table
+.0003:
+	; Remove breakpoint from table
+	subi.w		#1,NumSetBreakpoints	; decrement number of breakpoints
+	move.l		-4(a1),a2							; a2 = pointer to breakpoint address from table
+	clr.l			-4(a1)								; empty out breakpoint
+	lea				BreakpointWords,a1
+	asl.l			#1,d2									; d2 = word index
+	move.w		(a1,d2.w),(a2)				; copy instruction from table back to code
+.0001:
+	movem.l		(a7)+,d0/d1/d2/a0/a1/a2
+	rts
+
+;------------------------------------------------------------------------------
+;------------------------------------------------------------------------------
+
+ListBreakpoints:
+	bsr			CRLF
+	move.w	#numBreakpoints,d2
+	lea			Breakpoints,a1
+.0001:
+	move.l	(a1)+,d1
+	bsr			DisplayTetra
+	bsr			CRLF
+	dbra		d2,.0001
+	bra			Monitor
+
+;------------------------------------------------------------------------------
+;------------------------------------------------------------------------------
+
+ClearBreakpointList:
+	move.w	#numBreakpoints,d2
+	lea			Breakpoints,a1
+.0001:
+	clr.l		(a1)+
+	dbra		d2,.0001
+	rts
+
+;------------------------------------------------------------------------------
+;------------------------------------------------------------------------------
+
 irq_rout:
 	movem.l	d0/d1/a0,-(a7)
+	moveq		#1,d1
+;	bsr			LockSemaphore
 	bsr			_KeybdGetStatus		; check if timer or keyboard
 	bpl.s		.0001							; branch if not keyboard
 	btst		#1,_KeyState2			; Is Alt down?
@@ -2155,7 +2433,12 @@ irq_rout:
 	move.b	KEYBD,d0					; get scan code
 	cmpi.b	#SC_TAB,d0				; is Alt-Tab?
 	bne.s		.0003
+	bsr			_KeybdGetScancode	; grab the scan code (clears interrupt)
 	bsr			rotate_iofocus
+	clr.b		_KeybdHead				; clear keyboard buffer
+	clr.b		_KeybdTail
+	clr.b		_KeybdCnt
+	bra			.0002							; do not store Alt-Tab
 .0003:
 	; Insert keyboard scan code into raw keyboard buffer
 	bsr			_KeybdGetScancode	; grab the scan code (clears interrupt)
@@ -2175,6 +2458,8 @@ irq_rout:
 	move.l	TextScr,a0				; a0 = screen address
 	addi.l	#1,40(a0)					; update onscreen IRQ flag
 .0002:	
+	moveq		#1,d1
+	bsr			UnlockSemaphore
 	movem.l	(a7)+,d0/d1/a0		; return
 	rte
 
@@ -2186,17 +2471,21 @@ nmi_rout:
 	rte
 
 brdisp_trap:
-	addq		#4,sp					; get rid of sr
+	movem.l	d0/d1/d2/d3/d4/d5/d6/d7/a0/a1/a2/a3/a4/a5/a6/a7,Regsave
+	move.w	(a7)+,Regsave+$40
+	move.l	(a7)+,Regsave+$44
+	move.l	#$40FFC,a7			; reset stack pointer
+	move.w	#$2500,sr				; enable interrupts
 	lea			msg_bad_branch_disp,a1
 	bsr			DisplayString
 	bsr			DisplaySpace
-	move.l	(sp)+,d1			; pop exception address
-	bsr			DisplayTetra	; and display it
-;	move.l	(sp)+,d1			; pop format word 68010 mode only
-	bra			Monitor
+	move.l	Regsave+$44,d1	; exception address
+	bsr			DisplayTetra		; and display it
+;	move.l	(sp)+,d1				; pop format word 68010 mode only
+	bra			DumpRegs
 
 illegal_trap:
-	addq		#4,sp						; get rid of sr
+	addq		#2,sp						; get rid of sr
 	move.l	(sp)+,d1				; pop exception address
 	bsr			DisplayTetra		; and display it
 	lea			msg_illegal,a1	; followed by message
@@ -2211,7 +2500,7 @@ illegal_trap:
 msg_start:
 	dc.b	"rf68k System Starting",CR,LF,0
 msg_core_start:
-	dc.b	" core starting",CR,LF
+	dc.b	" core starting",CR,LF,0
 msg_illegal:
 	dc.b	" illegal opcode",CR,LF,0
 msg_bad_branch_disp:

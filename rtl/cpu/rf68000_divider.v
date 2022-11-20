@@ -39,7 +39,7 @@
 //
 // ============================================================================
 //
-module rf68000_divider(rst, clk, ld, abort, sgn, sgnus, a, b, qo, ro, dvByZr, done, idle);
+module rf68000_divider(rst, clk, ld, abort, sgn, sgnus, a, b, qo, ro, dvByZr, ovf, done, idle);
 parameter WID=32;
 parameter DIV=3'd3;
 parameter IDLE=3'd4;
@@ -59,7 +59,9 @@ reg [WID-1:0] ro;
 output done;
 output idle;
 output dvByZr;
+output ovf;
 reg dvByZr;
+reg ovf;
 
 reg [WID-1:0] aa,bb;
 reg so;
@@ -91,6 +93,7 @@ if (rst) begin
 	ro <= {WID{1'b0}};
 	cnt <= 8'd0;
 	dvByZr <= 1'b0;
+	ovf <= 1'b0;
 	state <= IDLE;
 end
 else
@@ -103,6 +106,7 @@ else if (!cnt_done)
 case(state)
 IDLE:
 	if (ld) begin
+		ovf <= 1'b0;
 		if (sgn) begin
 			q <= a[WID-1] ? -a : a;
 			bb <= b[WID-1] ? -b : b;
@@ -126,9 +130,13 @@ IDLE:
 	end
 DIV:
 	if (!cnt_done) begin
-		$display("cnt:%d r1=%h q[63:0]=%h", cnt,r1,q);
+		$display("cnt:%d r1=%h q[31:0]=%h", cnt,r1,q);
 		q <= {q[WID-2:0],b0};
 		r <= {r1,q[WID-1]};
+		if (q[31:16] > bb[15:0] && cnt==WID+1) begin
+			ovf <= 1'b1;
+			state <= DONE;
+		end
 	end
 	else begin
 		$display("cnt:%d r1=%h q[63:0]=%h", cnt,r1,q);
@@ -149,7 +157,8 @@ DIV:
 		state <= DONE;
 	end
 DONE:
-	state <= IDLE;
+	if (!ld)
+		state <= IDLE;
 default: state <= IDLE;
 endcase
 end
@@ -157,7 +166,7 @@ end
 endmodule
 
 module rf68000_divider_tb();
-parameter WID=64;
+parameter WID=32;
 reg rst;
 reg clk;
 reg ld;
@@ -181,15 +190,17 @@ rf68000_divider #(WID) u1
 	.rst(rst),
 	.clk(clk),
 	.ld(ld),
-	.sgn(1'b1),
-	.isDivi(1'b0),
-	.a(32'd10005),
-	.b(32'd27),
-	.imm(32'd123),
+	.abort(1'b0),
+	.sgn(1'b0),
+	.sgnus(1'b0),
+	.a(32'h10000000),
+	.b(32'h5a5a),
 	.qo(qo),
 	.ro(ro),
 	.dvByZr(),
-	.done(done)
+	.ovf(),
+	.done(done),
+	.idle()
 );
 
 endmodule

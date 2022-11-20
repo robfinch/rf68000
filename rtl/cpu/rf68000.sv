@@ -231,7 +231,7 @@ typedef enum logic [7:0] {
 	CMP1,
 	CMPA,
 	CMPM,
-	CMPM1,
+	CMPM1,	// defunct
 
 	AND,
 	AND1,
@@ -316,17 +316,17 @@ typedef enum logic [7:0] {
 	
 	// 140
 	PEA3,
-	ABCD,
-	ABCD1,
-	SBCD,
-	SBCD1,
-	NBCD,
+	BCD,
+	BCD1,
+	BCD2,
+	BCD3,
+	BCD4,
 	OR,
 	
 	INT,
 	INT2,
 	INT3,
-	
+
 	// 150
 	INT4,
 
@@ -610,8 +610,6 @@ endcase
 //wire [31:0] rfob = {mmm[0],rrr}==4'b1111 ? sp : regfile[{mmm[0],rrr}];
 //wire [31:0] rfoDnn = regfile[{1'b0,rrr}];
 //wire [31:0] rfoRnn = rrrr==4'b1111 ? sp : regfile[rrrr];
-wire signed [31:0] rfoDns = rfoDn;
-wire signed [31:0] ss = s;
 wire clk = clk_i;
 reg rfwrL,rfwrB,rfwrW;
 reg takb;
@@ -619,7 +617,7 @@ reg [8:0] resB;
 reg [16:0] resW;
 reg [32:0] resL;
 reg [31:0] st_data;
-wire [7:0] bcdaddo,bcdsubo,bcdnego;
+wire [11:0] bcdaddo,bcdsubo,bcdnego;
 wire bcdaddoc,bcdsuboc,bcdnegoc;
 reg [31:0] bad_addr;
 reg [15:0] mac_cycle_type;
@@ -636,6 +634,7 @@ reg [2:0] shift_op;
 reg rtr;
 reg bsr;
 reg lea;
+reg bcdsub, bcdneg;
 reg [31:0] dati_buf;	// input data from bus error
 reg [31:0] dato_buf;
 
@@ -706,6 +705,24 @@ input [31:0] w;
 rbo = {w[7:0],w[15:8],w[23:16],w[31:24]};
 endfunction
 
+wire [7:0] dbin, sbin;
+reg [7:0] bcdres;
+wire dd_done;
+wire [11:0] bcdreso;
+BCDToBin ub2b1 (clk_i, d, dbin);
+BCDToBin ub2b2 (clk_i, s, sbin);
+
+DDBinToBCD #(.WID(10)) udd1
+(
+	.rst(rst_i),
+	.clk(clk_i),
+	.ld(state==BCD3),
+	.bin(bcdres),
+	.bcd(bcdreso),
+	.done(dd_done)
+);
+
+/*
 BCDAdd u1
 (
 	.ci(xf),
@@ -714,6 +731,7 @@ BCDAdd u1
 	.o(bcdaddo),
 	.c(bcdaddoc)
 );
+
 
 BCDSub u2
 (
@@ -732,7 +750,7 @@ BCDSub u3
 	.o(bcdnego),
 	.c(bcdnegoc)
 );
-
+*/
 // These functions take the MSBs of the operands and results and return an
 // overflow status.
 
@@ -757,6 +775,7 @@ endfunction
 reg divs;
 wire dvdone;
 wire dvByZr;
+wire dvovf;
 wire [31:0] divq;
 wire [31:0] divr;
 
@@ -769,10 +788,11 @@ rf68000_divider udiv1
 	.sgn(divs),
 	.sgnus(1'b0),
 	.a(d),
-	.b(s),
+	.b(divs? {{16{s[15]}},s[15:0]}:{16'd0,s[15:0]}),
 	.qo(divq),
 	.ro(divr),
 	.dvByZr(dvByZr),
+	.ovf(dvovf),
 	.done(dvdone),
 	.idle()
 );
@@ -780,7 +800,7 @@ rf68000_divider udiv1
 always_comb
 case(ir[15:8])
 `BRA:	takb = 1'b1;
-`BSR:	takb = 1'b1;
+`BSR:	takb = 1'b0;
 `BHI:	takb = !cf & !zf;
 `BLS:	takb = cf | zf;
 `BHS:	takb = !cf;
@@ -855,6 +875,8 @@ if (rst_i) begin
 	bsr <= 1'b0;
 	lea <= 1'b0;
 	divs <= 1'b0;
+	bcdsub <= 1'b0;
+	bcdneg <= 1'b0;
 	icnt <= 'd0;
 	is_bus_err <= 1'b0;
 	is_adr_err <= 1'b0;
@@ -964,14 +986,10 @@ IFETCH:
 		FU_CMP:
 			begin
 				case(sz)
-				2'b00:	begin zf <= resB[7:0]== 8'd0; nf <= resB[ 7]; cf <= resB[ 8]; vf <= fnSubOverflow(resB[7],d[7],s[7]); end
+				2'b00:	begin zf <= resB[ 7:0]== 8'd0; nf <= resB[ 7]; cf <= resB[ 8]; vf <= fnSubOverflow(resB[ 7],d[ 7],s[ 7]); end
 				2'b01:	begin zf <= resW[15:0]==16'd0; nf <= resW[15]; cf <= resW[16]; vf <= fnSubOverflow(resW[15],d[15],s[15]); end
 				2'b10:	begin zf <= resL[31:0]==32'd0; nf <= resL[31]; cf <= resL[32]; vf <= fnSubOverflow(resL[31],d[31],s[31]); end
-				2'b11:
-//					if (ir[8])
-						begin zf <= resL[31:0]==32'd0; nf <= resL[31]; cf <= resL[32]; vf <= fnSubOverflow(resL[31],d[31],s[31]); end
-//					else
-//						begin zf <= resW[15:0]==16'd0; nf <= resW[15]; cf <= resW[16]; vf <= fnSubOverflow(resW[15],d[15],s[15]); end
+				2'b11:	begin zf <= resL[31:0]==32'd0; nf <= resL[31]; cf <= resL[32]; vf <= fnSubOverflow(resL[31],d[31],s[31]); end	// CMPA
 				endcase
 			end
 		FU_ADD:
@@ -991,7 +1009,6 @@ IFETCH:
 						nf <= resW[15];
 						zf <= resW[15:0]==16'h0000;
 						vf <= fnAddOverflow(resW[15],dd[15],s[15]);
-						//vf <= resW[16]!=resW[15];
 						xf <= resW[16];
 					end
 				2'b10:
@@ -1383,7 +1400,7 @@ IFETCH:
 				cf <= 1'b0;
 				nf <= divq[15];
 				zf <= divq[15:0]==16'd0;
-				vf <= divq[31:16] != {16{divq[15]}};
+				vf <= dvovf;
 			end	
 		default:	;
 		endcase
@@ -1392,6 +1409,8 @@ IFETCH:
 		rtr <= 1'b0;
 		bsr <= 1'b0;
 		lea <= 1'b0;
+		bcdsub <= 1'b0;
+		bcdneg <= 1'b0;
 		is_illegal <= 1'b0;
 		use_sfc <= 1'b0;
 		use_dfc <= 1'b0;
@@ -1636,7 +1655,8 @@ DECODE:
 `ifdef SUPPORT_BCD			
 		9'b100000???:	// NBCD
 			begin
-				push(NBCD);
+				bcdneg <= 1'b1;
+				push(BCD1);
 				fs_data(mmm,rrr,FETCH_BYTE,D);
 			end
 `endif			
@@ -1826,44 +1846,41 @@ DECODE:
 // Branches
 //-----------------------------------------------------------------------------
 	4'h6:
-		if (takb) begin
-			// If branch back to self, trap
-		  if (ir[7:0]==8'hFE)
-		  	tBadBranchDisp();
-			else
-`ifdef SUPPORT_B24			
-			if (ir[7:0]==8'h00 || ir[0]) begin
-`else				
-			if (ir[7:0]==8'h00) begin
-`endif				
-				if (ir[15:8]==8'h61) begin
-					bsr <= 1'b1;
-					call(FETCH_BRDISP,JSR);
-				end
-				else
-					goto(FETCH_BRDISP);
+		begin
+			opc <= pc + 4'd2;
+			ea <= pc + {{24{ir[7]}},ir[7:1],1'b0} + 4'd2;
+			if (ir[11:0]==12'h100) begin		// 6100 = BSR
+				bsr <= 1'b1;
+				call(FETCH_BRDISP,JSR);
 			end
-			else begin
-				ea <= pc + {{24{ir[7]}},ir[7:1],1'b0} + 4'd2;
-				opc <= pc + 4'd2;
-				if (ir[15:8]==8'h61) begin
-					bsr <= 1'b1;
-					goto(JSR);
+			else if (ir[11:8]==4'h1)	// 61xx = BSR
+				goto(JSR);
+			else if (takb) begin
+				// If branch back to self, trap
+			  if (ir[7:0]==8'hFE)
+			  	tBadBranchDisp();
+				else
+`ifdef SUPPORT_B24			
+				if (ir[7:0]==8'h00 || ir[0]) begin
+`else				
+				if (ir[7:0]==8'h00) begin
+`endif
+					goto(FETCH_BRDISP);
 				end
 				else begin
 					pc <= pc + {{24{ir[7]}},ir[7:1],1'b0} + 4'd2;
 					ret();
 				end
 			end
-		end
-		else begin
+			else begin
 `ifdef SUPPORT_B24			
-			if (ir[7:0]==8'h00 || ir[0])		// skip over long displacement
+				if (ir[7:0]==8'h00 || ir[0])		// skip over long displacement
 `else
-			if (ir[7:0]==8'h00)		// skip over long displacement
+				if (ir[7:0]==8'h00)		// skip over long displacement
 `endif			
-				pc <= pc + 4'd4;
-			ret();
+					pc <= pc + 4'd4;
+				ret();
+			end
 		end
 
 //-----------------------------------------------------------------------------
@@ -1884,7 +1901,7 @@ DECODE:
 			ret();
 		end
 //-----------------------------------------------------------------------------
-// OR / SBCD
+// OR / DIVU / DIVS / SBCD
 //-----------------------------------------------------------------------------
 	4'h8:
 		begin
@@ -1899,14 +1916,17 @@ DECODE:
 `endif
 `ifdef SUPPORT_BCD				
 			12'b???1_0000_????:	// SBCD
-				if (ir[3]) begin
-					push(SBCD);
-					fs_data(3'b100,rrr,FETCH_BYTE,S);
-				end
-				else begin
-					s <= rfoDnn;
-					d <= rfoDn;
-					state <= SBCD;
+				begin
+					bcdsub <= 1'b1;
+					if (ir[3]) begin
+						push(BCD);
+						fs_data(3'b100,rrr,FETCH_BYTE,S);
+					end
+					else begin
+						s <= rfoDnn;
+						d <= rfoDn;
+						goto (BCD1);
+					end
 				end
 `endif				
 			default:	
@@ -1931,9 +1951,36 @@ DECODE:
         d <= rfoDn;
       if (ir[8] && ir[5:4]==2'b00)
 				case(sz)
-				2'b00:	begin push(SUBX); fs_data(ir[3] ? 3'b100 : 3'b000,rrr,FETCH_BYTE,S); end
-				2'b01:	begin push(SUBX); fs_data(ir[3] ? 3'b100 : 3'b000,rrr,FETCH_WORD,S); end
-				2'b10:	begin push(SUBX); fs_data(ir[3] ? 3'b100 : 3'b000,rrr,FETCH_LWORD,S); end
+				2'b00:
+					if (ir[3]) begin
+						push(SUBX);
+						fs_data(3'b100,rrr,FETCH_BYTE,S);
+					end
+					else begin
+						s <= rfoDnn;
+						d <= rfoDn;
+						goto (SUBX2);
+					end
+				2'b01:
+					if (ir[3]) begin
+						push(SUBX);
+						fs_data(3'b100,rrr,FETCH_WORD,S);
+					end
+					else begin
+						s <= rfoDnn;
+						d <= rfoDn;
+						goto (SUBX2);
+					end
+				2'b10:
+					if (ir[3]) begin
+						push(SUBX);
+						fs_data(3'b100,rrr,FETCH_LWORD,S);
+					end
+					else begin
+						s <= rfoDnn;
+						d <= rfoDn;
+						goto (SUBX2);
+					end
 				2'b11:
 	        begin
 		        d <= rfoAna;
@@ -1967,7 +2014,7 @@ DECODE:
     	goto (TRAP3);
     end
 //-----------------------------------------------------------------------------
-// CMP / CMPA / EOR
+// CMP / CMPA / CMPM / EOR
 //-----------------------------------------------------------------------------
 	4'hB:
 		begin
@@ -1977,26 +2024,26 @@ DECODE:
 					2'b00:	begin push(CMPM); fs_data(3'b011,rrr,FETCH_BYTE,S); end
 					2'b01:	begin push(CMPM); fs_data(3'b011,rrr,FETCH_WORD,S); end
 					2'b10:	begin push(CMPM); fs_data(3'b011,rrr,FETCH_LWORD,S); end
-					2'b11:	begin push(CMPA); fs_data(mmm,rrr,FETCH_LWORD,S); end	// CMPA
+					2'b11:	begin d <= rfoAna; push(CMPA); fs_data(mmm,rrr,FETCH_LWORD,S); end	// CMPA
 					endcase
 				else
 					case(sz)
 					2'b00:	begin push(EOR); fs_data(mmm,rrr,FETCH_BYTE,D); end
 					2'b01:	begin push(EOR); fs_data(mmm,rrr,FETCH_WORD,D); end
 					2'b10:	begin push(EOR); fs_data(mmm,rrr,FETCH_LWORD,D); end
-					2'b11:	begin push(CMPA); fs_data(mmm,rrr,FETCH_LWORD,S); end	// CMPA
+					2'b11:	begin d <= rfoAna; push(CMPA); fs_data(mmm,rrr,FETCH_LWORD,S); end	// CMPA
 					endcase
 			end
 			else	// CMP
 				case(sz)
-				2'b00:	begin push(CMP); fs_data(mmm,rrr,FETCH_BYTE,S); end
-				2'b01:	begin push(CMP); fs_data(mmm,rrr,FETCH_WORD,S); end
-				2'b10:	begin push(CMP); fs_data(mmm,rrr,FETCH_LWORD,S); end
-				2'b11:	begin push(CMPA); fs_data(mmm,rrr,FETCH_WORD,S); end	// CMPA
+				2'b00:	begin d <= rfoDn; push(CMP); fs_data(mmm,rrr,FETCH_BYTE,S); end
+				2'b01:	begin d <= rfoDn; push(CMP); fs_data(mmm,rrr,FETCH_WORD,S); end
+				2'b10:	begin d <= rfoDn; push(CMP); fs_data(mmm,rrr,FETCH_LWORD,S); end
+				2'b11:	begin d <= rfoAna; push(CMPA); fs_data(mmm,rrr,FETCH_WORD,S); end	// CMPA
 				endcase
 		end
 //-----------------------------------------------------------------------------
-// AND / EXG / MULU / MULS
+// AND / EXG / MULU / MULS / ABCD
 //-----------------------------------------------------------------------------
 	4'hC:
 		begin
@@ -2004,13 +2051,13 @@ DECODE:
 `ifdef SUPPORT_BCD			
 			12'b???1_0000_????:	// ABCD
 				if (ir[3]) begin
-					push(ABCD);
+					push(BCD);
 					fs_data(3'b100,rrr,FETCH_BYTE,S);
 				end
 				else begin
 					s <= rfoDnn;
 					d <= rfoDn;
-					goto (ABCD);
+					goto (BCD1);
 				end
 `endif				
 			12'b????_11??_????:	// MULS / MULU
@@ -2063,9 +2110,36 @@ DECODE:
 				d <= rfoDn;
 			if (ir[8] && ir[5:4]==2'b00)
 				case(sz)
-				2'b00:	begin push(ADDX); fs_data(ir[3] ? 3'b100 : 3'b000,rrr,FETCH_BYTE,S); end
-				2'b01:	begin push(ADDX); fs_data(ir[3] ? 3'b100 : 3'b000,rrr,FETCH_WORD,S); end
-				2'b10:	begin push(ADDX); fs_data(ir[3] ? 3'b100 : 3'b000,rrr,FETCH_LWORD,S); end
+				2'b00:	
+					if (ir[3]) begin
+						push(ADDX);
+						fs_data(3'b100,rrr,FETCH_BYTE,S);
+					end
+					else begin
+						s <= rfoDnn;
+						d <= rfoDn;
+						goto (ADDX2);
+					end
+				2'b01:	
+					if (ir[3]) begin
+						push(ADDX);
+						fs_data(3'b100,rrr,FETCH_WORD,S);
+					end
+					else begin
+						s <= rfoDnn;
+						d <= rfoDn;
+						goto (ADDX2);
+					end
+				2'b10:
+					if (ir[3]) begin
+						push(ADDX);
+						fs_data(3'b100,rrr,FETCH_LWORD,S);
+					end
+					else begin
+						s <= rfoDnn;
+						d <= rfoDn;
+						goto (ADDX2);
+					end
 				2'b11:
 					begin
 						d <= rfoAna;
@@ -2198,82 +2272,45 @@ MOVES3:
 // ABCD / SBCD / NBCD
 //-----------------------------------------------------------------------------
 `ifdef SUPPORT_BCD
-ABCD:
+BCD:
 	begin
 		if (ir[3]) begin
-			push(ABCD1);
+			push(BCD1);
 			fs_data(3'b100,RRR,FETCH_BYTE,D);
-		end
-		else begin
-			rfwrB <= 1'b1;
-			Rt <= {1'b0,RRR};
-			resB <= bcdaddo;
-			cf <= bcdaddoc;
-			xf <= bcdaddoc;
-			nf <= bcdaddo[7];
-			if (bcdaddo[7:0]!=8'h00)
-				zf <= 1'b0;
-			ret();
-		end
-	end
-ABCD1:
-	begin
-		goto (STORE_BYTE);
-		d <= bcdaddo;
-		cf <= bcdaddoc;
-		xf <= bcdaddoc;
-		nf <= bcdaddo[7];
-		if (bcdaddo[7:0]!=8'h00)
-			zf <= 1'b0;
-	end
-
-SBCD:
-	begin
-		if (ir[3]) begin
-			push(SBCD1);
-			fs_data(3'b100,RRR,FETCH_BYTE,D);
-		end
-		else begin
-			rfwrB <= 1'b1;
-			Rt <= {1'b0,RRR};
-			resB <= bcdsubo;
-			cf <= bcdsuboc;
-			xf <= bcdsuboc;
-			nf <= bcdsubo[7];
-			if(bcdsubo[7:0]!='d0)
-				zf <= 1'b0;
-			ret();
-		end
-	end
-SBCD1:
-	begin
-		goto (STORE_BYTE);
-		d <= bcdsubo;
-		cf <= bcdsuboc;
-		xf <= bcdsuboc;
-		nf <= bcdsubo[7];
-		if(bcdsubo[7:0]!='d0)
-			zf <= 1'b0;
-	end
-
-NBCD:
-	begin
-		if (mmm==3'b000) begin
-			Rt <= {1'b0,rrr};
-			rfwrB <= 1'b1;
-			resB <= bcdnego;
-			ret();
 		end
 		else
+			goto (BCD1);
+	end
+BCD1:	goto (BCD2);	// clock to convert BCD to binary.
+BCD2:
+	begin
+		if (bcdsub)
+			bcdres <= dbin - sbin - xf;
+		else if (bcdneg)
+			bcdres <= 8'h00 - dbin - xf;
+		else
+			bcdres <= dbin + sbin + xf;
+		goto (BCD3);
+	end
+BCD3:	goto (BCD4);	// clock to load binary to BCD conversion
+BCD4:
+	if (dd_done) begin
+		if (ir[3])
 			goto (STORE_BYTE);
-		d <= bcdnego;
-		cf <= bcdnegoc;
-		xf <= bcdnegoc;
-		nf <= bcdnego[7];
-		if(bcdnego[7:0]!='d0)
+		else begin
+			rfwrB <= 1'b1;
+			Rt <= {1'b0,RRR};
+			resB <= bcdreso[7:0];
+			ret();
+		end
+		d <= bcdreso[7:0];
+		cf <= |bcdreso[11:8];
+		xf <= |bcdreso[11:8];
+		nf <= bcdreso[7];
+		if (bcdreso[7:0]!=8'h00)
 			zf <= 1'b0;
 	end
-`endif
+`endif		
 
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
@@ -2315,7 +2352,7 @@ MUL:
 		if (ir[8]) begin
 			rfwrL <= 1'b1;
 			Rt <= {1'b0,DDD};
-			resL <= rfoDns[15:0] * ss[15:0];
+			resL <= $signed(rfoDn[15:0]) * $signed(s[15:0]);
 		end
 		else begin
 			rfwrL <= 1'b1;
@@ -2573,11 +2610,10 @@ STORE_IN_DEST:
 CMP:
 	begin
 		flag_update <= FU_CMP;
-		d <= rfoDn;
 		case(sz)
-		2'b00:	resB <= rfoDn[ 7:0] - s[ 7:0];
-		2'b01:	resW <= rfoDn[15:0] - s[15:0];
-		2'b10:	resL <= rfoDn[31:0] - s[31:0];
+		2'b00:	resB <= d[ 7:0] - s[ 7:0];
+		2'b01:	resW <= d[15:0] - s[15:0];
+		2'b10:	resL <= d[31:0] - s[31:0];
 		2'b11:	;
 		endcase
 		ret();
@@ -2587,40 +2623,21 @@ CMPA:
 	begin
 		flag_update <= FU_CMP;
 		case(ir[8])
-		1'b0:
-			begin
-				d <= rfoAna;
-				resL <= rfoAna[31:0] - {{16{s[15]}},s[15:0]};
-			end
-		1'b1:	
-			begin
-				d <= rfoAna;
-				resL <= rfoAna[31:0] - s[31:0];
-			end
+		1'b0:	resL <= d[31:0] - {{16{s[15]}},s[15:0]};
+		1'b1:	resL <= d[31:0] - s[31:0];
 		endcase
 		ret();
 	end
 
 CMPM:
 	begin
+		push (CMP);
 		case(sz)
 		2'd0:	fs_data(3'b011,RRR,FETCH_BYTE,D);
 		2'd1:	fs_data(3'b011,RRR,FETCH_WORD,D);
 		2'd2:	fs_data(3'b011,RRR,FETCH_LWORD,D);
 		default:	;	// cant get here
 		endcase
-		goto (CMPM1);
-	end
-CMPM1:
-	begin
-		flag_update <= FU_CMP;
-		case(sz)
-		2'b00:	resB <= d[ 7:0] - s[ 7:0];
-		2'b01:	resW <= d[15:0] - s[15:0];
-		2'b10:	resL <= d[31:0] - s[31:0];
-		2'b11:	;
-		endcase
-		ret();
 	end
 
 //-----------------------------------------------------------------------------
@@ -2850,9 +2867,9 @@ ADDX:
 	begin
 		push(ADDX2);
 		case(sz)
-		2'd0:	fs_data(ir[3] ? 3'b100 : 3'b000,RRR,FETCH_BYTE,D);
-		2'd1:	fs_data(ir[3] ? 3'b100 : 3'b000,RRR,FETCH_WORD,D);
-		2'd2:	fs_data(ir[3] ? 3'b100 : 3'b000,RRR,FETCH_LWORD,D);
+		2'd0:	fs_data(3'b100,RRR,FETCH_BYTE,D);
+		2'd1:	fs_data(3'b100,RRR,FETCH_WORD,D);
+		2'd2:	fs_data(3'b100,RRR,FETCH_LWORD,D);
 		default:	;
 		endcase
 	end
@@ -2887,9 +2904,9 @@ SUBX:
 	begin
 		push(SUBX2);
 		case(sz)
-		2'd0:	fs_data(ir[3] ? 3'b100 : 3'b000,RRR,FETCH_BYTE,D);
-		2'd1:	fs_data(ir[3] ? 3'b100 : 3'b000,RRR,FETCH_WORD,D);
-		2'd2:	fs_data(ir[3] ? 3'b100 : 3'b000,RRR,FETCH_LWORD,D);
+		2'd0:	fs_data(3'b100,RRR,FETCH_BYTE,D);
+		2'd1:	fs_data(3'b100,RRR,FETCH_WORD,D);
+		2'd2:	fs_data(3'b100,RRR,FETCH_LWORD,D);
 		default:	;
 		endcase
 	end
@@ -5417,8 +5434,7 @@ endtask
 task ret;
 begin
 	if (state_stk1==STORE_IN_DEST ||
-			state_stk1==ABCD ||
-			state_stk1==SBCD ||
+			state_stk1==BCD ||
 			state_stk1==ADDX ||
 			state_stk1==SUBX ||
 			state_stk1==CMPM)
