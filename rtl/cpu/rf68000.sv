@@ -317,6 +317,7 @@ typedef enum logic [7:0] {
 	// 140
 	PEA3,
 	BCD,
+	BCD0,
 	BCD1,
 	BCD2,
 	BCD3,
@@ -369,8 +370,10 @@ typedef enum logic [7:0] {
 	
 	ADDX,
 	ADDX2,
+	ADDX3,
 	SUBX,
 	SUBX2,
+	SUBX3,
 
 	FSDATA2
 } state_t;
@@ -378,7 +381,7 @@ typedef enum logic [7:0] {
 typedef enum logic [4:0] {
 	FU_NONE = 5'd0,
 	FU_MUL, FU_DIV,
-	FU_TST,
+	FU_TST, FU_ADDX, FU_SUBX,
 	FU_CMP, FU_ADD, FU_SUB, FU_LOGIC, FU_ADDQ, FU_SUBQ,
 	FU_ADDI, FU_ANDI_CCR, FU_ANDI_SR, FU_EORI_CCR,
 	FU_ANDI_SRX, FU_EORI_SRX, FU_ORI_SRX, FU_MOVE2SRX,
@@ -1016,8 +1019,73 @@ IFETCH:
 						cf <= resL[32];
 						nf <= resL[31];
 						zf <= resL[31:0]==32'h00000000;
-						vf <= resL[32]!=resL[31];
 						vf <= fnAddOverflow(resL[31],dd[31],s[31]);
+						xf <= resL[32];
+					end
+				default:	;
+				endcase
+			end
+		FU_ADDX:
+			begin
+				case(sz)
+				2'b00:
+					begin
+						cf <= resB[8];
+						nf <= resB[7];
+						if (resB[7:0]!=8'h00)
+							zf <= 1'b0;
+						vf <= fnAddOverflow(resB[7],dd[7],s[7]);
+						xf <= resB[8];
+					end
+				2'b01:
+					begin
+						cf <= resW[16];
+						nf <= resW[15];
+						if (resW[15:0]!=16'h00)
+							zf <= 1'b0;
+						vf <= fnAddOverflow(resW[15],dd[15],s[15]);
+						xf <= resW[16];
+					end
+				2'b10:
+					begin
+						cf <= resL[32];
+						nf <= resL[31];
+						if (resL[31:0]!=32'h00)
+							zf <= 1'b0;
+						vf <= fnAddOverflow(resL[31],dd[31],s[31]);
+						xf <= resL[32];
+					end
+				default:	;
+				endcase
+			end
+		FU_SUBX:
+			begin
+				case(sz)
+				2'b00:
+					begin
+						cf <= resB[8];
+						nf <= resB[7];
+						if (resB[7:0]!=8'h00)
+							zf <= 1'b0;
+						vf <= fnSubOverflow(resB[7],dd[7],s[7]);
+						xf <= resB[8];
+					end
+				2'b01:
+					begin
+						cf <= resW[16];
+						nf <= resW[15];
+						if (resW[15:0]!=16'h00)
+							zf <= 1'b0;
+						vf <= fnSubOverflow(resW[15],dd[15],s[15]);
+						xf <= resW[16];
+					end
+				2'b10:
+					begin
+						cf <= resL[32];
+						nf <= resL[31];
+						if (resL[31:0]!=32'h00)
+							zf <= 1'b0;
+						vf <= fnSubOverflow(resL[31],dd[31],s[31]);
 						xf <= resL[32];
 					end
 				default:	;
@@ -1918,10 +1986,8 @@ DECODE:
 			12'b???1_0000_????:	// SBCD
 				begin
 					bcdsub <= 1'b1;
-					if (ir[3]) begin
-						push(BCD);
-						fs_data(3'b100,rrr,FETCH_BYTE,S);
-					end
+					if (ir[3])
+						goto (BCD);
 					else begin
 						s <= rfoDnn;
 						d <= rfoDn;
@@ -1952,34 +2018,28 @@ DECODE:
       if (ir[8] && ir[5:4]==2'b00)
 				case(sz)
 				2'b00:
-					if (ir[3]) begin
-						push(SUBX);
-						fs_data(3'b100,rrr,FETCH_BYTE,S);
-					end
+					if (ir[3])
+						goto (SUBX);
 					else begin
 						s <= rfoDnn;
 						d <= rfoDn;
-						goto (SUBX2);
+						goto (SUBX3);
 					end
 				2'b01:
-					if (ir[3]) begin
-						push(SUBX);
-						fs_data(3'b100,rrr,FETCH_WORD,S);
-					end
+					if (ir[3])
+						goto (SUBX);
 					else begin
 						s <= rfoDnn;
 						d <= rfoDn;
-						goto (SUBX2);
+						goto (SUBX3);
 					end
 				2'b10:
-					if (ir[3]) begin
-						push(SUBX);
-						fs_data(3'b100,rrr,FETCH_LWORD,S);
-					end
+					if (ir[3])
+						goto (SUBX);
 					else begin
 						s <= rfoDnn;
 						d <= rfoDn;
-						goto (SUBX2);
+						goto (SUBX3);
 					end
 				2'b11:
 	        begin
@@ -2050,10 +2110,8 @@ DECODE:
 			casez(ir[11:0])
 `ifdef SUPPORT_BCD			
 			12'b???1_0000_????:	// ABCD
-				if (ir[3]) begin
-					push(BCD);
-					fs_data(3'b100,rrr,FETCH_BYTE,S);
-				end
+				if (ir[3])
+					goto (BCD);
 				else begin
 					s <= rfoDnn;
 					d <= rfoDn;
@@ -2111,34 +2169,28 @@ DECODE:
 			if (ir[8] && ir[5:4]==2'b00)
 				case(sz)
 				2'b00:	
-					if (ir[3]) begin
-						push(ADDX);
-						fs_data(3'b100,rrr,FETCH_BYTE,S);
-					end
+					if (ir[3])
+						goto (ADDX);
 					else begin
 						s <= rfoDnn;
 						d <= rfoDn;
-						goto (ADDX2);
+						goto (ADDX3);
 					end
 				2'b01:	
-					if (ir[3]) begin
-						push(ADDX);
-						fs_data(3'b100,rrr,FETCH_WORD,S);
-					end
+					if (ir[3])
+						goto (ADDX);
 					else begin
 						s <= rfoDnn;
 						d <= rfoDn;
-						goto (ADDX2);
+						goto (ADDX3);
 					end
 				2'b10:
-					if (ir[3]) begin
-						push(ADDX);
-						fs_data(3'b100,rrr,FETCH_LWORD,S);
-					end
+					if (ir[3])
+						goto (ADDX);
 					else begin
 						s <= rfoDnn;
 						d <= rfoDn;
-						goto (ADDX2);
+						goto (ADDX3);
 					end
 				2'b11:
 					begin
@@ -2175,27 +2227,15 @@ DECODE:
 			end
 			else begin
 				shift_op <= {ir[8],ir[4:3]};
-				case({ir[8],ir[4:3]})
-				3'b010,	// ROXL, ROXR
-				3'b110:
-					begin
-						cf <= xf;
-						vf <= 1'b0;
-					end
-				default:
-					begin
-						cf <= 1'b0;
-						vf <= 1'b0;
-					end
-				endcase
-				goto (SHIFT);
+				goto (SHIFT1);
 				if (ir[5])
 					cnt <= rfoDn[5:0];
 				else
 					cnt <= {2'b0,~|QQQ,QQQ};
-				resL <= rfoDnn;
-				resB <= rfoDnn[7:0];
-				resW <= rfoDnn[15:0];
+				// Extend by a bit for ASL overflow detection.
+				resL <= {rfoDnn[31],rfoDnn};
+				resB <= {rfoDnn[7],rfoDnn[7:0]};
+				resW <= {rfoDnn[15],rfoDnn[15:0]};
 				d <= rfoDnn;
 			end
 		end
@@ -2274,6 +2314,11 @@ MOVES3:
 `ifdef SUPPORT_BCD
 BCD:
 	begin
+		push(BCD0);
+		fs_data(3'b100,rrr,FETCH_BYTE,S);
+	end
+BCD0:
+	begin
 		if (ir[3]) begin
 			push(BCD1);
 			fs_data(3'b100,RRR,FETCH_BYTE,D);
@@ -2295,11 +2340,14 @@ BCD2:
 BCD3:	goto (BCD4);	// clock to load binary to BCD conversion
 BCD4:
 	if (dd_done) begin
-		if (ir[3])
+		if (ir[3] || (bcdneg && mmm!=3'b000 && mmm != 3'b001))
 			goto (STORE_BYTE);
 		else begin
 			rfwrB <= 1'b1;
-			Rt <= {1'b0,RRR};
+			if (bcdneg)
+				Rt <= {1'b0,rrr};
+			else
+				Rt <= {1'b0,RRR};
 			resB <= bcdreso[7:0];
 			ret();
 		end
@@ -2642,12 +2690,26 @@ CMPM:
 
 //-----------------------------------------------------------------------------
 // Shifts
+// Rotate instructions ROL,ROR do not affect the X flag.
 //-----------------------------------------------------------------------------
 SHIFT1:
 	begin
-		resB <= d[7:0];
-		resW <= d[15:0];
-		resL <= d[31:0];
+		vf <= 1'b0;
+		case(shift_op)
+		3'b010,	// ROXL, ROXR
+		3'b110:	cf <= xf;
+		default:
+			begin
+				if (cnt=='d0)
+					cf <= 1'b0;
+			end
+		endcase
+		if (sz==2'b11) begin
+			// Extend by a bit for ASL overflow detection.
+			resB <= {d[7],d[7:0]};
+			resW <= {d[15],d[15:0]};
+			resL <= {d[31],d[31:0]};
+		end
 		state <= SHIFT;
 	end
 SHIFT:
@@ -2677,17 +2739,17 @@ SHIFT:
 			endcase
 		3'b011:	// ROR
 			case(sz)
-			2'b00:	begin resB <= {resB[0],resB[ 7:1]}; cf <= resB[0]; xf <= resB[0]; end
-			2'b01:	begin resW <= {resW[0],resW[15:1]}; cf <= resW[0]; xf <= resW[0]; end
-			2'b10:	begin resL <= {resL[0],resL[31:1]}; cf <= resL[0]; xf <= resL[0]; end
-			2'b11:	begin resW <= {resW[0],resW[15:1]}; cf <= resW[0]; xf <= resW[0]; end
+			2'b00:	begin resB <= {resB[0],resB[ 7:1]}; cf <= resB[0]; end
+			2'b01:	begin resW <= {resW[0],resW[15:1]}; cf <= resW[0]; end
+			2'b10:	begin resL <= {resL[0],resL[31:1]}; cf <= resL[0]; end
+			2'b11:	begin resW <= {resW[0],resW[15:1]}; cf <= resW[0]; end
 			endcase
 		3'b100:	// ASL
 			case(sz)
-			2'b00:	begin resB <= {resB[ 6:0],1'b0}; cf <= resB[ 7]; xf <= resB[ 7]; end
-			2'b01:	begin resW <= {resW[14:0],1'b0}; cf <= resW[15]; xf <= resW[15]; end
-			2'b10:	begin resL <= {resL[30:0],1'b0}; cf <= resL[31]; xf <= resL[31]; end
-			2'b11:	begin resW <= {resW[14:0],1'b0}; cf <= resW[15]; xf <= resW[15]; end
+			2'b00:	begin resB <= {resB[ 7:0],1'b0}; cf <= resB[ 7]; xf <= resB[ 7]; if (resB[ 7] != resB[ 8]) vf <= 1'b1; end
+			2'b01:	begin resW <= {resW[15:0],1'b0}; cf <= resW[15]; xf <= resW[15]; if (resB[15] != resB[16]) vf <= 1'b1; end
+			2'b10:	begin resL <= {resL[31:0],1'b0}; cf <= resL[31]; xf <= resL[31]; if (resB[31] != resB[32]) vf <= 1'b1; end
+			2'b11:	begin resW <= {resW[15:0],1'b0}; cf <= resW[15]; xf <= resW[15]; if (resB[15] != resB[16]) vf <= 1'b1; end
 			endcase
 		3'b101:	// LSL
 			case(sz)
@@ -2705,21 +2767,23 @@ SHIFT:
 			endcase
 		3'b111: // ROL
 			case(sz)
-			2'b00:	begin resB <= {resB[ 6:0],resB[ 7]}; cf <= resB[ 7]; xf <= resB[ 7]; end
-			2'b01:	begin resW <= {resW[14:0],resW[15]}; cf <= resW[15]; xf <= resW[15]; end
-			2'b10:	begin resL <= {resL[30:0],resL[31]}; cf <= resL[31]; xf <= resL[31]; end
-			2'b11:	begin resW <= {resW[14:0],resW[15]}; cf <= resW[15]; xf <= resW[15]; end
+			2'b00:	begin resB <= {resB[ 6:0],resB[ 7]}; cf <= resB[ 7]; end
+			2'b01:	begin resW <= {resW[14:0],resW[15]}; cf <= resW[15]; end
+			2'b10:	begin resL <= {resL[30:0],resL[31]}; cf <= resL[31]; end
+			2'b11:	begin resW <= {resW[14:0],resW[15]}; cf <= resW[15]; end
 			endcase
 		endcase
 	end
 	else begin
+		/*
 		if (shift_op==3'b100)	// ASL
 			case(sz)
-			2'b00:	vf <= resB[7] != d[7];
+			2'b00:	vf <= resB[ 7] != d[ 7];
 			2'b01:	vf <= resW[15] != d[15];
 			2'b10:	vf <= resL[31] != d[31];
 			2'b11:	vf <= resW[15] != d[15];
 			endcase
+		*/
 		case(sz)
 		2'b00:	d <= resB;
 		2'b01:	d <= resW;
@@ -2865,7 +2929,17 @@ SUB:
 
 ADDX:
 	begin
-		push(ADDX2);
+		push (ADDX2);
+		case(sz)
+		2'd0:	fs_data(3'b100,rrr,FETCH_BYTE,S);
+		2'd1:	fs_data(3'b100,rrr,FETCH_WORD,S);
+		2'd2:	fs_data(3'b100,rrr,FETCH_LWORD,S);
+		default:	;
+		endcase
+	end
+ADDX2:
+	begin
+		push(ADDX3);
 		case(sz)
 		2'd0:	fs_data(3'b100,RRR,FETCH_BYTE,D);
 		2'd1:	fs_data(3'b100,RRR,FETCH_WORD,D);
@@ -2873,10 +2947,10 @@ ADDX:
 		default:	;
 		endcase
 	end
-ADDX2:
+ADDX3:
 	begin
-		flag_update <= FU_ADD;
-		resB <= d[7:0] + s[7:0] + xf;
+		flag_update <= FU_ADDX;
+		resB <= d[ 7:0] + s[ 7:0] + xf;
 		resW <= d[15:0] + s[15:0] + xf;
 		resL <= d[31:0] + s[31:0] + xf;
 		dd <= d;
@@ -2889,7 +2963,7 @@ ADDX2:
 			default:	;
 			endcase
 		else begin
-			Rt <= {1'b0,DDD};
+			Rt <= {1'b0,RRR};
 			case(sz)
 			2'd0:	rfwrB <= 1'b1;
 			2'd1:	rfwrW <= 1'b1;
@@ -2902,7 +2976,17 @@ ADDX2:
 
 SUBX:
 	begin
-		push(SUBX2);
+		push (SUBX2);
+		case(sz)
+		2'd0:	fs_data(3'b100,rrr,FETCH_BYTE,S);
+		2'd1:	fs_data(3'b100,rrr,FETCH_WORD,S);
+		2'd2:	fs_data(3'b100,rrr,FETCH_LWORD,S);
+		default:	;
+		endcase
+	end
+SUBX2:
+	begin
+		push(SUBX3);
 		case(sz)
 		2'd0:	fs_data(3'b100,RRR,FETCH_BYTE,D);
 		2'd1:	fs_data(3'b100,RRR,FETCH_WORD,D);
@@ -2910,9 +2994,9 @@ SUBX:
 		default:	;
 		endcase
 	end
-SUBX2:
+SUBX3:
 	begin
-		flag_update <= FU_SUB;
+		flag_update <= FU_SUBX;
 		resB <= d[7:0] - s[7:0] - xf;
 		resW <= d[15:0] - s[15:0] - xf;
 		resL <= d[31:0] - s[31:0] - xf;
@@ -2926,7 +3010,7 @@ SUBX2:
 			default:	;
 			endcase
 		else begin
-			Rt <= {1'b0,DDD};
+			Rt <= {1'b0,RRR};
 			case(sz)
 			2'd0:	rfwrB <= 1'b1;
 			2'd1:	rfwrW <= 1'b1;
@@ -3059,6 +3143,7 @@ EOR:
 //-----------------------------------------------------------------------------
 // ADDQ / SUBQ
 // Flags are not updated if the target is an address register.
+// If the target is an address register, the entire register is updated.
 //-----------------------------------------------------------------------------
 ADDQ:
 	begin
@@ -3082,7 +3167,7 @@ ADDQ:
 			dd <= d;
 			s <= immx;
 		end
-		if (mmm==3'd0 || mmm==3'd1) begin
+		if (mmm==3'd0) begin
 			ret();
 			Rt <= {mmm[0],rrr};
 			case(sz)
@@ -3091,6 +3176,12 @@ ADDQ:
 			2'b10:	rfwrL <= 1'b1;
 			default:	;
 			endcase
+		end
+		// If the target is an address register, the entire register is updated.
+		else if (mmm==3'b001) begin
+			ret();
+			Rt <= {mmm[0],rrr};
+			rfwrL <= 1'b1;
 		end
 		else
 			case(sz)
@@ -3751,7 +3842,7 @@ FETCH_LWORD:
       else
         s[15:0] <= dat_i[31:16];
 `endif          
-  		state <= FETCH_LWORDa;
+  		goto (FETCH_LWORDa);
     end
     else begin
       cyc_o <= `LOW;
@@ -5231,6 +5322,7 @@ begin
 				LFETCH_BYTE,FETCH_BYTE,STORE_BYTE,USTORE_BYTE:	resL <= (MMMRRR ? rfoAna : rfoAn) + 4'd1;
 				FETCH_WORD,STORE_WORD:	resL <= (MMMRRR ? rfoAna : rfoAn) + 4'd2;
 				FETCH_LWORD,STORE_LWORD:	resL <= (MMMRRR ? rfoAna : rfoAn) + 4'd4;
+				default:	;
 				endcase
 				goto(size_state);
 			end
@@ -5243,11 +5335,13 @@ begin
 				FETCH_NOP_BYTE,LFETCH_BYTE,FETCH_BYTE,STORE_BYTE,USTORE_BYTE:	ea <= (MMMRRR ? rfoAna : rfoAn) - 4'd1;
 				FETCH_NOP_WORD,FETCH_WORD,STORE_WORD:	ea <= (MMMRRR ? rfoAna : rfoAn) - 4'd2;
 				FETCH_NOP_LWORD,FETCH_LWORD,STORE_LWORD:	ea <= (MMMRRR ? rfoAna : rfoAn) - 4'd4;
+				default:	;
 				endcase
 				case(size_state)
 				LFETCH_BYTE,FETCH_BYTE,STORE_BYTE,USTORE_BYTE:	resL <= (MMMRRR ? rfoAna : rfoAn) - 4'd1;
 				FETCH_WORD,STORE_WORD:	resL <= (MMMRRR ? rfoAna : rfoAn) - 4'd2;
 				FETCH_LWORD,STORE_LWORD:	resL <= (MMMRRR ? rfoAna : rfoAn) - 4'd4;
+				default:	;
 				endcase
 				goto(size_state);
 			end
@@ -5434,9 +5528,9 @@ endtask
 task ret;
 begin
 	if (state_stk1==STORE_IN_DEST ||
-			state_stk1==BCD ||
-			state_stk1==ADDX ||
-			state_stk1==SUBX ||
+			state_stk1==ADDX2 ||	
+			state_stk1==SUBX2 ||
+			state_stk1==BCD0 ||
 			state_stk1==CMPM)
 		MMMRRR <= 1'b1;
 	if (state_stk1==IFETCH && tf) begin
