@@ -126,7 +126,7 @@
 `define BGT		8'h6E
 `define BLE		8'h6F
 
-// 7700 LUTs / 80MHz
+// 12000 LUTs / 80MHz
 // slices
 // 1600 FF's
 // 2 MULTS
@@ -380,7 +380,7 @@ typedef enum logic [7:0] {
 
 typedef enum logic [4:0] {
 	FU_NONE = 5'd0,
-	FU_MUL, FU_DIV,
+	FU_MUL,
 	FU_TST, FU_ADDX, FU_SUBX,
 	FU_CMP, FU_ADD, FU_SUB, FU_LOGIC, FU_ADDQ, FU_SUBQ,
 	FU_ADDI, FU_ANDI_CCR, FU_ANDI_SR, FU_EORI_CCR,
@@ -709,7 +709,7 @@ rbo = {w[7:0],w[15:8],w[23:16],w[31:24]};
 endfunction
 
 wire [7:0] dbin, sbin;
-reg [7:0] bcdres;
+reg [9:0] bcdres;
 wire dd_done;
 wire [11:0] bcdreso;
 BCDToBin ub2b1 (clk_i, d, dbin);
@@ -787,7 +787,7 @@ rf68000_divider udiv1
 	.rst(rst_i),
 	.clk(clk_i),
 	.ld(state==DIV1),
-	.abort(),
+	.abort(1'b0),
 	.sgn(divs),
 	.sgnus(1'b0),
 	.a(d),
@@ -1463,13 +1463,6 @@ IFETCH:
 				sr14 <= s[14];
 				tf <= s[15];
 			end
-		FU_DIV:
-			begin
-				cf <= 1'b0;
-				nf <= divq[15];
-				zf <= divq[15:0]==16'd0;
-				vf <= dvovf;
-			end	
 		default:	;
 		endcase
 		flag_update <= FU_NONE;
@@ -1517,7 +1510,6 @@ IFETCH:
 			mmm <= iri[5:3];
 			rrr <= iri[2:0];
 			rrrr <= iri[3:0];
-			divs <= iri[8];
 			gosub (DECODE);
 		end
 	end
@@ -1977,6 +1969,7 @@ DECODE:
 `ifdef SUPPORT_DIV			
 			12'b????_11??_????:	// DIVU / DIVS
 				begin
+					divs <= ir[8];
 					d <= rfoDn;
 					push(DIV1);
 					fs_data(mmm,rrr,FETCH_WORD,S);
@@ -2413,6 +2406,7 @@ MUL:
 
 //-----------------------------------------------------------------------------
 // DIVU / DIVS
+// - the target register is not updated if overflow occurs.
 //-----------------------------------------------------------------------------
 DIV1:
 	if (s[15:0]==16'd0) begin
@@ -2426,10 +2420,17 @@ DIV1:
 		goto (DIV2);
 DIV2:
 	if (dvdone) begin
-		flag_update <= FU_DIV;
-		Rt <= {1'b0,DDD};
-		resL <= {divr[15:0],divq[15:0]};
-		rfwrL <= 1'b1;
+		cf <= 1'b0;
+		if (dvovf)
+			vf <= 1'b1;
+		else begin
+			nf <= divq[15];
+			zf <= divq[15:0]==16'h0000;
+			vf <= 1'b0;
+			Rt <= {1'b0,DDD};
+			resL <= {divr[15:0],divq[15:0]};
+			rfwrL <= 1'b1;
+		end
 		ret();
 	end
 
@@ -2704,12 +2705,10 @@ SHIFT1:
 					cf <= 1'b0;
 			end
 		endcase
-		if (sz==2'b11) begin
-			// Extend by a bit for ASL overflow detection.
-			resB <= {d[7],d[7:0]};
-			resW <= {d[15],d[15:0]};
-			resL <= {d[31],d[31:0]};
-		end
+		// Extend by a bit for ASL overflow detection.
+		resB <= {d[7],d[7:0]};
+		resW <= {d[15],d[15:0]};
+		resL <= {d[31],d[31:0]};
 		state <= SHIFT;
 	end
 SHIFT:
@@ -2747,9 +2746,9 @@ SHIFT:
 		3'b100:	// ASL
 			case(sz)
 			2'b00:	begin resB <= {resB[ 7:0],1'b0}; cf <= resB[ 7]; xf <= resB[ 7]; if (resB[ 7] != resB[ 8]) vf <= 1'b1; end
-			2'b01:	begin resW <= {resW[15:0],1'b0}; cf <= resW[15]; xf <= resW[15]; if (resB[15] != resB[16]) vf <= 1'b1; end
-			2'b10:	begin resL <= {resL[31:0],1'b0}; cf <= resL[31]; xf <= resL[31]; if (resB[31] != resB[32]) vf <= 1'b1; end
-			2'b11:	begin resW <= {resW[15:0],1'b0}; cf <= resW[15]; xf <= resW[15]; if (resB[15] != resB[16]) vf <= 1'b1; end
+			2'b01:	begin resW <= {resW[15:0],1'b0}; cf <= resW[15]; xf <= resW[15]; if (resW[15] != resW[16]) vf <= 1'b1; end
+			2'b10:	begin resL <= {resL[31:0],1'b0}; cf <= resL[31]; xf <= resL[31]; if (resL[31] != resL[32]) vf <= 1'b1; end
+			2'b11:	begin resW <= {resW[15:0],1'b0}; cf <= resW[15]; xf <= resW[15]; if (resW[15] != resW[16]) vf <= 1'b1; end
 			endcase
 		3'b101:	// LSL
 			case(sz)
@@ -2775,15 +2774,19 @@ SHIFT:
 		endcase
 	end
 	else begin
-		/*
 		if (shift_op==3'b100)	// ASL
 			case(sz)
+			2'b00:	if (resB[ 7] != resB[ 8]) vf <= 1'b1;
+			2'b01:	if (resW[15] != resW[16]) vf <= 1'b1;
+			2'b10:	if (resL[31] != resL[32]) vf <= 1'b1;
+			2'b11:	if (resW[15] != resW[16]) vf <= 1'b1;
+			/*
 			2'b00:	vf <= resB[ 7] != d[ 7];
 			2'b01:	vf <= resW[15] != d[15];
 			2'b10:	vf <= resL[31] != d[31];
 			2'b11:	vf <= resW[15] != d[15];
+			*/
 			endcase
-		*/
 		case(sz)
 		2'b00:	d <= resB;
 		2'b01:	d <= resW;

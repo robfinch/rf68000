@@ -64,7 +64,7 @@ reg dvByZr;
 reg ovf;
 
 reg [WID-1:0] aa,bb;
-reg so;
+reg so, rs;
 reg [2:0] state;
 reg [7:0] cnt;
 wire cnt_done = cnt==8'd0;
@@ -77,10 +77,10 @@ wire b0 = bb <= r;
 wire [WID-1:0] r1 = b0 ? r - bb : r;
 
 initial begin
-    q = 32'd0;
-    r = 32'd0;
-    qo = 32'd0;
-    ro = 32'd0;
+  q = 32'd0;
+  r = 32'd0;
+  qo = 32'd0;
+  ro = 32'd0;
 end
 
 always @(posedge clk)
@@ -94,6 +94,8 @@ if (rst) begin
 	cnt <= 8'd0;
 	dvByZr <= 1'b0;
 	ovf <= 1'b0;
+	so <= 1'b0;
+	rs <= 1'b0;
 	state <= IDLE;
 end
 else
@@ -111,6 +113,7 @@ IDLE:
 			q <= a[WID-1] ? -a : a;
 			bb <= b[WID-1] ? -b : b;
 			so <= a[WID-1] ^ b[WID-1];
+			rs <= a[WID-1];
 		end
 		else if (sgnus) begin
 			q <= a[WID-1] ? -a : a;
@@ -133,7 +136,7 @@ DIV:
 		$display("cnt:%d r1=%h q[31:0]=%h", cnt,r1,q);
 		q <= {q[WID-2:0],b0};
 		r <= {r1,q[WID-1]};
-		if (q[31:16] > bb[15:0] && cnt==WID+1) begin
+		if (q[31:16] >= bb[15:0] && cnt==WID+1) begin
 			ovf <= 1'b1;
 			state <= DONE;
 		end
@@ -141,14 +144,15 @@ DIV:
 	else begin
 		$display("cnt:%d r1=%h q[63:0]=%h", cnt,r1,q);
 		if (sgn|sgnus) begin
-			if (so) begin
+			if (so)
 				qo <= -q;
-				ro <= -r[WID:1];
-			end
-			else begin
+			else
 				qo <= q;
+			// The sign of the remainder is the same as the dividend.
+			if (rs != r[WID])
+				ro <= -r[WID:1];
+			else
 				ro <= r[WID:1];
-			end
 		end
 		else begin
 			qo <= q;

@@ -116,7 +116,7 @@ else begin
 		end
 		else if (cpu_cyc) begin
 			w1 <= 1'b1;
-			if (cpu_adr[31:20]==12'h0) begin
+			if (cpu_adr[31:18]==14'h0) begin
 				state <= cpu_we ? ST_RD3 : ST_RD1;
 				ram_we <= {4{cpu_we}} & cpu_sel;
 				ram_en <= TRUE;

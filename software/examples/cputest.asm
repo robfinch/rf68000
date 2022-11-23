@@ -122,20 +122,20 @@ cpu_test:
 	bsr op_SUBQ
 	bsr op_MOVEQ
 *** fails
-*	bsr op_DIVU
-*	bsr op_DIVS
+	bsr op_DIVU
+	bsr op_DIVS
 	bsr op_OR
 	bsr op_AND
 	bsr op_EOR
 	bsr op_CMP
 	bsr op_CMPA
-*	bsr op_CMPM
+	bsr op_CMPM
 	bsr op_ADD
 	bsr op_SUB
 	bsr op_ADDA
 	bsr op_SUBA
-*	bsr op_ADDX	
-*	bsr op_SUBX
+	bsr op_ADDX	
+	bsr op_SUBX
 	bsr op_MULU
 	bsr op_MULS
 	bsr op_EXG

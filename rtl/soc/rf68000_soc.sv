@@ -139,7 +139,7 @@ wire xrst = ~cpu_resetn;
 wire locked;
 wire clk20, clk40, clk50, clk100, clk200;
 wire xclk_bufg;
-wire node_clk = clk40;
+wire node_clk = clk50;
 wb_write_request128_t ch7req;
 wb_read_response128_t ch7resp;
 wb_write_request128_t fb_req;
@@ -369,7 +369,7 @@ always_ff @(posedge node_clk)
 always_ff @(posedge node_clk)
 	br1_ack <= fb_ack|tc_ack;
 
-PS2kbd #(.pClkFreq(40000000)) ukbd1
+PS2kbd #(.pClkFreq(50000000)) ukbd1
 (
 	// WISHBONE/SoC bus interface 
 	.rst_i(rst),
@@ -408,10 +408,10 @@ random urnd1
 	.dat_o(rand_dato)
 );
 
-uart6551 uuart
+uart6551 #(.pClkFreq(100), .pClkDiv(24'd130)) uuart
 (
 	.rst_i(rst),
-	.clk_i(clk40),
+	.clk_i(clk100),
 	.cs_i(cs_br3_acia),
 	.irq_o(),
 	.cyc_i(br3_cyc),
@@ -434,7 +434,7 @@ uart6551 uuart
 	.rxDRQ_o(),
 	.txDRQ_o(),
 	.xclk_i(clk20),
-	.RxC_i(1'b0)
+	.RxC_i(clk20)
 );
 
 
@@ -764,7 +764,7 @@ ila_0 your_instance_name (
 	.probe0(unode1.ucpu1.ir), // input wire [15:0]  probe0  
 	.probe1(br3_adr), // input wire [31:0]  probe1 
 	.probe2(br3_dato), // input wire [31:0]  probe2 
-	.probe3({ch7req.cyc,ch7req.we,irq,ack}), // input wire [7:0]  probe3
+	.probe3({ch7req.cyc,ch7req.we,irq,ack,br3_cack,acia_ack}), // input wire [7:0]  probe3
 	.probe4(unode1.ucpu1.pc),
 	.probe5(unode1.ucpu1.state),
 	.probe6(ipacket[4]),

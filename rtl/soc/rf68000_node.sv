@@ -53,7 +53,7 @@ wire cyc2, stb2, ack2;
 wire we1, we2;
 wire [3:0] sel1, sel2;
 wire [31:0] adr1, adr2;
-wire [31:0] dati1, dati2;
+reg [31:0] dati1, dati2;
 wire [31:0] dato1, dato2;
 wire ram1_en, ram2_en;
 wire [3:0] ram1_we, ram2_we;
@@ -71,15 +71,27 @@ wire [31:0] nic1_sdato, nic2_sdato;
 wire [2:0] cpu1_irq, cpu2_irq;
 wire [7:0] cpu1_icause, cpu2_icause;
 wire err1, err2;
+wire spram1_ack, spram2_ack;
+wire [31:0] spram1o, spram2o;
 
 packet_t packet_x;
 packet_t rpacket_x;
 ipacket_t ipacket_x;
 
-assign ack1 = nic1_sack|ram1_ack;
-assign ack2 = nic2_sack|ram2_ack;
-assign dati1 = adr1[31:20]==12'h0 ? ram1_dat : nic1_sdato;
-assign dati2 = adr2[31:20]==12'h0 ? ram2_dat : nic2_sdato;
+assign ack1 = nic1_sack|ram1_ack|spram1_ack;
+assign ack2 = nic2_sack|ram2_ack|spram2_ack;
+always_comb
+	case(adr1[31:18])
+	14'h0:	dati1 <= ram1_dat;
+	14'h1:	dati1 <= spram1o;
+	default:	dati1 <= nic1_sdato;
+	endcase
+always_comb
+	case(adr2[31:18])
+	14'h0:	dati2 <= ram2_dat;
+	14'h1:	dati2 <= spram2o;
+	default:	dati2 <= nic2_sdato;
+	endcase
 
 /*
 always_comb
@@ -188,7 +200,7 @@ rf68000_node_arbiter undarb1
 	.rst_i(rst),
 	.clk_i(clk),
 	.cpu_cyc(cyc1),
-	.cpu_stb(stb1 && adr1[31:20]==12'h000),
+	.cpu_stb(stb1 && adr1[31:18]==14'h000),
 	.cpu_ack(ram1_ack),
 	.cpu_aack(ram1_aack),
 	.cpu_we(we1),
@@ -217,7 +229,7 @@ rf68000_node_arbiter undarb2
 	.rst_i(rst),
 	.clk_i(clk),
 	.cpu_cyc(cyc2),
-	.cpu_stb(stb2 && adr2[31:20]==12'h000),
+	.cpu_stb(stb2 && adr2[31:18]==14'h000),
 	.cpu_ack(ram2_ack),
 	.cpu_aack(ram2_aack),
 	.cpu_we(we2),
@@ -432,5 +444,172 @@ rf68000 ucpu2
 
    );
 
-			
+wire cs_spram1 = adr1[31:18]==14'h1 && cyc1 && stb1;
+wire cs_spram2 = adr2[31:18]==14'h1 && cyc2 && stb2;
+
+ack_gen uag1
+(
+	.clk_i(clk),
+	.ce_i(1'b1),
+	.i(cs_spram1),
+	.rid_i({id,1'b0}),
+	.we_i(cs_spram1 & we1),
+	.wid_i({id,1'b0}),
+	.o(spram1_ack), 
+	.rid_o(),
+	.wid_o()
+);
+
+ack_gen uag2
+(
+	.clk_i(clk),
+	.ce_i(1'b1),
+	.i(cs_spram2),
+	.rid_i({id,1'b1}),
+	.we_i(cs_spram2 & we2),
+	.wid_i({id,1'b1}),
+	.o(spram2_ack), 
+	.rid_o(),
+	.wid_o()
+);
+
+	 // xpm_memory_spram: Single Port RAM
+   // Xilinx Parameterized Macro, version 2022.2
+
+   xpm_memory_spram #(
+      .ADDR_WIDTH_A(10),              // DECIMAL
+      .AUTO_SLEEP_TIME(0),           // DECIMAL
+      .BYTE_WRITE_WIDTH_A(8),       // DECIMAL
+      .CASCADE_HEIGHT(0),            // DECIMAL
+      .ECC_MODE("no_ecc"),           // String
+      .MEMORY_INIT_FILE("none"),     // String
+      .MEMORY_INIT_PARAM("0"),       // String
+      .MEMORY_OPTIMIZATION("true"),  // String
+      .MEMORY_PRIMITIVE("auto"),     // String
+      .MEMORY_SIZE(32768),            // DECIMAL
+      .MESSAGE_CONTROL(0),           // DECIMAL
+      .READ_DATA_WIDTH_A(32),        // DECIMAL
+      .READ_LATENCY_A(2),            // DECIMAL
+      .READ_RESET_VALUE_A("0"),      // String
+      .RST_MODE_A("SYNC"),           // String
+      .SIM_ASSERT_CHK(0),            // DECIMAL; 0=disable simulation messages, 1=enable simulation messages
+      .USE_MEM_INIT(1),              // DECIMAL
+      .USE_MEM_INIT_MMI(0),          // DECIMAL
+      .WAKEUP_TIME("disable_sleep"), // String
+      .WRITE_DATA_WIDTH_A(32),       // DECIMAL
+      .WRITE_MODE_A("read_first"),   // String
+      .WRITE_PROTECT(1)              // DECIMAL
+   )
+   xpm_memory_spram_inst1 (
+      .dbiterra(),             // 1-bit output: Status signal to indicate double bit error occurrence
+                                       // on the data output of port A.
+
+      .douta(spram1o),                   // READ_DATA_WIDTH_A-bit output: Data output for port A read operations.
+      .sbiterra(),             // 1-bit output: Status signal to indicate single bit error occurrence
+                                       // on the data output of port A.
+
+      .addra(adr1[11:2]),          // ADDR_WIDTH_A-bit input: Address for port A write and read operations.
+      .clka(clk),                     // 1-bit input: Clock signal for port A.
+      .dina(dato1),                     // WRITE_DATA_WIDTH_A-bit input: Data input for port A write operations.
+      .ena(cs_spram1),                       // 1-bit input: Memory enable signal for port A. Must be high on clock
+                                       // cycles when read or write operations are initiated. Pipelined
+                                       // internally.
+
+      .injectdbiterra(1'b0), // 1-bit input: Controls double bit error injection on input data when
+                                       // ECC enabled (Error injection capability is not available in
+                                       // "decode_only" mode).
+
+      .injectsbiterra(1'b0), // 1-bit input: Controls single bit error injection on input data when
+                                       // ECC enabled (Error injection capability is not available in
+                                       // "decode_only" mode).
+
+      .regcea(1'b1),                 // 1-bit input: Clock Enable for the last register stage on the output
+                                       // data path.
+
+      .rsta(1'b0),                     // 1-bit input: Reset signal for the final port A output register stage.
+                                       // Synchronously resets output port douta to the value specified by
+                                       // parameter READ_RESET_VALUE_A.
+
+      .sleep(1'b0),                   // 1-bit input: sleep signal to enable the dynamic power saving feature.
+      .wea(sel1 & {4{we1}})                        // WRITE_DATA_WIDTH_A/BYTE_WRITE_WIDTH_A-bit input: Write enable vector
+                                       // for port A input data port dina. 1 bit wide when word-wide writes are
+                                       // used. In byte-wide write configurations, each bit controls the
+                                       // writing one byte of dina to address addra. For example, to
+                                       // synchronously write only bits [15-8] of dina when WRITE_DATA_WIDTH_A
+                                       // is 32, wea would be 4'b0010.
+
+   );
+
+   // End of xpm_memory_spram_inst instantiation
+				
+	 // xpm_memory_spram: Single Port RAM
+   // Xilinx Parameterized Macro, version 2022.2
+
+   xpm_memory_spram #(
+      .ADDR_WIDTH_A(10),              // DECIMAL
+      .AUTO_SLEEP_TIME(0),           // DECIMAL
+      .BYTE_WRITE_WIDTH_A(8),       // DECIMAL
+      .CASCADE_HEIGHT(0),            // DECIMAL
+      .ECC_MODE("no_ecc"),           // String
+      .MEMORY_INIT_FILE("none"),     // String
+      .MEMORY_INIT_PARAM("0"),       // String
+      .MEMORY_OPTIMIZATION("true"),  // String
+      .MEMORY_PRIMITIVE("auto"),     // String
+      .MEMORY_SIZE(32768),            // DECIMAL
+      .MESSAGE_CONTROL(0),           // DECIMAL
+      .READ_DATA_WIDTH_A(32),        // DECIMAL
+      .READ_LATENCY_A(2),            // DECIMAL
+      .READ_RESET_VALUE_A("0"),      // String
+      .RST_MODE_A("SYNC"),           // String
+      .SIM_ASSERT_CHK(0),            // DECIMAL; 0=disable simulation messages, 1=enable simulation messages
+      .USE_MEM_INIT(1),              // DECIMAL
+      .USE_MEM_INIT_MMI(0),          // DECIMAL
+      .WAKEUP_TIME("disable_sleep"), // String
+      .WRITE_DATA_WIDTH_A(32),       // DECIMAL
+      .WRITE_MODE_A("read_first"),   // String
+      .WRITE_PROTECT(1)              // DECIMAL
+   )
+   xpm_memory_spram_inst2 (
+      .dbiterra(),             // 1-bit output: Status signal to indicate double bit error occurrence
+                                       // on the data output of port A.
+
+      .douta(spram2o),                   // READ_DATA_WIDTH_A-bit output: Data output for port A read operations.
+      .sbiterra(),             // 1-bit output: Status signal to indicate single bit error occurrence
+                                       // on the data output of port A.
+
+      .addra(adr2[11:2]),          // ADDR_WIDTH_A-bit input: Address for port A write and read operations.
+      .clka(clk),                     // 1-bit input: Clock signal for port A.
+      .dina(dato2),                     // WRITE_DATA_WIDTH_A-bit input: Data input for port A write operations.
+      .ena(cs_spram2),                       // 1-bit input: Memory enable signal for port A. Must be high on clock
+                                       // cycles when read or write operations are initiated. Pipelined
+                                       // internally.
+
+      .injectdbiterra(1'b0), // 1-bit input: Controls double bit error injection on input data when
+                                       // ECC enabled (Error injection capability is not available in
+                                       // "decode_only" mode).
+
+      .injectsbiterra(1'b0), // 1-bit input: Controls single bit error injection on input data when
+                                       // ECC enabled (Error injection capability is not available in
+                                       // "decode_only" mode).
+
+      .regcea(1'b1),                 // 1-bit input: Clock Enable for the last register stage on the output
+                                       // data path.
+
+      .rsta(1'b0),                     // 1-bit input: Reset signal for the final port A output register stage.
+                                       // Synchronously resets output port douta to the value specified by
+                                       // parameter READ_RESET_VALUE_A.
+
+      .sleep(1'b0),                   // 1-bit input: sleep signal to enable the dynamic power saving feature.
+      .wea(sel2 & {4{we2}})                        // WRITE_DATA_WIDTH_A/BYTE_WRITE_WIDTH_A-bit input: Write enable vector
+                                       // for port A input data port dina. 1 bit wide when word-wide writes are
+                                       // used. In byte-wide write configurations, each bit controls the
+                                       // writing one byte of dina to address addra. For example, to
+                                       // synchronously write only bits [15-8] of dina when WRITE_DATA_WIDTH_A
+                                       // is 32, wea would be 4'b0010.
+
+   );
+
+   // End of xpm_memory_spram_inst instantiation
+				
+							
 endmodule
