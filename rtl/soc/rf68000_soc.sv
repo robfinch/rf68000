@@ -413,7 +413,7 @@ uart6551 #(.pClkFreq(100), .pClkDiv(24'd130)) uuart
 	.rst_i(rst),
 	.clk_i(clk100),
 	.cs_i(cs_br3_acia),
-	.irq_o(),
+	.irq_o(acia_irq),
 	.cyc_i(br3_cyc),
 	.stb_i(br3_stb),
 	.ack_o(acia_ack),

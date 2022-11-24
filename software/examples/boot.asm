@@ -20,6 +20,8 @@
 ; 00100000 +----------------+
 ;					 |   global ram   |
 ; 00101000 +----------------+
+;					 | serial rcvbuf  |
+; 00102000 +----------------+
 ;					 |    unused      |
 ; 20000000 +----------------+
 ;          |                |
@@ -50,6 +52,8 @@ CTRLH	EQU		$08
 CTRLX	EQU		$18
 LF		EQU		$0A
 CR		EQU		$0D
+XON		EQU		$11
+XOFF	EQU		$13
 
 SC_F12  EQU    $07
 SC_C    EQU    $21
@@ -75,6 +79,8 @@ ACIA			EQU	$FD060000
 ACIA_RX		EQU	0
 ACIA_TX		EQU	0
 ACIA_STAT	EQU	4
+ACIA_CMD	EQU	8
+ACIA_CTRL	EQU	12
 PLIC			EQU	$FD090000
 leds			EQU	$FD0FFF00
 keybd			EQU	$FD0FFE00
@@ -201,6 +207,11 @@ _KeybdHead	equ	$00100011
 _KeybdTail	equ	$00100012
 _KeybdCnt		equ	$00100013
 _KeybdBuf		equ	$00100020
+SerTailRcv	equ	$00100030
+SerHeadRcv	equ	$00100032
+SerRcvXon		equ	$00100034
+SerRcvXoff	equ	$00100035
+SerRcvBuf		equ	$00101000
 
 	code
 	align		2
@@ -228,6 +239,8 @@ start:
 ;	bsr			InitSemaphores
 	bsr			Delay3s						; give devices time to reset
 	bsr			clear_screen
+
+	bsr			SerialInit
 
 	; Write startup message to screen
 
@@ -446,8 +459,16 @@ loop3:
 	nop
 	nop	
 	nop
+	nop	
+	nop
+	nop	
+	nop
 	move.l	d0,(a0)+					; copy fgcolor to cell
 	nop
+	nop
+	nop	
+	nop
+	nop	
 	nop
 	nop	
 	nop
@@ -503,7 +524,7 @@ DisplayChar:
 	movec		coreno,d2
 	cmpi.b	#2,d2
 	bne.s		.0001
-	bsr			SerialPutChar
+;	bsr			SerialPutChar
 .0001:
 	andi.l	#$ff,d1				; zero out upper bytes of d1
 	cmpi.b	#13,d1				; carriage return ?
@@ -688,7 +709,11 @@ ScrollUp:
 	mulu		d1,d0								; d0 = count of characters to move
 .0001:
 	move.l	(a0)+,(a5)+					; each char is 64 bits
+	nop
+	nop
 	move.l	(a0)+,(a5)+	
+	nop
+	nop
 	dbra		d0,.0001
 	movem.l	(a7)+,d0/d1/a0/a5
 	; Fall through into blanking out last line
@@ -721,7 +746,11 @@ BlankLastLine:
 	rol.w		#8,d0
 .0001:
 	move.l	d0,(a0)+
+	nop
+	nop
 	move.l	d1,(a0)+
+	nop
+	nop
 	dbra		d2,.0001
 	movem.l	(a7)+,d0/d1/d2/a0
 	rts
@@ -811,6 +840,9 @@ SyncCursor:
 	movec		coreno,d2
 	cmp.b		IOFocus,d2
 	bne.s		.0001
+	subi.w	#2,d2						; factor in location of screen in controller
+	mulu		#2048,d2				; 2048 cells per screen
+	add.w		d2,d0
 	rol.w		#8,d0						; swap byte order
 	move.w	d0,TEXTREG+$24
 .0001:	
@@ -873,8 +905,8 @@ T15DispatchTable:
 	dc.l	rotate_iofocus
 	dc.l	SerialPeekCharDirect
 	dc.l	SerialPutChar
-	dc.l	StubRout
-	dc.l	StubRout
+	dc.l	SerialPeekChar
+	dc.l	SerialGetChar
 	dc.l	StubRout
 	dc.l	StubRout
 	dc.l	StubRout
@@ -917,6 +949,20 @@ StubRout:
 	rts
 
 ;------------------------------------------------------------------------------
+; Select a specific IO focus.
+;------------------------------------------------------------------------------
+
+select_iofocus:
+	cmpi.b	#2,d1
+	blo.s		.0001
+	cmpi.b	#9,d1
+	bhi.s		.0001
+	move.l	d1,d0
+	bra.s		select_focus1
+.0001:
+	rts
+
+;------------------------------------------------------------------------------
 ; Rotate the IO focus, done when ALT-Tab is pressed.
 ;
 ; Modifies:
@@ -930,6 +976,7 @@ rotate_iofocus:
 	bls.s		.0001
 	move.b	#2,d0
 .0001:
+select_focus1:
 	move.b	d0,IOFocus				; set IO focus
 	subi.b	#2,d0							; screen is 0 to 7, focus is 2 to 9
 	ext.w		d0								; make into long value
@@ -953,12 +1000,14 @@ rotate_iofocus:
 
 init_plic:
 	lea		PLIC,a0						; a0 points to PLIC
-	lea		$80+4*29(a0),a0		; point to timer registers (29)
-	move.l	#$00060302,(a0)	; initialize, core=2,edge sensitive,enabled,irq6
-	lea			4(a0),a0				; point to keyboard registers (30)
-	move.l	#$00060102,(a0)	; initialize, core=2,level sensitive,enabled,irq6
-	lea			4(a0),a0				; point to nmi button register (31)
-	move.l	#$00070302,(a0)	; initialize, core=2,edge sensitive,enabled,irq7
+	lea		$80+4*29(a0),a1		; point to timer registers (29)
+	move.l	#$00060302,(a1)	; initialize, core=2,edge sensitive,enabled,irq6
+	lea			4(a1),a1				; point to keyboard registers (30)
+	move.l	#$00060102,(a1)	; initialize, core=2,level sensitive,enabled,irq6
+	lea			4(a1),a1				; point to nmi button register (31)
+	move.l	#$00070302,(a1)	; initialize, core=2,edge sensitive,enabled,irq7
+	lea		$80+4*16(a0),a1		; a1 points to ACIA register
+	move.l	#$00030102,(a1)	; core=2,level sensitive,enabled,irq3	
 	rts
 
 ;==============================================================================
@@ -1098,12 +1147,9 @@ GetKey:
 	rts
 
 CheckForCtrlC:
-	bsr			CheckForKey
-	beq.s		.0001
-	bsr			KeybdGetChar
+	bsr			KeybdGetCharNoWait
 	cmp.b		#CTRLC,d1
 	beq			Monitor
-.0001:
 	rts
 
 ;------------------------------------------------------------------------------
@@ -1442,7 +1488,7 @@ StartMon:
 Monitor:
 	; Reset the stack pointer on each entry into the monitor
 	move.l	#$40FFC,sp	; reset core's stack
-	move.w	#$2500,sr		; enable level 6 and higher interrupts
+	move.w	#$2200,sr		; enable level 2 and higher interrupts
 	moveq		#1,d1
 	bsr			UnlockSemaphore
 	clr.b		KeybdEcho		; turn off keyboard echo
@@ -1520,23 +1566,39 @@ Prompt2:
 	beq			TestCLS
 	cmpi.b	#'T',d1			; $T - run cpu test program
 	bne.s		.0002
+	bsr			FromScreen
+	cmpi.b	#'R',d1
+	beq			TestSerialReceive
 	bsr			cpu_test
 	lea			msg_test_done,a1
 	bsr			DisplayStringCRLF
+	bra			Monitor
 .0002:
+	cmpi.b	#'S',d1
+	beq			SendSerial
+	cmpi.b	#'R',d1
+	beq			ReceiveSerial
 	bra			Monitor
 
 TestCLS:
 	bsr			FromScreen
 	addq		#1,d2
 	cmpi.b	#'L',d1
-	bne			Monitor
+	bne.s		.0001
 	bsr			FromScreen
 	addq		#1,d2
 	cmpi.b	#'S',d1
 	bne			Monitor
 	bsr			ClearScreen
 	bsr			HomeCursor
+	bra			Monitor
+.0001:
+	cmpi.b	#'2',d1					; check range
+	blo			Monitor
+	cmpi.b	#'9',d1
+	bhi			Monitor
+	subi.b	#'0',d1					; convert ascii to binary
+	bsr			select_iofocus
 	bra			Monitor
 	
 DisplayHelp:
@@ -1546,15 +1608,20 @@ DisplayHelp:
 
 HelpMsg:
 	dc.b	"? = Display help",CR,LF
+	dc.b  "C<n> = switch to core n",CR,LF
 	dc.b	"CLS = clear screen",CR,LF
 	dc.b	": = Edit memory bytes",CR,LF
 	dc.b	"F = Fill memory",CR,LF
 	dc.b	"L = Load S19 file",CR,LF
-	dc.b	"D = Dump memory",CR,LF
+	dc.b	"D = Dump memory, DR = dump registers",CR,LF
 	dc.b	"B = start tiny basic",CR,LF
 	dc.b  "BR = set breakpoint",CR,LF
 	dc.b	"J = Jump to code",CR,LF
+	dc.b  "SE = send to serial port",CR,LF
 	dc.b	"T = cpu test program",CR,LF,0
+
+msgHello:
+	dc.b	LF,CR,"Hello World!",LF,CR,0
 	even
 
 ;------------------------------------------------------------------------------
@@ -1619,6 +1686,61 @@ GetCmdLine:
 		bsr		DisplayChar
 		rts
 
+;------------------------------------------------------------------------------
+; S <address> <length>
+; Send data buffer to serial port
+; S 40000 40
+;------------------------------------------------------------------------------
+
+SendSerial:
+	bsr			ignBlanks
+	bsr			GetHexNumber
+	beq			Monitor
+	move.l	d1,d6					; d6 points to buffer
+	bsr			ignBlanks
+	bsr			GetHexNumber
+	bne.s		.0003
+	moveq		#16,d1
+.0003:
+	move.l	d6,a1					; a1 points to buffer
+	move.l	d1,d2					; d2 = count of bytes to send
+	bra.s		.0002					; enter loop at bottom
+.0001:
+	move.b	(a1)+,d1
+	move.w	#34,d0				; serial putchar
+	trap		#15
+.0002:
+	dbra		d2,.0001
+	bra			Monitor
+		
+;------------------------------------------------------------------------------
+; R <address> <length>
+; Send data buffer to serial port
+; R 10000 40
+;------------------------------------------------------------------------------
+
+ReceiveSerial:
+	bsr			ignBlanks
+	bsr			GetHexNumber
+	beq			Monitor
+	move.l	d1,d6					; d6 points to buffer
+	bsr			ignBlanks
+	bsr			GetHexNumber
+	bne.s		.0003
+	moveq		#16,d1
+.0003:
+	move.l	d6,a1					; a1 points to buffer
+	move.l	d1,d2					; d2 = count of bytes to send
+	bra.s		.0002					; enter loop at bottom
+.0001:
+	move.w	#33,d0				; serial peek char
+	trap		#15
+	cmpi.l	#-1,d1
+	beq			.0001
+	move.b	d1,(a1)+
+.0002:
+	dbra		d2,.0001
+	bra			Monitor
 		
 ;------------------------------------------------------------------------------
 ; Fill memory
@@ -1627,7 +1749,7 @@ GetCmdLine:
 ; FL = fill longs
 ; F = fill bytes
 ;------------------------------------------------------------------------------
-;
+
 FillMem:
 	bsr			FromScreen
 	;bsr		ScreenToAscii
@@ -1665,7 +1787,7 @@ fmemB:
 ; Modifies:
 ;	a0	- text pointer
 ;------------------------------------------------------------------------------
-;
+
 ignBlanks:
 	move.l	d1,-(a7)
 .0001:
@@ -1679,7 +1801,7 @@ ignBlanks:
 ;------------------------------------------------------------------------------
 ; Edit memory byte.
 ;------------------------------------------------------------------------------
-;
+
 EditMem:
 	bsr		ignBlanks
 	bsr		GetHexNumber
@@ -1843,6 +1965,19 @@ msg_reglist:
 	align	1
 
 ;------------------------------------------------------------------------------
+;------------------------------------------------------------------------------
+
+TestSerialReceive:
+.0002:
+	bsr			SerialPeekCharDirect
+	cmpi.b	#-1,d1
+	beq.s		.0001
+	bsr			DisplayChar
+.0001:	
+	bsr			CheckForCtrlC
+	bra			.0002
+	
+;------------------------------------------------------------------------------
 ; Get a hexidecimal number. Maximum of eight digits.
 ;
 ; Returns:
@@ -2000,11 +2135,14 @@ DisplayNybble:
 ;==============================================================================
 ;
 LoadS19:
+	bsr			CRLF
 	bra			ProcessRec
 NextRec:
 	bsr			sGetChar
 	cmpi.b	#LF,d0
 	bne			NextRec
+	move.b	#'.',d1
+	bsr			DisplayChar
 ProcessRec
 	bsr			sGetChar
 	move.b	d0,d4
@@ -2150,20 +2288,21 @@ S1932b:
 ; Get a character from auxillary input, checking the keyboard status for a
 ; CTRL-C
 ;------------------------------------------------------------------------------
-;
+
 sGetChar:
-	bsr			CheckForKey
-	beq			.0001
-	moveq		#5,d0					; GetKey
-	trap		#15
-	cmpi.b	#CTRLC,d1
-	beq			Monitor
+	bsr			CheckForCtrlC
+;	bsr			CheckForKey
+;	beq			.0001
+;	moveq		#5,d0					; GetKey
+;	trap		#15
+;	cmpi.b	#CTRLC,d1
+;	beq			Monitor
 .0001:
-	moveq		#33,d0				; serial peek character direct
+	moveq		#36,d0				; serial get char from buffer
 	trap		#15
-	tst.l		d0
-	bmi			sGetChar
-	move.b	d0,d1
+	cmpi.b	#-1,d1
+	beq.s		sGetChar
+	move.l	d1,d0					; expected in d0
 	rts
 
 AudioInputTest:
@@ -2179,6 +2318,111 @@ ClearScreen:
 AUXIN:
 
 ;------------------------------------------------------------------------------
+; Initialize the serial port an enhanced 6551 circuit.
+;
+; Select internal baud rate clock divider for 9600 baud
+; Reset fifos, set threshold to 3/4 full on transmit and 3/4 empty on receive
+; Note that the byte order is swapped.
+;------------------------------------------------------------------------------
+
+SerialInit:
+	clr.w		SerHeadRcv					; clear receive buffer indexes
+	clr.w		SerTailRcv
+	clr.b		SerRcvXon						; and Xon,Xoff flags
+	clr.b		SerRcvXoff
+	move.l	#$09000000,d0				; dtr,rts active, rxint enabled, no parity
+	move.l	d0,ACIA+ACIA_CMD
+;	move.l	#$1E00F700,d0				; fifos enabled
+	move.l	#$1E000000,d0				; fifos disabled
+	move.l	d0,ACIA+ACIA_CTRL
+	rts
+;	move.l	#$0F000000,d0				; transmit a break for a while
+;	move.l	d0,ACIA+ACIA_CMD
+;	move.l	#300000,d2					; wait 100 ms
+;	bra			.0001
+;.0003:
+;	swap		d2
+;.0001:
+;	nop
+;	dbra		d2,.0001
+;.0002:
+;	swap		d2
+;	dbra		d2,.0003
+;	move.l	#$07000000,d0				; clear break
+;	move.l	d0,ACIA+ACIA_CMD
+;	rts
+	
+;------------------------------------------------------------------------------
+; SerialGetChar
+;
+; Check the serial port buffer to see if there's a char available. If there's
+; a char available then return it. If the buffer is almost empty then send an
+; XON.
+;
+; Stack Space:
+;		2 words
+; Parameters:
+;		none
+; Modifies:
+;		d0,a0
+; Returns:
+;		d1 = character or -1
+;------------------------------------------------------------------------------
+
+SerialGetChar:
+	bsr				SerialRcvCount			; check number of chars in receive buffer
+	cmpi.w		#8,d0								; less than 8?
+	bhi				.sgc2
+	tst.b			SerRcvXon						; skip sending XON if already sent
+	bne	  		.sgc2            		; XON already sent?
+	move.b		#XON,d1							; if <8 send an XON
+	clr.b			SerRcvXoff					; clear XOFF status
+	move.b		d1,SerRcvXon				; flag so we don't send it multiple times
+	bsr				SerialPutChar				; send it
+.sgc2:
+	move.w		SerHeadRcv,d1				; check if anything is in buffer
+	cmp.w			SerTailRcv,d1
+	beq				.NoChars						; no?
+	lea				SerRcvBuf,a0
+	move.b		(a0,d1.w),d1				; get byte from buffer
+	addi.w		#1,SerHeadRcv
+	andi.w		#$FFF,SerHeadRcv		; 4k wrap around
+	bra				.Xit
+.NoChars:
+	moveq			#-1,d1
+.Xit:
+	rts
+
+;------------------------------------------------------------------------------
+; SerialPeekChar
+;
+; Check the serial port buffer to see if there's a char available. If there's
+; a char available then return it. But don't update the buffer indexes. No need
+; to send an XON here.
+;
+; Stack Space:
+;		0 words
+; Parameters:
+;		none
+; Modifies:
+;		a0
+; Returns:
+;		d1 = character or -1
+;------------------------------------------------------------------------------
+
+SerialPeekChar:
+	move.w	SerHeadRcv,d1		; check if anything is in buffer
+	cmp.w		SerTailRcv,d1
+	beq			.NoChars				; no?
+	lea			SerRcvBuf,a0
+	move.b	(a0,d1.w),d1		; get byte from buffer
+	bra			.Xit
+.NoChars:
+	moveq		#-1,d1
+.Xit:
+	rts
+
+;------------------------------------------------------------------------------
 ; SerialPeekChar
 ;		Get a character directly from the I/O port. This bypasses the input
 ; buffer.
@@ -2190,21 +2434,21 @@ AUXIN:
 ; Modifies:
 ;		d
 ; Returns:
-;		d0 = character or -1
+;		d1 = character or -1
 ;------------------------------------------------------------------------------
 
 SerialPeekCharDirect:
-	move.l	ACIA+ACIA_STAT,d0	; get serial status
-	rol.w		#8,d0							; swap byte order
-	swap		d0
-	rol.w		#8,d0
-	btst		#3,d0							; look for Rx not empty
+	move.l	ACIA+ACIA_STAT,d1	; get serial status
+	rol.w		#8,d1							; swap byte order
+	swap		d1
+	rol.w		#8,d1
+	btst		#3,d1							; look for Rx not empty
 	beq.s		.0001
-	moveq.l	#0,d0							; clear upper bits of return value
-	move.b	ACIA+ACIA_RX,d0		; get data from ACIA
-	rts												; restore SR and return
+	moveq.l	#0,d1							; clear upper bits of return value
+	move.b	ACIA+ACIA_RX,d1		; get data from ACIA
+	rts												; return
 .0001:
-	moveq		#-1,d0
+	moveq		#-1,d1
 	rts
 
 bus_err:
@@ -2234,14 +2478,96 @@ SerialPutChar:
 	rol.w		#8,d0
 	btst		#4,d0							; bit #4 of the status reg
 	beq.s		.0001			    		; branch if transmitter is not empty
-	rol.w		#8,d1
-	swap		d1
-	rol.w		#8,d1
+	bsr			rbo
 	move.l	d1,ACIA+ACIA_TX		; send the byte
 	movem.l	(a7)+,d0/d1				; pop d0,d1
 	rts
+	
+;------------------------------------------------------------------------------
+; Reverse the order of bytes in d1.
+;------------------------------------------------------------------------------
+
+rbo:
+	rol.w		#8,d1
+	swap		d1
+	rol.w		#8,d1
+	rts
+
+;------------------------------------------------------------------------------
+; Calculate number of character in input buffer
+;
+; Returns:
+;		d0 = number of bytes in buffer.
+;------------------------------------------------------------------------------
+
+SerialRcvCount:
+	move.w	SerTailRcv,d0
+	sub.w		SerHeadRcv,d0
+	bge			.0001
+	move.w	#$1000,d0
+	sub.w		SerHeadRcv,d0
+	add.w		SerTailRcv,d0
+.0001:
+	rts
+
+;------------------------------------------------------------------------------
+; Serial IRQ routine
+;
+; Keeps looping as long as it finds characters in the ACIA recieve buffer/fifo.
+; Received characters are buffered. If the buffer becomes full, new characters
+; will be lost.
+;
+; Parameters:
+;		none
+; Modifies:
+;		none
+; Returns:
+;		none
+;------------------------------------------------------------------------------
+
+SerialIRQ:
+	movem.l	d0/d1/a0,-(a7)
+sirqNxtByte:
+	move.l	ACIA+ACIA_STAT,d1		; check the status
+	bsr			rbo
+	btst		#3,d1								; bit 3 = rx full
+	beq			notRxInt
+	move.l	ACIA+ACIA_RX,d1
+	bsr			rbo
+sirq0001:
+	move.w	SerTailRcv,d0				; check if recieve buffer full
+	addi.w	#1,d0
+	andi.w	#$FFF,d0
+	cmp.w		SerHeadRcv,d0
+	beq			sirqRxFull
+	move.w	d0,SerTailRcv				; update tail pointer
+	subi.w	#1,d0								; backup
+	andi.w	#$FFF,d0
+	lea			SerRcvBuf,a0				; a0 = buffer address
+	move.b	d1,(a0,d0.w)				; store recieved byte in buffer
+	tst.b		SerRcvXoff					; check if xoff already sent
+	bne			sirqNxtByte
+	bsr			SerialRcvCount			; if more than 4080 chars in buffer
+	cmpi.w	#4080,d0
+	blo			sirqNxtByte
+	move.b	#XOFF,d1						; send an XOFF
+	clr.b		SerRcvXon						; clear XON status
+	move.b	d1,SerRcvXoff				; set XOFF status
+	bsr			rbo
+	move.l	d1,ACIA+ACIA_TX
+	bra			sirqNxtByte     		; check the status for another byte
+sirqRxFull:
+notRxInt:
+	movem.l	(a7)+,d0/d1/a0
+	rts
+
+nmeSerial:
+	dc.b		"Serial",0
+
+
 ;------------------------------------------------------------------------------
 ;------------------------------------------------------------------------------
+	even
 
 trap3:
 	; First save all registers
@@ -2323,7 +2649,7 @@ ArmBreakpoint:
 	bne.s			.0001
 	; See if the breakpoint is in the table already
 	lea				Breakpoints,a1				; a1 points to breakpoint table
-	subi.w		#1,d2
+	move.w		#numBreakpoints-1,d2
 .0002:
 	cmp.l			(a1)+,d1
 	beq.s			.0003									; breakpoint is in table already
@@ -2418,6 +2744,13 @@ ClearBreakpointList:
 	clr.l		(a1)+
 	dbra		d2,.0001
 	rts
+
+;------------------------------------------------------------------------------
+;------------------------------------------------------------------------------
+
+irq3_rout:
+	bsr			SerialIRQ
+	rte
 
 ;------------------------------------------------------------------------------
 ;------------------------------------------------------------------------------

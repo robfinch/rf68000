@@ -70,11 +70,12 @@
 *	dc.l		$0001FFFC						; top of local ram area
 *	dc.l		start
 
-	code												; code starts at $400 in local ram
+*    org $1000												; code starts at $400 in local ram
 *start:
 *	move.l	$FFFFFFE0,d0		; get core number
 *	cmpi.b	#2,d0
 *	bne			do_nothing
+
 *	lea			EXCEPTION_6,a0	* check exception vector
 *	move.l	a0,6*4
 *	lea			EXCEPTION_7,a0	* TRAPV exception vector
@@ -108,7 +109,6 @@ cpu_test:
 	bsr op_CHK
 	bsr op_NEGS
 	bsr op_MOVEM
-** fails
 *	bsr op_ABCD
 *	bsr op_SBCD
 *	bsr op_NBCD
@@ -121,9 +121,8 @@ cpu_test:
 	bsr op_ADDQ
 	bsr op_SUBQ
 	bsr op_MOVEQ
-*** fails
 	bsr op_DIVU
-	bsr op_DIVS
+*	bsr op_DIVS
 	bsr op_OR
 	bsr op_AND
 	bsr op_EOR
@@ -163,14 +162,14 @@ BSR_FAR1:       move.l #$33333333,d3
 
 * Exception Vector = 6   CHK Instruction
 *
-	align	4
+*	align	4
 EXCEPTION_6:
 	move.l #$EEEE0006,d6      * Set d6 to the exception vector
 	rte
 
 * Exception Vector = 7   TRAPV Instruction
 *
-	align	4
+*	align	4
 EXCEPTION_7:
 	move.l #$12345678,d0      * Set d6 to the exception vector
 	rte
@@ -207,14 +206,14 @@ op_ORI_TO_CCR:
 
 op_ORI_TO_SR:
 
-    ori.l #$FF002FFF,SR
+    ori.w #$2FFF,SR
     bpl.s *                   * branch if Z clear
     bne.s *                   * branch if N clear
     bvc.s *                   * branch if V clear
     bcc.s *                   * branch if C clear
 
     move.w #$2000,SR
-    ori.l #$0000,SR
+    ori.w #$0000,SR
     beq.s *                   * branch if Z set
     bmi.s *                   * branch if N set
     bvs.s *                   * branch if V set
@@ -259,14 +258,14 @@ op_EORI_TO_CCR:
 op_EORI_TO_SR:
 
     move.w #$2000,SR
-    eori.l #$0FFF,SR
+    eori.w #$0FFF,SR
     bpl.s *                   * branch if Z clear
     bne.s *                   * branch if N clear
     bvc.s *                   * branch if V clear
     bcc.s *                   * branch if C clear
 
     move.w #$2000,SR
-    eori.l #$0000,SR
+    eori.w #$0000,SR
     beq.s *                   * branch if Z set
     bmi.s *                   * branch if N set
     bvs.s *                   * branch if V set
@@ -312,14 +311,14 @@ op_ANDI_TO_CCR:
 *-----------------------------------------------------------
 op_ANDI_TO_SR:
     move.w #$20FF,SR
-    andi.l #$FFFFFFFF,SR
+    andi.w #$FFFF,SR
     bpl.s *                   * branch if Z clear
     bne.s *                   * branch if N clear
     bvc.s *                   * branch if V clear
     bcc.s *                   * branch if C clear
 
     move.w #$20FF,SR
-    andi.l #$FFFFFF00,SR
+    andi.w #$FF00,SR
     beq.s *                   * branch if Z set
     bmi.s *                   * branch if N set
     bvs.s *                   * branch if V set
@@ -6719,3 +6718,5 @@ SHIFTS2_LOOP6:
 ;t4_bsr:
 ;	moveq	#4,d4
 ;	rts
+*    END
+    
