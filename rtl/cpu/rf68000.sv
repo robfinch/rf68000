@@ -375,6 +375,14 @@ typedef enum logic [7:0] {
 	SUBX2,
 	SUBX3,
 
+	MULU1,
+	MULU2,
+	MULU3,
+	
+	MULS1,
+	MULS2,
+	MULS3,
+
 	FSDATA2
 } state_t;
 
@@ -619,6 +627,7 @@ reg takb;
 reg [8:0] resB;
 reg [16:0] resW;
 reg [32:0] resL;
+reg [32:0] resMS1,resMS2,resMU1,resMU2;
 reg [31:0] st_data;
 wire [11:0] bcdaddo,bcdsubo,bcdnego;
 wire bcdaddoc,bcdsuboc,bcdnegoc;
@@ -2113,7 +2122,7 @@ DECODE:
 `endif				
 			12'b????_11??_????:	// MULS / MULU
 				begin
-					push(MUL);
+					push(ir[8] ? MULS1 : MULU1);
 					fs_data(mmm,rrr,FETCH_WORD,S);
 				end
 			12'b???1_0100_0???:	// EXG	Dx,Dy
@@ -2384,23 +2393,43 @@ STOP1:
 	end
 
 //-----------------------------------------------------------------------------
-// MUL
+// MULU / MULS
+// - a couple of regs may be needed.
 //-----------------------------------------------------------------------------
-MUL:
+MULS1:
+	begin
+		resMS1 <= $signed(rfoDn[15:0]) * $signed(s[15:0]);
+		goto (MULS2);
+	end
+MULS2:
+	begin
+		resMS2 <= resMS1;
+		goto (MULS3);
+	end
+MULS3:
 	begin
 		flag_update <= FU_MUL;
-`ifdef SUPPORT_MUL		
-		if (ir[8]) begin
-			rfwrL <= 1'b1;
-			Rt <= {1'b0,DDD};
-			resL <= $signed(rfoDn[15:0]) * $signed(s[15:0]);
-		end
-		else begin
-			rfwrL <= 1'b1;
-			Rt <= {1'b0,DDD};
-			resL <= rfoDn[15:0] * s[15:0];
-		end
-`endif		
+		rfwrL <= 1'b1;
+		Rt <= {1'b0,DDD};
+		resL <= resMS2;
+		ret();
+	end
+MULU1:
+	begin
+		resMU1 <= rfoDn[15:0] * s[15:0];
+		goto (MULU2);
+	end
+MULU2:
+	begin
+		resMU2 <= resMU1;
+		goto (MULU3);
+	end
+MULU3:
+	begin
+		flag_update <= FU_MUL;
+		rfwrL <= 1'b1;
+		Rt <= {1'b0,DDD};
+		resL <= resMU2;
 		ret();
 	end
 

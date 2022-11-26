@@ -91,6 +91,7 @@ RAND_NUM	EQU	$FD0FFD00
 RAND_STRM	EQU	$FD0FFD04
 RAND_MZ		EQU $FD0FFD08
 RAND_MW		EQU	$FD0FFD0C
+RST_REG		EQU	$FD0FFC00
 IOFocus		EQU	$00100000
 
 SERIAL_SEMA	EQU	2
@@ -360,7 +361,7 @@ loop1:
 
 start_other:
 	bsr			clear_screen
-	movec.l	coreno,d1
+	movec		coreno,d1
 	bsr			DisplayByte
 	lea			msg_core_start,a1
 	bsr			DisplayString
@@ -1699,6 +1700,7 @@ cmdString:
 	dc.b	'T','R'+$80				; TR test serial receive
 	dc.b	'T'+$80						; T test CPU
 	dc.b	'S'+$80						; S send serial
+	dc.b	"RESE",'T'+$80		; RESET <n>
 	dc.b	'R'+$80						; R receive serial
 
 	align	2
@@ -1719,6 +1721,7 @@ cmdTable:
 	dc.w	cmdTestSerialReceive
 	dc.w	cmdTestCPU
 	dc.w	cmdSendSerial
+	dc.w	cmdReset
 	dc.w	cmdReceiveSerial	
 	dc.w	cmdMonitor
 
@@ -1839,6 +1842,37 @@ cmdCore:
 	bsr			select_iofocus
 	bra			Monitor
 
+;-------------------------------------------------------------------------------
+; RESET <n>
+;    Reset the specified core.
+;-------------------------------------------------------------------------------
+
+cmdReset:
+	bsr			ignBlanks
+	bsr			FromScreen
+	cmpi.b	#'2',d1					; check range
+	blo			Monitor
+	cmpi.b	#'9',d1
+	bhi			Monitor
+	subi.b	#'0',d1					; convert ascii to binary
+	lsr.w		#1,d1						; cores are reset in pairs
+	lea			tblPow2,a1
+	move.b	(a1,d1.w),d1
+	move.b	d1,RST_REG
+	bra			Monitor
+
+tblPow2:
+	dc.b		1
+	dc.b		2
+	dc.b		4
+	dc.b		8
+	dc.b		16
+	dc.b		32
+	dc.b		64
+	dc.b		128
+
+	even
+	
 cmdHelp:
 DisplayHelp:
 	lea			HelpMsg,a1

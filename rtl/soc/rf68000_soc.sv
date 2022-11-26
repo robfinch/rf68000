@@ -189,7 +189,10 @@ wire [31:0] plic_dato;
 wire [7:0] plic_cause;
 wire [5:0] plic_core;
 
+
 wire leds_ack;
+reg [7:0] rst_reg;
+wire rst_ack;
 
 wire hSync, vSync;
 wire blank, border;
@@ -268,6 +271,7 @@ wire cs_fb = ch7req.adr[31:16]==16'hFD04 && ch7req.stb;
 wire cs_br1_fb = br1_adr[31:16]==16'hFD04 && br1_stb;
 wire cs_leds = ch7req.adr[31:8]==24'hFD0FFF && ch7req.stb;
 wire cs_br3_leds = br3_adr[31:8]==24'hFD0FFF && br3_stb;
+wire cs_br3_rst  = br3_adr[31:8]==24'hFD0FFC && br3_stb;
 wire cs_kbd  = ch7req.adr[31:8]==24'hFD0FFE && ch7req.stb;
 wire cs_br3_kbd  = br3_adr[31:8]==24'hFD0FFE && br3_stb;
 wire cs_rand  = ch7req.adr[31:8]==24'hFD0FFD && ch7req.stb;
@@ -793,6 +797,28 @@ else
 always_ff @(posedge node_clk)
 	ack <= ch7resp.ack|br1_cack|br3_cack|sema_ack|scr_ack|plic_ack;
 
+reg [6:0] rst_cnt;
+reg [7:0] rsts;
+
+always_ff @(posedge node_clk)
+if (rst) begin
+	rst_cnt <= 'd0;
+	rst_reg <= 8'hFF;
+end
+else begin
+	if (cs_br3_rst) begin
+		rst_reg <= br3_dato[7:0];
+		rst_cnt <= 'd0;
+	end
+	if (~rst_cnt[6])
+		rst_cnt <= rst_cnt + 2'd1;
+	else
+		rst_reg <= 'd0;
+end
+assign rst_ack = cs_br3_rst;
+always_comb
+	rsts <= {8{~rst_cnt[6]}} & rst_reg;
+
 rf68000_node unode1
 (
 	.id(5'd1),
@@ -809,7 +835,7 @@ rf68000_node unode1
 rf68000_node unode2
 (
 	.id(5'd2),
-	.rst(rst),
+	.rst(rst|rsts[2]),
 	.clk(node_clk),
 	.packet_i(packet[0]),
 	.packet_o(packet[1]),
@@ -822,7 +848,7 @@ rf68000_node unode2
 rf68000_node unode3
 (
 	.id(5'd3),
-	.rst(rst),
+	.rst(rst|rsts[3]),
 	.clk(node_clk),
 	.packet_i(packet[1]),
 	.packet_o(packet[2]),
@@ -835,7 +861,7 @@ rf68000_node unode3
 rf68000_node unode4
 (
 	.id(5'd4),
-	.rst(rst),
+	.rst(rst|rsts[4]),
 	.clk(node_clk),
 	.packet_i(packet[2]),
 	.packet_o(packet[3]),
