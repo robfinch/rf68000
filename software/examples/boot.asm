@@ -86,8 +86,17 @@ PLIC			EQU	$FD090000
 leds			EQU	$FD0FFF00
 keybd			EQU	$FD0FFE00
 KEYBD			EQU	$FD0FFE00
-rand			EQU	$FD0FFD00
+RAND			EQU	$FD0FFD00
+RAND_NUM	EQU	$FD0FFD00
+RAND_STRM	EQU	$FD0FFD04
+RAND_MZ		EQU $FD0FFD08
+RAND_MW		EQU	$FD0FFD0C
 IOFocus		EQU	$00100000
+
+SERIAL_SEMA	EQU	2
+KEYBD_SEMA	EQU	3
+RAND_SEMA		EQU	4
+SCREEN_SEMA	EQU	5
 
 	data
 	dc.l		$00040FFC
@@ -315,6 +324,7 @@ start:
 	bne			start_other
 	move.b	d0,IOFocus				; Set the IO focus in global memory
 	bsr			InitSemaphores
+	bsr			InitRand
 	bsr			Delay3s						; give devices time to reset
 	bsr			clear_screen
 
@@ -357,6 +367,58 @@ start_other:
 do_nothing:	
 	bra			StartMon
 	bra			do_nothing
+
+;------------------------------------------------------------------------------
+;------------------------------------------------------------------------------
+
+InitRand:
+RandInit:
+	movec		coreno,d0
+	swap		d0
+	moveq		#RAND_SEMA,d1
+	bsr			LockSemaphore
+	swap		d0
+	lsl.l		#6,d0									; allow 64 streams per core
+	move.l	d0,RAND_STRM					; select the stream
+	move.l	#$12345678,RAND_MZ		; initialize to some value
+	move.l	#$98765432,RAND_MW
+	move.l	#777777777,RAND_NUM		; generate first number
+	movec		coreno,d0
+	swap		d0
+	moveq		#RAND_SEMA,d1
+	bsr			UnlockSemaphore
+	rts
+
+RandGetNum:
+	movec		coreno,d0
+	swap		d0
+	moveq		#RAND_SEMA,d1
+	bsr			LockSemaphore
+	lsl.l		#6,d0
+	move.l	d0,RAND_STRM					; select the stream
+	move.l	RAND_NUM,d0
+	clr.l		RAND_NUM							; generate next number
+	movec		coreno,d0
+	swap		d0
+	moveq		#RAND_SEMA,d1
+	bsr			UnlockSemaphore
+	exg			d1,d0
+	rts
+
+;------------------------------------------------------------------------------
+; RandWait
+;    Wait some random number of clock cycles before returning.
+;------------------------------------------------------------------------------
+
+RandWait:
+	movem.l	d0/d1,-(a7)
+	bsr			RandGetNum
+	andi.w	#15,d1
+.0001:
+	nop
+	dbra		d1,.0001
+	movem.l	(a7)+,d0/d1
+	rts
 
 ;------------------------------------------------------------------------------
 ; Initialize semaphores
@@ -532,6 +594,10 @@ get_screen_address:
 
 clear_screen:
 	movem.l	d0/d1/d2/a0,-(a7)
+	movec		coreno,d0
+	swap		d0	
+	moveq		#SCREEN_SEMA,d1
+	bsr			LockSemaphore
 	bsr			get_screen_address	; a0 = pointer to screen area
 	move.b	TextRows,d0					; d0 = rows
 	move.b	TextCols,d2					; d2 = cols
@@ -548,24 +614,12 @@ clear_screen:
 	rol.w		#8,d0
 loop3:
 	move.l	d1,(a0)+						; copy char plus bkcolor to cell
-	nop	
-	nop
-	nop	
-	nop
-	nop	
-	nop
-	nop	
-	nop
 	move.l	d0,(a0)+					; copy fgcolor to cell
-	nop
-	nop
-	nop	
-	nop
-	nop	
-	nop
-	nop	
-	nop
 	dbra		d2,loop3
+	movec		coreno,d0
+	swap		d0	
+	moveq		#SCREEN_SEMA,d1
+	bsr			UnlockSemaphore
 	movem.l	(a7)+,d0/d1/d2/a0
 	rts
 
@@ -788,6 +842,10 @@ icc1:
 
 ScrollUp:
 	movem.l	d0/d1/a0/a5,-(a7)		; save off some regs
+	movec		coreno,d0
+	swap		d0	
+	moveq		#SCREEN_SEMA,d1
+	bsr			LockSemaphore
 	bsr			get_screen_address
 	move.l	a0,a5								; a5 = pointer to text screen
 .0003:								
@@ -802,12 +860,12 @@ ScrollUp:
 	mulu		d1,d0								; d0 = count of characters to move
 .0001:
 	move.l	(a0)+,(a5)+					; each char is 64 bits
-	nop
-	nop
 	move.l	(a0)+,(a5)+	
-	nop
-	nop
 	dbra		d0,.0001
+	movec		coreno,d0
+	swap		d0	
+	moveq		#SCREEN_SEMA,d1
+	bsr			UnlockSemaphore
 	movem.l	(a7)+,d0/d1/a0/a5
 	; Fall through into blanking out last line
 
@@ -817,6 +875,10 @@ ScrollUp:
 
 BlankLastLine:
 	movem.l	d0/d1/d2/a0,-(a7)
+	movec		coreno,d0
+	swap		d0	
+	moveq		#SCREEN_SEMA,d1
+	bsr			LockSemaphore
 	bsr			get_screen_address
 	move.b	TextRows,d0					; d0 = columns
 	move.b	TextCols,d1					; d1 = rows
@@ -831,20 +893,18 @@ BlankLastLine:
 	subi.w	#1,d2								; count must be one less than desired
 	bsr			get_screen_color		; d0,d1 = screen color
 	move.w	#32,d1							; set the character for display in low 16 bits
-	rol.w		#8,d1								; reverse the byte order
-	swap		d1
-	rol.w		#8,d1
+	bsr			rbo									; reverse the byte order
 	rol.w		#8,d0
 	swap		d0
 	rol.w		#8,d0
 .0001:
 	move.l	d0,(a0)+
-	nop
-	nop
 	move.l	d1,(a0)+
-	nop
-	nop
 	dbra		d2,.0001
+	movec		coreno,d0
+	swap		d0	
+	moveq		#SCREEN_SEMA,d1
+	bsr			UnlockSemaphore
 	movem.l	(a7)+,d0/d1/d2/a0
 	rts
 
@@ -1261,8 +1321,8 @@ KeybdGetChar:
 .0003:
 	movec		coreno,d0
 	swap		d0
-	moveq		#1,d1
-;	bsr			LockSemaphore
+	moveq		#KEYBD_SEMA,d1
+	bsr			LockSemaphore
 	move.b	_KeybdCnt,d2		; get count of buffered scan codes
 	beq.s		.0015						;
 	move.b	_KeybdHead,d2		; d2 = buffer head
@@ -1277,7 +1337,7 @@ KeybdGetChar:
 	exg			d1,d2						; save scancode value in d2
 	movec		coreno,d0
 	swap		d0
-	moveq		#1,d1
+	moveq		#KEYBD_SEMA,d1
 	bsr			UnlockSemaphore
 	exg			d2,d1						; restore scancode value
 	bra			.0001						; go process scan code
@@ -1287,12 +1347,12 @@ KeybdGetChar:
 .0015:
 	movec		coreno,d0
 	swap		d0
-	moveq	#1,d1
-	bsr		UnlockSemaphore
-	tst.b	KeybdWaitFlag			; are we willing to wait for a key ?
-	bmi		.0003							; yes, branch back
+	moveq		#KEYBD_SEMA,d1
+	bsr			UnlockSemaphore
+	tst.b		KeybdWaitFlag			; are we willing to wait for a key ?
+	bmi			.0003							; yes, branch back
 	movem.l	(a7)+,d0/d2/d3/a0
-	moveq	#-1,d1						; flag no char available
+	moveq		#-1,d1						; flag no char available
 	rts
 .0006:
 	bsr		_KeybdGetScancode
@@ -1470,8 +1530,8 @@ KeybdIRQ:
 	bpl			.0001							; branch if not keyboard
 	movec		coreno,d0
 	swap		d0
-	moveq		#1,d1
-;	bsr			LockSemaphore
+	moveq		#KEYBD_SEMA,d1
+	bsr			LockSemaphore
 	btst		#1,_KeyState2			; Is Alt down?
 	beq.s		.0003
 	move.b	KEYBD,d0					; get scan code
@@ -1499,7 +1559,7 @@ KeybdIRQ:
 .0002:
 	movec		coreno,d0
 	swap		d0
-	moveq		#1,d1
+	moveq		#KEYBD_SEMA,d1
 	bsr			UnlockSemaphore
 .0001:
 	movem.l	(a7)+,d0/d1/a0		; return
@@ -2367,31 +2427,32 @@ NextRec:
 	move.b	#'.',d1
 	bsr			DisplayChar
 ProcessRec:
+	bsr			CheckForCtrlC	; check for CTRL-C once per record
 	bsr			sGetChar
 	cmpi.b	#CR,d1
 	beq.s		ProcessRec
 	clr.b		S19Checksum
 	move.b	d1,d4
-	cmpi.b	#CTRLZ,d4		; CTRL-Z ?
+	cmpi.b	#CTRLZ,d4			; CTRL-Z ?
 	beq			Monitor
-	cmpi.b	#'S',d4
-	bne			NextRec
+	cmpi.b	#'S',d4				; All records must begin with an 'S'
+	bne.s		NextRec
 	bsr			sGetChar
 	move.b	d1,d4
-	cmpi.b	#'0',d4
-	blo			NextRec
-	cmpi.b	#'9',d4		; d4 = record type
-	bhi			NextRec
-	bsr			sGetChar
+	cmpi.b	#'0',d4				; Record type must be between '0' and '9'
+	blo.s		NextRec
+	cmpi.b	#'9',d4				; d4 = record type
+	bhi.s		NextRec
+	bsr			sGetChar			; get byte count for record
 	bsr			AsciiToHexNybble
 	move.b	d1,d2
 	bsr			sGetChar
 	bsr			AsciiToHexNybble
 	lsl.b		#4,d2
-	or.b		d2,d1		; d1 = byte count
-	move.b	d1,d3		; d3 = byte count
+	or.b		d2,d1					; d1 = byte count
+	move.b	d1,d3					; d3 = byte count
 	add.b		d3,S19Checksum
-	cmpi.b	#'0',d4		; manufacturer ID record, ignore
+	cmpi.b	#'0',d4				; manufacturer ID record, ignore
 	beq			NextRec
 	cmpi.b	#'1',d4
 	beq			ProcessS1
@@ -2399,7 +2460,7 @@ ProcessRec:
 	beq			ProcessS2
 	cmpi.b	#'3',d4
 	beq			ProcessS3
-	cmpi.b	#'5',d4		; record count record, ignore
+	cmpi.b	#'5',d4				; record count record, ignore
 	beq			NextRec
 	cmpi.b	#'7',d4
 	beq			ProcessS7
@@ -2409,10 +2470,14 @@ ProcessRec:
 	beq			ProcessS9
 	bra			NextRec
 
-pcssxa
+pcssxa:
+	move.l	a1,d1
+	bsr			DisplayTetra
+	move.b	#CR,d1
+	bsr			DisplayChar
 	andi.w	#$ff,d3
 	subi.w	#1,d3			; one less for dbra
-.0001
+.0001:
 	clr.l		d2
 	bsr			sGetChar
 	bsr			AsciiToHexNybble
@@ -2423,9 +2488,9 @@ pcssxa
 	lsl.l		#4,d2
 	or.b		d1,d2
 	add.b		d2,S19Checksum
-	move.b	d2,(a1)+
+	move.b	d2,(a1)+			; move byte to memory
 	dbra		d3,.0001
-; Get the checksum byte
+	; Get the checksum byte
 	clr.l		d2
 	bsr			sGetChar
 	bsr			AsciiToHexNybble
@@ -2450,10 +2515,6 @@ ProcessS2:
 	bra			pcssxa
 ProcessS3:
 	bsr			S19Get32BitAddress
-	move.l	a1,d1
-	bsr			DisplayTetra
-	move.b	#CR,d1
-	bsr			DisplayChar
 	bra			pcssxa
 ProcessS7:
 	bsr			S19Get32BitAddress
@@ -2530,18 +2591,31 @@ S1932b:
 	rts
 
 ;------------------------------------------------------------------------------
-; Get a character from auxillary input, checking the keyboard status for a
-; CTRL-C
+; Get a character from auxillary input. Waiting for a character is limited to
+; 32000 tries. If a character is not available within the limit, then a return
+; to the monitor is done.
+;
+;	Parameters:
+;		none
+; Returns:
+;		d1 = character from receive buffer or -1 if no char available
 ;------------------------------------------------------------------------------
 
 AUXIN:
 
 sGetChar:
-;	bsr			CheckForCtrlC
+	movem.l	d0/d2,-(a7)
+	move.w	#32000,d2
+.0001:
 	moveq		#36,d0				; serial get char from buffer
 	trap		#15
-	tst.l		d1						; was there a char available?
-	bmi.s		sGetChar			; no - try again
+	tst.w		d1						; was there a char available?
+	bpl.s		.0002
+	dbra		d2,.0001			; no - try again
+	movem.l	(a7)+,d0/d2
+	bra			Monitor				; ran out of tries
+.0002:
+	movem.l	(a7)+,d0/d2
 	cmpi.b	#CTRLZ,d1			; receive end of file?
 	beq			Monitor
 	rts
@@ -2617,12 +2691,16 @@ SerialInit:
 ; Parameters:
 ;		none
 ; Modifies:
-;		d0,a0
+;		d0,d2,a0
 ; Returns:
 ;		d1 = character or -1
 ;------------------------------------------------------------------------------
 
 SerialGetChar:
+	movec			coreno,d0
+	swap			d0
+	moveq			#SERIAL_SEMA,d1
+	bsr				LockSemaphore
 	bsr				SerialRcvCount			; check number of chars in receive buffer
 	cmpi.w		#8,d0								; less than 8?
 	bhi				.sgc2
@@ -2645,6 +2723,12 @@ SerialGetChar:
 .NoChars:
 	moveq			#-1,d1
 .Xit:
+	exg				d1,d2
+	movec			coreno,d0
+	swap			d0
+	moveq			#SERIAL_SEMA,d1
+	bsr				UnlockSemaphore
+	exg				d2,d1
 	rts
 
 ;------------------------------------------------------------------------------
@@ -2659,21 +2743,30 @@ SerialGetChar:
 ; Parameters:
 ;		none
 ; Modifies:
-;		a0
+;		d0,d2,a0
 ; Returns:
 ;		d1 = character or -1
 ;------------------------------------------------------------------------------
 
 SerialPeekChar:
-	move.w	SerHeadRcv,d1		; check if anything is in buffer
-	cmp.w		SerTailRcv,d1
+	movec		coreno,d0
+	swap		d0
+	moveq		#SERIAL_SEMA,d1
+	bsr			LockSemaphore
+	move.w	SerHeadRcv,d2		; check if anything is in buffer
+	cmp.w		SerTailRcv,d2
 	beq			.NoChars				; no?
 	lea			SerRcvBuf,a0
-	move.b	(a0,d1.w),d1		; get byte from buffer
+	move.b	(a0,d2.w),d2		; get byte from buffer
 	bra			.Xit
 .NoChars:
-	moveq		#-1,d1
+	moveq		#-1,d2
 .Xit:
+	movec		coreno,d0
+	swap		d0
+	moveq		#SERIAL_SEMA,d1
+	bsr			LockSemaphore
+	move		d2,d1
 	rts
 
 ;------------------------------------------------------------------------------
@@ -2775,6 +2868,10 @@ SerialRcvCount:
 SerialIRQ:
 	move.w	#$2300,sr						; disable lower level IRQs
 	movem.l	d0/d1/d2/a0,-(a7)
+	movec		coreno,d0
+	swap		d0
+	moveq		#SERIAL_SEMA,d1
+	bsr			LockSemaphore
 sirqNxtByte:
 	move.l	ACIA+ACIA_STAT,d1		; check the status
 	bsr			SerialRbo
@@ -2805,6 +2902,10 @@ sirq0001:
 	bra			sirqNxtByte     		; check the status for another byte
 sirqRxFull:
 notRxInt:
+	movec		coreno,d0
+	swap		d0
+	moveq		#SERIAL_SEMA,d1
+	bsr			UnlockSemaphore
 	movem.l	(a7)+,d0/d1/d2/a0
 	rte
 
