@@ -47,6 +47,7 @@ parameter PT_RETRY = 6'd4;
 parameter PT_AREAD = 6'd5;	// asynchronous read
 parameter PT_AACK = 6'd6;
 parameter PT_ERR = 6'd7;
+parameter PT_VPA = 6'd8;
 
 typedef logic [31:0] address_t;
 typedef logic [31:0] data_t;

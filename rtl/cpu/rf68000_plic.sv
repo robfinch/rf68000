@@ -78,6 +78,7 @@
 //            bits 8 to 11 = irq level to issue
 //            bit 16 = irq enable
 //            bit 17 = edge sensitivity
+//						bit 18 = respond to inta
 //						bit 24 to 29 target core
 //=============================================================================
 
@@ -89,8 +90,10 @@ module rf68000_plic
 	input cyc_i,
 	input stb_i,
 	output ack_o,       // controller is ready
+	output reg vpa_o,
 	input wr_i,			// write
-	input [7:0] adr_i,	// address
+	input [2:0] fc_i,
+	input [31:0] adr_i,	// address
 	input [31:0] dat_i,
 	output reg [31:0] dat_o,
 	output vol_o,		// volatile register selected
@@ -119,28 +122,19 @@ reg [31:0] es;
 reg [3:0] irq [0:31];
 reg [7:0] cause [0:31];
 reg [5:0] core [0:31];
-integer n;
-
-initial begin
-	ie <= 32'h0;	
-	es <= 32'hFFFFFFFF;
-	rste <= 32'h0;
-	for (n = 0; n < 32; n = n + 1) begin
-		cause[n] <= 8'h00;
-		irq[n] <= 4'h8;
-		core[n] <= 'd0;
-	end
-end
+reg [31:0] intar;
+integer n,n1,n2;
 
 wire cs = cyc_i && stb_i && cs_i;
+wire cs_inta = cyc_i && stb_i && adr_i[31:4]=={28{1'b1}} && fc_i==3'b111;
 assign vol_o = cs;
 
 assign clk = clk_i;
 //BUFH ucb1 (.I(clk_i), .O(clk));
 
 always_ff @(posedge clk)
-	rdy1 <= cs;
-assign ack_o = cs ? (wr_i ? 1'b1 : rdy1) : 1'b0;
+	rdy1 <= cs | (cs_inta & intar[irqenc]);
+assign ack_o = (cs | (cs_inta & intar[irqenc])) ? (wr_i ? 1'b1 : rdy1) : 1'b0;
 
 // write registers	
 always_ff @(posedge clk)
@@ -148,6 +142,14 @@ always_ff @(posedge clk)
 		ie <= 32'h0;
 		rste <= 32'h0;
 		trig <= 32'h0;
+		es <= 32'hFFFFFFFF;
+		rste <= 32'h0;
+		intar <= 32'hFFFFFFFF;
+		for (n1 = 0; n1 < 32; n1 = n1 + 1) begin
+			cause[n1] <= 8'h00;
+			irq[n1] <= 4'h8;
+			core[n1] <= 'd0;
+		end
 	end
 	else begin
 		rste <= 32'h0;
@@ -170,6 +172,7 @@ always_ff @(posedge clk)
 			         irq[adr_i[6:2]] <= dat_i[11:8];
 			         ie[adr_i[6:2]] <= dat_i[16];
 			         es[adr_i[6:2]] <= dat_i[17];
+			         intar[adr_i[6:2]] <= dat_i[18];
 			         core[adr_i[6:2]] <= dat_i[29:24];
 			     end
 			endcase
@@ -187,9 +190,20 @@ begin
 		6'b1?????: dat_o <= {es[adr_i[6:2]],ie[adr_i[6:2]],4'b0,irq[adr_i[6:2]],cause[adr_i[6:2]]};
 		default:	dat_o <= ie;
 		endcase
+	else if (cs_inta & intar[irqenc]) begin
+		if (adr_i[3:1] <= irq[irqenc])
+			dat_o <= {4{cause[irqenc]}};
+		else
+			dat_o <= {4{8'd24}};	// spurious interrupt
+	end
 	else
 		dat_o <= 32'h0000;
 end
+always_ff @(posedge clk)
+	if (cs_inta & ~intar[irqenc])
+		vpa_o <= 1'b1;
+	else
+		vpa_o <= 1'b0;
 
 always_ff @(posedge clk)
   irqo <= (irqenc == 5'h0) ? 4'd0 : irq[irqenc] & {4{ie[irqenc]}};
@@ -218,8 +232,8 @@ end
 always_ff @(posedge clk)
 begin
 	irqenc <= 5'd0;
-	for (n = 31; n > 0; n = n - 1)
-		if ((es[n] ? iedge[n] : i[n])) irqenc <= n;
+	for (n2 = 31; n2 > 0; n2 = n2 - 1)
+		if ((es[n2] ? iedge[n2] : i[n2])) irqenc <= n2;
 end
 
 endmodule

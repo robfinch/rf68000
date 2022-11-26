@@ -71,6 +71,7 @@ wire [31:0] nic1_sdato, nic2_sdato;
 wire [2:0] cpu1_irq, cpu2_irq;
 wire [7:0] cpu1_icause, cpu2_icause;
 wire err1, err2;
+wire vpa1, vpa2;
 wire spram1_ack, spram2_ack;
 wire [31:0] spram1o, spram2o;
 
@@ -123,6 +124,7 @@ rf68000_nic unic1
 	.s_aack_o(),
 	.s_rty_o(),
 	.s_err_o(err1),
+	.s_vpa_o(vpa1),
 	.s_we_i(we1),
 	.s_sel_i(sel1),
 	.s_adr_i(adr1),
@@ -132,6 +134,7 @@ rf68000_nic unic1
 	.m_stb_o(nic1_stb),
 	.m_ack_i(nic1_ack),
 	.m_err_i(1'b0),
+	.m_vpa_i(1'b0),
 	.m_we_o(nic1_we),
 	.m_sel_o(nic1_sel),
 	.m_adr_o(nic1_adr),
@@ -165,6 +168,7 @@ rf68000_nic unic2
 	.s_aack_o(),
 	.s_rty_o(),
 	.s_err_o(err2),
+	.s_vpa_o(vpa2),
 	.s_we_i(we2),
 	.s_sel_i(sel2),
 	.s_adr_i(adr2),
@@ -174,6 +178,7 @@ rf68000_nic unic2
 	.m_stb_o(nic2_stb),
 	.m_ack_i(nic2_ack),
 	.m_err_i(1'b0),
+	.m_vpa_i(1'b0),
 	.m_we_o(nic2_we),
 	.m_sel_o(nic2_sel),
 	.m_adr_o(nic2_adr),
@@ -260,7 +265,7 @@ rf68000 ucpu1
 	.clk_i(clk),
 	.nmi_i(),
 	.ipl_i(cpu1_irq),
-	.vpa_i(1'b1),
+	.vpa_i(vpa1),
 	.lock_o(),
 	.cyc_o(cyc1),
 	.stb_o(stb1),
@@ -283,7 +288,7 @@ rf68000 ucpu2
 	.clk_i(clk),
 	.nmi_i(),
 	.ipl_i(cpu2_irq),
-	.vpa_i(1'b1),
+	.vpa_i(vpa2),
 	.lock_o(),
 	.cyc_o(cyc2),
 	.stb_o(stb2),

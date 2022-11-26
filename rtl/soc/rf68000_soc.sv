@@ -139,12 +139,13 @@ wire xrst = ~cpu_resetn;
 wire locked;
 wire clk20, clk40, clk50, clk100, clk200;
 wire xclk_bufg;
-wire node_clk = clk50;
+wire node_clk = clk40;
 wb_write_request128_t ch7req;
 wb_read_response128_t ch7resp;
 wb_write_request128_t fb_req;
 wb_read_response128_t fb_resp;
 reg ack;
+wire vpa;
 wire [3:0] sel;
 reg [31:0] dati;
 wire [31:0] dato;
@@ -176,11 +177,12 @@ wire [7:0] kbd_dato;
 wire rand_ack;
 wire [31:0] rand_dato;
 wire sema_ack;
-wire [7:0] sema_dato;
+wire [31:0] sema_dato;
 wire scr_ack;
 wire [31:0] scr_dato;
 wire acia_ack;
 wire [31:0] acia_dato;
+wire acia_irq;
 wire plic_ack;
 wire [3:0] plic_irq;
 wire [31:0] plic_dato;
@@ -274,6 +276,7 @@ wire cs_sema = ch7req.adr[31:16]==16'hFD05 && ch7req.stb;
 wire cs_acia = ch7req.adr[31:12]==20'hFD060 && ch7req.stb;
 wire cs_br3_acia = br3_adr[31:12]==20'hFD060 && br3_stb;
 wire cs_scr = ch7req.adr[31:20]==12'h001 && ch7req.stb;
+wire cs_plic = ch7req.adr[31:12]==20'hFD090;
 wire cs_br3_plic = br3_adr[31:12]==20'hFD090;
 
 rfFrameBuffer uframebuf1
@@ -369,7 +372,7 @@ always_ff @(posedge node_clk)
 always_ff @(posedge node_clk)
 	br1_ack <= fb_ack|tc_ack;
 
-PS2kbd #(.pClkFreq(50000000)) ukbd1
+PS2kbd #(.pClkFreq(40000000)) ukbd1
 (
 	// WISHBONE/SoC bus interface 
 	.rst_i(rst),
@@ -471,12 +474,12 @@ IOBridge ubridge3
 always_ff @(posedge node_clk)
 	casez({cs_br3_rand,cs_br3_kbd,cs_br3_leds})
 	3'b??1:	br3_dati <= led;
-	3'b??0:	br3_dati <= {4{kbd_dato}}|rand_dato|acia_dato|plic_dato;
+	3'b??0:	br3_dati <= {4{kbd_dato}}|rand_dato|acia_dato;
 	default:	br3_dati <= 'd0;
 	endcase
 
 always_ff @(posedge node_clk)
-	br3_ack <= leds_ack|kbd_ack|rand_ack|acia_ack|plic_ack;
+	br3_ack <= leds_ack|kbd_ack|rand_ack|acia_ack;
 
 assign leds_ack = cs_br3_leds;
 always_ff @(posedge node_clk)
@@ -591,7 +594,7 @@ mpmc10_wb umpmc1
 	.state()
 );
 
-semamem usema1
+binary_semamem usema1
 (
 	.rst_i(rst),
 	.clk_i(node_clk),
@@ -600,8 +603,8 @@ semamem usema1
 	.stb_i(ch7req.stb),
 	.ack_o(sema_ack),
 	.we_i(ch7req.we),
-	.adr_i(ch7req.adr[14:2]),
-	.dat_i(dato[7:0]),
+	.adr_i(ch7req.adr[13:0]),
+	.dat_i(dato),
 	.dat_o(sema_dato)
 );
 
@@ -643,17 +646,21 @@ else begin
 		icnt <= 24'd1;
 end
 
-rf68000_plic
+// PLIC needs to be able to detect INTA cycle where all address lines are high
+// except for a0 to a3.
+rf68000_plic uplic1
 (
 	.rst_i(rst),		// reset
 	.clk_i(node_clk),		// system clock
-	.cs_i(cs_br3_plic),
-	.cyc_i(br3_cyc),
-	.stb_i(br3_stb),
+	.cs_i(cs_plic),
+	.fc_i(3'b111),
+	.cyc_i(ch7req.cyc),
+	.stb_i(ch7req.stb),
 	.ack_o(plic_ack),       // controller is ready
-	.wr_i(br3_we),			// write
-	.adr_i(br3_adr[7:0]),	// address
-	.dat_i(br3_dato),
+	.vpa_o(vpa),
+	.wr_i(ch7req.we),			// write
+	.adr_i(ch7req.adr),	// address
+	.dat_i(dato),
 	.dat_o(plic_dato),
 	.vol_o(),		// volatile register selected
 	.i1(1'b0),
@@ -718,6 +725,8 @@ rf68000_nic unic1
 	.s_ack_o(),
 	.s_aack_o(),
 	.s_rty_o(),
+	.s_err_o(),
+	.s_vpa_o(),
 	.s_we_i(1'b0),
 	.s_sel_i(4'h0),
 	.s_adr_i(32'h0),
@@ -727,6 +736,7 @@ rf68000_nic unic1
 	.m_stb_o(ch7req.stb),
 	.m_ack_i(ack),
 	.m_err_i(bus_err),
+	.m_vpa_i(vpa),
 	.m_we_o(ch7req.we),
 	.m_sel_o(sel),
 	.m_adr_o(ch7req.adr),
@@ -762,13 +772,13 @@ ila_0 your_instance_name (
 	.clk(node_clk), // input wire clk
 
 	.probe0(unode1.ucpu1.ir), // input wire [15:0]  probe0  
-	.probe1(br3_adr), // input wire [31:0]  probe1 
+	.probe1(ch7req.adr), // input wire [31:0]  probe1 
 	.probe2(br3_dato), // input wire [31:0]  probe2 
-	.probe3({ch7req.cyc,ch7req.we,irq,ack,br3_cack,acia_ack}), // input wire [7:0]  probe3
+	.probe3({ch7req.cyc,ch7req.we,irq,ack,vpa,plic_ack}), // input wire [7:0]  probe3
 	.probe4(unode1.ucpu1.pc),
 	.probe5(unode1.ucpu1.state),
 	.probe6(ipacket[4]),
-	.probe7(br3_dati),
+	.probe7(dati),
 	.probe8({kclk,kd}),
 	.probe9(unode1.ucpu1.disp)
 );
@@ -779,9 +789,9 @@ always_ff @(posedge node_clk)
 if (ch7req.adr[31:29]==3'd1)
 	dati <= ch7resp.dat >> {ch7req.adr[3:2],5'b0};
 else
-	dati <= br1_cdato|br3_cdato|{4{sema_dato}}|scr_dato;
+	dati <= br1_cdato|br3_cdato|sema_dato|scr_dato|plic_dato;
 always_ff @(posedge node_clk)
-	ack <= ch7resp.ack|br1_cack|br3_cack|sema_ack|scr_ack;
+	ack <= ch7resp.ack|br1_cack|br3_cack|sema_ack|scr_ack|plic_ack;
 
 rf68000_node unode1
 (

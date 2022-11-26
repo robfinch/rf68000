@@ -161,8 +161,20 @@ DIV:
 		state <= DONE;
 	end
 DONE:
-	if (!ld)
-		state <= IDLE;
+	begin
+		/*
+		if (so) begin
+			if (qo[WID-1:WID/2] != {WID/2{qo[WID/2-1]}})
+				ovf <= 1'b1;
+		end
+		else begin
+			if (qo[WID-1:WID/2] != 'd0)
+				ovf <= 1'b1;
+		end
+		*/
+		if (!ld)
+			state <= IDLE;
+	end
 default: state <= IDLE;
 endcase
 end

@@ -50,6 +50,7 @@
 CTRLC	EQU		$03
 CTRLH	EQU		$08
 CTRLX	EQU		$18
+CTRLZ	EQU		$1A
 LF		EQU		$0A
 CR		EQU		$0D
 XON		EQU		$11
@@ -117,15 +118,15 @@ IOFocus		EQU	$00100000
 	dc.l		0
 	dc.l		0
 	dc.l		0
+	dc.l		SpuriousIRQ
 	dc.l		0
 	dc.l		0
-	dc.l		0
-	dc.l		0
+	dc.l		irq3_rout
 	dc.l		0
 	dc.l		0
 	
 	; 30
-	dc.l		irq_rout					* IRQ 30 - timer
+	dc.l		TickIRQ						; IRQ 30 - timer / keyboard
 	dc.l		nmi_rout
 	dc.l		0
 	dc.l		0
@@ -161,8 +162,8 @@ IOFocus		EQU	$00100000
 	dc.l		0
 
 	; 60
-	dc.l		0
-	dc.l		0
+	dc.l		KeybdIRQ
+	dc.l		SerialIRQ
 	dc.l		0
 	dc.l		brdisp_trap
 	dc.l		0
@@ -172,6 +173,82 @@ IOFocus		EQU	$00100000
 	dc.l		0
 	dc.l		0
 
+	org			$400
+
+InstalledIRQ:
+	dc.l		0
+	dc.l		0
+	dc.l		0
+	dc.l		0
+	dc.l		0
+	dc.l		0
+	dc.l		0
+	dc.l		0
+
+	dc.l		0
+	dc.l		0
+	dc.l		0
+	dc.l		0
+	dc.l		0
+	dc.l		0
+	dc.l		0
+	dc.l		0
+
+	dc.l		0
+	dc.l		0
+	dc.l		0
+	dc.l		0
+	dc.l		0
+	dc.l		0
+	dc.l		0
+	dc.l		0
+
+	dc.l		0
+	dc.l		0
+	dc.l		0
+	dc.l		0
+	dc.l		0
+	dc.l		0
+	dc.l		0
+	dc.l		0
+
+	dc.l		0
+	dc.l		0
+	dc.l		0
+	dc.l		0
+	dc.l		0
+	dc.l		0
+	dc.l		0
+	dc.l		0
+
+	dc.l		0
+	dc.l		0
+	dc.l		0
+	dc.l		0
+	dc.l		0
+	dc.l		0
+	dc.l		0
+	dc.l		0
+
+	dc.l		0
+	dc.l		0
+	dc.l		0
+	dc.l		0
+	dc.l		0
+	dc.l		0
+	dc.l		0
+	dc.l		0
+
+	dc.l		0
+	dc.l		0
+	dc.l		0
+	dc.l		0
+	dc.l		0
+	dc.l		0
+	dc.l		0
+	dc.l		0
+
+	org			$500
 
 ;-------------------------------------------------------------------------------
 ;-------------------------------------------------------------------------------
@@ -207,10 +284,11 @@ _KeybdHead	equ	$00100011
 _KeybdTail	equ	$00100012
 _KeybdCnt		equ	$00100013
 _KeybdBuf		equ	$00100020
-SerTailRcv	equ	$00100030
-SerHeadRcv	equ	$00100032
-SerRcvXon		equ	$00100034
-SerRcvXoff	equ	$00100035
+S19Checksum	equ	$00100050
+SerTailRcv	equ	$00100060
+SerHeadRcv	equ	$00100062
+SerRcvXon		equ	$00100064
+SerRcvXoff	equ	$00100065
 SerRcvBuf		equ	$00101000
 
 	code
@@ -236,19 +314,22 @@ start:
 	cmpi.b	#2,d0
 	bne			start_other
 	move.b	d0,IOFocus				; Set the IO focus in global memory
-;	bsr			InitSemaphores
+	bsr			InitSemaphores
 	bsr			Delay3s						; give devices time to reset
 	bsr			clear_screen
 
+;	bsr			InitIRQ
 	bsr			SerialInit
 
 	; Write startup message to screen
 
 	lea			msg_start,a1
 	bsr			DisplayString
-	moveq.l	#1,d1
+	movec		coreno,d0
+	swap		d0
+	moveq		#1,d1
 	bsr			UnlockSemaphore	; allow another cpu access
-	moveq.l	#0,d1
+	moveq		#0,d1
 	bsr			UnlockSemaphore	; allow other cpus to proceed
 	move.w	#$A4A4,leds			; diagnostics
 	bsr			init_plic				; initialize platform level interrupt controller
@@ -279,7 +360,8 @@ do_nothing:
 
 ;------------------------------------------------------------------------------
 ; Initialize semaphores
-; - all semaphores are set to one except the first one, which is set to zero.
+; - all semaphores are set to unlocked except the first one, which is locked
+; for core #2.
 ;
 ; Parameters:
 ;		<none>
@@ -290,33 +372,15 @@ do_nothing:
 ;------------------------------------------------------------------------------
 
 InitSemaphores:
-	movem.l	d0/d1/a0,-(a7)
+	movem.l	d1/a0,-(a7)
 	lea			semamem,a0
-	move.b	#0,$4000(a0)		; lock the first semaphore
+	move.l	#$20000,$2000(a0)	; lock the first semaphore for core #2, thread #0
 	move.w	#254,d1
-	moveq		#1,d0
 .0001:
-	lea			16(a0),a0
-	move.b	d0,$4000(a0)
+	lea			4(a0),a0
+	clr.l		$2000(a0)					; write zeros to unlock
 	dbra		d1,.0001
-	movem.l	(a7)+,d0/d1/a0
-	rts
-
-; -----------------------------------------------------------------------------
-; Test a semaphore to see if it is non-zero.
-;
-; Parameters:
-;		d1 semaphore number
-; -----------------------------------------------------------------------------
-
-TestSemaphore:
-	movem.l	d1/a0,-(a7)			; save registers
-	lea			semamem,a0			; point to semaphore memory
-	ext.w		d1							; make d1 word value
-	asl.w		#4,d1						; align to memory
-	addi.w	#$4000,d1				; point to read / write memory
-	tst.b		(a0,d1.w)				; read (test) value for zero
-	movem.l	(a7)+,a0/d1			; restore regs
+	movem.l	(a7)+,d1/a0
 	rts
 
 ; -----------------------------------------------------------------------------
@@ -330,14 +394,14 @@ TestSemaphore:
 ; 	z flag set if semaphore was zero
 ; -----------------------------------------------------------------------------
 
-IncrementSemaphore:
-	movem.l	d1/a0,-(a7)			; save registers
-	lea			semamem,a0			; point to semaphore memory
-	ext.w		d1							; make d1 word value
-	asl.w		#4,d1						; align to memory
-	tst.b		1(a0,d1.w)			; read (test) value for zero
-	movem.l	(a7)+,a0/d1			; restore regs
-	rts
+;IncrementSemaphore:
+;	movem.l	d1/a0,-(a7)			; save registers
+;	lea			semamem,a0			; point to semaphore memory
+;	ext.w		d1							; make d1 word value
+;	asl.w		#4,d1						; align to memory
+;	tst.b		1(a0,d1.w)			; read (test) value for zero
+;	movem.l	(a7)+,a0/d1			; restore regs
+;	rts
 	
 ; -----------------------------------------------------------------------------
 ; Parameters:
@@ -350,41 +414,70 @@ IncrementSemaphore:
 ; 	z flag set if semaphore was zero
 ; -----------------------------------------------------------------------------
 
-DecrementSemaphore:
-	movem.l	d1/a0,-(a7)			; save registers
-	lea			semamem,a0			; point to semaphore memory
-	andi.w	#255,d1					; make d1 word value
-	asl.w		#4,d1						; align to memory
-	tst.b		1(a0,d1.w)			; read (test) value for zero
-	movem.l	(a7)+,a0/d1			; restore regs
-	rts
+;DecrementSemaphore:
+;	movem.l	d1/a0,-(a7)			; save registers
+;	lea			semamem,a0			; point to semaphore memory
+;	andi.w	#255,d1					; make d1 word value
+;	asl.w		#4,d1						; align to memory
+;	tst.b		1(a0,d1.w)			; read (test) value for zero
+;	movem.l	(a7)+,a0/d1			; restore regs
+;	rts
 
 ; -----------------------------------------------------------------------------
+; Lock a semaphore
+;
 ; Parameters:
-;		d1 semaphore number
+;		d0 = key
+;		d1 = semaphore number
 ; -----------------------------------------------------------------------------
 
 LockSemaphore:
+	movem.l	d1/a0,-(a7)			; save registers
+	lea			semamem,a0			; point to semaphore memory lock area
+	andi.w	#255,d1					; make d1 word value
+	lsl.w		#2,d1						; align to memory
 .0001:
-	bsr			DecrementSemaphore
-	beq.s		.0001
+	move.l	d0,(a0,d1.w)		; try and write the semaphore
+	cmp.l		(a0,d1.w),d0		; did it lock?
+	bne.s		.0001						; no, try again
+	movem.l	(a7)+,a0/d1			; restore regs
 	rts
 	
 ; -----------------------------------------------------------------------------
-; Test a semaphore to see if it is non-zero.
+; Unlocks a semaphore even if not the owner.
 ;
 ; Parameters:
 ;		d1 semaphore number
 ; -----------------------------------------------------------------------------
 
+ForceUnlockSemaphore:
+	movem.l	d1/a0,-(a7)				; save registers
+	lea			semamem+$3000,a0	; point to semaphore memory read/write area
+	andi.w	#255,d1						; make d1 word value
+	lsl.w		#2,d1							; align to memory
+	clr.l		(a0,d1.w)					; write zero to unlock
+	movem.l	(a7)+,a0/d1				; restore regs
+	rts
+
+; -----------------------------------------------------------------------------
+; Unlocks a semaphore. Must be the owner to have effect.
+; Three cases:
+;	1) the owner, the semaphore will be reset to zero
+;	2) not the owner, the write will be ignored
+; 3) already unlocked, the write will be ignored
+;
+; Parameters:
+;		d0 = key
+;		d1 = semaphore number
+; -----------------------------------------------------------------------------
+
 UnlockSemaphore:
-	movem.l	d1/a0,-(a7)			; save registers
-	lea			semamem,a0			; point to semaphore memory
-	andi.w	#255,d1					; make d1 word value
-	asl.w		#4,d1						; align to memory
-	addi.w	#$4000,d1				; point to read / write memory
-	move.b	#1,(a0,d1.w)		; write one to unlock
-	movem.l	(a7)+,a0/d1			; restore regs
+	movem.l	d1/a0,-(a7)				; save registers
+	lea			semamem+$1000,a0	; point to semaphore memory unlock area
+	andi.w	#255,d1						; make d1 word value
+	lsl.w		#2,d1							; align to memory
+	move.l	d0,(a0,d1.w)			; write matching value to unlock
+	movem.l	(a7)+,a0/d1				; restore regs
 	rts
 
 ; -----------------------------------------------------------------------------
@@ -989,10 +1082,11 @@ select_focus1:
 ; PLIC - platform level interrupt controller
 ;
 ; Register layout:
-;   bits 0 to 7  = cause code to issue
+;   bits 0 to 7  = cause code to issue (vector number)
 ;   bits 8 to 11 = irq level to issue
 ;   bit 16 = irq enable
 ;   bit 17 = edge sensitivity
+;   bit 18 = 0=vpa, 1=inta
 ;		bit 24 to 29 target core
 ;
 ; Note byte order must be reversed for PLIC.
@@ -1001,13 +1095,13 @@ select_focus1:
 init_plic:
 	lea		PLIC,a0						; a0 points to PLIC
 	lea		$80+4*29(a0),a1		; point to timer registers (29)
-	move.l	#$00060302,(a1)	; initialize, core=2,edge sensitive,enabled,irq6
+	move.l	#$00060302,(a1)	; initialize, core=2,edge sensitive,enabled,irq6,vpa
 	lea			4(a1),a1				; point to keyboard registers (30)
-	move.l	#$00060102,(a1)	; initialize, core=2,level sensitive,enabled,irq6
+	move.l	#$3C060502,(a1)	; core=2,level sensitive,enabled,irq6,inta
 	lea			4(a1),a1				; point to nmi button register (31)
-	move.l	#$00070302,(a1)	; initialize, core=2,edge sensitive,enabled,irq7
+	move.l	#$00070302,(a1)	; initialize, core=2,edge sensitive,enabled,irq7,vpa
 	lea		$80+4*16(a0),a1		; a1 points to ACIA register
-	move.l	#$00030102,(a1)	; core=2,level sensitive,enabled,irq3	
+	move.l	#$3D030502,(a1)	; core=2,level sensitive,enabled,irq3,inta	
 	rts
 
 ;==============================================================================
@@ -1041,8 +1135,8 @@ _KeybdGetStatus:
 
 _KeybdGetScancode:
 	moveq		#0,d1
-	move.b	KEYBD,d1				* get the scan code
-	move.b	#0,KEYBD+1			* clear receive register
+	move.b	KEYBD,d1				; get the scan code
+	move.b	#0,KEYBD+1			; clear receive register
 	rts
 
 ; Recieve a byte from the keyboard, used after a command is sent to the
@@ -1127,8 +1221,8 @@ GetKey:
 	cmp.b		d0,d1
 	bne.s		.0004							; go return no key available, if not in focus
 	bsr			KeybdGetCharNoWait	; get a character
-	cmpi.b	#-1,d1						; was a key available?
-	beq.s		.0004
+	tst.l		d1						; was a key available?
+	bmi.s		.0004
 	tst.b		KeybdEcho					; is keyboard echo on ?
 	beq.s		.0003							; no echo, just return the key
 	cmpi.b	#CR,d1						; convert CR keystroke into CRLF
@@ -1148,7 +1242,7 @@ GetKey:
 
 CheckForCtrlC:
 	bsr			KeybdGetCharNoWait
-	cmp.b		#CTRLC,d1
+	cmpi.b	#CTRLC,d1
 	beq			Monitor
 	rts
 
@@ -1163,8 +1257,10 @@ KeybdGetCharWait:
 	move.b	#-1,KeybdWaitFlag
 
 KeybdGetChar:
-	movem.l	d2/d3/a0,-(a7)
+	movem.l	d0/d2/d3/a0,-(a7)
 .0003:
+	movec		coreno,d0
+	swap		d0
 	moveq		#1,d1
 ;	bsr			LockSemaphore
 	move.b	_KeybdCnt,d2		; get count of buffered scan codes
@@ -1179,6 +1275,8 @@ KeybdGetChar:
 	move.b	d2,_KeybdHead
 	subi.b	#1,_KeybdCnt		; decrement count of scan codes in buffer
 	exg			d1,d2						; save scancode value in d2
+	movec		coreno,d0
+	swap		d0
 	moveq		#1,d1
 	bsr			UnlockSemaphore
 	exg			d2,d1						; restore scancode value
@@ -1187,11 +1285,13 @@ KeybdGetChar:
 	bsr		_KeybdGetStatus		; check keyboard status for key available
 	bmi		.0006							; yes, go process
 .0015:
+	movec		coreno,d0
+	swap		d0
 	moveq	#1,d1
 	bsr		UnlockSemaphore
 	tst.b	KeybdWaitFlag			; are we willing to wait for a key ?
 	bmi		.0003							; yes, branch back
-	movem.l	(a7)+,d2/d3/a0
+	movem.l	(a7)+,d0/d2/d3/a0
 	moveq	#-1,d1						; flag no char available
 	rts
 .0006:
@@ -1250,7 +1350,7 @@ KeybdGetChar:
 	move.w	#$0202,leds
 .0008:
 	move.w	#$0303,leds
-	movem.l	(a7)+,d2/d3/a0
+	movem.l	(a7)+,d0/d2/d3/a0
 	rts
 .doKeyup:
 	move.b	#-1,_KeyState1
@@ -1354,6 +1454,56 @@ Wait10ms:
 	move.l	(a7)+,d3
 	rts
 
+
+;--------------------------------------------------------------------------
+; Keyboard IRQ routine.
+;
+; Returns:
+; 	d1 = -1 if keyboard routine handled interrupt, otherwise positive.
+;--------------------------------------------------------------------------
+
+KeybdIRQ:
+	move.w	#$2600,sr					; disable lower interrupts
+	movem.l	d0/d1/a0,-(a7)
+	bsr			_KeybdGetStatus		; check if keyboard
+	tst.b		d1
+	bpl			.0001							; branch if not keyboard
+	movec		coreno,d0
+	swap		d0
+	moveq		#1,d1
+;	bsr			LockSemaphore
+	btst		#1,_KeyState2			; Is Alt down?
+	beq.s		.0003
+	move.b	KEYBD,d0					; get scan code
+	cmpi.b	#SC_TAB,d0				; is Alt-Tab?
+	bne.s		.0003
+	bsr			_KeybdGetScancode	; grab the scan code (clears interrupt)
+	bsr			rotate_iofocus
+	clr.b		_KeybdHead				; clear keyboard buffer
+	clr.b		_KeybdTail
+	clr.b		_KeybdCnt
+	bra			.0002							; do not store Alt-Tab
+.0003:
+	; Insert keyboard scan code into raw keyboard buffer
+	bsr			_KeybdGetScancode	; grab the scan code (clears interrupt)
+	cmpi.b	#32,_KeybdCnt			; see if keyboard buffer full
+	bhs.s		.0002
+	move.b	_KeybdTail,d0			; keyboard buffer not full, add to tail
+	ext.w		d0
+	lea			_KeybdBuf,a0			; a0 = pointer to buffer
+	move.b	d1,(a0,d0.w)			; put scancode in buffer
+	addi.b	#1,d0							; increment tail index
+	andi.b	#31,d0						; wrap at buffer limit
+	move.b	d0,_KeybdTail			; update tail index
+	addi.b	#1,_KeybdCnt			; increment buffer count
+.0002:
+	movec		coreno,d0
+	swap		d0
+	moveq		#1,d1
+	bsr			UnlockSemaphore
+.0001:
+	movem.l	(a7)+,d0/d1/a0		; return
+	rte
 
 ;--------------------------------------------------------------------------
 ; PS2 scan codes to ascii conversion tables.
@@ -1471,24 +1621,65 @@ _keybdExtendedCodes:
 ; Monitor
 ;==============================================================================
 ;==============================================================================
-;
+
+cmdString:
+	dc.b	'?'+$80						; ? display help
+	dc.b	'L'+$80						; L load S19 file
+	dc.b	'F','B'+$80				; FB fill with byte
+	dc.b	'F','W'+$80				; FW fill with wyde
+	dc.b	'F','L'+$80				; FL fill with long wyde
+	dc.b	'B','A'+$80				; BA start Tiny Basic
+	dc.b	'B','R'+$80				; BR breakpoint
+	dc.b	'D','R'+$80				; DR dump registers
+	dc.b	'D'+$80						; D dump memory
+	dc.b	'J'+$80						; J jump to code
+	dc.b	':'+$80						; : edit memory
+	dc.b	"CL",'S'+$80			; CLS clear screen
+	dc.b	"COR",'E'+$80			; CORE <n> switch to core
+	dc.b	'T','R'+$80				; TR test serial receive
+	dc.b	'T'+$80						; T test CPU
+	dc.b	'S'+$80						; S send serial
+	dc.b	'R'+$80						; R receive serial
+
+	align	2
+cmdTable:
+	dc.w	cmdHelp
+	dc.w	cmdLoadS19
+	dc.w	cmdFillB
+	dc.w	cmdFillW
+	dc.w	cmdFillL
+	dc.w	cmdTinyBasic
+	dc.w	cmdBreakpoint
+	dc.w	cmdDumpRegs
+	dc.w	cmdDumpMemory
+	dc.w	cmdJump
+	dc.w	cmdEditMemory
+	dc.w	cmdClearScreen
+	dc.w	cmdCore
+	dc.w	cmdTestSerialReceive
+	dc.w	cmdTestCPU
+	dc.w	cmdSendSerial
+	dc.w	cmdReceiveSerial	
+	dc.w	cmdMonitor
+
 ; Get a word from screen memory and swap byte order
 
 FromScreen:
 	move.l	(a0),d1
-	rol.w		#8,d1
-	swap		d1
-	rol.w		#8,d1
+	bsr			rbo
 	lea			8(a0),a0	; increment screen pointer
 	rts
 
 StartMon:
 	clr.w		NumSetBreakpoints
 	bsr			ClearBreakpointList
+cmdMonitor:
 Monitor:
 	; Reset the stack pointer on each entry into the monitor
 	move.l	#$40FFC,sp	; reset core's stack
 	move.w	#$2200,sr		; enable level 2 and higher interrupts
+	movec		coreno,d0
+	swap		d0
 	moveq		#1,d1
 	bsr			UnlockSemaphore
 	clr.b		KeybdEcho		; turn off keyboard echo
@@ -1509,7 +1700,7 @@ Prompt3:
 	bra.s		Prompt3
 
 ; Process the screen line that the CR was keyed on
-;
+
 Prompt1:
 	clr.b		CursorCol			; go back to the start of the line
 	bsr			CalcScreenLoc	; a0 = screen memory location
@@ -1518,32 +1709,41 @@ Prompt1:
 	cmpi.b	#'$',d1				; skip over '$' prompt character
 	beq.s		.0001
 	
-; Dispatch based on command character
-;
-Prompt2:
-	cmpi.b	#'a',d1
-	beq			AudioInputTest
-	cmpi.b	#'b',d1
-	beq			BouncingBalls
-	cmpi.b	#'g',d1
-	beq			GraphicsDemo
-	cmpi.b	#':',d1			; $: - edit memory
-	beq			EditMem
-	cmpi.b	#'D',d1			; $D - dump memory
-	bne.s		.0003
-	bsr			FromScreen
-	cmpi.b	#'R',d1			; $DR - dump registers
-	beq			DumpRegs
-	lea			-8(a0),a0
-	bra			DumpMem
-.0003:
-	cmpi.b	#'F',d1
-	beq			FillMem
-	cmpi.b	#'B',d1			; $B - start tiny basic
-	bne.s	.0001
-	bsr			FromScreen
-	cmpi.b	#'R',d1
-	bne.s		.0004
+; Dispatch based on command string
+
+cmdDispatch:
+	lea			cmdString,a2
+	clr.l		d4						; command counter
+	lea			-8(a0),a0			; backup a character
+	move.l	a0,a3					; a3 = start of command on screen
+.checkNextCmd:
+	bsr			FromScreen		; d1 = char from input screen
+	move.b	(a2)+,d5
+	eor.b		d5,d1					; does it match with command string?
+	beq.s		.checkNextCmd	; If it does, keep matching for longest match
+	cmpi.b	#$80,d1				; didn't match, was it the end of the command?
+	beq.s		.foundCmd
+	tst.b		-1(a2)				; was end of table hit?
+	beq.s		.endOfTable
+	addi.w	#2,d4					; increment command counter
+	move.l	a3,a0					; reset input pointer
+	tst.b		-1(a2)				; were we at the end of the command?
+	bmi.s		.checkNextCmd	; if were at end continue, otherwise scan for enf of cmd
+.scanToEndOfCmd
+	tst.b		(a2)+					; scan to end of command
+	beq.s		.endOfTable
+	bpl.s		.scanToEndOfCmd
+	bmi.s		.checkNextCmd
+.endOfTable
+	lea			msgUnknownCmd,a1
+	bsr			DisplayStringCRLF
+	bra			Monitor
+.foundCmd:
+	lea			cmdTable,a1		; a1 = pointer to command address table
+	move.w	(a1,d4.w),a1	; fetch command routine address from table
+	jmp			(a1)					; go execute command
+
+cmdBreakpoint:
 	bsr			ignBlanks
 	bsr			FromScreen
 	cmpi.b	#'+',d1
@@ -1553,46 +1753,24 @@ Prompt2:
 	cmpi.b	#'L',d1
 	beq			ListBreakpoints
 	bra			Monitor
-.0004:
-	jmp			$FFFCC000
-.0001:
-	cmpi.b	#'J',d1			; $J - execute code
-	beq			ExecuteCode
-	cmpi.b	#'L',d1			; $L - load S19 file
-	beq			LoadS19
-	cmpi.b	#'?',d1			; $? - display help
-	beq			DisplayHelp
-	cmpi.b	#'C',d1			; $C - clear screen
-	beq			TestCLS
-	cmpi.b	#'T',d1			; $T - run cpu test program
-	bne.s		.0002
-	bsr			FromScreen
-	cmpi.b	#'R',d1
-	beq			TestSerialReceive
+
+cmdTinyBasic:
+	jmp			$10000
+
+cmdTestCPU:
 	bsr			cpu_test
 	lea			msg_test_done,a1
 	bsr			DisplayStringCRLF
 	bra			Monitor
-.0002:
-	cmpi.b	#'S',d1
-	beq			SendSerial
-	cmpi.b	#'R',d1
-	beq			ReceiveSerial
-	bra			Monitor
 
-TestCLS:
-	bsr			FromScreen
-	addq		#1,d2
-	cmpi.b	#'L',d1
-	bne.s		.0001
-	bsr			FromScreen
-	addq		#1,d2
-	cmpi.b	#'S',d1
-	bne			Monitor
+cmdClearScreen:
 	bsr			ClearScreen
 	bsr			HomeCursor
 	bra			Monitor
-.0001:
+
+cmdCore:
+	bsr			ignBlanks
+	bsr			FromScreen
 	cmpi.b	#'2',d1					; check range
 	blo			Monitor
 	cmpi.b	#'9',d1
@@ -1600,7 +1778,8 @@ TestCLS:
 	subi.b	#'0',d1					; convert ascii to binary
 	bsr			select_iofocus
 	bra			Monitor
-	
+
+cmdHelp:
 DisplayHelp:
 	lea			HelpMsg,a1
 	bsr			DisplayString
@@ -1608,17 +1787,20 @@ DisplayHelp:
 
 HelpMsg:
 	dc.b	"? = Display help",CR,LF
-	dc.b  "C<n> = switch to core n",CR,LF
+	dc.b  "CORE <n> = switch to core n",CR,LF
 	dc.b	"CLS = clear screen",CR,LF
 	dc.b	": = Edit memory bytes",CR,LF
 	dc.b	"F = Fill memory",CR,LF
 	dc.b	"L = Load S19 file",CR,LF
 	dc.b	"D = Dump memory, DR = dump registers",CR,LF
-	dc.b	"B = start tiny basic",CR,LF
+	dc.b	"BA = start tiny basic",CR,LF
 	dc.b  "BR = set breakpoint",CR,LF
 	dc.b	"J = Jump to code",CR,LF
-	dc.b  "SE = send to serial port",CR,LF
+	dc.b  "S = send to serial port",CR,LF
 	dc.b	"T = cpu test program",CR,LF,0
+
+msgUnknownCmd:
+	dc.b	"command unknown",0
 
 msgHello:
 	dc.b	LF,CR,"Hello World!",LF,CR,0
@@ -1692,7 +1874,7 @@ GetCmdLine:
 ; S 40000 40
 ;------------------------------------------------------------------------------
 
-SendSerial:
+cmdSendSerial:
 	bsr			ignBlanks
 	bsr			GetHexNumber
 	beq			Monitor
@@ -1719,7 +1901,7 @@ SendSerial:
 ; R 10000 40
 ;------------------------------------------------------------------------------
 
-ReceiveSerial:
+cmdReceiveSerial:
 	bsr			ignBlanks
 	bsr			GetHexNumber
 	beq			Monitor
@@ -1733,10 +1915,10 @@ ReceiveSerial:
 	move.l	d1,d2					; d2 = count of bytes to send
 	bra.s		.0002					; enter loop at bottom
 .0001:
-	move.w	#33,d0				; serial peek char
+	move.w	#36,d0				; serial peek char
 	trap		#15
-	cmpi.l	#-1,d1
-	beq			.0001
+	tst.l		d1
+	bmi.s		.0001
 	move.b	d1,(a1)+
 .0002:
 	dbra		d2,.0001
@@ -1744,45 +1926,61 @@ ReceiveSerial:
 		
 ;------------------------------------------------------------------------------
 ; Fill memory
+;
 ; FB = fill bytes		FB 00000010 100 FF	; fill starting at 10 for 256 bytes
 ; FW = fill words
 ; FL = fill longs
 ; F = fill bytes
 ;------------------------------------------------------------------------------
 
-FillMem:
-	bsr			FromScreen
-	;bsr		ScreenToAscii
-	move.b	d1,d4			; d4 = fill size
+cmdFillB:
 	bsr			ignBlanks
 	bsr			GetHexNumber
-	move.l	d1,a1			; a1 = start
+	move.l	d1,a1					; a1 = start
 	bsr			ignBlanks
 	bsr			GetHexNumber
-	move.l	d1,d3			; d3 = count
+	move.l	d1,d3					; d3 = count
+	beq			Monitor
 	bsr			ignBlanks
 	bsr			GetHexNumber	; fill value
-	cmpi.b	#'L',d4
-	bne			fmem1
-fmemL:
-	move.l	d1,(a1)+
-	sub.l	#1,d3
-	bne.s	fmemL
-	bra		Monitor
-fmem1
-	cmpi.b	#'W',d4
-	bne		fmemB
-fmemW:
-	move.w	d1,(a1)+
-	sub.l	#1,d3
-	bne.s	fmemW
-	bra		Monitor
-fmemB:
+.fmem:
 	move.b	d1,(a1)+
-	sub.l	#1,d3
-	bne.s	fmemB
-	bra		Monitor
-
+	sub.l		#1,d3
+	bne.s		.fmem
+	bra			Monitor
+	
+cmdFillW:
+	bsr			ignBlanks
+	bsr			GetHexNumber
+	move.l	d1,a1					; a1 = start
+	bsr			ignBlanks
+	bsr			GetHexNumber
+	move.l	d1,d3					; d3 = count
+	beq			Monitor
+	bsr			ignBlanks
+	bsr			GetHexNumber	; fill value
+.fmem:
+	move.w	d1,(a1)+
+	sub.l		#1,d3
+	bne.s		.fmem
+	bra			Monitor
+	
+cmdFillL:
+	bsr			ignBlanks
+	bsr			GetHexNumber
+	move.l	d1,a1					; a1 = start
+	bsr			ignBlanks
+	bsr			GetHexNumber
+	move.l	d1,d3					; d3 = count
+	beq			Monitor
+	bsr			ignBlanks
+	bsr			GetHexNumber	; fill value
+.fmem:
+	move.l	d1,(a1)+
+	sub.l		#1,d3
+	bne.s		.fmem
+	bra			Monitor
+	
 ;------------------------------------------------------------------------------
 ; Modifies:
 ;	a0	- text pointer
@@ -1800,43 +1998,64 @@ ignBlanks:
 
 ;------------------------------------------------------------------------------
 ; Edit memory byte.
+;    Bytes are built into long words in case the memory is only longword
+; accessible.
 ;------------------------------------------------------------------------------
 
-EditMem:
-	bsr		ignBlanks
-	bsr		GetHexNumber
+cmdEditMemory:
+	bsr			ignBlanks
+	bsr			GetHexNumber
 	move.l	d1,a1
 edtmem1:
-	bsr		ignBlanks
-	bsr		GetHexNumber
-	move.b	d1,(a1)+
-	bsr		ignBlanks
-	bsr		GetHexNumber
-	move.b	d1,(a1)+
-	bsr		ignBlanks
-	bsr		GetHexNumber
-	move.b	d1,(a1)+
-	bsr		ignBlanks
-	bsr		GetHexNumber
-	move.b	d1,(a1)+
-	bsr		ignBlanks
-	bsr		GetHexNumber
-	move.b	d1,(a1)+
-	bsr		ignBlanks
-	bsr		GetHexNumber
-	move.b	d1,(a1)+
-	bsr		ignBlanks
-	bsr		GetHexNumber
-	move.b	d1,(a1)+
-	bsr		ignBlanks
-	bsr		GetHexNumber
-	move.b	d1,(a1)+
-	bra		Monitor
+	clr.l		d2
+	bsr			ignBlanks
+	bsr			GetHexNumber
+	move.b	d1,d2
+;	move.b	d1,(a1)+
+	bsr			ignBlanks
+	bsr			GetHexNumber
+	lsl.l		#8,d2
+	move.b	d1,d2
+;	move.b	d1,(a1)+
+	bsr			ignBlanks
+	bsr			GetHexNumber
+	lsl.l		#8,d2
+	move.b	d1,d2
+;	move.b	d1,(a1)+
+	bsr			ignBlanks
+	bsr			GetHexNumber
+	lsl.l		#8,d2
+	move.b	d1,d2
+	move.l	d2,(a1)+
+;	move.b	d1,(a1)+
+	clr.l		d2
+	bsr			ignBlanks
+	bsr			GetHexNumber
+	move.b	d1,d2
+;	move.b	d1,(a1)+
+	bsr			ignBlanks
+	bsr			GetHexNumber
+	lsl.l		#8,d2
+	move.b	d1,d2
+;	move.b	d1,(a1)+
+	bsr			ignBlanks
+	bsr			GetHexNumber
+	lsl.l		#8,d2
+	move.b	d1,d2
+;	move.b	d1,(a1)+
+	bsr			ignBlanks
+	bsr			GetHexNumber
+	lsl.l		#8,d2
+	move.b	d1,d2
+;	move.b	d1,(a1)+
+	move.l	d2,(a1)+
+	bra			Monitor
 
 ;------------------------------------------------------------------------------
 ; Execute code at the specified address.
 ;------------------------------------------------------------------------------
 
+cmdJump:
 ExecuteCode:
 	bsr			ignBlanks
 	bsr			GetHexNumber
@@ -1849,7 +2068,7 @@ ExecuteCode:
 ; D 0800 0850
 ;------------------------------------------------------------------------------
 
-DumpMem:
+cmdDumpMemory:
 	bsr			ignBlanks
 	bsr			GetHexNumber
 	beq			Monitor			; was there a number ? no, other garbage, just ignore
@@ -1920,7 +2139,7 @@ dspmem1:
 ;	... etc
 ;------------------------------------------------------------------------------
 
-DumpRegs:
+cmdDumpRegs:
 	bsr			CRLF
 	move.w	#15,d0					; number of registers-1
 	lea			msg_reglist,a0	;
@@ -1967,11 +2186,15 @@ msg_reglist:
 ;------------------------------------------------------------------------------
 ;------------------------------------------------------------------------------
 
-TestSerialReceive:
+cmdTestSerialReceive:
 .0002:
-	bsr			SerialPeekCharDirect
-	cmpi.b	#-1,d1
-	beq.s		.0001
+	moveq		#36,d0				; serial get char from buffer
+	trap		#15
+;	bsr			SerialPeekCharDirect
+	tst.l		d1
+	bmi.s		.0001
+	cmpi.b	#CTRLZ,d1
+	beq			Monitor
 	bsr			DisplayChar
 .0001:	
 	bsr			CheckForCtrlC
@@ -2133,25 +2356,28 @@ DisplayNybble:
 ;==============================================================================
 ; Load an S19 format file
 ;==============================================================================
-;
-LoadS19:
+
+cmdLoadS19:
 	bsr			CRLF
 	bra			ProcessRec
 NextRec:
 	bsr			sGetChar
-	cmpi.b	#LF,d0
+	cmpi.b	#LF,d1
 	bne			NextRec
 	move.b	#'.',d1
 	bsr			DisplayChar
-ProcessRec
+ProcessRec:
 	bsr			sGetChar
-	move.b	d0,d4
-	cmpi.b	#26,d4		; CTRL-Z ?
+	cmpi.b	#CR,d1
+	beq.s		ProcessRec
+	clr.b		S19Checksum
+	move.b	d1,d4
+	cmpi.b	#CTRLZ,d4		; CTRL-Z ?
 	beq			Monitor
 	cmpi.b	#'S',d4
 	bne			NextRec
 	bsr			sGetChar
-	move.b	d0,d4
+	move.b	d1,d4
 	cmpi.b	#'0',d4
 	blo			NextRec
 	cmpi.b	#'9',d4		; d4 = record type
@@ -2159,28 +2385,29 @@ ProcessRec
 	bsr			sGetChar
 	bsr			AsciiToHexNybble
 	move.b	d1,d2
-	bsr		sGetChar
-	bsr		AsciiToHexNybble
-	lsl.b	#4,d2
-	or.b	d2,d1		; d1 = byte count
+	bsr			sGetChar
+	bsr			AsciiToHexNybble
+	lsl.b		#4,d2
+	or.b		d2,d1		; d1 = byte count
 	move.b	d1,d3		; d3 = byte count
+	add.b		d3,S19Checksum
 	cmpi.b	#'0',d4		; manufacturer ID record, ignore
-	beq		NextRec
+	beq			NextRec
 	cmpi.b	#'1',d4
-	beq		ProcessS1
+	beq			ProcessS1
 	cmpi.b	#'2',d4
-	beq		ProcessS2
+	beq			ProcessS2
 	cmpi.b	#'3',d4
-	beq		ProcessS3
+	beq			ProcessS3
 	cmpi.b	#'5',d4		; record count record, ignore
-	beq		NextRec
+	beq			NextRec
 	cmpi.b	#'7',d4
-	beq		ProcessS7
+	beq			ProcessS7
 	cmpi.b	#'8',d4
-	beq		ProcessS8
+	beq			ProcessS8
 	cmpi.b	#'9',d4
-	beq		ProcessS9
-	bra		NextRec
+	beq			ProcessS9
+	bra			NextRec
 
 pcssxa
 	andi.w	#$ff,d3
@@ -2195,6 +2422,7 @@ pcssxa
 	bsr			AsciiToHexNybble
 	lsl.l		#4,d2
 	or.b		d1,d2
+	add.b		d2,S19Checksum
 	move.b	d2,(a1)+
 	dbra		d3,.0001
 ; Get the checksum byte
@@ -2207,6 +2435,11 @@ pcssxa
 	bsr			AsciiToHexNybble
 	lsl.l		#4,d2
 	or.b		d1,d2
+	eor.b		#$FF,d2
+	cmp.b		S19Checksum,d2
+	beq			NextRec
+	move.b	#'E',d1
+	bsr			DisplayChar
 	bra			NextRec
 
 ProcessS1:
@@ -2217,6 +2450,10 @@ ProcessS2:
 	bra			pcssxa
 ProcessS3:
 	bsr			S19Get32BitAddress
+	move.l	a1,d1
+	bsr			DisplayTetra
+	move.b	#CR,d1
+	bsr			DisplayChar
 	bra			pcssxa
 ProcessS7:
 	bsr			S19Get32BitAddress
@@ -2239,14 +2476,14 @@ S19Get16BitAddress:
 	bra			S1932b
 
 S19Get24BitAddress:
-	clr.l	d2
-	bsr		sGetChar
-	bsr		AsciiToHexNybble
+	clr.l		d2
+	bsr			sGetChar
+	bsr			AsciiToHexNybble
 	move.b	d1,d2
-	bra		S1932a
+	bra			S1932a
 
 S19Get32BitAddress:
-	clr.l	d2
+	clr.l		d2
 	bsr			sGetChar
 	bsr			AsciiToHexNybble
 	move.b	d1,d2
@@ -2282,6 +2519,14 @@ S1932b:
 	or.b		d1,d2
 	clr.l		d4
 	move.l	d2,a1
+	; Add bytes from address value to checksum
+	add.b		d2,S19Checksum
+	lsr.l		#8,d2
+	add.b		d2,S19Checksum
+	lsr.l		#8,d2
+	add.b		d2,S19Checksum
+	lsr.l		#8,d2
+	add.b		d2,S19Checksum
 	rts
 
 ;------------------------------------------------------------------------------
@@ -2289,20 +2534,16 @@ S1932b:
 ; CTRL-C
 ;------------------------------------------------------------------------------
 
+AUXIN:
+
 sGetChar:
-	bsr			CheckForCtrlC
-;	bsr			CheckForKey
-;	beq			.0001
-;	moveq		#5,d0					; GetKey
-;	trap		#15
-;	cmpi.b	#CTRLC,d1
-;	beq			Monitor
-.0001:
+;	bsr			CheckForCtrlC
 	moveq		#36,d0				; serial get char from buffer
 	trap		#15
-	cmpi.b	#-1,d1
-	beq.s		sGetChar
-	move.l	d1,d0					; expected in d0
+	tst.l		d1						; was there a char available?
+	bmi.s		sGetChar			; no - try again
+	cmpi.b	#CTRLZ,d1			; receive end of file?
+	beq			Monitor
 	rts
 
 AudioInputTest:
@@ -2315,7 +2556,19 @@ ClearScreen:
 	bra		clear_screen
 	rts
 
-AUXIN:
+;------------------------------------------------------------------------------
+; Reverse the order of bytes in d1.
+;------------------------------------------------------------------------------
+
+rbo:
+	rol.w		#8,d1
+	swap		d1
+	rol.w		#8,d1
+	rts
+
+;==============================================================================
+; Serial I/O routines
+;==============================================================================
 
 ;------------------------------------------------------------------------------
 ; Initialize the serial port an enhanced 6551 circuit.
@@ -2387,6 +2640,7 @@ SerialGetChar:
 	move.b		(a0,d1.w),d1				; get byte from buffer
 	addi.w		#1,SerHeadRcv
 	andi.w		#$FFF,SerHeadRcv		; 4k wrap around
+	andi.l		#$FF,d1
 	bra				.Xit
 .NoChars:
 	moveq			#-1,d1
@@ -2439,9 +2693,7 @@ SerialPeekChar:
 
 SerialPeekCharDirect:
 	move.l	ACIA+ACIA_STAT,d1	; get serial status
-	rol.w		#8,d1							; swap byte order
-	swap		d1
-	rol.w		#8,d1
+	bsr			SerialRbo
 	btst		#3,d1							; look for Rx not empty
 	beq.s		.0001
 	moveq.l	#0,d1							; clear upper bits of return value
@@ -2450,11 +2702,6 @@ SerialPeekCharDirect:
 .0001:
 	moveq		#-1,d1
 	rts
-
-bus_err:
-.0001:
-	nop
-	bra			.0001
 
 ;------------------------------------------------------------------------------
 ; SerialPutChar
@@ -2478,7 +2725,7 @@ SerialPutChar:
 	rol.w		#8,d0
 	btst		#4,d0							; bit #4 of the status reg
 	beq.s		.0001			    		; branch if transmitter is not empty
-	bsr			rbo
+	bsr			SerialRbo
 	move.l	d1,ACIA+ACIA_TX		; send the byte
 	movem.l	(a7)+,d0/d1				; pop d0,d1
 	rts
@@ -2487,7 +2734,7 @@ SerialPutChar:
 ; Reverse the order of bytes in d1.
 ;------------------------------------------------------------------------------
 
-rbo:
+SerialRbo:
 	rol.w		#8,d1
 	swap		d1
 	rol.w		#8,d1
@@ -2522,18 +2769,19 @@ SerialRcvCount:
 ; Modifies:
 ;		none
 ; Returns:
-;		none
+;		d1 = -1 if IRQ handled, otherwise zero
 ;------------------------------------------------------------------------------
 
 SerialIRQ:
-	movem.l	d0/d1/a0,-(a7)
+	move.w	#$2300,sr						; disable lower level IRQs
+	movem.l	d0/d1/d2/a0,-(a7)
 sirqNxtByte:
 	move.l	ACIA+ACIA_STAT,d1		; check the status
-	bsr			rbo
+	bsr			SerialRbo
 	btst		#3,d1								; bit 3 = rx full
 	beq			notRxInt
 	move.l	ACIA+ACIA_RX,d1
-	bsr			rbo
+	bsr			SerialRbo
 sirq0001:
 	move.w	SerTailRcv,d0				; check if recieve buffer full
 	addi.w	#1,d0
@@ -2553,13 +2801,12 @@ sirq0001:
 	move.b	#XOFF,d1						; send an XOFF
 	clr.b		SerRcvXon						; clear XON status
 	move.b	d1,SerRcvXoff				; set XOFF status
-	bsr			rbo
-	move.l	d1,ACIA+ACIA_TX
+	bsr			SerialPutChar				; send XOFF
 	bra			sirqNxtByte     		; check the status for another byte
 sirqRxFull:
 notRxInt:
-	movem.l	(a7)+,d0/d1/a0
-	rts
+	movem.l	(a7)+,d0/d1/d2/a0
+	rte
 
 nmeSerial:
 	dc.b		"Serial",0
@@ -2568,6 +2815,11 @@ nmeSerial:
 ;------------------------------------------------------------------------------
 ;------------------------------------------------------------------------------
 	even
+
+bus_err:
+.0001:
+	nop
+	bra			.0001
 
 trap3:
 	; First save all registers
@@ -2587,7 +2839,7 @@ trap3:
 	bra				Monitor					; not a breakpoint
 ProcessBreakpoint:
 	bsr				DisarmAllBreakpoints
-	bra				DumpRegs
+	bra				cmdDumpRegs
 
 ;------------------------------------------------------------------------------
 ; DisarmAllBreakpoints, used when entering the monitor.
@@ -2748,53 +3000,110 @@ ClearBreakpointList:
 ;------------------------------------------------------------------------------
 ;------------------------------------------------------------------------------
 
-irq3_rout:
-	bsr			SerialIRQ
-	rte
+InitIRQ:
+	moveq		#6,d0
+	lea			KeybdIRQ,a0
+	bsr			InstallIRQ
+	lea			TickIRQ,a0
+	bsr			InstallIRQ
+	moveq		#3,d0
+	lea			SerialIRQ,a0
+	; fall through
+
+;------------------------------------------------------------------------------
+; Install an IRQ handler.
+;
+; Parameters:
+;		d0 = IRQ level
+;		a0 = pointer to IRQ routine
+; Returns:
+;		d1 = -1 if successfully added, 0 otherwise
+;		nf = 1, zf = 0 if successfully added, otherwise nf = 0, zf = 1
+;------------------------------------------------------------------------------
+
+InstallIRQ:
+	move.l	d0,-(a7)					; save working register
+	lea			InstalledIRQ,a1		; a1 points to installed IRQ list
+	lsl.w		#5,d0							; multiply by 8 long words per IRQ level
+.nextSpot:
+	cmpa.l	(a1,d0.w),a0			; Is the IRQ already installed?
+	beq.s		.found
+	tst.l		(a1,d0.w)					; test for an empty spot
+	beq.s		.foundSpot
+	addi.w	#4,d0							; increment to next slot
+	move.w	d0,d1
+	andi.w	#$1F,d1						; check to see if spots exhausted
+	beq.s		.noEmpties
+	bra.s		.nextSpot
+.foundSpot:
+	move.l	a0,(a1,d0.w)			; add IRQ routine to table
+.found:
+	move.l	(a7)+,d0
+	moveq		#-1,d1						; return success
+	rts
+.noEmpties:
+	move.l	(a7)+,d0
+	moveq		#0,d1							; return failed to add
+	rts
+	
 
 ;------------------------------------------------------------------------------
 ;------------------------------------------------------------------------------
 
-irq_rout:
-	movem.l	d0/d1/a0,-(a7)
-	moveq		#1,d1
-;	bsr			LockSemaphore
-	bsr			_KeybdGetStatus		; check if timer or keyboard
-	bpl.s		.0001							; branch if not keyboard
-	btst		#1,_KeyState2			; Is Alt down?
-	beq.s		.0003
-	move.b	KEYBD,d0					; get scan code
-	cmpi.b	#SC_TAB,d0				; is Alt-Tab?
-	bne.s		.0003
-	bsr			_KeybdGetScancode	; grab the scan code (clears interrupt)
-	bsr			rotate_iofocus
-	clr.b		_KeybdHead				; clear keyboard buffer
-	clr.b		_KeybdTail
-	clr.b		_KeybdCnt
-	bra			.0002							; do not store Alt-Tab
-.0003:
-	; Insert keyboard scan code into raw keyboard buffer
-	bsr			_KeybdGetScancode	; grab the scan code (clears interrupt)
-	cmpi.b	#32,_KeybdCnt			; see if keyboard buffer full
-	bhs.s		.0002
-	move.b	_KeybdTail,d0			; keyboard buffer not full, add to tail
-	ext.w		d0
-	lea			_KeybdBuf,a0			; a0 = pointer to buffer
-	move.b	d1,(a0,d0.w)			; put scancode in buffer
-	addi.b	#1,d0							; increment tail index
-	andi.b	#31,d0						; wrap at buffer limit
-	move.b	d0,_KeybdTail			; update tail index
-	addi.b	#1,_KeybdCnt			; increment buffer count
-	bra			.0002
-.0001:
+TickIRQ:
+	move.w	#$2600,sr					; disable lower level IRQs
+	movem.l	d1/a0,-(a7)
+	; ToDo: detect a tick interrupt
+;	move.l	PLIC+$00,d1
+;	rol.l		#8,d1
+;	cmpi.b	#29,d1
+;	bne.s		.notTick
 	move.l	#$1D000000,PLIC+$14	; reset edge sense circuit
 	move.l	TextScr,a0				; a0 = screen address
 	addi.l	#1,40(a0)					; update onscreen IRQ flag
-.0002:	
-	moveq		#1,d1
-	bsr			UnlockSemaphore
-	movem.l	(a7)+,d0/d1/a0		; return
+	movem.l	(a7)+,d1/a0
 	rte
+;.notTick:
+;	movem.l	(a7)+,d1/a0
+;	rte
+
+;------------------------------------------------------------------------------
+;------------------------------------------------------------------------------
+
+irq3_rout:
+	movem.l	d0/d1/a0/a1,-(a7)
+	lea			InstalledIRQ+8*4*3,a0
+	bra			irq_rout
+
+irq6_rout:
+	movem.l	d0/d1/a0/a1,-(a7)
+	lea			InstalledIRQ+8*4*6,a0
+irq_rout:
+	moveq		#7,d0
+.nextHandler:
+	move.l	(a0)+,a1
+	beq.s		.0003
+	jsr			(a1)
+	tst.l		d1								; was IRQ handled?
+	bmi.s		.0002							; first one to return handled quits loop
+.0003:
+	dbra		d0,.nextHandler
+.0002:
+	movem.l	(a7)+,d0/d1/a0/a1	; return
+
+SpuriousIRQ:
+	rte
+
+;	bsr			KeybdIRQ
+;	tst.l		d1								; handled by KeybdIRQ?
+;	bmi.s		.0002							; if yes, go return
+;.0001:
+;	move.l	#$1D000000,PLIC+$14	; reset edge sense circuit
+;	move.l	TextScr,a0				; a0 = screen address
+;	addi.l	#1,40(a0)					; update onscreen IRQ flag
+;.0002:	
+;	movem.l	(a7)+,d0/d1/a0/a1	; return
+;	rte
 
 nmi_rout:
 	movem.l	d0/d1/a0,-(a7)
@@ -2815,7 +3124,7 @@ brdisp_trap:
 	move.l	Regsave+$44,d1	; exception address
 	bsr			DisplayTetra		; and display it
 ;	move.l	(sp)+,d1				; pop format word 68010 mode only
-	bra			DumpRegs
+	bra			cmdDumpRegs
 
 illegal_trap:
 	addq		#2,sp						; get rid of sr
