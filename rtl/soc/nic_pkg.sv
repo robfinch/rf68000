@@ -62,6 +62,10 @@ typedef struct packed
 	logic [1:0] pad2;
 	logic we;
 	logic [3:0] sel;
+	logic [7:0] asid;
+	logic mmus;
+	logic ios;
+	logic iops;
 	address_t adr;
 	data_t dat;
 } packet_t;

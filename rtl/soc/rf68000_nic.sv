@@ -41,9 +41,11 @@ import nic_pkg::*;
 
 module rf68000_nic(id, rst_i, clk_i, s_cti_i, s_atag_o,
 	s_cyc_i, s_stb_i, s_ack_o, s_aack_o, s_rty_o, s_err_o, s_vpa_o, 
-	s_we_i, s_sel_i, s_adr_i, s_dat_i, s_dat_o,
+	s_we_i, s_sel_i, s_asid_i, s_adr_i, s_dat_i, s_dat_o,
+	s_mmus_i, s_ios_i, s_iops_i,
 	m_cyc_o, m_stb_o, m_ack_i, m_err_i, m_vpa_i,
-	m_we_o, m_sel_o, m_adr_o, m_dat_o, m_dat_i,
+	m_we_o, m_sel_o, m_asid_o, m_adr_o, m_dat_o, m_dat_i,
+	m_mmus_o, m_ios_o, m_iops_o,
 	packet_i, packet_o, ipacket_i, ipacket_o,
 	rpacket_i, rpacket_o,
 	irq_i, firq_i, cause_i, iserver_i, irq_o, firq_o, cause_o);
@@ -61,9 +63,13 @@ output reg s_vpa_o;
 output reg s_aack_o;
 input s_we_i;
 input [3:0] s_sel_i;
+input [7:0] s_asid_i;
 input [31:0] s_adr_i;
 input [31:0] s_dat_i;
 output reg [31:0] s_dat_o;
+input s_mmus_i;
+input s_ios_i;
+input s_iops_i;
 output reg m_cyc_o;
 output reg m_stb_o;
 input m_ack_i;
@@ -71,9 +77,13 @@ input m_err_i;
 input m_vpa_i;
 output reg m_we_o;
 output reg [3:0] m_sel_o;
+output reg [7:0] m_asid_o;
 output reg [31:0] m_adr_o;
 output reg [31:0] m_dat_o;
 input [31:0] m_dat_i;
+output reg m_mmus_o;
+output reg m_ios_o;
+output reg m_iops_o;
 input packet_t packet_i;
 output packet_t packet_o;
 input packet_t rpacket_i;
@@ -153,6 +163,10 @@ if (rst_i) begin
 	m_stb_o <= 1'b0;
 	m_we_o <= 1'b0;
 	m_sel_o <= 4'h0;
+	m_asid_o <= 'd0;
+	m_mmus_o <= 'd0;
+	m_ios_o <= 'd0;
+	m_iops_o <= 'd0;
 	m_adr_o <= 24'h0;
 	m_dat_o <= 12'h00;
 	irq_o <= 'd0;
@@ -195,8 +209,13 @@ else begin
 		ipacket_o.irq <= irq_i;
 		ipacket_o.cause <= cause_i;
 	end
-	if (ipacket_i.did==id || ipacket_i.did==6'd63) begin
-		ipacket_o <= {$bits(ipacket_t){1'b0}};
+	if (ipacket_i.did==id) begin
+		ipacket_o <= 'd0;
+		irq_o <= ipacket_i.irq;
+		firq_o <= ipacket_i.firq;
+		cause_o <= ipacket_i.cause;
+	end
+	else if (ipacket_i.did==6'd63) begin
 		irq_o <= ipacket_i.irq;
 		firq_o <= ipacket_i.firq;
 		cause_o <= ipacket_i.cause;
@@ -289,7 +308,11 @@ else begin
 			m_stb_o <= TRUE;
 			m_we_o <= FALSE;
 			m_sel_o <= 4'hF;
+			m_asid_o <= packet_rx.asid;
 			m_adr_o <= packet_rx.adr;
+			m_mmus_o <= packet_rx.mmus;
+			m_ios_o <= packet_rx.ios;
+			m_iops_o <= packet_rx.iops;
 			state <= ST_READ_ACK;
 		end
 	ST_READ_ACK:
@@ -304,6 +327,10 @@ else begin
 			rpacket_tx.age <= 6'd0;
 			rpacket_tx.typ <= packet_rx.typ==PT_AREAD ? PT_AACK : PT_ACK;
 			rpacket_tx.ack <= TRUE;
+			rpacket_tx.asid <= m_asid_o;
+			rpacket_tx.mmus <= m_mmus_o;
+			rpacket_tx.ios <= m_ios_o;
+			rpacket_tx.iops <= m_iops_o;
 			rpacket_tx.adr <= m_adr_o;
 			rpacket_tx.dat <= m_dat_i;
 			state <= ST_IDLE;
@@ -319,6 +346,10 @@ else begin
 			rpacket_tx.age <= 6'd0;
 			rpacket_tx.typ <= PT_ERR;
 			rpacket_tx.ack <= TRUE;
+			rpacket_tx.asid <= m_asid_o;
+			rpacket_tx.mmus <= m_mmus_o;
+			rpacket_tx.ios <= m_ios_o;
+			rpacket_tx.iops <= m_iops_o;
 			rpacket_tx.adr <= m_adr_o;
 			rpacket_tx.dat <= m_dat_i;
 			state <= ST_IDLE;
@@ -334,6 +365,10 @@ else begin
 			rpacket_tx.age <= 6'd0;
 			rpacket_tx.typ <= PT_VPA;
 			rpacket_tx.ack <= TRUE;
+			rpacket_tx.asid <= m_asid_o;
+			rpacket_tx.mmus <= m_mmus_o;
+			rpacket_tx.ios <= m_ios_o;
+			rpacket_tx.iops <= m_iops_o;
 			rpacket_tx.adr <= m_adr_o;
 			rpacket_tx.dat <= m_dat_i;
 			state <= ST_IDLE;
@@ -345,6 +380,10 @@ else begin
 			m_stb_o <= TRUE;
 			m_we_o <= TRUE;
 			m_sel_o <= packet_rx.sel;
+			m_asid_o <= packet_rx.asid;
+			m_mmus_o <= packet_rx.mmus;
+			m_ios_o <= packet_rx.ios;
+			m_iops_o <= packet_rx.iops;
 			m_adr_o <= packet_rx.adr;
 			m_dat_o <= packet_rx.dat;
 			state <= ST_WRITE_ACK;
@@ -437,6 +476,10 @@ begin
 		packet_tx.pad2 <= 2'b0;
 		packet_tx.we <= s_we_i;
 		packet_tx.sel <= s_sel_i;
+		packet_tx.asid <= s_asid_i;
+		packet_tx.mmus <= s_mmus_i;
+		packet_tx.ios <= s_ios_i;
+		packet_tx.iops <= s_iops_i;
 		packet_tx.adr <= s_adr_i;
 		packet_tx.dat <= s_dat_i;
 		casez(s_adr_i[31:24])
@@ -452,7 +495,8 @@ begin
 				s_ack1 <= s_we_i;
 			end
 		/* I/O area */
-		8'hFD:
+		8'hFD,
+		8'h01:	// virtual address
 			begin
 				packet_tx.did <= 6'd62;
 				s_ack1 <= s_we_i|burst;
@@ -475,8 +519,14 @@ begin
 				packet_tx.did <= 6'd62;
 				s_ack1 <= s_we_i|burst;
 			end
+		/* Global DRAM area */
+		8'h2?,8'h3?:
+			begin
+				packet_tx.did <= 6'd62;
+				s_ack1 <= s_we_i|burst;
+			end
 		8'h00:
-			if (s_adr_i[23:20]==4'h1) begin
+			if (s_adr_i[23:20]>=4'h1) begin
 				packet_tx.did <= 6'd62;
 				s_ack1 <= s_we_i|burst;
 			end

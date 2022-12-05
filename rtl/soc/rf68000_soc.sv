@@ -37,6 +37,9 @@
 import wishbone_pkg::*;
 import nic_pkg::*;
 
+`define USE_GATED_CLOCK	1'b1
+//`define HAS_MMU 1'b1
+
 module rf68000_soc(cpu_resetn, xclk, led, sw, btnl, btnr, btnc, btnd, btnu, 
   kclk, kd, uart_txd, uart_rxd,
   TMDS_OUT_clk_p, TMDS_OUT_clk_n, TMDS_OUT_data_p, TMDS_OUT_data_n,
@@ -141,14 +144,23 @@ wire clk20, clk40, clk50, clk100, clk200;
 wire xclk_bufg;
 wire node_clk = clk40;
 wb_write_request128_t ch7req;
+wb_write_request128_t ch7dreq;	// DRAM request
 wb_read_response128_t ch7resp;
 wb_write_request128_t fb_req;
 wb_read_response128_t fb_resp;
+wire cpu_cyc;
+wire cpu_stb;
+wire cpu_we;
+wire [31:0] cpu_adr;
+wire [31:0] cpu_dato;
 reg ack;
 wire vpa;
 wire [3:0] sel;
 reg [31:0] dati;
 wire [31:0] dato;
+wire mmus, ios, iops;
+wire mmu_ack;
+wire [31:0] mmu_dato;
 wire br1_cyc;
 wire br1_stb;
 reg br1_ack;
@@ -183,12 +195,19 @@ wire [31:0] scr_dato;
 wire acia_ack;
 wire [31:0] acia_dato;
 wire acia_irq;
+wire i2c_ack;
+wire [7:0] i2c_dato;
+wire i2c_irq;
 wire plic_ack;
 wire [3:0] plic_irq;
 wire [31:0] plic_dato;
 wire [7:0] plic_cause;
 wire [5:0] plic_core;
-
+wire [3:0] dram_state;
+wire [7:0] asid;
+wire io_ack;
+wire [31:0] io_dato;
+wire io_gate, io_gate_en;
 
 wire leds_ack;
 reg [7:0] rst_reg;
@@ -263,25 +282,36 @@ ur2d1
 	.SerialClk(clk200)
 );
 
-wire cs_tc = (ch7req.adr[31:16]==16'hFD00 || ch7req.adr[31:16]==16'hFD01 ||
-							ch7req.adr[31:16]==16'hFD02 || ch7req.adr[31:16]==16'hFD03) && ch7req.stb;
-wire cs_br1_tc = (br1_adr[31:16]==16'hFD00 || br1_adr[31:16]==16'hFD01 ||
-									br1_adr[31:16]==16'hFD02 || br1_adr[31:16]==16'hFD03) && br1_stb;
-wire cs_fb = ch7req.adr[31:16]==16'hFD04 && ch7req.stb;
-wire cs_br1_fb = br1_adr[31:16]==16'hFD04 && br1_stb;
-wire cs_leds = ch7req.adr[31:8]==24'hFD0FFF && ch7req.stb;
-wire cs_br3_leds = br3_adr[31:8]==24'hFD0FFF && br3_stb;
-wire cs_br3_rst  = br3_adr[31:8]==24'hFD0FFC && br3_stb;
-wire cs_kbd  = ch7req.adr[31:8]==24'hFD0FFE && ch7req.stb;
-wire cs_br3_kbd  = br3_adr[31:8]==24'hFD0FFE && br3_stb;
-wire cs_rand  = ch7req.adr[31:8]==24'hFD0FFD && ch7req.stb;
-wire cs_br3_rand  = br3_adr[31:8]==24'hFD0FFD && br3_stb;
-wire cs_sema = ch7req.adr[31:16]==16'hFD05 && ch7req.stb;
-wire cs_acia = ch7req.adr[31:12]==20'hFD060 && ch7req.stb;
-wire cs_br3_acia = br3_adr[31:12]==20'hFD060 && br3_stb;
+wire cs_io;
+assign cs_io = ios;//ch7req.adr[31:20]==12'hFD0;
+wire cs_io2;
+// These two decodes outside the IO area.
+wire cs_iobitmap;
+assign cs_iobitmap = iops;	//ch7req.adr[31:16]==16'hFC10;
+wire cs_mmu;
+assign cs_mmu = mmus;	//cpu_adr[31:16]==16'hFC00 || cpu_adr[31:16]==16'hFC01;
+
+wire cs_tc = (ch7req.adr[19:16]==4'h0 || ch7req.adr[19:16]==4'h1 ||
+							ch7req.adr[19:16]==4'h2 || ch7req.adr[19:16]==4'h3) && ch7req.stb && cs_io2;
+wire cs_br1_tc = (br1_adr[19:16]==4'h0 || br1_adr[19:16]==4'h1 ||
+									br1_adr[19:16]==4'h2 || br1_adr[19:16]==4'h3) && br1_stb && cs_io2;
+wire cs_fb = ch7req.adr[19:16]==4'h4 && ch7req.stb && cs_io2;
+wire cs_br1_fb = br1_adr[19:16]==4'h4 && br1_stb && cs_io2;
+wire cs_leds = ch7req.adr[19:8]==12'hFFF && ch7req.stb && cs_io2;
+wire cs_br3_leds = br3_adr[19:8]==12'hFFF && br3_stb && cs_io2;
+wire cs_br3_rst  = br3_adr[19:8]==12'hFFC && br3_stb && cs_io2;
+wire cs_kbd  = ch7req.adr[19:8]==12'hFFE && ch7req.stb && cs_io2;
+wire cs_br3_kbd  = br3_adr[19:8]==12'hFFE && br3_stb && cs_io2;
+wire cs_rand  = ch7req.adr[19:8]==12'hFFD && ch7req.stb && cs_io2;
+wire cs_br3_rand  = br3_adr[19:8]==12'hFFD && br3_stb && cs_io2;
+wire cs_sema = ch7req.adr[19:16]==4'h5 && ch7req.stb && cs_io2;
+wire cs_acia = ch7req.adr[19:12]==8'h60 && ch7req.stb && cs_io2;
+wire cs_br3_acia = br3_adr[19:12]==8'h60 && br3_stb && cs_io2;
+wire cs_br3_i2c2 = br3_adr[19:12]==8'h69 && br3_stb && cs_io2;
 wire cs_scr = ch7req.adr[31:20]==12'h001 && ch7req.stb;
-wire cs_plic = ch7req.adr[31:12]==20'hFD090;
-wire cs_br3_plic = br3_adr[31:12]==20'hFD090;
+wire cs_plic = ch7req.adr[19:12]==8'h90 && cs_io2;
+wire cs_br3_plic = br3_adr[19:12]==8'h90 && cs_io2;
+wire cs_dram = ch7req.adr[31:29]==3'b001 && !cs_mmu && !cs_iobitmap && !cs_io;
 
 rfFrameBuffer uframebuf1
 (
@@ -344,10 +374,10 @@ IOBridge ubridge1
 (
 	.rst_i(rst),
 	.clk_i(node_clk),
-	.s1_cyc_i(ch7req.cyc),
-	.s1_stb_i(ch7req.stb),
+	.s1_cyc_i(ch7req.cyc & io_gate_en),
+	.s1_stb_i(ch7req.stb & io_gate_en),
 	.s1_ack_o(br1_cack),
-	.s1_we_i(ch7req.we),
+	.s1_we_i(ch7req.we & io_gate_en),
 	.s1_sel_i(sel),
 	.s1_adr_i(ch7req.adr),
 	.s1_dat_i(dato),
@@ -444,15 +474,41 @@ uart6551 #(.pClkFreq(100), .pClkDiv(24'd130)) uuart
 	.RxC_i(clk20)
 );
 
+wire rtc_clko, rtc_clkoen;
+wire rtc_datao, rtc_dataoen;
+
+i2c_master_top ui2cm1
+(
+	.wb_clk_i(node_clk),
+	.wb_rst_i(rst),
+	.arst_i(~rst),
+	.wb_adr_i(br3_adr[2:0]),
+	.wb_dat_i(br3_dato[7:0]),
+	.wb_dat_o(i2c_dato),
+	.wb_we_i(br3_we),
+	.wb_stb_i(cs_br3_i2c2),
+	.wb_cyc_i(br3_cyc),
+	.wb_ack_o(i2c_ack),
+	.wb_inta_o(i2c_irq),
+	.scl_pad_i(rtc_clk),
+	.scl_pad_o(rtc_clko),
+	.scl_padoen_o(rtc_clkoen),
+	.sda_pad_i(rtc_data),
+	.sda_pad_o(rtc_datao), 
+	.sda_padoen_o(rtc_dataoen)
+);
+assign rtc_clk = rtc_clkoen ? 'bz : rtc_clko;
+assign rtc_data = rtc_dataoen ? 'bz : rtc_datao;
+
 
 IOBridge ubridge3
 (
 	.rst_i(rst),
 	.clk_i(node_clk),
-	.s1_cyc_i(ch7req.cyc),
-	.s1_stb_i(ch7req.stb),
+	.s1_cyc_i(ch7req.cyc & io_gate_en),
+	.s1_stb_i(ch7req.stb & io_gate_en),
 	.s1_ack_o(br3_cack),
-	.s1_we_i(ch7req.we),
+	.s1_we_i(ch7req.we & io_gate_en),
 	.s1_sel_i(sel),
 	.s1_adr_i(ch7req.adr),
 	.s1_dat_i(dato),
@@ -478,12 +534,12 @@ IOBridge ubridge3
 always_ff @(posedge node_clk)
 	casez({cs_br3_rand,cs_br3_kbd,cs_br3_leds})
 	3'b??1:	br3_dati <= led;
-	3'b??0:	br3_dati <= {4{kbd_dato}}|rand_dato|acia_dato;
+	3'b??0:	br3_dati <= {4{kbd_dato}}|rand_dato|acia_dato|{4{i2c_dato}};
 	default:	br3_dati <= 'd0;
 	endcase
 
 always_ff @(posedge node_clk)
-	br3_ack <= leds_ack|kbd_ack|rand_ack|acia_ack;
+	br3_ack <= leds_ack|kbd_ack|rand_ack|acia_ack|i2c_ack;
 
 assign leds_ack = cs_br3_leds;
 always_ff @(posedge node_clk)
@@ -550,6 +606,15 @@ mig_7series_0 uddr3
 	.init_calib_complete(calib_complete)
 );
 
+always_comb
+begin
+	ch7req.cid <= 4'd7;
+	ch7dreq <= ch7req;
+	ch7dreq.cid <= 4'd7;
+	ch7dreq.cyc <= ch7req.cyc & cs_dram;
+	ch7dreq.stb <= ch7req.stb & cs_dram;
+end
+
 mpmc10_wb umpmc1
 (
 	.rst(rst),
@@ -593,9 +658,9 @@ mpmc10_wb umpmc1
 	.ch5o(),
 	.ch6i('d0),
 	.ch6o(),
-	.ch7i(ch7req),
+	.ch7i(ch7dreq),
 	.ch7o(ch7resp),
-	.state()
+	.state(dram_state)
 );
 
 binary_semamem usema1
@@ -626,6 +691,25 @@ scratchmem uscr1
 	.dat_i(dato),
 	.dat_o(scr_dato)
 );
+
+io_bitmap uiob1
+(
+	.clk_i(node_clk),
+	.cs_i(cs_iobitmap),
+	.cyc_i(ch7req.cyc),
+	.stb_i(ch7req.stb),
+	.ack_o(io_ack),
+	.we_i(ch7req.we),
+	.asid_i(asid),
+	.adr_i(ch7req.adr[19:0]),
+	.dat_i(dato),
+	.dat_o(io_dato),
+	.iocs_i(cs_io),
+	.gate_o(cs_io2),
+	.gate_en(io_gate_en)
+);
+
+assign io_irq = cs_io & ~cs_io2 & io_gate_en;
 
 packet_t [5:0] packet;
 packet_t [5:0] rpacket;
@@ -670,7 +754,7 @@ rf68000_plic uplic1
 	.i1(1'b0),
 	.i2(1'b0),
 	.i3(1'b0),
-	.i4(1'b0),
+	.i4(io_irq),
 	.i5(1'b0),
 	.i6(1'b0),
 	.i7(1'b0),
@@ -717,6 +801,43 @@ BusError ube1
 	.err_o(bus_err)
 );
 
+reg [6:0] rst_cnt;
+reg [15:0] rsts;
+reg [15:0] clken_reg;
+
+`ifdef HAS_MMU
+rf68000_mmu ummu1
+(
+	.rst_i(rst),
+	.clk_i(node_clk),
+	.s_ex_i(1'b0),
+	.s_cs_i(cs_mmu),
+	.s_cyc_i(cpu_cyc),
+	.s_stb_i(cpu_stb),
+	.s_ack_o(mmu_ack),
+	.s_we_i(cpu_we),
+	.s_asid_i(asid),
+	.s_adr_i(cpu_adr),
+	.s_dat_i(cpu_dato),
+	.s_dat_o(mmu_dato),
+  .pea_o(ch7req.adr),
+  .pdat_o(dato),
+  .cyc_o(ch7req.cyc),
+  .stb_o(ch7req.stb),
+  .we_o(ch7req.we),
+  .exv_o(),
+  .rdv_o(),
+  .wrv_o()
+);
+`else
+assign ch7req.cyc = cpu_cyc;
+assign ch7req.stb = cpu_stb;
+assign ch7req.we = cpu_we;
+assign ch7req.adr = cpu_adr;
+assign mmu_ack = 1'b0;
+assign mmu_dato = 'd0;
+`endif
+
 rf68000_nic unic1
 (
 	.id(6'd62),			// system node id
@@ -736,22 +857,30 @@ rf68000_nic unic1
 	.s_adr_i(32'h0),
 	.s_dat_i(32'h0),
 	.s_dat_o(),
-	.m_cyc_o(ch7req.cyc),
-	.m_stb_o(ch7req.stb),
+	.s_asid_i('d0),
+	.s_mmus_i(1'b0),
+	.s_ios_i(1'b0),
+	.s_iops_i(1'b0),
+	.m_cyc_o(cpu_cyc),
+	.m_stb_o(cpu_stb),
 	.m_ack_i(ack),
 	.m_err_i(bus_err),
 	.m_vpa_i(vpa),
-	.m_we_o(ch7req.we),
+	.m_we_o(cpu_we),
 	.m_sel_o(sel),
-	.m_adr_o(ch7req.adr),
-	.m_dat_o(dato),
+	.m_asid_o(asid),
+	.m_mmus_o(mmus),
+	.m_ios_o(ios),
+	.m_iops_o(iops),
+	.m_adr_o(cpu_adr),
+	.m_dat_o(cpu_dato),
 	.m_dat_i(dati),
-	.packet_i(packet[3]),
-	.packet_o(packet[4]),
-	.ipacket_i(ipacket[3]),
-	.ipacket_o(ipacket[4]),
-	.rpacket_i(rpacket[3]),
-	.rpacket_o(rpacket[4]),
+	.packet_i(clken_reg[3] ? packet[2] : clken_reg[2] ? packet[1] : packet[0]),
+	.packet_o(packet[3]),
+	.ipacket_i(clken_reg[3] ? ipacket[2] : clken_reg[2] ? ipacket[1] : ipacket[0]),
+	.ipacket_o(ipacket[3]),
+	.rpacket_i(clken_reg[3] ? rpacket[2] : clken_reg[2] ? rpacket[1] : rpacket[0]),
+	.rpacket_o(rpacket[3]),
 	.irq_i(plic_irq[2:0]),
 	.firq_i(1'b0),
 	.cause_i(plic_cause),
@@ -764,51 +893,55 @@ rf68000_nic unic1
 nic_ager uager1
 (
 	.clk_i(node_clk),
-	.packet_i(packet[4]),
-	.packet_o(packet[5]),
-	.ipacket_i(ipacket[4]),
-	.ipacket_o(ipacket[5]), 
-	.rpacket_i(rpacket[4]),
-	.rpacket_o(rpacket[5])
+	.packet_i(packet[3]),
+	.packet_o(packet[4]),
+	.ipacket_i(ipacket[3]),
+	.ipacket_o(ipacket[4]), 
+	.rpacket_i(rpacket[3]),
+	.rpacket_o(rpacket[4])
 );
 
 ila_0 your_instance_name (
-	.clk(node_clk), // input wire clk
+	.clk(clk100), // input wire clk
 
 	.probe0(unode1.ucpu1.ir), // input wire [15:0]  probe0  
-	.probe1(ch7req.adr), // input wire [31:0]  probe1 
-	.probe2(br3_dato), // input wire [31:0]  probe2 
-	.probe3({ch7req.cyc,ch7req.we,irq,ack,vpa,plic_ack}), // input wire [7:0]  probe3
+	.probe1(cpu_adr), // input wire [31:0]  probe1 
+	.probe2(dato), // input wire [31:0]  probe2 
+	.probe3({cpu_cyc,cpu_stb,ack,cs_io2,cs_io,ch7req.stb,cpu_we}), // input wire [7:0]  probe3
 	.probe4(unode1.ucpu1.pc),
-	.probe5(unode1.ucpu1.state),
-	.probe6(ipacket[4]),
-	.probe7(dati),
-	.probe8({kclk,kd}),
-	.probe9(unode1.ucpu1.disp)
+	.probe5({dram_state,unode1.ucpu1.ios_o,ios}),
+	.probe6(unode1.ucpu1.state),
+	.probe7(mem_wdf_mask),
+	.probe8({umpmc1.req_fifoo.stb,umpmc1.req_fifoo.we}),
+	.probe9(umpmc1.req_fifoo.sel),
+	.probe10(ch7req.adr)
 );
 
-assign ch7req.sel = sel << {ch7req.adr[3:2],2'b0};
+assign ch7req.sel = ch7req.we ? sel << {ch7req.adr[3:2],2'b0} : 16'hFFFF;
 assign ch7req.dat = {4{dato}};
 always_ff @(posedge node_clk)
-if (ch7req.adr[31:29]==3'd1)
+if (cs_dram)
 	dati <= ch7resp.dat >> {ch7req.adr[3:2],5'b0};
 else
-	dati <= br1_cdato|br3_cdato|sema_dato|scr_dato|plic_dato;
+	dati <= br1_cdato|br3_cdato|sema_dato|scr_dato|plic_dato|io_dato|mmu_dato;
 always_ff @(posedge node_clk)
-	ack <= ch7resp.ack|br1_cack|br3_cack|sema_ack|scr_ack|plic_ack;
-
-reg [6:0] rst_cnt;
-reg [7:0] rsts;
+	ack <= ch7resp.ack|br1_cack|br3_cack|sema_ack|scr_ack|plic_ack|io_ack|mmu_ack;
 
 always_ff @(posedge node_clk)
 if (rst) begin
 	rst_cnt <= 'd0;
-	rst_reg <= 8'hFF;
+	rst_reg <= 16'h0000;
 end
 else begin
 	if (cs_br3_rst) begin
-		rst_reg <= br3_dato[7:0];
-		rst_cnt <= 'd0;
+		if (|sel[1:0]) begin
+			rst_reg <= br3_dato[15:0];
+			rst_cnt <= 'd0;
+			clken_reg[2] <= clken_reg[2] | |br3_dato[5:4];
+			clken_reg[3] <= clken_reg[3] | |br3_dato[7:6];
+		end
+		if (|sel[3:2])
+			clken_reg <= br3_dato[31:16];
 	end
 	if (~rst_cnt[6])
 		rst_cnt <= rst_cnt + 2'd1;
@@ -817,26 +950,37 @@ else begin
 end
 assign rst_ack = cs_br3_rst;
 always_comb
-	rsts <= {8{~rst_cnt[6]}} & rst_reg;
+	rsts <= {16{~rst_cnt[6]}} & rst_reg;
+
+assign node_clk1 = node_clk;
+`ifdef USE_GATED_CLOCK
+BUFGCE uce2 (.CE(clken_reg[2]), .I(node_clk), .O(node_clk2));
+BUFGCE uce3 (.CE(clken_reg[3]), .I(node_clk), .O(node_clk3));
+`else
+assign node_clk2 = node_clk;
+assign node_clk3 = node_clk;
+`endif
 
 rf68000_node unode1
 (
 	.id(5'd1),
-	.rst(rst),
-	.clk(node_clk),
-	.packet_i(packet[5]),
+	.rst1(rst),
+	.rst2(rst|rsts[3]),
+	.clk(node_clk1),
+	.packet_i(packet[4]),
 	.packet_o(packet[0]),
-	.rpacket_i(rpacket[5]),
+	.rpacket_i(rpacket[4]),
 	.rpacket_o(rpacket[0]),
-	.ipacket_i(ipacket[5]),
+	.ipacket_i(ipacket[4]),
 	.ipacket_o(ipacket[0])
 );
 
 rf68000_node unode2
 (
 	.id(5'd2),
-	.rst(rst|rsts[2]),
-	.clk(node_clk),
+	.rst1(rst|rsts[4]),
+	.rst2(rst|rsts[5]),
+	.clk(node_clk2),
 	.packet_i(packet[0]),
 	.packet_o(packet[1]),
 	.rpacket_i(rpacket[0]),
@@ -848,20 +992,23 @@ rf68000_node unode2
 rf68000_node unode3
 (
 	.id(5'd3),
-	.rst(rst|rsts[3]),
-	.clk(node_clk),
-	.packet_i(packet[1]),
+	.rst1(rst|rsts[6]),
+	.rst2(rst|rsts[7]),
+	.clk(node_clk3),
+	.packet_i(clken_reg[2] ? packet[1] : packet[0]),
 	.packet_o(packet[2]),
-	.rpacket_i(rpacket[1]),
+	.rpacket_i(clken_reg[2] ? rpacket[1] : rpacket[0]),
 	.rpacket_o(rpacket[2]),
-	.ipacket_i(ipacket[1]),
+	.ipacket_i(clken_reg[2] ? ipacket[1] : ipacket[0]),
 	.ipacket_o(ipacket[2])
 );
 
+/*
 rf68000_node unode4
 (
 	.id(5'd4),
-	.rst(rst|rsts[4]),
+	.rst1(rst|rsts[8]),
+	.rst2(rst|rsts[9]),
 	.clk(node_clk),
 	.packet_i(packet[2]),
 	.packet_o(packet[3]),
@@ -870,5 +1017,6 @@ rf68000_node unode4
 	.ipacket_i(ipacket[2]),
 	.ipacket_o(ipacket[3])
 );
+*/
 
 endmodule

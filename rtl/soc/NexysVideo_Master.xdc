@@ -20,9 +20,9 @@ clk_pll_i \
 clk100_NexysVideoClkgen \
 clk160_NexysVideoClkgen \
 clk200_NexysVideoClkgen \
-clk20_NexysVideoClkgen \
 } \
 -group { \
+clk20_NexysVideoClkgen \
 clk40_NexysVideoClkgen \
 } \
 -group { \

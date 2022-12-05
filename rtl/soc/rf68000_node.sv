@@ -36,11 +36,14 @@
 
 import nic_pkg::*;
 
-module rf68000_node(id, rst, clk, packet_i, packet_o, 
+module rf68000_node(id, rst1, rst2, clk, clken1, clken2, packet_i, packet_o, 
 	rpacket_i, rpacket_o, ipacket_i, ipacket_o);
 input [4:0] id;
-input rst;
+input rst1;
+input rst2;
 input clk;
+input clken1;
+input clken2;
 input packet_t packet_i;
 output packet_t packet_o;
 input packet_t rpacket_i;
@@ -74,6 +77,12 @@ wire err1, err2;
 wire vpa1, vpa2;
 wire spram1_ack, spram2_ack;
 wire [31:0] spram1o, spram2o;
+wire [7:0] asid1, asid2;
+wire mmus1, mmus2;
+wire ios1, ios2;
+wire iops1, iops2;
+
+wire rst = rst1|rst2;
 
 packet_t packet_x;
 packet_t rpacket_x;
@@ -127,6 +136,10 @@ rf68000_nic unic1
 	.s_vpa_o(vpa1),
 	.s_we_i(we1),
 	.s_sel_i(sel1),
+	.s_asid_i(asid1),
+	.s_mmus_i(mmus1),
+	.s_ios_i(ios1),
+	.s_iops_i(iops1),
 	.s_adr_i(adr1),
 	.s_dat_i(dato1),
 	.s_dat_o(nic1_sdato),
@@ -137,6 +150,10 @@ rf68000_nic unic1
 	.m_vpa_i(1'b0),
 	.m_we_o(nic1_we),
 	.m_sel_o(nic1_sel),
+	.m_asid_o(),
+	.m_mmus_o(),
+	.m_ios_o(),
+	.m_iops_o(),
 	.m_adr_o(nic1_adr),
 	.m_dat_o(nic1_dato),
 	.m_dat_i(nic1_dati),
@@ -171,6 +188,10 @@ rf68000_nic unic2
 	.s_vpa_o(vpa2),
 	.s_we_i(we2),
 	.s_sel_i(sel2),
+	.s_asid_i(asid2),
+	.s_mmus_i(mmus2),
+	.s_ios_i(ios2),
+	.s_iops_i(iops2),
 	.s_adr_i(adr2),
 	.s_dat_i(dato2),
 	.s_dat_o(nic2_sdato),
@@ -181,6 +202,10 @@ rf68000_nic unic2
 	.m_vpa_i(1'b0),
 	.m_we_o(nic2_we),
 	.m_sel_o(nic2_sel),
+	.m_asid_o(),
+	.m_mmus_o(),
+	.m_ios_o(),
+	.m_iops_o(),
 	.m_adr_o(nic2_adr),
 	.m_dat_o(nic2_dato),
 	.m_dat_i(nic2_dati),
@@ -260,7 +285,8 @@ rf68000_node_arbiter undarb2
 rf68000 ucpu1
 (
 	.coreno_i({26'd0,id,1'b0}),
-	.rst_i(rst),
+	.clken_i(clken1),
+	.rst_i(rst1),
 	.rst_o(),
 	.clk_i(clk),
 	.nmi_i(1'b0),
@@ -275,6 +301,10 @@ rf68000 ucpu1
 	.we_o(we1),
 	.sel_o(sel1),
 	.fc_o(),
+	.asid_o(asid1),
+	.mmus_o(mmus1),
+	.ios_o(ios1),
+	.iops_o(iops1),
 	.adr_o(adr1),
 	.dat_i(dati1),
 	.dat_o(dato1)
@@ -283,7 +313,8 @@ rf68000 ucpu1
 rf68000 ucpu2
 (
 	.coreno_i({26'd0,id,1'b1}),
-	.rst_i(rst),
+	.clken_i(clken2),
+	.rst_i(rst2),
 	.rst_o(),
 	.clk_i(clk),
 	.nmi_i(1'b0),
@@ -298,6 +329,10 @@ rf68000 ucpu2
 	.we_o(we2),
 	.sel_o(sel2),
 	.fc_o(),
+	.asid_o(asid2),
+	.mmus_o(mmus2),
+	.ios_o(ios2),
+	.iops_o(iops2),
 	.adr_o(adr2),
 	.dat_i(dati2),
 	.dat_o(dato2)
@@ -454,6 +489,7 @@ wire cs_spram2 = adr2[31:18]==14'h1 && cyc2 && stb2;
 
 ack_gen uag1
 (
+	.rst_i(rst1),
 	.clk_i(clk),
 	.ce_i(1'b1),
 	.i(cs_spram1),
@@ -467,6 +503,7 @@ ack_gen uag1
 
 ack_gen uag2
 (
+	.rst_i(rst2),
 	.clk_i(clk),
 	.ce_i(1'b1),
 	.i(cs_spram2),
@@ -482,7 +519,7 @@ ack_gen uag2
    // Xilinx Parameterized Macro, version 2022.2
 
    xpm_memory_spram #(
-      .ADDR_WIDTH_A(10),              // DECIMAL
+      .ADDR_WIDTH_A(12),              // DECIMAL
       .AUTO_SLEEP_TIME(0),           // DECIMAL
       .BYTE_WRITE_WIDTH_A(8),       // DECIMAL
       .CASCADE_HEIGHT(0),            // DECIMAL
@@ -491,7 +528,7 @@ ack_gen uag2
       .MEMORY_INIT_PARAM("0"),       // String
       .MEMORY_OPTIMIZATION("true"),  // String
       .MEMORY_PRIMITIVE("auto"),     // String
-      .MEMORY_SIZE(32768),            // DECIMAL
+      .MEMORY_SIZE(32768*4),            // DECIMAL
       .MESSAGE_CONTROL(0),           // DECIMAL
       .READ_DATA_WIDTH_A(32),        // DECIMAL
       .READ_LATENCY_A(2),            // DECIMAL
@@ -513,7 +550,7 @@ ack_gen uag2
       .sbiterra(),             // 1-bit output: Status signal to indicate single bit error occurrence
                                        // on the data output of port A.
 
-      .addra(adr1[11:2]),          // ADDR_WIDTH_A-bit input: Address for port A write and read operations.
+      .addra(adr1[13:2]),          // ADDR_WIDTH_A-bit input: Address for port A write and read operations.
       .clka(clk),                     // 1-bit input: Clock signal for port A.
       .dina(dato1),                     // WRITE_DATA_WIDTH_A-bit input: Data input for port A write operations.
       .ena(cs_spram1),                       // 1-bit input: Memory enable signal for port A. Must be high on clock
@@ -551,7 +588,7 @@ ack_gen uag2
    // Xilinx Parameterized Macro, version 2022.2
 
    xpm_memory_spram #(
-      .ADDR_WIDTH_A(10),              // DECIMAL
+      .ADDR_WIDTH_A(12),              // DECIMAL
       .AUTO_SLEEP_TIME(0),           // DECIMAL
       .BYTE_WRITE_WIDTH_A(8),       // DECIMAL
       .CASCADE_HEIGHT(0),            // DECIMAL
@@ -560,7 +597,7 @@ ack_gen uag2
       .MEMORY_INIT_PARAM("0"),       // String
       .MEMORY_OPTIMIZATION("true"),  // String
       .MEMORY_PRIMITIVE("auto"),     // String
-      .MEMORY_SIZE(32768),            // DECIMAL
+      .MEMORY_SIZE(32768*4),            // DECIMAL
       .MESSAGE_CONTROL(0),           // DECIMAL
       .READ_DATA_WIDTH_A(32),        // DECIMAL
       .READ_LATENCY_A(2),            // DECIMAL
@@ -582,7 +619,7 @@ ack_gen uag2
       .sbiterra(),             // 1-bit output: Status signal to indicate single bit error occurrence
                                        // on the data output of port A.
 
-      .addra(adr2[11:2]),          // ADDR_WIDTH_A-bit input: Address for port A write and read operations.
+      .addra(adr2[13:2]),          // ADDR_WIDTH_A-bit input: Address for port A write and read operations.
       .clka(clk),                     // 1-bit input: Clock signal for port A.
       .dina(dato2),                     // WRITE_DATA_WIDTH_A-bit input: Data input for port A write operations.
       .ena(cs_spram2),                       // 1-bit input: Memory enable signal for port A. Must be high on clock

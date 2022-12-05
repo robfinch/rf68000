@@ -46,6 +46,9 @@
 `define SUPPORT_DIV	1'b1
 `define SUPPORT_BCD	1'b1
 //`define SUPPORT_010	1'b1
+`define SUPPORT_BITPAIRS 1'b1
+
+//`define HAS_MMU 1'b1
 
 //`define SUPPORT_TASK	1'b1
 
@@ -132,8 +135,9 @@
 // 2 MULTS
 // 8 BRAMs
 
-module rf68000(coreno_i, rst_i, rst_o, clk_i, nmi_i, ipl_i, vpa_i,
-	lock_o, cyc_o, stb_o, ack_i, err_i, rty_i, we_o, sel_o, fc_o, adr_o, dat_i, dat_o);
+module rf68000(coreno_i, clken_i, rst_i, rst_o, clk_i, nmi_i, ipl_i, vpa_i,
+	lock_o, cyc_o, stb_o, ack_i, err_i, rty_i, we_o, sel_o, fc_o, 
+	asid_o, mmus_o, ios_o, iops_o, adr_o, dat_i, dat_o);
 typedef enum logic [7:0] {
 	IFETCH = 8'd1,
 	DECODE,
@@ -382,6 +386,14 @@ typedef enum logic [7:0] {
 	MULS1,
 	MULS2,
 	MULS3,
+	
+	BIN2BCD1,
+	BIN2BCD2,
+	BCD2BIN1,
+	BCD2BIN2,
+	BCD2BIN3,
+
+	IFETCH2,
 
 	FSDATA2
 } state_t;
@@ -401,6 +413,7 @@ parameter S = 1'b0;
 parameter D = 1'b1;
 
 input [31:0] coreno_i;
+input clken_i;
 input rst_i;
 output reg rst_o;
 input clk_i;
@@ -422,6 +435,10 @@ output [3:0] sel_o;
 reg [3:0] sel_o;
 output [2:0] fc_o;
 reg [2:0] fc_o;
+output [7:0] asid_o;
+output mmus_o;
+output ios_o;
+output iops_o;
 output [31:0] adr_o;
 reg [31:0] adr_o;
 input [31:0] dat_i;
@@ -431,6 +448,7 @@ reg [31:0] dat_o;
 reg em;							// emulation mode
 reg [15:0] ir;
 reg [15:0] ir2;			// second word for ir
+reg ext_ir;
 reg [31:0] icnt;
 state_t state;
 state_t rstate;
@@ -621,12 +639,14 @@ endcase
 //wire [31:0] rfob = {mmm[0],rrr}==4'b1111 ? sp : regfile[{mmm[0],rrr}];
 //wire [31:0] rfoDnn = regfile[{1'b0,rrr}];
 //wire [31:0] rfoRnn = rrrr==4'b1111 ? sp : regfile[rrrr];
-wire clk = clk_i;
+wire clk_g;
 reg rfwrL,rfwrB,rfwrW;
 reg takb;
 reg [8:0] resB;
 reg [16:0] resW;
 reg [32:0] resL;
+(* USE_DSP = "no" *)
+reg [32:0] resL1,resL2;
 reg [32:0] resMS1,resMS2,resMU1,resMU2;
 reg [31:0] st_data;
 wire [11:0] bcdaddo,bcdsubo,bcdnego;
@@ -652,16 +672,25 @@ reg [31:0] dato_buf;
 
 // CSR's
 reg [31:0] tick;	// FF0
-
+reg [7:0] asid;		// 003
+assign asid_o = asid;
 reg [31:0] vbr;		// 801
 reg [31:0] sfc;		// 000
 reg [31:0] dfc;		// 001
+reg [31:0] apc;
+reg [7:0] cpl;
+reg [31:0] tr;
+reg [31:0] tcba;
+reg [31:0] mmus, ios, iops;
+assign mmus_o = adr_o[31:12] == mmus[31:12];
+assign iops_o = adr_o[31:12] == iops[31:12];
+assign ios_o  = adr_o[31:20] == ios [31:20];
 
 wire [16:0] lfsr_o;
 lfsr17 ulfsr1
 (
 	.rst(rst_i),
-	.clk(clk_i),
+	.clk(clk_g),
 	.ce(1'b1),
 	.cyc(1'b0),
 	.o(lfsr_o)
@@ -721,17 +750,30 @@ wire [7:0] dbin, sbin;
 reg [9:0] bcdres;
 wire dd_done;
 wire [11:0] bcdreso;
-BCDToBin ub2b1 (clk_i, d, dbin);
-BCDToBin ub2b2 (clk_i, s, sbin);
+BCDToBin ub2b1 (clk_g, d, dbin);
+BCDToBin ub2b2 (clk_g, s, sbin);
 
 DDBinToBCD #(.WID(10)) udd1
 (
 	.rst(rst_i),
-	.clk(clk_i),
+	.clk(clk_g),
 	.ld(state==BCD3),
 	.bin(bcdres),
 	.bcd(bcdreso),
 	.done(dd_done)
+);
+
+reg [31:0] dd32in;
+wire [39:0] dd32out;
+wire dd32done;
+DDBinToBCD #(.WID(32)) udd2
+(
+	.rst(rst_i),
+	.clk(clk_g),
+	.ld(state==BIN2BCD1),
+	.bin(dd32in),
+	.bcd(dd32out),
+	.done(dd32done)
 );
 
 /*
@@ -794,7 +836,7 @@ wire [31:0] divr;
 rf68000_divider udiv1
 (
 	.rst(rst_i),
-	.clk(clk_i),
+	.clk(clk_g),
 	.ld(state==DIV1),
 	.abort(1'b0),
 	.sgn(divs),
@@ -852,7 +894,9 @@ wire [15:0] iri = pc[1] ? {dat_i[23:16],dat_i[31:24]} : {dat_i[7:0],dat_i[15:8]}
 wire [15:0] iri = pc[1] ? dat_i[31:16] : dat_i[15:0];
 `endif
 
-always_ff @(posedge clk_i)
+assign clk_g = clk_i;
+
+always_ff @(posedge clk_g)
 if (rst_i) begin
 	em <= 1'b0;
 	lock_o <= 1'b0;
@@ -902,6 +946,10 @@ if (rst_i) begin
 	dato_buf <= 'd0;
 	use_sfc <= 'd0;
 	use_dfc <= 'd0;
+	ext_ir <= 1'b0;
+	ios  <= 32'hFD000000;
+	iops <= 32'hFD100000;
+	mmus <= 32'hFDC00000;
 end
 else begin
 
@@ -1509,6 +1557,7 @@ IFETCH:
 				stb_o <= 1'b1;
 				sel_o <= 4'b1111;
 				adr_o <= pc;
+				goto (IFETCH);
 			end
 		end
 		else if (ack_i) begin
@@ -1522,6 +1571,23 @@ IFETCH:
 			gosub (DECODE);
 		end
 	end
+IFETCH2:
+	if (!cyc_o) begin
+		fc_o <= {sf,2'b10};
+		cyc_o <= 1'b1;
+		stb_o <= 1'b1;
+		sel_o <= 4'b1111;
+		adr_o <= pc;
+		goto (IFETCH2);
+	end
+	else if (ack_i) begin
+		cyc_o <= 1'b0;
+		stb_o <= 1'b0;
+		sel_o <= 2'b00;
+		ext_ir <= 1'b1;
+		ir2 <= iri;
+		goto (DECODE);
+	end
 
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
@@ -1530,8 +1596,8 @@ DECODE:
 		pc <= pc + 4'd2;
 		opc <= pc + 4'd2;
 		icnt <= icnt + 2'd1;
-	case(ir[15:12])
-	4'h0:
+	case({ext_ir,ir[15:12]})
+	5'h0:
 		case(ir[11:8])
 		4'h0:
 			case(ir[7:0])
@@ -1598,7 +1664,7 @@ DECODE:
 //-----------------------------------------------------------------------------
 // MOVE.B
 //-----------------------------------------------------------------------------
-	4'h1:	
+	5'h1:	
 		begin
 			push(STORE_IN_DEST);
 			fs_data(mmm,rrr,FETCH_BYTE,S);
@@ -1606,7 +1672,7 @@ DECODE:
 //-----------------------------------------------------------------------------
 // MOVE.L
 //-----------------------------------------------------------------------------
-  4'h2:    
+  5'h2:    
    	begin
 			push(STORE_IN_DEST);
     	fs_data(mmm,rrr,FETCH_LWORD,S);
@@ -1614,14 +1680,14 @@ DECODE:
 //-----------------------------------------------------------------------------
 // MOVE.W
 //-----------------------------------------------------------------------------
-	4'h3:
+	5'h3:
 		begin
 			push(STORE_IN_DEST);
 			fs_data(mmm,rrr,FETCH_WORD,S);
 		end
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
-	4'h4:
+	5'h4:
 		casez(ir[11:3])
 		9'b0000?????:
 			case(sz)
@@ -1860,7 +1926,7 @@ DECODE:
 //-----------------------------------------------------------------------------
 // ADDQ / SUBQ / DBRA / Scc
 //-----------------------------------------------------------------------------
-	4'h5:
+	5'h5:
 		begin
 			casez(ir[7:4])
 			// When optimizing DBRA for performance, the memory access cycle to fetch
@@ -1914,7 +1980,7 @@ DECODE:
 //-----------------------------------------------------------------------------
 // Branches
 //-----------------------------------------------------------------------------
-	4'h6:
+	5'h6:
 		begin
 			opc <= pc + 4'd2;
 			ea <= pc + {{24{ir[7]}},ir[7:1],1'b0} + 4'd2;
@@ -1955,7 +2021,7 @@ DECODE:
 //-----------------------------------------------------------------------------
 // MOVEQ
 //-----------------------------------------------------------------------------
-	4'h7:
+	5'h7:
 		// MOVEQ only if ir[8]==0, but it is otherwise not used for the 68k.
 		// So some decode and fmax is saved by not decoding ir[8]
 		//if (ir[8]==1'b0) 
@@ -1972,7 +2038,7 @@ DECODE:
 //-----------------------------------------------------------------------------
 // OR / DIVU / DIVS / SBCD
 //-----------------------------------------------------------------------------
-	4'h8:
+	5'h8:
 		begin
 			casez(ir[11:0])
 `ifdef SUPPORT_DIV			
@@ -2011,7 +2077,7 @@ DECODE:
 //-----------------------------------------------------------------------------
 // SUB / SUBA / SUBX
 //-----------------------------------------------------------------------------
-  4'h9:
+  5'h9:
     begin
       if (ir[8])
         s <= rfoDn;
@@ -2067,18 +2133,20 @@ DECODE:
     end
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
-  4'hA:
-    begin
+  5'hA:
+  	if (ir[11:8]==4'h2)
+  		goto (IFETCH2);
+		else begin
   		isr <= srx;
   		tf <= 1'b0;
   		sf <= 1'b1;
     	vecno <= `LINE10_VEC;
     	goto (TRAP3);
-    end
+  	end
 //-----------------------------------------------------------------------------
 // CMP / CMPA / CMPM / EOR
 //-----------------------------------------------------------------------------
-	4'hB:
+	5'hB:
 		begin
 			if (ir[8]) begin	// EOR
 				if (mmm==001)
@@ -2107,7 +2175,7 @@ DECODE:
 //-----------------------------------------------------------------------------
 // AND / EXG / MULU / MULS / ABCD
 //-----------------------------------------------------------------------------
-	4'hC:
+	5'hC:
 		begin
 			casez(ir[11:0])
 `ifdef SUPPORT_BCD			
@@ -2162,7 +2230,7 @@ DECODE:
 //-----------------------------------------------------------------------------
 // ADD / ADDA / ADDX
 //-----------------------------------------------------------------------------
-	4'hD:
+	5'hD:
 		begin
 			if (ir[8])
 				s <= rfoDn;
@@ -2219,7 +2287,7 @@ DECODE:
 //-----------------------------------------------------------------------------
 // ASL / LSL / ASR / LSR / ROL / ROR / ROXL / ROXR
 //-----------------------------------------------------------------------------
-	4'hE:
+	5'hE:
 		begin
 			if (sz==2'b11) begin
 				cnt <= 6'd1;	// memory shifts only by one
@@ -2243,7 +2311,7 @@ DECODE:
 		end
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
-  4'hF:
+  5'hF:
     begin
   		isr <= srx;
   		tf <= 1'b0;
@@ -2251,6 +2319,28 @@ DECODE:
     	vecno <= `LINE15_VEC;
     	goto (TRAP3);
     end
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+	5'h1A:
+		begin
+			ext_ir <= 1'b0;
+			if (ir[11:8]==4'h2) begin
+				case(ir2[15:0])
+				16'h0000:
+					begin
+						dd32in <= rfoDnn;
+						goto (BIN2BCD1);
+					end
+				16'h0001:
+					begin
+						d <= rfoDnn;
+						goto (BCD2BIN1);
+					end
+				default:	tIllegal();
+				endcase
+			end
+		end
+	default: tIllegal();
 	endcase
 	end
 
@@ -3364,31 +3454,76 @@ BIT2:
 		// Targets a data register then the size is 32-bit, test is mod 32.
 		if (mmm_save==3'b000)
 			case(sz)
-			2'b00:	
+			2'b00:	// BTST
 				begin
-					zf <= ~d[bit2test[4:0]];
+`ifdef SUPPORT_BITPAIRS					
+					if (bit2test[7]) begin
+						zf <= (d >> {bit2test[3:0],1'b0} & 4'd3) == 2'b00;
+						cf <= (d >> {bit2test[3:0],1'b0} & 4'd3) == 2'b01;
+						nf <= (d >> {bit2test[3:0],1'b0} & 4'd3) == 2'b10;
+						vf <= (d >> {bit2test[3:0],1'b0} & 4'd3) == 2'b11;
+					end
+					else
+`endif					
+						zf <= ~d[bit2test[4:0]];
 					ret();
 				end
-			2'b01:
+			2'b01:	// BCHG
 				begin
-					zf <= ~d[bit2test[4:0]];
-					resL <= d ^  (32'd1 << bit2test[4:0]);
+`ifdef SUPPORT_BITPAIRS					
+					if (bit2test[7]) begin
+						zf <= (d >> {bit2test[3:0],1'b0} & 4'd3) == 2'b00;
+						cf <= (d >> {bit2test[3:0],1'b0} & 4'd3) == 2'b01;
+						nf <= (d >> {bit2test[3:0],1'b0} & 4'd3) == 2'b10;
+						vf <= (d >> {bit2test[3:0],1'b0} & 4'd3) == 2'b11;
+						resL <= d ^ (32'd3 << {bit2test[3:0],1'b0});
+					end
+					else
+`endif					
+					begin
+						zf <= ~d[bit2test[4:0]];
+						resL <= d ^  (32'd1 << bit2test[4:0]);
+					end
 					rfwrL <= 1'b1;
 					Rt <= {1'b0,rrr};
 					ret();
 				end
-			2'b10:
+			2'b10:	// BCLR
 				begin
-					zf <= ~d[bit2test[4:0]];
-					resL <= d & ~(32'd1 << bit2test[4:0]);
+`ifdef SUPPORT_BITPAIRS					
+					if (bit2test[7]) begin
+						zf <= (d >> {bit2test[3:0],1'b0} & 4'd3) == 2'b00;
+						cf <= (d >> {bit2test[3:0],1'b0} & 4'd3) == 2'b01;
+						nf <= (d >> {bit2test[3:0],1'b0} & 4'd3) == 2'b10;
+						vf <= (d >> {bit2test[3:0],1'b0} & 4'd3) == 2'b11;
+						resL <= d & ~(32'd3 << {bit2test[3:0],1'b0});
+					end
+					else
+`endif					
+					begin
+						zf <= ~d[bit2test[4:0]];
+						resL <= d & ~(32'd1 << bit2test[4:0]);
+					end
 					rfwrL <= 1'b1;
 					Rt <= {1'b0,rrr};
 					ret();
 				end
-			2'b11:
+			2'b11:	// BSET
 				begin
-					zf <= ~d[bit2test[4:0]];
-					resL <= d |  (32'd1 << bit2test[4:0]);
+`ifdef SUPPORT_BITPAIRS					
+					if (bit2test[7]) begin
+						zf <= (d >> {bit2test[3:0],1'b0} & 4'd3) == 2'b00;
+						cf <= (d >> {bit2test[3:0],1'b0} & 4'd3) == 2'b01;
+						nf <= (d >> {bit2test[3:0],1'b0} & 4'd3) == 2'b10;
+						vf <= (d >> {bit2test[3:0],1'b0} & 4'd3) == 2'b11;
+						resL <= (d & ~(32'd3 << {bit2test[3:0],1'b0})) | (bit2test[5:4] << {bit2test[3:0],1'b0});
+					end
+					else
+`endif					
+					begin
+						zf <= ~d[bit2test[4:0]];
+						resL <= d |  (32'd1 << bit2test[4:0]);
+					end
 					rfwrL <= 1'b1;
 					Rt <= {1'b0,rrr};
 					ret();
@@ -3397,27 +3532,72 @@ BIT2:
 		// Target is memory, size is byte, test is mod 8.
 		else
 			case(sz)
-			2'b00:
+			2'b00:	// BTST
 				begin
-					zf <= ~d[bit2test[2:0]];
+`ifdef SUPPORT_BITPAIRS					
+					if (bit2test[7]) begin
+						zf <= (d >> {bit2test[1:0],1'b0} & 4'd3) == 2'b00;
+						cf <= (d >> {bit2test[1:0],1'b0} & 4'd3) == 2'b01;
+						nf <= (d >> {bit2test[1:0],1'b0} & 4'd3) == 2'b10;
+						vf <= (d >> {bit2test[1:0],1'b0} & 4'd3) == 2'b11;
+					end
+					else
+`endif					
+						zf <= ~d[bit2test[2:0]];
 					ret();
 				end
-			2'b01:	
+			2'b01:	// BCHG
 				begin
-					zf <= ~d[bit2test[2:0]];
-					d <= d ^  (32'd1 << bit2test[2:0]);
+`ifdef SUPPORT_BITPAIRS					
+					if (bit2test[7]) begin
+						zf <= (d >> {bit2test[1:0],1'b0} & 4'd3) == 2'b00;
+						cf <= (d >> {bit2test[1:0],1'b0} & 4'd3) == 2'b01;
+						nf <= (d >> {bit2test[1:0],1'b0} & 4'd3) == 2'b10;
+						vf <= (d >> {bit2test[1:0],1'b0} & 4'd3) == 2'b11;
+						d <= d ^ (32'd3 << {bit2test[1:0],1'b0});
+					end
+					else
+`endif					
+					begin
+						zf <= ~d[bit2test[2:0]];
+						d <= d ^  (32'd1 << bit2test[2:0]);
+					end
 					goto(STORE_BYTE);
 				end
-			2'b10:
+			2'b10:	// BCLR
 				begin
-					zf <= ~d[bit2test[2:0]];
-					d <= d & ~(32'd1 << bit2test[2:0]);
+`ifdef SUPPORT_BITPAIRS					
+					if (bit2test[7]) begin
+						zf <= (d >> {bit2test[1:0],1'b0} & 4'd3) == 2'b00;
+						cf <= (d >> {bit2test[1:0],1'b0} & 4'd3) == 2'b01;
+						nf <= (d >> {bit2test[1:0],1'b0} & 4'd3) == 2'b10;
+						vf <= (d >> {bit2test[1:0],1'b0} & 4'd3) == 2'b11;
+						d <= d & ~(32'd3 << {bit2test[1:0],1'b0});
+					end
+					else
+`endif					
+					begin
+						zf <= ~d[bit2test[2:0]];
+						d <= d & ~(32'd1 << bit2test[2:0]);
+					end
 					goto(STORE_BYTE);
 				end
-			2'b11:
+			2'b11:	// BSET
 				begin
-					zf <= ~d[bit2test[2:0]];
-					d <= d |  (32'd1 << bit2test[2:0]);
+`ifdef SUPPORT_BITPAIRS					
+					if (bit2test[7]) begin
+						zf <= (d >> {bit2test[1:0],1'b0} & 4'd3) == 2'b00;
+						cf <= (d >> {bit2test[1:0],1'b0} & 4'd3) == 2'b01;
+						nf <= (d >> {bit2test[1:0],1'b0} & 4'd3) == 2'b10;
+						vf <= (d >> {bit2test[1:0],1'b0} & 4'd3) == 2'b11;
+						d <= (d & ~(32'd3 << {bit2test[1:0],1'b0})) | (bit2test[5:4] << {bit2test[1:0],1'b0});
+					end
+					else 
+`endif					
+					begin
+						zf <= ~d[bit2test[2:0]];
+						d <= d |  (32'd1 << bit2test[2:0]);
+					end
 					goto(STORE_BYTE);
 				end
 			endcase
@@ -4129,6 +4309,14 @@ TRAP:
     		vecno <= `PRIV_VEC;
       	goto (TRAP3);
     	end
+    is_illegal:
+    	begin
+    		isr <= srx;
+    		tf <= 1'b0;
+    		sf <= 1'b1;
+    		vecno <= `ILLEGAL_VEC;
+      	goto (TRAP3);
+    	end
     default:
     	begin
     		isr <= srx;
@@ -4295,7 +4483,7 @@ TRAP7:
 	begin
 		sp <= s;
 		ssp <= s;
-		ea <= {vbr[31:10],vecno,2'b00};
+		ea <= {vbr[31:2]+vecno,2'b00};
 		ds <= S;
 		call (FETCH_LWORD, TRAP7a);
 	end
@@ -5207,6 +5395,14 @@ MOVERn2Rc2:
 	case(imm[11:0])
 	12'h000:	begin sfc <= rfoRnn; ret(); end
 	12'h001:	begin dfc <= rfoRnn; ret(); end
+	12'h003:  begin asid <= rfoRnn[7:0]; ret(); end
+	12'h010:  begin apc <= rfoRnn; ret(); end
+	12'h011:  begin cpl <= rfoRnn[7:0]; ret(); end
+	12'h012:  begin tr <= rfoRnn; ret(); end
+	12'h013:  begin tcba <= rfoRnn; ret(); end
+	12'h014:	begin mmus <= rfoRnn; ret(); end
+	12'h015:	begin ios <= rfoRnn; ret(); end
+	12'h016:	begin iops <= rfoRnn; ret(); end
 	12'h800:	begin usp <= rfoRnn; ret(); end
 	12'h801:	begin vbr <= rfoRnn; ret(); end
 /*	
@@ -5238,6 +5434,14 @@ MOVERc2Rn:
 	case(imm[11:0])
 	12'h000:	begin resL <= sfc; Rt <= imm[15:12]; rfwrL <= 1'b1; ret(); end
 	12'h001:	begin resL <= dfc; Rt <= imm[15:12]; rfwrL <= 1'b1; ret(); end
+	12'h003:  begin resL <= {24'h0,asid}; Rt <= imm[15:12]; rfwrL <= 1'b1; ret(); end
+	12'h010:  begin resL <= apc; Rt <= imm[15:12]; rfwrL <= 1'b1; ret(); end
+	12'h011:  begin resL <= {24'h0,cpl}; Rt <= imm[15:12]; rfwrL <= 1'b1; ret(); end
+	12'h012:  begin resL <= tr; Rt <= imm[15:12]; rfwrL <= 1'b1; ret(); end
+	12'h013:  begin resL <= tcba; Rt <= imm[15:12]; rfwrL <= 1'b1; ret(); end
+	12'h014:  begin resL <= mmus; Rt <= imm[15:12]; rfwrL <= 1'b1; ret(); end
+	12'h015:  begin resL <= ios; Rt <= imm[15:12]; rfwrL <= 1'b1; ret(); end
+	12'h016:  begin resL <= iops; Rt <= imm[15:12]; rfwrL <= 1'b1; ret(); end
 	12'h800:	begin resL <= usp; Rt <= imm[15:12]; rfwrL <= 1'b1; ret(); end
 	12'h801:	begin resL <= vbr; Rt <= imm[15:12]; rfwrL <= 1'b1; ret(); end
 	12'hFE0:	begin resL <= coreno_i; Rt <= imm[15:12]; rfwrL <= 1'b1; ret(); end
@@ -5246,6 +5450,44 @@ MOVERc2Rn:
 	12'hFF8:	begin resL <= icnt; Rt <= imm[15:12]; rfwrL <= 1'b1; ret(); end
 	default:	tIllegal();
 	endcase
+
+BIN2BCD1:
+	goto (BIN2BCD2);
+BIN2BCD2:
+	if (dd32done) begin
+		zf <= dd32in==32'h0;
+		vf <= dd32out[39:32]!=8'h00;
+		resL <= dd32out[31:0];
+		rfwrL <= 1'b1;
+		Rt <= {1'b0,rrr};
+		ret();
+	end
+BCD2BIN1:
+	begin
+		(* USE_DSP = "no" *)
+		resL1 <= d[3:0] +
+		     d[7:4] * 4'd10 +
+		     d[11:8] * 7'd100 +
+		     d[15:12] * 10'd1000 +
+		     d[19:16] * 14'd10000 +
+		     d[23:20] * 17'd100000 +
+		     d[27:24] * 20'd1000000 +
+		     d[31:28] * 24'd10000000
+		     ;
+		goto (BCD2BIN2);
+	end
+BCD2BIN2:
+	begin
+		resL2 <= resL1;
+		goto (BCD2BIN3);
+	end
+BCD2BIN3:
+	begin
+		resL <= resL2;
+		rfwrL <= 1'b1;
+		Rt <= {1'b0,rrr};
+		ret();
+	end
 default:
 	goto(RESET);
 endcase

@@ -62,11 +62,20 @@ begin
 	end
 
 	// Age only valid packets packet
+	if ((ipacket_i.sid|ipacket_i.did) != 6'd0)
+		ipacket_o.age <= ipacket_i.age + 2'd1;
 	if ((packet_i.sid|packet_i.did) != 6'd0)
 		packet_o.age <= packet_i.age + 2'd1;
 	if ((rpacket_i.sid|rpacket_i.did) != 6'd0)
 		rpacket_o.age <= rpacket_i.age + 2'd1;
 //	ipacket_o.age <= ipacket_i.age + 2'd1;
+	// Remove global broadcast interrupt packets that are too old.
+	// We allow three trips around the network which is about 24
+	// clock cycles.
+	if (ipacket_i.did==6'd63) begin
+		if (ipacket_i.age > 4'd3)
+			ipacket_o <= 'd0;
+	end
 	if (packet_i.age>=6'd7 && ~|rpacket_tx) begin
 		rpacket_tx <= packet_i;
 		rpacket_tx.did <= packet_i.sid;
@@ -74,9 +83,11 @@ begin
 		rpacket_tx.typ <= PT_RETRY;
 	end
 	// If the packet is too old, flag as available.
-	if (packet_i.age == 6'd15)
+	if (ipacket_i.age >= 6'd15)
+		ipacket_o <= 'd0;
+	if (packet_i.age >= 6'd15)
 		packet_o <= {$bits(packet_t){1'b0}};
-	if (rpacket_i.age == 6'd15)
+	if (rpacket_i.age >= 6'd15)
 		rpacket_o <= {$bits(packet_t){1'b0}};
 //	if (ipacket_i.age == 6'd7)
 //		ipacket_o <= {$bits(Ipacket_t){1'b0}};
