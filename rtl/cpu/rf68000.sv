@@ -48,6 +48,8 @@
 //`define SUPPORT_010	1'b1
 `define SUPPORT_BITPAIRS 1'b1
 
+`define SUPPORT_DECFLT 1'b1
+
 //`define HAS_MMU 1'b1
 
 //`define SUPPORT_TASK	1'b1
@@ -95,6 +97,7 @@
 `define STH		16'b0010_xxx1xx_xxxxxx
 `define STW		16'b0011_xxx1xx_xxxxxx
 
+// DBcc also for Scc
 `define DBRA	8'h50
 `define DBSR	8'h51
 `define DBHI	8'h52
@@ -330,9 +333,9 @@ typedef enum logic [7:0] {
 	
 	INT,
 	INT2,
-	INT3,
-
+	
 	// 150
+	INT3,
 	INT4,
 
 	MOVEM_Xn2D,
@@ -344,9 +347,9 @@ typedef enum logic [7:0] {
 	MOVEM_s2Xn3,
 	
 	TASK1,
-	THREAD2,
 
 	// 160
+	THREAD2,
 	TASK3,
 	TASK4,
 	
@@ -358,6 +361,8 @@ typedef enum logic [7:0] {
 	
 	SUB,
 	SUB1,
+	
+	// 170
 	MOVEP,
 	MOVEP1,
 	MOVEP2,
@@ -370,8 +375,10 @@ typedef enum logic [7:0] {
 
 	MOVES,
 	MOVES2,
-	MOVES3,
 	
+	// 180
+	MOVES3,
+
 	ADDX,
 	ADDX2,
 	ADDX3,
@@ -382,7 +389,8 @@ typedef enum logic [7:0] {
 	MULU1,
 	MULU2,
 	MULU3,
-	
+
+	//190	
 	MULS1,
 	MULS2,
 	MULS3,
@@ -394,6 +402,31 @@ typedef enum logic [7:0] {
 	BCD2BIN3,
 
 	IFETCH2,
+	FADD,
+
+	// 200
+	FCMP,
+	FMUL1,
+	FMUL2,
+	FDIV1,
+	FDIV2,
+	FNEG,
+	FMOVE,
+	I2DF1,
+	I2DF2,
+	DF2I1,
+	DF2I2,
+	FTST,
+	FBCC,
+	
+	FETCH_HEXI1,
+	FETCH_HEXI2,
+	FETCH_HEXI3,
+	FETCH_HEXI4,
+	STORE_HEXI1,
+	STORE_HEXI2,
+	STORE_HEXI3,
+	STORE_HEXI4,
 
 	FSDATA2
 } state_t;
@@ -445,6 +478,8 @@ input [31:0] dat_i;
 output [31:0] dat_o;
 reg [31:0] dat_o;
 
+wire DECFLT = coreno_i==32'd2;
+
 reg em;							// emulation mode
 reg [15:0] ir;
 reg [15:0] ir2;			// second word for ir
@@ -474,6 +509,14 @@ reg [31:0] a4 = 'd0;
 reg [31:0] a5 = 'd0;
 reg [31:0] a6 = 'd0;
 reg [31:0] sp = 'd0;
+reg [127:0] fp0 = 'd0;
+reg [127:0] fp1 = 'd0;
+reg [127:0] fp2 = 'd0;
+reg [127:0] fp3 = 'd0;
+reg [127:0] fp4 = 'd0;
+reg [127:0] fp5 = 'd0;
+reg [127:0] fp6 = 'd0;
+reg [127:0] fp7 = 'd0;
 reg [31:0] d0i;
 reg [31:0] d1i;
 reg [31:0] d2i;
@@ -517,8 +560,14 @@ reg [1:0] sr1112;
 reg sr14;
 wire [15:0] sr = {tf,sr14,sf,sr1112,im,ccr57,xf,nf,zf,vf,cf};
 wire [31:0] srx = {sr};
+reg fnf,fzf,fvf,fnanf;
+wire finff = fvf;
+reg [7:0] quotient_bits;
+reg [7:0] fpexc,fpaexc;
+wire [31:0] fpsr = {4'h0,fnf,fzf,fvf,fnanf,quotient_bits,fpexc,fpaexc};
 reg [31:0] isr;
 reg [3:0] ifmt;
+reg [7:0] fpcnt;
 reg [31:0] pc;
 reg [31:0] opc;			// pc for branch references
 reg [31:0] ssp,usp;
@@ -542,6 +591,8 @@ wire [2:0] RRR = ir[11:9];
 wire [2:0] QQQ = ir[11:9];
 wire [2:0] DDD = ir[11:9];
 wire [2:0] AAA = ir[11:9];
+reg [2:0] FLTSRC;
+reg [2:0] FLTDST;
 reg MMMRRR;
 wire Anabit;
 wire [31:0] sp_dec = sp - 32'd2;
@@ -634,6 +685,31 @@ case(rrrr)
 4'd14:  rfoRnn <= a6;
 4'd15:  rfoRnn <= sp;
 endcase
+reg [127:0] rfoFpdst, rfoFpsrc;
+`ifdef SUPPORT_DECFLT
+always_comb
+case(FLTDST)
+3'd0:   rfoFpdst <= fp0;
+3'd1:   rfoFpdst <= fp1;
+3'd2:   rfoFpdst <= fp2;
+3'd3:   rfoFpdst <= fp3;
+3'd4:   rfoFpdst <= fp4;
+3'd5:   rfoFpdst <= fp5;
+3'd6:   rfoFpdst <= fp6;
+3'd7:   rfoFpdst <= fp7;
+endcase
+always_comb
+case(FLTSRC)
+3'd0:   rfoFpsrc <= fp0;
+3'd1:   rfoFpsrc <= fp1;
+3'd2:   rfoFpsrc <= fp2;
+3'd3:   rfoFpsrc <= fp3;
+3'd4:   rfoFpsrc <= fp4;
+3'd5:   rfoFpsrc <= fp5;
+3'd6:   rfoFpsrc <= fp6;
+3'd7:   rfoFpsrc <= fp7;
+endcase
+`endif
 //wire [31:0] rfoDn = regfile[{1'b0,DDD}];
 //wire [31:0] rfoAna = AAA==3'b111 ? sp : regfile[{1'b1,AAA}];
 //wire [31:0] rfob = {mmm[0],rrr}==4'b1111 ? sp : regfile[{mmm[0],rrr}];
@@ -641,10 +717,13 @@ endcase
 //wire [31:0] rfoRnn = rrrr==4'b1111 ? sp : regfile[rrrr];
 wire clk_g;
 reg rfwrL,rfwrB,rfwrW;
-reg takb;
+reg rfwrF;
+reg takb, ftakb;
 reg [8:0] resB;
 reg [16:0] resW;
 reg [32:0] resL;
+reg [127:0] resF;
+reg [127:0] fps, fpd;
 (* USE_DSP = "no" *)
 reg [32:0] resL1,resL2;
 reg [32:0] resMS1,resMS2,resMU1,resMU2;
@@ -666,6 +745,7 @@ reg [2:0] shift_op;
 reg rtr;
 reg bsr;
 reg lea;
+reg fsub;
 reg bcdsub, bcdneg;
 reg [31:0] dati_buf;	// input data from bus error
 reg [31:0] dato_buf;
@@ -682,8 +762,8 @@ reg [7:0] cpl;
 reg [31:0] tr;
 reg [31:0] tcba;
 reg [31:0] mmus, ios, iops;
-assign mmus_o = adr_o[31:12] == mmus[31:12];
-assign iops_o = adr_o[31:12] == iops[31:12];
+assign mmus_o = adr_o[31:20] == mmus[31:20];
+assign iops_o = adr_o[31:16] == iops[31:16];
 assign ios_o  = adr_o[31:20] == ios [31:20];
 
 wire [16:0] lfsr_o;
@@ -851,6 +931,92 @@ rf68000_divider udiv1
 	.idle()
 );
 
+wire [127:0] dfaddsubo, dfmulo, dfdivo, i2dfo, df2io;
+wire dfmulinf;
+wire dfmuldone, dfmulover, dfmulunder;
+wire dfdivdone, dfdivover, dfdivunder;
+wire [11:0] dfcmpo;
+wire i2dfdone, df2idone;
+wire df2iover;
+
+`ifdef SUPPORT_DECFLT
+DFPAddsub128nr ufaddsub1
+(
+	.clk(clk_g),
+	.ce(1'b1),
+	.rm(3'b0),
+	.op(fsub),
+	.a(fpd),
+	.b(fps),
+	.o(dfaddsubo)
+);
+
+DFPMultiply128nr udfmul1
+(
+	.clk(clk_g),
+	.ce(ce),
+	.ld(state==FMUL1),
+	.a(fpd),
+	.b(fps),
+	.o(dfmulo),
+	.rm(3'b000),
+	.sign_exe(),
+	.inf(dfmulinf),
+	.overflow(dfmulover),
+	.underflow(dfmulunder),
+	.done(dfmuldone)
+);
+
+DFPDivide128 udfdiv1
+(
+	.rst(rst_i),
+	.clk(clk_g),
+	.ce(1'b1),
+	.ld(state==FDIV1),
+	.op(1'b0),
+	.a(fpd),
+	.b(fps),
+	.o(dfdivo),
+	.done(dfdivdone),
+	.sign_exe(),
+	.overflow(dfdivover),
+	.underflow(dfdivunder)
+);
+
+DFPCompare128 udfcmp1
+(
+	.a(fpd),
+	.b(fps),
+	.o(dfcmpo)
+);
+
+i2df128 ui2df1
+(
+	.rst(rst_i),
+	.clk(clk_g),
+	.ce(1'b1),
+	.ld(state==I2DF1),
+	.op(1'b0),	// 0=unsigned, 1= signed
+	.rm(3'b000),
+	.i(fps),
+	.o(i2dfo),
+	.done(i2dfdone)
+);
+
+df128Toi udf2i1 (
+	.rst(rst_i),
+	.clk(clk_g),
+	.ce(1'b1),
+	.ld(state==DF2I1),
+	.op(1'b0),
+	.i(fps),
+	.o(df2io),
+	.overflow(df2iover),
+	.done(df2idone)
+);
+
+`endif
+
 always_comb
 case(ir[15:8])
 `BRA:	takb = 1'b1;
@@ -888,6 +1054,44 @@ case(ir[15:8])
 default:	takb = 1'b1;
 endcase
 
+always_comb
+case(ir[5:0])
+6'b000001:	ftakb =  fzf;	// EQ
+6'b001110:	ftakb = !fzf;	// NE
+6'b010010:	ftakb = !fnanf && !fzf && !fvf && !fnf; // GT
+6'b011101:	ftakb = fnanf || fzf || fnf;	// NGT
+6'b010011:	ftakb = fzf || (!fnanf && !fvf && !fnf);	// GE
+6'b011100:	ftakb = fnanf || (fnf && !fzf); 	// NGE
+6'b010100:	ftakb = fnf && (!fnanf && !fvf && !fzf);	// LT
+6'b011011:	ftakb = fnanf || (fzf || !fnf);	// NLT
+6'b010101:	ftakb = fzf || (fnf && !fnanf);	// LE
+6'b011010:	ftakb = fnanf || (!fnf && !fvf && !fzf);	// NLE
+6'b010110:	ftakb = !fnanf && !fvf && !fzf;	// GL
+6'b011001:	ftakb = fnanf || fzf;	// NGL
+6'b010111:	ftakb = !fnanf;	// GLE
+6'b011000:	ftakb = fnanf;	// NGLE
+
+6'b000010:	ftakb = !fnanf && !fzf && !fvf && !fnf; // OGT
+6'b001101:	ftakb = fnanf || fzf || fnf;	// ULE
+6'b000011:	ftakb = fzf || (!fnanf && !fvf && !fnf);	// OGE
+6'b001100:	ftakb = fnanf || (fnf && !fzf);	// ULT
+6'b000100:	ftakb = fnf && (!fnanf && !fvf && !fnf);	// OLT
+6'b001011:	ftakb = fnanf || fzf || fnf;	// UGE
+6'b000101:	ftakb = fzf || (fnf && !fnanf);	// OLE
+6'b001010:	ftakb = fnanf || (!fnf && !fvf && !fzf); // UGT
+6'b000110:	ftakb = !fnanf && !fvf && !fzf;	// OGL
+6'b001001:	ftakb = fnanf || fzf;	// UEQ
+6'b000111:	ftakb = !fnanf;
+6'b001000:	ftakb = fnanf;
+
+6'b000000:	ftakb = 1'b0;	// F
+6'b001111:	ftakb = 1'b1;	// T
+6'b010000:	ftakb = 1'b0;	// SF
+6'b011111:	ftakb = 1'b1;	// ST
+6'b010001:	ftakb = fzf;	// SEQ
+6'b011110:	ftakb = !fzf;	// SNE
+endcase
+
 `ifdef BIG_ENDIAN
 wire [15:0] iri = pc[1] ? {dat_i[23:16],dat_i[31:24]} : {dat_i[7:0],dat_i[15:8]};
 `else
@@ -910,6 +1114,7 @@ if (rst_i) begin
 	rfwrB <= 1'b0;
 	rfwrW <= 1'b0;
 	rfwrL <= 1'b0;
+	rfwrF <= 1'b0;
 	zf <= 1'b0;
 	nf <= 1'b0;
 	cf <= 1'b0;
@@ -918,6 +1123,10 @@ if (rst_i) begin
 	im <= 3'b111;
 	sf <= 1'b1;
 	tf <= 1'b0;
+	fnanf <= 1'b0;
+	fzf <= 1'b0;
+	fnf <= 1'b0;
+	fvf <= 1'b0;
 	goto (RESET);
 	rstate <= RESET;
 	prev_nmi <= 1'b0;
@@ -931,6 +1140,7 @@ if (rst_i) begin
 	bsr <= 1'b0;
 	lea <= 1'b0;
 	divs <= 1'b0;
+	fsub <= 1'b0;
 	bcdsub <= 1'b0;
 	bcdneg <= 1'b0;
 	icnt <= 'd0;
@@ -967,6 +1177,7 @@ if (nmi_i & !prev_nmi)
 rfwrB <= 1'b0;
 rfwrW <= 1'b0;
 rfwrL <= 1'b0;
+rfwrF <= 1'b0;
 if (rfwrL) begin
   case(Rt)
   4'd0:   d0 <= resL[31:0];
@@ -1019,6 +1230,20 @@ else if (rfwrB)
   4'd7:   d7[7:0] <= resB[7:0];
   default:    ;
   endcase
+`ifdef SUPPORT_DECFLT  
+ if (rfwrF && DECFLT)
+ 	case(Rt)
+ 	4'd0:	fp0 <= resF;
+ 	4'd1:	fp1 <= resF;
+ 	4'd2:	fp2 <= resF;
+ 	4'd3:	fp3 <= resF;
+ 	4'd4:	fp4 <= resF;
+ 	4'd5:	fp5 <= resF;
+ 	4'd6:	fp6 <= resF;
+ 	4'd7:	fp7 <= resF;
+	default:	;
+	endcase
+`endif
 
 case(state)
 
@@ -1527,11 +1752,13 @@ IFETCH:
 		rtr <= 1'b0;
 		bsr <= 1'b0;
 		lea <= 1'b0;
+		fsub <= 1'b0;
 		bcdsub <= 1'b0;
 		bcdneg <= 1'b0;
 		is_illegal <= 1'b0;
 		use_sfc <= 1'b0;
 		use_dfc <= 1'b0;
+		fpcnt <= 'd0;
 		if (!cyc_o) begin
 			is_nmi <= 1'b0;
 			is_irq <= 1'b0;
@@ -1578,6 +1805,7 @@ IFETCH2:
 		stb_o <= 1'b1;
 		sel_o <= 4'b1111;
 		adr_o <= pc;
+		ext_ir <= 1'b1;
 		goto (IFETCH2);
 	end
 	else if (ack_i) begin
@@ -1586,6 +1814,8 @@ IFETCH2:
 		sel_o <= 2'b00;
 		ext_ir <= 1'b1;
 		ir2 <= iri;
+		FLTSRC <= iri[12:10];
+		FLTDST <= iri[ 9: 7];
 		goto (DECODE);
 	end
 
@@ -1928,13 +2158,13 @@ DECODE:
 //-----------------------------------------------------------------------------
 	5'h5:
 		begin
-			casez(ir[7:4])
+			casez(ir[7:3])
 			// When optimizing DBRA for performance, the memory access cycle to fetch
 			// the displacement constant is not done, instead the PC is incremented by
 			// two if not doing the DBRA. This is an extra PC increment that increases
 			// the code size. It is slower, but more hardware efficient to just always
 			// fetch the displacement.
-			4'b1100:					// DBRA
+			5'b11001:					// DBRA
 `ifdef OPT_PERF			
 				if (~takb) begin
 					call(FETCH_IMM16,DBRA);
@@ -1946,7 +2176,7 @@ DECODE:
 `else
 				call(FETCH_IMM16,DBRA);				
 `endif				
-			4'b11??:					// Scc
+			5'b11???:		// Scc
 				begin
 					resL <= {32{takb}};
 					resW <= {16{takb}};
@@ -2311,14 +2541,18 @@ DECODE:
 		end
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
   5'hF:
-    begin
+  	if (ir[11:9]==3'b001)
+  		goto (IFETCH2);
+		else begin
   		isr <= srx;
   		tf <= 1'b0;
   		sf <= 1'b1;
     	vecno <= `LINE15_VEC;
     	goto (TRAP3);
-    end
+  	end
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
 	5'h1A:
@@ -2339,7 +2573,139 @@ DECODE:
 				default:	tIllegal();
 				endcase
 			end
+			else
+				tIllegal();
 		end
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+`ifdef SUPPORT_DECFLT
+	5'h1F:
+		begin
+			ext_ir <= 1'b0;
+			if (ir[11:9]==3'b001) begin
+				if (ir[8:7]==2'b01) begin
+					push(FBCC);
+					if (ir[6])
+						goto(FETCH_IMM32);
+					else
+						goto(FETCH_IMM16);
+				end
+				else
+				casez(ir2[15:8])
+				8'h6?,8'h7?:	// FMOVE to memory
+					begin
+						if (ir2[12:10]==3'b000) begin
+							fps <= rfoFpsrc;
+							goto (DF2I1);
+						end
+						else begin
+							fpd <= rfoFpsrc;
+							fs_data(mmm,rrr,STORE_HEXI1,D);
+						end
+					end
+				8'h??:
+					case(ir2[6:0])
+					7'b0000000:	// FMOVE
+						if (ir2[14]) begin	// RM
+							push(FMOVE);
+							if (ir2[12:10]==3'b000)
+								fs_data(mmm,rrr,FETCH_LWORD,S);
+							else
+								fs_data(mmm,rrr,FETCH_HEXI1,S);
+						end
+						else begin
+							fps <= rfoFpsrc;
+							goto(FMOVE);
+						end
+					7'b0100000:	// FDIV
+						if (ir2[14]) begin	// RM
+							fpd <= rfoFpdst;
+							push(FDIV1);
+							fs_data(mmm,rrr,FETCH_HEXI1,S);
+						end
+						else begin
+							fpd <= rfoFpdst;
+							fps <= rfoFpsrc;
+							goto(FDIV1);
+						end
+					7'b0100010:	// FADD
+						if (ir2[14]) begin	// RM
+							fpd <= rfoFpdst;
+							push(FADD);
+							fs_data(mmm,rrr,FETCH_HEXI1,S);
+						end
+						else begin
+							fpd <= rfoFpdst;
+							fps <= rfoFpsrc;
+							goto(FADD);
+						end
+					7'b0100011:	// FMUL
+						if (ir2[14]) begin	// RM
+							fsub <= 1'b1;
+							fpd <= rfoFpdst;
+							push(FMUL1);
+							fs_data(mmm,rrr,FETCH_HEXI1,S);
+						end
+						else begin
+							fsub <= 1'b1;
+							fpd <= rfoFpdst;
+							fps <= rfoFpsrc;
+							goto(FMUL1);
+						end
+					7'b0101000:	// FSUB
+						if (ir2[14]) begin	// RM
+							fsub <= 1'b1;
+							fpd <= rfoFpdst;
+							push(FADD);
+							fs_data(mmm,rrr,FETCH_HEXI1,S);
+						end
+						else begin
+							fsub <= 1'b1;
+							fpd <= rfoFpdst;
+							fps <= rfoFpsrc;
+							goto(FADD);
+						end
+					7'b0011010:	// FNEG
+						if (ir2[14]) begin	// RM
+							push(FNEG);
+							fs_data(mmm,rrr,FETCH_HEXI1,S);
+						end
+						else begin
+							fps <= rfoFpsrc;
+							goto(FNEG);
+						end
+					7'b0001100:	// FCMP
+						if (ir2[14]) begin	// RM
+							fpd <= rfoFpdst;
+							push(FCMP);
+							fs_data(mmm,rrr,FETCH_HEXI1,S);
+						end
+						else begin
+							fpd <= rfoFpdst;
+							fps <= rfoFpsrc;
+							goto(FCMP);
+						end
+					7'b0111010:	// FTST
+						if (ir2[14]) begin
+							push (FTST);
+							fs_data(mmm,rrr,FETCH_HEXI1,S);
+						end
+						else begin
+							fnf <= rfoFpsrc[127];
+							fzf <= rfoFpsrc[126:0]=='d0;
+							ret();
+						end
+					default:
+						tIllegal();
+					endcase
+				default:
+					tIllegal();
+				endcase
+			end
+			else
+				tIllegal();
+		end
+`endif		
 	default: tIllegal();
 	endcase
 	end
@@ -4046,13 +4412,17 @@ FETCH_LWORD:
 `ifdef BIG_ENDIAN
       if (ds==D)
         d[31:16] <= {dat_i[23:16],dat_i[31:24]};
-      else
+      else begin
         s[31:16] <= {dat_i[23:16],dat_i[31:24]};
+        fps[31:16] <= {dat_i[23:16],dat_i[31:24]};
+      end
 `else			
       if (ds==D)
         d[15:0] <= dat_i[31:16];
-      else
+      else begin
         s[15:0] <= dat_i[31:16];
+        fps[15:0] <= dat_i[31:16];
+      end
 `endif          
   		goto (FETCH_LWORDa);
     end
@@ -4060,14 +4430,18 @@ FETCH_LWORD:
       cyc_o <= `LOW;
 `ifdef BIG_ENDIAN
       if (ds==D)
-          d <= rbo(dat_i);
-      else
-          s <= rbo(dat_i);
+        d <= rbo(dat_i);
+      else begin
+        s <= rbo(dat_i);
+        fps <= rbo(dat_i);
+      end
 `else        
       if (ds==D)
-          d <= dat_i;
-      else
-          s <= dat_i;
+        d <= dat_i;
+      else begin
+        s <= dat_i;
+        fps <= dat_i;
+      end
 `endif            
       ret();
     end
@@ -4086,17 +4460,172 @@ FETCH_LWORDa:
 `ifdef BIG_ENDIAN
 		if (ds==D)
 			d[15:0] <= {dat_i[7:0],dat_i[15:8]};
-		else
+		else begin
 			s[15:0] <= {dat_i[7:0],dat_i[15:8]};
+			fps[15:0] <= {dat_i[7:0],dat_i[15:8]};
+		end
 `else		
 		if (ds==D)
 			d[31:16] <= dat_i[15:0];
-		else
+		else begin
 			s[31:16] <= dat_i[15:0];
+			fps[31:16] <= dat_i[15:0];
+		end
 `endif			
 		ret();
 	end
 
+`ifdef SUPPORT_DECFLT
+FETCH_HEXI1:
+	if (!cyc_o) begin
+		fc_o <= {sf,2'b01};
+		cyc_o <= 1'b1;
+		stb_o <= 1'b1;
+		sel_o <= 4'b1111;
+		adr_o <= ea;
+	end
+	else if (ack_i) begin
+`ifdef BIG_ENDIAN
+		if (ds==S)
+			fps[127:96] <= rbo(dat_i);
+		else
+			fpd[127:96] <= rbo(dat_i);
+`else
+		if (ds==S)
+			fps[31:0] <= dat_i;
+		else
+			fpd[31:0] <= dat_i;
+`endif
+		stb_o <= 1'b0;
+		goto (FETCH_HEXI2);
+	end
+FETCH_HEXI2:
+	if (!stb_o) begin
+		stb_o <= 1'b1;
+		adr_o <= ea + 4'd4;
+	end
+	else if (ack_i) begin
+`ifdef BIG_ENDIAN
+		if (ds==S)
+			fps[95:64] <= rbo(dat_i);
+		else
+			fpd[95:64] <= rbo(dat_i);
+`else
+		if (ds==S)
+			fps[63:32] <= dat_i;
+		else
+			fpd[63:32] <= dat_i;
+`endif
+		stb_o <= 1'b0;
+		goto (FETCH_HEXI3);
+	end
+FETCH_HEXI3:
+	if (!stb_o) begin
+		stb_o <= 1'b1;
+		adr_o <= ea + 4'd8;
+	end
+	else if (ack_i) begin
+`ifdef BIG_ENDIAN
+		if (ds==S)
+			fps[63:32] <= rbo(dat_i);
+		else
+			fpd[63:32] <= rbo(dat_i);
+`else
+		if (ds==S)
+			fps[95:64] <= dat_i;
+		else
+			fpd[95:64] <= dat_i;
+`endif
+		stb_o <= 1'b0;
+		goto (FETCH_HEXI4);
+	end
+FETCH_HEXI4:
+	if (!stb_o) begin
+		stb_o <= 1'b1;
+		adr_o <= ea + 4'd12;
+	end
+	else if (ack_i) begin
+`ifdef BIG_ENDIAN
+		if (ds==S)
+			fps[31:0] <= rbo(dat_i);
+		else
+			fpd[31:0] <= rbo(dat_i);
+`else
+		if (ds==S)
+			fps[127:96] <= dat_i;
+		else
+			fpd[127:96] <= dat_i;
+`endif
+		cyc_o <= 1'b0;
+		stb_o <= 1'b0;
+		sel_o <= 4'b0000;
+		ret();
+	end
+
+STORE_HEXI1:
+	if (!cyc_o) begin
+		fc_o <= {sf,2'b01};
+		cyc_o <= 1'b1;
+		stb_o <= 1'b1;
+		we_o <= 1'b1;
+		sel_o <= 4'b1111;
+		adr_o <= ea;
+`ifdef BIG_ENDIAN
+		dat_o <= rbo(fpd[127:96]);
+`else
+		dat_o <= fpd[31:0];
+`endif
+	end
+	else if (ack_i) begin
+		stb_o <= 1'b0;
+		goto (STORE_HEXI2);
+	end
+STORE_HEXI2:
+	if (!stb_o) begin
+		stb_o <= 1'b1;
+		adr_o <= ea + 4'd4;
+`ifdef BIG_ENDIAN
+		dat_o <= rbo(fpd[95:64]);
+`else
+		dat_o <= fpd[63:32];
+`endif
+	end
+	else if (ack_i) begin
+		stb_o <= 1'b0;
+		goto (STORE_HEXI3);
+	end
+STORE_HEXI3:
+	if (!stb_o) begin
+		stb_o <= 1'b1;
+		adr_o <= ea + 4'd8;
+`ifdef BIG_ENDIAN
+		dat_o <= rbo(fpd[63:32]);
+`else
+		dat_o <= fpd[95:64];
+`endif
+	end
+	else if (ack_i) begin
+		stb_o <= 1'b0;
+		goto (STORE_HEXI4);
+	end
+STORE_HEXI4:
+	if (!stb_o) begin
+		stb_o <= 1'b1;
+		adr_o <= ea + 4'd12;
+`ifdef BIG_ENDIAN
+		dat_o <= rbo(fpd[31:0]);
+`else
+		dat_o <= fpd[127:96];
+`endif
+	end
+	else if (ack_i) begin
+		cyc_o <= 1'b0;
+		stb_o <= 1'b0;
+		we_o <= 1'b0;
+		sel_o <= 4'b0000;
+		ret();
+	end
+`endif
 
 STORE_BYTE:
 	if (!cyc_o) begin
@@ -5488,6 +6017,136 @@ BCD2BIN3:
 		Rt <= {1'b0,rrr};
 		ret();
 	end
+`ifdef SUPPORT_DECFLT
+FADD:
+	begin
+		fpcnt <= fpcnt + 2'd1;
+		if (fpcnt==8'd27) begin
+			if (DECFLT) begin
+				fzf <= dfaddsubo[126:0]==127'd0;
+				fnf <= dfaddsubo[127];
+				resF <= dfaddsubo;
+				Rt <= {1'b0,FLTDST};
+				rfwrF <= 1'b1;
+			end
+			ret();
+		end
+	end
+FNEG:
+	begin
+		if (DECFLT) begin
+			resF <= {~fps[127],fps[126:0]};
+			fzf <= fps[126:0]==127'd0;
+			fnf <= ~fps[127];
+			Rt <= {1'b0,FLTDST};
+			rfwrF <= 1'b1;
+		end
+		ret();
+	end
+FMUL1:
+	goto (FMUL2);
+FMUL2:
+	if (dfmuldone) begin
+		if (DECFLT) begin
+			fzf <= dfmulo[126:0]==127'd0;
+			fnf <= dfmulo[127];
+			resF <= dfmulo;
+			Rt <= {1'b0,FLTDST};
+			rfwrF <= 1'b1;
+		end
+		ret();
+	end
+FDIV1:
+	goto (FDIV2);
+FDIV2:
+	if (dfdivdone) begin
+		if (DECFLT) begin
+			fzf <= dfdivo[126:0]==127'd0;
+			fnf <= dfdivo[127];
+			resF <= dfdivo;
+			Rt <= {1'b0,FLTDST};
+			rfwrF <= 1'b1;
+		end
+		ret();
+	end
+FCMP:
+	begin
+		if (DECFLT) begin
+			fzf <= dfcmpo[0];
+			fnf <= dfcmpo[1];
+			fvf <= 1'b0;
+		end
+		ret();
+	end
+FMOVE:
+	begin
+		if (DECFLT) begin
+			if (ir2[12:10]==3'b000) begin
+				fps <= {96'd0,s};
+				goto (I2DF1);
+			end
+			else begin
+				resF <= fps[127:0];
+				fzf <= fps[126:0]==127'd0;
+				fnf <= fps[127];
+				Rt <= {1'b0,FLTDST};
+				rfwrF <= 1'b1;
+				ret();
+			end
+		end
+		else
+			ret();
+	end
+I2DF1:
+	goto (I2DF2);
+I2DF2:
+	begin
+		if (DECFLT) begin
+			if (i2dfdone) begin
+				resF <= i2dfo;
+				fzf <= i2dfo[126:0]==127'd0;
+				fnf <= i2dfo[127];
+				Rt <= {1'b0,FLTDST};
+				rfwrF <= 1'b1;
+				ret();
+			end
+		end
+		else
+			ret();
+	end
+DF2I1:
+	goto (DF2I2);
+DF2I2:
+	begin
+		if (DECFLT) begin
+			if (df2idone) begin
+				resF <= df2io;
+				resL <= df2io;
+				fzf <= df2io[126:0]==127'd0;
+				fnf <= df2io[127];
+				fvf <= df2iover;
+				Rt <= {1'b0,FLTDST};
+				rfwrL <= 1'b1;
+				ret();
+			end
+		end
+		else
+			ret();
+	end
+FTST:
+	begin
+		fnf <= fps[127];
+		fzf <= fps[126:0]=='d0;
+		ret();
+	end
+FBCC:
+	begin
+		if (ftakb)
+			pc <= opc + imm;
+		ret();
+	end
+`endif
+
 default:
 	goto(RESET);
 endcase
@@ -5535,8 +6194,10 @@ begin
 	3'd0:	begin
 				if (dsi==D)
 					d <= MMMRRR ? (mmm[0] ? rfoAna : rfoDn) : rfob;
-				else
+				else begin
 					s <= MMMRRR ? (mmm[0] ? rfoAna : rfoDn) : rfob;
+					fps <= MMMRRR ? (mmm[0] ? rfoAna : rfoDn) : rfob;
+				end
 				case(size_state)
 				STORE_LWORD:
 					begin
@@ -5596,6 +6257,9 @@ begin
 				LFETCH_BYTE,FETCH_BYTE,STORE_BYTE,USTORE_BYTE:	resL <= (MMMRRR ? rfoAna : rfoAn) + 4'd1;
 				FETCH_WORD,STORE_WORD:	resL <= (MMMRRR ? rfoAna : rfoAn) + 4'd2;
 				FETCH_LWORD,STORE_LWORD:	resL <= (MMMRRR ? rfoAna : rfoAn) + 4'd4;
+`ifdef SUPPORT_DECFLT				
+				FETCH_HEXI1,STORE_HEXI1: resL <= (MMMRRR ? rfoAna : rfoAn) + 5'd16;
+`endif				
 				default:	;
 				endcase
 				goto(size_state);
@@ -5609,12 +6273,18 @@ begin
 				FETCH_NOP_BYTE,LFETCH_BYTE,FETCH_BYTE,STORE_BYTE,USTORE_BYTE:	ea <= (MMMRRR ? rfoAna : rfoAn) - 4'd1;
 				FETCH_NOP_WORD,FETCH_WORD,STORE_WORD:	ea <= (MMMRRR ? rfoAna : rfoAn) - 4'd2;
 				FETCH_NOP_LWORD,FETCH_LWORD,STORE_LWORD:	ea <= (MMMRRR ? rfoAna : rfoAn) - 4'd4;
+`ifdef SUPPORT_DECFLT				
+				FETCH_HEXI1,STORE_HEXI1: ea <= (MMMRRR ? rfoAna : rfoAn) - 5'd16;
+`endif				
 				default:	;
 				endcase
 				case(size_state)
 				LFETCH_BYTE,FETCH_BYTE,STORE_BYTE,USTORE_BYTE:	resL <= (MMMRRR ? rfoAna : rfoAn) - 4'd1;
 				FETCH_WORD,STORE_WORD:	resL <= (MMMRRR ? rfoAna : rfoAn) - 4'd2;
 				FETCH_LWORD,STORE_LWORD:	resL <= (MMMRRR ? rfoAna : rfoAn) - 4'd4;
+`ifdef SUPPORT_DECFLT				
+				FETCH_HEXI1,STORE_HEXI1: resL <= (MMMRRR ? rfoAna : rfoAn) - 5'd16;
+`endif
 				default:	;
 				endcase
 				goto(size_state);
@@ -5669,6 +6339,7 @@ begin
 							dsix <= dsi;
 							goto (FSDATA2);
 						end
+						// ToDo: add FETCH_IMM128
 				3'd4:	begin	// #i16
 							goto((size_state==FETCH_LWORD||size_state==FETCH_NOP_LWORD)?FETCH_IMM32:FETCH_IMM16);
 						end

@@ -4303,6 +4303,9 @@ op_SCC:         move #$01,CCR
                 cmpi.b #$FF,$00010000
                 bne.s *
 
+								scc d0													* Test setting a data register
+								cmpi.b #$FF,d0
+								bne.s *
                 rts
 
 

@@ -135,7 +135,7 @@ RAND_STRM	EQU	$FD0FFD04
 RAND_MZ		EQU $FD0FFD08
 RAND_MW		EQU	$FD0FFD0C
 RST_REG		EQU	$FD0FFC00
-IO_BITMAP	EQU $FD000000
+IO_BITMAP	EQU $FD100000
 	endif
 
 SERIAL_SEMA	EQU	2
@@ -358,9 +358,13 @@ RTCBuf			equ $00100200	; to $0010023F
 	code
 	align		2
 start:
+;	fadd (a0)+,fp2
 	move.w #$2700,sr					; enable level 6 and higher interrupts
 	moveq #0,d0								; set address space zero
 	movec d0,asid
+	; Setup circuit select signals
+	move.l #MMU,d0
+	movec d0,mmus
 	if HAS_MMU
 		move.l #$01F00000,d0			; set virtual address for iop bitmap
 		movec d0,iops
@@ -372,6 +376,10 @@ start:
 		move.l #$FD000000,d0			; set virtual address for io block
 		movec d0,ios
 	endif
+	movec coreno,d0							; set initial value of thread register
+	swap d0											; coreno in high eight bits
+	lsl.l #8,d0
+	movec d0,tr
 	; Prepare local variable storage
 	move.w #1023,d0						; 1024 longs to clear
 	lea	$40000,a0							; non shared local memory address
@@ -383,7 +391,11 @@ start:
 	movec.l	coreno,d0					; get core number (2 to 9)
 	subi.b #2,d0							; adjust (0 to 7)
 	mulu #16384,d0						; compute screen location
-	addi.l #$01E00000,d0
+	if HAS_MMU
+		addi.l #$01E00000,d0
+	else
+		addi.l #$FD000000,d0
+	endif
 	move.l d0,TextScr
 	move.b #64,TextCols				; set rows and columns
 	move.b #32,TextRows
@@ -391,8 +403,10 @@ start:
 	cmpi.b #2,d0
 	bne	start_other
 	move.b d0,IOFocus					; Set the IO focus in global memory
-	bsr InitMMU								; Can't access anything till this is done
-	bsr	InitIOBitmap					; not going to get far without this
+	if HAS_MMU
+		bsr InitMMU							; Can't access anything till this is done
+	endif
+	bsr	InitIOPBitmap					; not going to get far without this
 	bsr	InitSemaphores
 	bsr	InitRand
 	bsr	Delay3s						; give devices time to reset
@@ -402,7 +416,7 @@ start:
 ;	bsr	InitIRQ
 	bsr	SerialInit
 	bsr init_i2c
-	bsr rtc_read
+;	bsr rtc_read
 
 	; Write startup message to screen
 
@@ -448,6 +462,7 @@ do_nothing:
 ;------------------------------------------------------------------------------
 ; Initialize the MMU to allow thread #0 access to IO
 ;------------------------------------------------------------------------------
+	if HAS_MMU
 	align 2
 mmu_adrtbl:	; virtual address[24:16], physical address[31:16] bytes reversed!
 	dc.l	$0010,$10000300	; global scratch pad
@@ -482,37 +497,39 @@ InitMMU:
 	move.l (a1)+,(a0,d2.w)
 	dbra d0,.0001
 	rts	
+	endif
 
 ;------------------------------------------------------------------------------
 ; The IO bitmap needs to be initialized to allow access to IO.
 ;------------------------------------------------------------------------------
 
-InitIOBitmap:
-	; mark all IO inaccessible
-	move.w #8191,d0
-	lea	IO_BITMAP,a0
-.0001
-	clr.l (a0)+
-	dbra d0,.0001
-	; Give the system asid=0 complete access to the IO area
-	move.w #127,d0
-	moveq	#-1,d1
-	lea	IO_BITMAP,a0
-.0002
-	move.l d1,(a0)+
-	dbra d0,.0002
-	; Give all cores access to the screen
-	lea IO_BITMAP+128,a0
-	moveq #-1,d1
-	move.w #62,d0		; 63 more bitmaps to fill
+InitIOPBitmap:
+	moveq #0,d3				; d3 = asid value
+	move.w #63,d0			; 64 bitmaps to setup
+	movec iops,a0			; a0 = IOP bitmap address
+	movea.l a0,a1			; a1 = table address
 .0004
+	tst.b d3
+	seq d1						; set entire bitmap for asid 0, otherwise clear entire bitmap
+	ext.w	d1					; make into a long value
+	ext.l d1
+	move.w #127,d4
+.0001
+	move.l d1,(a1)+		; set or clear entire table
+	dbra d4,.0001
+	moveq #-1,d1
+	move.l d1,160(a0)	; all cores have access to semaphores
+	move.l d1,164(a0)
+	move.l d1,168(a0)
+	move.l d1,172(a0)
 	swap d0
-	move.w #31,d0		; 32 long words for the screen area per bitmap
+	move.w #31,d0			; 32 long words for the screen area per bitmap
 .0003
-	move.l d1,(a0)+
+	move.l d1,(a0)+		; all cores have access to a screen
 	dbra d0,.0003
 	swap d0
-	lea 96(a0),a0
+	addi.b #1,d3			; do next address space
+	movea.l a1,a0			; a0 points to area for next address space
 	dbra d0,.0004
 	rts	
 	
@@ -531,20 +548,18 @@ InitIOBitmap:
 InitRand:
 RandInit:
 	movem.l	d0/d1,-(a7)
-	movec		coreno,d0
-	swap		d0
-	moveq		#RAND_SEMA,d1
-	bsr			LockSemaphore
-	swap		d0
-	lsl.l		#6,d0									; allow 64 streams per core
-	move.l	d0,RAND_STRM					; select the stream
-	move.l	#$12345678,RAND_MZ		; initialize to some value
-	move.l	#$98765432,RAND_MW
-	move.l	#777777777,RAND_NUM		; generate first number
-	movec		coreno,d0
-	swap		d0
-	moveq		#RAND_SEMA,d1
-	bsr			UnlockSemaphore
+	moveq #37,d0								; lock semaphore
+	moveq	#RAND_SEMA,d1
+	trap #15
+	movec coreno,d0							; d0 = core number
+	lsl.l	#6,d0									; allow 64 streams per core
+	move.l d0,RAND_STRM					; select the stream
+	move.l #$12345678,RAND_MZ		; initialize to some value
+	move.l #$98765432,RAND_MW
+	move.l #777777777,RAND_NUM	; generate first number
+	moveq #38,d0								; unlock semaphore
+	moveq	#RAND_SEMA,d1
+	trap #15
 	movem.l	(a7)+,d0/d1
 	rts
 
@@ -553,19 +568,18 @@ RandInit:
 
 RandGetNum:
 	movem.l	d0/d2,-(a7)
-	movec		coreno,d0
-	swap		d0
-	moveq		#RAND_SEMA,d1
-	bsr			LockSemaphore
-	lsl.l		#6,d0
-	move.l	d0,RAND_STRM					; select the stream
-	move.l	RAND_NUM,d2
-	clr.l		RAND_NUM							; generate next number
-	movec		coreno,d0
-	swap		d0
-	moveq		#RAND_SEMA,d1
-	bsr			UnlockSemaphore
-	move.l	d2,d1
+	moveq #37,d0								; lock semaphore
+	moveq	#RAND_SEMA,d1
+	trap #15
+	movec	coreno,d0
+	lsl.l	#6,d0
+	move.l d0,RAND_STRM					; select the stream
+	move.l RAND_NUM,d2					; d2 = random number
+	clr.l	RAND_NUM							; generate next number
+	moveq #38,d0								; unlock semaphore
+	moveq	#RAND_SEMA,d1
+	trap #15
+	move.l d2,d1
 	movem.l	(a7)+,d0/d2
 	rts
 
@@ -658,6 +672,7 @@ InitSemaphores:
 ; -----------------------------------------------------------------------------
 
 LockSemaphore:
+	rts
 	movem.l	d1/a0,-(a7)			; save registers
 	lea			semamem,a0			; point to semaphore memory lock area
 	andi.w	#255,d1					; make d1 word value
@@ -698,6 +713,7 @@ ForceUnlockSemaphore:
 ; -----------------------------------------------------------------------------
 
 UnlockSemaphore:
+	bra ForceUnlockSemaphore
 	movem.l	d1/a0,-(a7)				; save registers
 	lea			semamem+$1000,a0	; point to semaphore memory unlock area
 	andi.w	#255,d1						; make d1 word value
@@ -712,13 +728,11 @@ UnlockSemaphore:
 ; -----------------------------------------------------------------------------
 
 T15LockSemaphore:	
-	movec coreno,d0
-	or.l RunningTCB,d0
+	movec tr,d0
 	bra LockSemaphore
 
 T15UnlockSemaphore:
-	movec coreno,d0
-	or.l RunningTCB,d0
+	movec tr,d0
 	bra UnlockSemaphore
 
 ; -----------------------------------------------------------------------------
