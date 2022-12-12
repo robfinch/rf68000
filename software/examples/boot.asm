@@ -331,7 +331,16 @@ BreakpointFlag	equ		$40200
 NumSetBreakpoints	equ	$40202	; to $40203
 Breakpoints			equ		$40220	; to $40240
 BreakpointWords	equ		$40280	; to $402A0
+fpBuf       equ $402C0
 ;RunningTCB  equ $40300
+_exp equ $40500
+_digit equ $40504
+_width equ $40508
+_E equ $4050C
+_digits_before_decpt equ $40510
+_precision equ $40514
+_fpBuf equ $40520	; to $40560
+_fpWork equ $40600
 TimerStack	equ	$40BFC
 
 ; Keyboard buffer is in shared memory
@@ -522,6 +531,7 @@ InitIOPBitmap:
 	move.l d1,164(a0)
 	move.l d1,168(a0)
 	move.l d1,172(a0)
+	move.l #2,508(a0)	; all cores access random # generator
 	swap d0
 	move.w #31,d0			; 32 long words for the screen area per bitmap
 .0003
@@ -1270,7 +1280,7 @@ T15DispatchTable:
 	dc.l	SerialGetChar
 	dc.l	T15LockSemaphore
 	dc.l	T15UnlockSemaphore
-	dc.l	StubRout
+	dc.l	prtflt
 
 ;------------------------------------------------------------------------------
 ; Cursor positioning / Clear screen
@@ -2081,6 +2091,7 @@ cmdString:
 	dc.b	':'+$80						; : edit memory
 	dc.b	"CL",'S'+$80			; CLS clear screen
 	dc.b	"COR",'E'+$80			; CORE <n> switch to core
+	dc.b	"TF",'P'+$80			; TFP test fp
 	dc.b  "TRA",'M'+$80			; TRAM test RAM
 	dc.b	'T','R'+$80				; TR test serial receive
 	dc.b	'T'+$80						; T test CPU
@@ -2104,6 +2115,7 @@ cmdTable:
 	dc.w	cmdEditMemory
 	dc.w	cmdClearScreen
 	dc.w	cmdCore
+	dc.w  cmdTestFP
 	dc.w  cmdTestRAM
 	dc.w	cmdTestSerialReceive
 	dc.w	cmdTestCPU
@@ -2230,6 +2242,34 @@ cmdCore:
 	bsr			select_iofocus
 	bra			Monitor
 
+cmdTestFP:
+	bsr ignBlanks
+	bsr GetHexNumber
+	move.l d1,d3
+	bsr ignBlanks
+	bsr GetHexNumber
+	move.l d1,d2
+	bsr CRLF
+	fmove.l d3,fp0					; this should do I2FP
+;	moveq #39,d0
+;	moveq #40,d1
+;	moveq #30,d2
+;	moveq #'e',d3
+;	trap #15
+;	bsr CRLF
+	fmove.l d2,fp1					; this should do I2FP
+	fmove.p fp0,fpBuf
+	fmove.p fp1,fpBuf+16
+	fadd fp1,fp0
+	fmove.p fp0,fpBuf+32
+	moveq #39,d0
+	moveq #40,d1
+	moveq #30,d2
+	moveq #'e',d3
+	trap #15
+	bsr CRLF
+	bra Monitor
+		
 ;-------------------------------------------------------------------------------
 ; CLOCK <n>
 ;    Set the clock register to n which will turn off or on clocks to the CPUs.
@@ -3880,7 +3920,571 @@ ReceiveMsg:
 DispatchMsg:
 	rts
 
-		
+;------------------------------------------------------------------------------
+; a0 = pointer to string buffer
+; d6 = exponent
+;------------------------------------------------------------------------------
+	align 4
+	if 0
+_dfOne	dc.w $25ff,$c000,$0000,$0000,$0000,$0000,$0000,$0000
+_dfTen	dc.w $2600,$0000,$0000,$0000,$0000,$0000,$0000,$0000
+_dfMil  dc.w $2601,$4000,$0000,$0000,$0000,$0000,$0000,$0000
+	endif
+_dfOne	dc.l $25ff0000,$00000000,$00000000
+_dfTen	dc.l $2600C000,$00000000,$00000000
+_dfMil  dc.l $2606DDFA,$1C000000,$00000000
+
+_msgNan	dc.b "NaN",0
+_msgInf dc.b "Inf",0
+
+;------------------------------------------------------------------------------
+; Parameters:
+;		fp0 = dbl
+;------------------------------------------------------------------------------
+
+;	if (dbl < 1.0) {
+;		while (dbl < 1.0) {
+;			dbl *= 1000000.0;
+;			exp -= 6;  
+;		}
+;	}
+
+_MakeBig:
+	fmove.p _dfOne,fp1
+	fmove.p _dfMil,fp2
+.0002
+	fcmp fp1,fp0						; is fp0 > 1?
+	fbge .0001							; yes, return
+	fscale.l #6,fp0					; multiply fp0 by a million
+	subi.w #6,d6						; decrement exponent by six
+	bra .0002								; keep trying until number is > 1
+.0001
+	rts
+	
+;------------------------------------------------------------------------------
+; Parameters:
+;		fp0 = dbl
+;------------------------------------------------------------------------------
+
+;	// The following is similar to using log10() and pow() functions.
+;	// Now dbl is >= 1.0
+;	// Create a number dbl2 on the same order of magnitude as dbl, but
+;	// less than dbl.
+;	dbl2 = 1.0;
+;	dbla = dbl2;
+;	if (dbl > dbl2) {	// dbl > 1.0 ?
+;		while (dbl2 <= dbl) {
+;			dbla = dbl2;
+;			dbl2 *= 10.0;	// increase power of 10
+;			exp++;
+;		}
+;		// The above loop goes one too far, we want the last value less
+;		// than dbl.
+;		dbl2 = dbla;
+;		exp--;
+;	}
+
+_LessThanDbl:
+	fmove.p _dfOne,fp2	; setup fp2 = 1
+	fmove.p _dfTen,fp1	; setup fp1 = 10
+	fcmp fp2,fp0				; if (dbl > dbl2)
+	fble .0004
+.0006
+	fcmp fp0,fp2				; while (dbl2 <= dbl)
+	fbgt .0005
+	fscale.l #1,fp2			; dbl2 *= 10 (increase exponent by one)
+	addi.w #1,d6				; exp++
+	bra .0006
+.0005
+	fscale.l #-1,fp2		; dbl2 /= 10 (decrease exponent by one)
+	subi.w #1,d6				; exp--;
+.0004	
+	fmove.p fp0,_fpWork
+	fmove.p fp2,_fpWork+12
+	rts
+
+;------------------------------------------------------------------------------
+; Parameters:
+;		d6 = exponent
+;------------------------------------------------------------------------------
+
+; if (exp >= 0 && exp < 6) {
+;   digits_before_decpt = exp+1;
+;		exp = 0;
+;	}
+;	else if (exp >= -6)
+;		digits_before_decpt = 1;
+;	else
+;		digits_before_decpt = -1;
+
+_ComputeDigitsBeforeDecpt:
+	tst.w d6
+	bmi .0007
+	cmpi.w #6,d6
+	bge .0007
+	move.w d6,d0
+	addi.w #1,d0
+	move.w d0,_digits_before_decpt	
+	clr.w d6
+	bra .0008
+.0007
+	cmpi.w #-6,d6
+	blt .0009
+	move.w #1,_digits_before_decpt
+	bra .0008
+.0009
+	move.w #-1,_digits_before_decpt
+.0008
+	rts
+
+;------------------------------------------------------------------------------
+; Parameters:
+;		d6 = exponent
+;------------------------------------------------------------------------------
+
+;	// Spit out a leading zero before the decimal point for a small number.
+;  if (exp < -6) {
+;		 buf[ndx] = '0';
+;		 ndx++;
+;    buf[ndx] = '.';
+;    ndx++;
+;  }
+_LeadingZero:
+	cmpi.w #-6,d6
+	bge .0010
+	move.b #'0',(a0)+
+	move.b #'.',(a0)+
+.0010
+	rts
+
+;------------------------------------------------------------------------------
+; Register Usage
+;		d1 = digit
+;		fp0 = dbl
+;		fp2 = dbl2
+; Parameters:
+;------------------------------------------------------------------------------
+
+;	// Now loop processing one digit at a time.
+;  for (nn = 0; nn < 25 && precision > 0; nn++) {
+;    digit = 0;
+;		dbla = dbl;
+;		// dbl is on the same order of magnitude as dbl2 so
+;		// a repeated subtract can be used to find the digit.
+;    while (dbl >= dbl2) {
+;      dbl -= dbl2;
+;      digit++;
+;    }
+;    buf[ndx] = digit + '0';
+;		// Now go back and perform just a single subtract and
+;		// a multiply to find out how much to reduce dbl by.
+;		// This should improve the accuracy
+;		if (digit > 2)
+;			dbl = dbla - dbl2 * digit;
+;    ndx++;
+;    digits_before_decpt--;
+;    if (digits_before_decpt==0) {
+;			buf[ndx] = '.';
+;			ndx++;
+;    }
+;    else if (digits_before_decpt < 0)
+;      precision--;
+;		// Shift the next digit to be tested into position.
+;    dbl *= 10.0;
+;  }
+	
+_SpitOutDigits:
+	move.w #24,d0		; d0 = nn
+.0017	
+	tst.l _precision
+	ble .0011
+	moveq #0,d1			; digit = 0
+	fmove fp0,fp7		; dbla = dbl
+.0013
+	fcmp fp2,fp0
+	fblt .0012
+	fsub fp2,fp0		; dbl -= dbl2
+	addi.b #1,d1
+	bra .0013
+.0012
+	addi.b #'0',d1
+	move.b d1,(a0)
+	subi.b #'0',d1
+	cmpi.b #2,d1
+	ble .0014
+	ext.w d1
+	ext.l d1
+	fmove.l d1,fp3
+	fmul fp2,fp3		; fp3 = dbl2 * digit
+	fmove fp7,fp0
+	fsub fp3,fp0		; dbl = dbla - dbl2 * digit
+.0014
+	addq #1,a0			; ndx++
+	subi.w #1,_digits_before_decpt
+	tst.w _digits_before_decpt
+	bne .0015
+	move.b #'.',(a0)+
+.0015
+	tst.w _digits_before_decpt
+	bge .0016
+	subi.l #1,_precision
+.0016
+	fmove.p _dfTen,fp3
+	fmul fp3,fp0
+	dbra d0,.0017
+.0011	
+	rts
+
+;------------------------------------------------------------------------------
+; If the number ends in a decimal point, trim off the point.
+;------------------------------------------------------------------------------
+
+_TrimTrailingPoint:
+	cmpi.b #'.',-1(a0)
+	bne .0001
+	move.b #0,-(a0)
+.0001
+	rts
+	
+;------------------------------------------------------------------------------
+;------------------------------------------------------------------------------
+
+;	// Trim trailing zeros from the number
+;  do {
+;      ndx--;
+;  } while(buf[ndx]=='0');
+;  ndx++;
+
+_TrimTrailingZeros:
+.0018	
+	cmpi.b #'0',-(a0)		; if the last digit was a zero, backup
+	beq .0018
+	addq #1,a0					; now advance by one
+	move.b #0,(a0)			; NULL terminate string
+	rts
+
+;------------------------------------------------------------------------------
+;------------------------------------------------------------------------------
+
+;	// Spit out +/-E
+;  buf[ndx] = E;
+;  ndx++;
+;  if (exp < 0) {
+;    buf[ndx]='-';
+;    ndx++;
+;    exp = -exp;
+;  }
+;  else {
+;		buf[ndx]='+';
+;		ndx++;
+;  }
+
+_SpitOutE:	
+	move.b _E,(a0)+
+	tst.w d6
+	bge .0021
+	move.b #'-',(a0)+
+	neg.w d6
+	bra .0022
+.0021
+	move.b #'+',(a0)+
+.0022
+	rts
+
+;------------------------------------------------------------------------------
+;------------------------------------------------------------------------------
+
+_ExtractExpDigits:
+_ExtractExp1000sDigit:
+	clr.b d1						; this needed here only for 96 bit floats
+	clr.b _digit
+.0026
+	cmpi.w #1000,d6
+	blt .0027
+	subi.w #1000,d6
+	addi.b #1,_digit
+	bra .0026
+.0027
+	move.b _digit,d2
+	move.b d2,d7
+	or.b d1,d7
+	beq .0028
+	move.b d2,d7
+	addi.b #'0',d7
+	move.b d7,(a0)+
+.0028
+
+;------------------------------------------------------------------------------
+;------------------------------------------------------------------------------
+
+_ExtractExp100sDigit:
+	clr.b _digit
+.0029
+	cmpi.w #100,d6
+	blt .0030
+	subi.w #100,d6
+	addi.b #1,_digit
+	bra .0029
+.0030
+	move.b _digit,d3
+	move.b d3,d7
+	or.b d2,d7
+	or.b d1,d7
+	beq .0031
+	move.b d3,d7
+	addi.b #'0',d7
+	move.b d7,(a0)+
+.0031
+
+;------------------------------------------------------------------------------
+;------------------------------------------------------------------------------
+
+_ExtractExp10sDigit:
+	clr.b _digit
+.0032
+	cmpi.w #10,d6
+	blt .0033
+	subi.w #10,d6
+	addi.b #1,_digit
+	bra .0032
+.0033
+	move.b _digit,d4
+	move.b d4,d7
+	or.b d3,d7
+	or.b d2,d7
+	or.b d1,d7
+	beq .0034
+	move.b d4,d7
+	addi.b #'0',d7
+	move.b d7,(a0)+
+.0034
+
+;------------------------------------------------------------------------------
+;------------------------------------------------------------------------------
+
+_ExtractExp1sDigit:
+	clr.b _digit
+.0035
+	cmpi.w #1,d6
+	blt .0036
+	subi.w #1,d6
+	addi.b #1,_digit
+	bra .0035
+.0036
+	move.b _digit,d5
+	move.b d5,d7
+	addi.b #'0',d7
+	move.b d7,(a0)+
+	move.b #0,(a0)
+	rts
+
+;------------------------------------------------------------------------------
+;------------------------------------------------------------------------------
+
+;	// Now pad the number on the left or right as requested.
+;  // pad left
+;  if (width > 0) {
+;    if (ndx < width) {
+;      for (nn = 39; nn >= width-ndx; nn--)
+;        buf[nn] = buf[nn-(width-ndx)];
+;      for (; nn >= 0; nn--)
+;        buf[nn] = ' ';
+;    }
+;  }
+	
+_PadLeft:
+	tst.b _width
+	ble .0041
+	move.l a0,d0
+	sub.l #_fpBuf,d0	; d0 = ndx
+	cmp.b _width,d0
+	bge .0041
+	move.w #49,d1			; d1 = nn
+.0040
+	move.b _width,d2
+	ext.w d2
+	sub.w d0,d2				; d2 = width-ndx
+	cmp.w d2,d1
+	blt .0039
+	move.w d1,d3			; d3 = nn
+	sub.w d2,d3				; d3 = nn-(width-ndx)
+	move.b (a0,d3.w),(a0,d1.w)
+	subi.w #1,d1
+	bra .0040
+.0039
+	tst.w d1
+	bmi .0041
+	move.b #' ',(a0,d1.w)
+	subi.w #1,d1
+	bra .0039
+.0041
+	rts
+
+;------------------------------------------------------------------------------
+; Returns:
+;		d0 = length of string
+;------------------------------------------------------------------------------
+
+;  // pad right
+;  if (width < 0) {
+;    width = -width;
+;    while (ndx < width) {
+;      buf[ndx]=' ';
+;      ndx++;
+;    }
+;    buf[ndx]='\0';
+;  }
+;  return (ndx);
+
+_PadRight:
+	tst.b _width
+	bpl .0042
+	neg.b _width
+	move.l a0,d0
+	sub.l #_fpBuf,d0	; d0 = ndx
+.0044
+	cmp.b _width,d0
+	bge .0043
+	move.b #' ',(a0,d0.w)
+	addi.w #1,d0
+	bra .0044
+.0043
+	move.b #0,(a0,d0.w)
+.0042
+	ext.w d0
+	ext.l d0
+	rts
+
+;------------------------------------------------------------------------------
+;------------------------------------------------------------------------------
+
+_IsZero:
+	clr.l d0								; d0 = 0
+	move.b _fpWork,d0				; get sign, combo
+	andi.b #$7f,d0					; ignore sign bit
+	or.b _fpWork+1,d0				; check all bytes for zero
+	or.w _fpWork+2,d0
+	or.w _fpWork+4,d0
+	or.w _fpWork+6,d0
+	or.w _fpWork+8,d0
+	or.w _fpWork+10,d0
+	rts
+
+;------------------------------------------------------------------------------
+; Output a string representation of a decimal floating point number to a 
+; buffer.
+;
+; Parameters:
+;		fp0 = number to convert
+;------------------------------------------------------------------------------
+
+_sprtflt:
+	fmove.p fp0,_fpWork
+	move.b _fpWork,d0				; get sign+combo
+	andi.b #$7C,d0					; mask for combo bits
+	cmpi.b #$7C,d0					; is it the Nan combo?
+	bne .notNan
+	move.l _msgNan,_fpBuf		; output "Nan"
+	rts
+.notNan
+	cmpi.b #$78,d0					; is it infinity combo?
+	bne .notInf
+	move.l _msgInf,_fpBuf		; output "Inf"
+	rts
+.notInf
+.0001
+	lea _fpBuf,a0						; a0 = pointer to string buffer
+	tst.b _fpWork						; is number negative?
+	bpl .0002
+	move.b #'-',(a0)+				; yes, output '-'
+.0002
+	bsr _IsZero							; check if number is zero
+	tst.w d0
+	bne .0003
+	move.b #'0',(a0)+				; if zero output "0"
+	clr.b (a0)+
+	rts	
+	; Now the fun begins
+.0003
+	clr.l d6
+	bsr _MakeBig
+	bsr _LessThanDbl
+	bsr _ComputeDigitsBeforeDecpt
+	bsr _LeadingZero
+	bsr _SpitOutDigits
+	bsr _TrimTrailingZeros
+
+	; If the number ends with a '.' remove the '.'
+	cmpi.b #'.',-1(a0)
+	bne .0005
+	move.b #0,-1(a0)
+	subq #1,a0
+
+.0005
+	; If the number ends in .0 get rid of the .0
+	cmpi.b #'0',-1(a0)
+	bne .0004
+	cmpi.b #'.',-2(a0)
+	bne .0004
+	move.b #0,-2(a0)
+	subq #1,a0
+.0004
+
+;	// Make sure we have at least one digit after the decimal point.
+;	if (buf[ndx-1]=='.') {
+;		buf[ndx]='0';
+;		ndx++;
+;    buf[ndx]='\0';
+;	}
+
+	cmpi.b #'.',-1(a0)
+	bne .0019
+	move.b '0',(a0)+
+	move.b #0,(a0)
+.0019
+
+;	// If the number is times 10^0 don't output the exponent
+;  if (exp==0) {
+;    buf[ndx]='\0';
+;    goto prt;
+;  }
+	
+	tst.w d6
+	bne .0020
+	move.b #0,(a0)			; NULL terminate string
+	bra .prt						; goto padding number
+.0020
+
+	bsr _SpitOutE
+	bsr _ExtractExpDigits
+
+.prt
+	bsr _PadLeft
+	bra _PadRight
+
+;------------------------------------------------------------------------------
+; Trap #15, function 39
+;
+; Parameters
+;		fp0 0 number to print
+;		d1 = width of print field
+;		d2 = precision
+;		d3 = 'E' or 'e'
+;------------------------------------------------------------------------------
+
+prtflt:
+	movem.l d0/d1/d2/a1,-(a7)
+	fmove.p fp0,-(a7)
+	move.b d1,_width
+	move.l d2,_precision
+	move.b d3,_E
+	bsr _sprtflt
+	lea _fpBuf,a1
+	bsr DisplayString
+	fmove.p (a7)+,fp0
+	movem.l (a7)+,d0/d1/d2/a1
+	rts
+
 ;------------------------------------------------------------------------------
 ;------------------------------------------------------------------------------
 
