@@ -49,10 +49,10 @@ output c;
 wire c0;
 
 reg [4:0] hsN0;
-always_comb
+always  @*
 begin
 	hsN0 = a[3:0] + b[3:0] + ci;
-	if (hsN0[3:0] > 4'd9 || hsN0[4])
+	if (hsN0 > 5'd9)
 		hsN0 = hsN0 + 3'd6;
 end		
 assign o = hsN0[3:0];
@@ -67,14 +67,16 @@ input [7:0] b;
 output [7:0] o;
 output c;
 
-wire c1;
+wire c0,c1;
 
-BCDAddNyb u1 (ci,a[3:0],b[3:0],o[3:0],c1);
-BCDAddNyb u2 (c1,a[7:4],b[7:4],o[7:4],c);
+wire [4:0] hsN0 = a[3:0] + b[3:0] + ci;
+wire [4:0] hsN1 = a[7:4] + b[7:4] + c0;
+
+BCDAddAdjust u1 (hsN0,o[3:0],c0);
+BCDAddAdjust u2 (hsN1,o[7:4],c);
 
 endmodule
 
-/*
 module BCDAdd4(ci,a,b,o,c,c8);
 input ci;		// carry input
 input [15:0] a;
@@ -97,7 +99,82 @@ BCDAddAdjust u3 (hsN2,o[11:8],c2);
 BCDAddAdjust u4 (hsN3,o[15:12],c);
 
 endmodule
-*/
+
+module BCDAddNClk(clk,ci,a,b,o,co);
+parameter N=25;
+input clk;
+input ci;
+input [N*4-1:0] a;
+input [N*4-1:0] b;
+output reg [N*4-1:0] o;
+output reg co;
+
+reg [N-1:0] cg;
+wire [N*4-1:0] s;
+reg [N*4-1:0] on [0:3];
+reg [3:0] cn;
+
+genvar g;
+generate begin :gAdd
+	for (g = 0; g < N; g = g + 1)
+	BCDAddNyb u1 (
+		.ci(g==0 ? ci : cg[g-1]),
+		.a(a[g*4+3:g*4]),
+		.b(b[g*4+3:g*4]),
+		.o(s[g*4+3:g*4]),
+		.c(cg[g])
+	);
+end
+endgenerate
+
+always_ff @(posedge clk)
+	on[0] <= s;
+always_ff @(posedge clk)
+	on[1] <= on[0];
+always_ff @(posedge clk)
+	on[2] <= on[1];
+always_ff @(posedge clk)
+	o <= on[2];
+always_ff @(posedge clk)
+	cn[0] <= cg[N-1];
+always_ff @(posedge clk)
+	cn[1] <= cn[0];
+always_ff @(posedge clk)
+	cn[2] <= cn[1];
+always_ff @(posedge clk)
+	co <= cn[2];
+
+endmodule
+
+module BCDAddN(ci,a,b,o,co);
+parameter N=25;
+input ci;
+input [N*4-1:0] a;
+input [N*4-1:0] b;
+output [N*4-1:0] o;
+output co;
+
+reg [N-1:0] cg;
+wire [N*4-1:0] s;
+
+genvar g;
+generate begin :gAdd
+	for (g = 0; g < N; g = g + 1)
+	BCDAddNyb u1 (
+		.ci(g==0 ? ci : cg[g-1]),
+		.a(a[g*4+3:g*4]),
+		.b(b[g*4+3:g*4]),
+		.o(s[g*4+3:g*4]),
+		.c(cg[g])
+	);
+end
+endgenerate
+
+assign o = s;
+assign co = cg[N-1];
+
+endmodule
+
 /*
 module BCDAddN(ci,a,b,o,co);
 parameter N=24;
@@ -126,374 +203,6 @@ endgenerate
 
 endmodule
 */
-/*
-module BCDAddN(ci,a,b,o,co);
-parameter N=34;	// Number of digits
-input ci;				// carry input
-input [N*4-1:0] a;
-input [N*4-1:0] b;
-output reg [N*4-1:0] o;
-output reg co;
-
-reg [N*4-1:0] sum1;
-reg [N-1:0] c;	// inter-digit carries
-reg [3:0] s1 [0:N-1];	// the digits of sum1 (just wires)
-reg [4:0] s2 [0:N-1];	// the digits of sum2
-reg [3:0] sixes [0:N-1];	// 0x666... 
-reg [3:0] ag [0:N-1];	// the digits of a
-reg [3:0] bg [0:N-1];	// the digits of b
-
-always_comb
-	sum1 = a + b + ci;
-always_comb
-	c[0] = 1'b0;
-genvar dig;
-generate begin : gBCDAdd
-for (dig = 0; dig < N; dig = dig + 1)
-begin
-	always_comb
-		s1[dig] = sum1[dig*4+3:dig*4];	// these are just wires
-	always_comb
-		ag[dig] = a[dig*4+3:dig*4];			// just wires
-	always_comb
-		bg[dig] = b[dig*4+3:dig*4];			// just wires
-	always_comb
-		if (dig==0)
-			sixes[dig] = 4'd6 | ci;				// except for first digt, the constant 6
-		else
-			sixes[dig] = 4'd6;
-	always_comb
-		if (dig==0)
-			s2[dig] = ag[dig] + bg[dig] + sixes[dig];
-		else
-			s2[dig] = ag[dig] + bg[dig] + (sixes[dig]|s2[dig-1][4]);
-	always_comb												// capture inter-digit carries
-		c[dig] = s2[dig][4];
-	always_comb												// select based on digit value
-		o[dig*4+3:dig*4] = (s1[dig] > 4'd9) ? s2[dig] : s1[dig];
-end
-always_comb
-	co = c[N-1];
-
-end
-endgenerate
-
-endmodule
-*/
-/* Does not work yet.
-module BCDAddN(ci,a,b,o,co);
-parameter N=34;
-input ci;		// carry input
-input [N*4-1:0] a;
-input [N*4-1:0] b;
-output reg [N*4-1:0] o;
-output reg co;
-
-reg [N*4:0] sum1, sum2, sum3, c;
-reg [N*4-1:0] sixes;
-always_comb
-	sum1 = a + b;
-always_comb
-	sum2 = sum1 + {c,4'd0};
-always_comb
-	{co,o} = {c[N*4],sum3};
-
-genvar g;
-generate begin : gSixes
-for (g = 0; g < N; g = g + 1)
-begin
-	always_comb
-		c[g*4+3:g*4] = {3'b0,sum1[g*4+3:g*4] > 4'd9};
-	always_comb
-		if (g==0)
-			sixes[g*4+3:g*4] = (c[g*4] ? 4'd6 : 4'd0) | ci;
-		else
-			sixes[g*4+3:g*4] = c[g*4] ? 4'd6 : 4'd0;
-	always_comb
-		if (g==N-1)
-			sum3[g*4+4:g*4] = sum2[g*4+3:g*4] + sixes[g*4+3:g*4];
-		else
-			sum3[g*4+3:g*4] = sum2[g*4+3:g*4] + sixes[g*4+3:g*4];
-end
-always_comb
-	c[N*4] = 1'b0;
-
-end
-endgenerate
-
-endmodule
-*/
-
-/*
-module BCDSubNyb(ci,a,b,o,c);
-input ci;		// carry input
-input [3:0] a;
-input [3:0] b;
-output [3:0] o;
-output c;
-
-wire c0;
-reg [4:0] dif1;
-
-BCDAddNyb (1'b0,a,~b + 4'd9,dif1,c1);
-if (!c1)
-	dif = ~dif1 + 4'd9;
-*/
-/*
-always_comb
-	case({ci,a,b})
-	9'b000000000:	dif <= 5'b00000;
-	9'b000000001:	dif <= 5'b11001;
-	9'b000000010:	dif <= 5'b11000;
-	9'b000000011:	dif <= 5'b10111;
-	9'b000000100:	dif <= 5'b10110;
-	9'b000000101:	dif <= 5'b10101;
-	9'b000000110:	dif <= 5'b10100;
-	9'b000000111:	dif <= 5'b10011;
-	9'b000001000:	dif <= 5'b10010;
-	9'b000001001:	dif <= 5'b10001;
-	9'b000010000:	dif <= 5'b00001;
-	9'b000010001:	dif <= 5'b00000;
-	9'b000010010:	dif <= 5'b11001;
-	9'b000010011:	dif <= 5'b11000;
-	9'b000010100:	dif <= 5'b10111;
-	9'b000010101:	dif <= 5'b10110;
-	9'b000010110:	dif <= 5'b10101;
-	9'b000010111:	dif <= 5'b10100;
-	9'b000011000:	dif <= 5'b10011;
-	9'b000011001:	dif <= 5'b10010;
-	9'b000100000:	dif <= 5'b00010;
-	9'b000100001:	dif <= 5'b00001;
-	9'b000100010:	dif <= 5'b00000;
-	9'b000100011:	dif <= 5'b11001;	
-	9'b000100100:	dif <= 5'b11000;
-	9'b000100101: dif <= 5'b10111;
-	9'b000100110:	dif <= 5'b10110;
-	9'b000100111:	dif <= 5'b10101;
-	9'b000101000:	dif <= 5'b10100;
-	9'b000101001:	dif <= 5'b10011;
-	9'b000110000:	dif <= 5'b00011;
-	9'b000110001:	dif <= 5'b00010;
-	9'b000110010:	dif <= 5'b00001;
-	9'b000110011:	dif <= 5'b00000;
-	9'b000110100:	dif <= 5'b11001;
-	9'b000110101:	dif <= 5'b11000;
-	9'b000110110: dif <= 5'b10111;
-	9'b000110111:	dif <= 5'b10110;
-	9'b000111000:	dif <= 5'b10101;
-	9'b000111001: dif <= 5'b10100;
-	9'b001000000:	dif <= 5'b00100;
-	9'b001000001: dif <= 5'b00011;
-	9'b001000010: dif <= 5'b00010;
-	9'b001000011: dif <= 5'b00001;
-	9'b001000100: dif <= 5'b00000;
-	9'b001000101: dif <= 5'b11001;
-	9'b001000110: dif <= 5'b11000;
-	9'b001000111: dif <= 5'b10111;
-	9'b001001000: dif <= 5'b10110;
-	9'b001001001: dif <= 5'b10101;
-	9'b001010000: dif <= 5'b00101;
-	9'b001010001: dif <= 5'b00100;
-	9'b001010010: dif <= 5'b00011;
-	9'b001010011: dif <= 5'b00010;
-	9'b001010100:	dif <= 5'b00001;
-	9'b001010101; dif <= 5'b00000;
-	9'b001010110: dif <= 5'b11001;
-	9'b001010111: dif <= 5'b11000;
-	9'b001011000: dif <= 5'b10111;
-	9'b001011001: dif <= 5'b10110;
-	9'b001100000: dif <= 5'b00110;
-	9'b001100001: dif <= 5'b00101;
-	9'b001100010: dif <= 5'b00100;
-	9'b001100011: dif <= 5'b00011;
-	9'b001100100: dif <= 5'b00010;
-	9'b001100101: dif <= 5'b00001;
-	9'b001100110: dif <= 5'b00000;
-	9'b001100111: dif <= 5'b11001;
-	9'b001101000: dif <= 5'b11000;
-	9'b001101001: dif <= 5'b10111;
-	9'b001110000: dif <= 5'b00111;
-	9'b001110001: dif <= 5'b00110;
-	9'b001110010: dif <= 5'b00101;
-	9'b001110011: dif <= 5'b00100;
-	9'b001110100: dif <= 5'b00011;
-	9'b001110101: dif <= 5'b00010;
-	9'b001110110: dif <= 5'b00001;
-	9'b001110111: dif <= 5'b00000;
-	9'b001111000: dif <= 5'b11001;
-	9'b001111001: dif <= 5'b11000;
-	9'b010000000: dif <= 5'b01000;
-	9'b010000001: dif <= 5'b00111;
-	9'b010000010: dif <= 5'b00110;
-	9'b010000011: dif <= 5'b00101;
-	9'b010000100: dif <= 5'b00100;
-	9'b010000101: dif <= 5'b00011;
-	9'b010000110: dif <= 5'b00010;
-	9'b010000111: dif <= 5'b00001;
-	9'b010001000: dif <= 5'b00000;
-	9'b010001001: dif <= 5'b11001;
-	9'b010010000: dif <= 5'b01001;
-	9'b010010001: dif <= 5'b01000;
-	9'b010010010: dif <= 5'b00111;
-	9'b010010011: dif <= 5'b00110;
-	9'b010010100: dif <= 5'b00101;
-	9'b010010101: dif <= 5'b00100;
-	9'b010010110: dif <= 5'b00011;
-	9'b010010111: dif <= 5'b00010;
-	9'b010011000: dif <= 5'b00001;
-	9'b010011001: dif <= 5'b00000;
-
-	9'b100000000:	dif <= 5'b11001;
-	9'b100000001: dif <= 5'b11000;
-	9'b100000010: dif <= 5'b10111;
-	9'b100000011: dif <= 5'b10110;
-	9'b100000100: dif <= 5'b10101;
-	9'b100000101: dif <= 5'b10100;
-	9'b100000110: dif <= 5'b10011;
-	9'b100000111: dif <= 5'b10010;
-	9'b100001000: dif <= 5'b10001;
-	9'b100001001: dif <= 5'b10000;
-	
-	endcase
-*/
-//endmodule
-/*
-module BCDSubNyb(a,b,o,s);
-input [3:0] a;
-input [3:0] b;
-output [3:0] o;
-output reg s;
-
-reg [3:0] b10compl;
-reg [4:0] res1,res2;
-reg [4:0] res2compl;
-
-always_comb
-	b10compl = ~b + 4'd9;
-always_comb
-	res1 = a + b10compl;
-always_comb
-	c1 = res1[4] | (res1[3]&res1[2]) | (res1[3]&res1[1]);
-always_comb
-	res2 = c1 ? res1 + 4'd6 : res1;
-always_comb
-	res2compl = c1 ? res2 : ~res2 + 4'd11;
-always_comb
-	s = ~c1;
-
-endmodule
-*/
-module BCDSub(ci,a,b,o,c);
-input ci;		// carry input
-input [7:0] a;
-input [7:0] b;
-output [7:0] o;
-output c;
-
-wire c0,c1;
-
-wire [4:0] hdN0 = a[3:0] - b[3:0] - ci;
-wire [4:0] hdN1 = a[7:4] - b[7:4] - c0;
-
-BCDSubAdjust u1 (hdN0,o[3:0],c0);
-BCDSubAdjust u2 (hdN1,o[7:4],c);
-
-endmodule
-
-/*
-module BCDSub4(ci,a,b,o,c,c8);
-input ci;		// carry input
-input [15:0] a;
-input [15:0] b;
-output [15:0] o;
-output c;
-output c8;
-
-wire c0,c1,c2;
-assign c8 = c1;
-
-wire [4:0] hdN0 = a[3:0] - b[3:0] - ci;
-wire [4:0] hdN1 = a[7:4] - b[7:4] - c0;
-wire [4:0] hdN2 = a[11:8] - b[11:8] - c1;
-wire [4:0] hdN3 = a[15:12] - b[15:12] - c2;
-
-BCDSubAdjust u1 (hdN0,o[3:0],c0);
-BCDSubAdjust u2 (hdN1,o[7:4],c1);
-BCDSubAdjust u3 (hdN2,o[11:8],c2);
-BCDSubAdjust u4 (hdN3,o[15:12],c);
-
-endmodule
-*/
-/*
-module BCDSubN(ci,a,b,o,co);
-parameter N=34;
-input ci;		// carry input
-input [N*4-1:0] a;
-input [N*4-1:0] b;
-output reg [N*4-1:0] o;
-output reg co;
-
-reg [N*4:0] sum1, sum2, sum3, c;
-reg [N*4-1:0] sixes;
-always_comb
-	sum1 = a - b;
-always_comb
-	sum2 = sum1 - {c,4'd0};
-always_comb
-	{co,o} = {c[N*4],sum3};
-
-genvar g;
-generate begin : gSixes
-for (g = 0; g < N; g = g + 1)
-begin
-	always_comb
-		c[g*4+3:g*4] = {3'b0,sum1[g*4+3:g*4] > 4'd9};
-	always_comb
-		if (g==0)
-			sixes[g*4+3:g*4] = (c[g*4] ? 4'd6 : 4'd0) | ci;
-		else
-			sixes[g*4+3:g*4] = c[g*4] ? 4'd6 : 4'd0;
-	always_comb
-		sum3[g*4+3:g*4] = sum2[g*4+3:g*4] - sixes[g*4+3:g*4];
-end
-
-end
-endgenerate
-
-always_comb
-	c[N*4] = 1'b0;
-
-endmodule
-*/
-/*
-module BCDSubN(ci,a,b,o,co);
-parameter N=24;
-input ci;		// carry input
-input [N*4-1:0] a;
-input [N*4-1:0] b;
-output [N*4-1:0] o;
-output co;
-
-genvar g;
-generate begin : gBCDSubN
-reg [4:0] hdN [0:N-1];
-wire [N:0] c;
-
-assign c[0] = ci;
-assign co = c[N];
-
-for (g = 0; g < N; g = g + 1)
-	always @*
-		hdN[g] = a[g*4+3:g*4] - b[g*4+3:g*4] - c[g];
-
-for (g = 0; g < N; g = g + 1)
-	BCDSubAdjust u1 (hdN[g],o[g*4+3:g*4],c[g+1]);
-end
-endgenerate
-
-endmodule
-		 
-
 module BCDAddAdjust(i,o,c);
 input [4:0] i;
 output [3:0] o;
@@ -775,41 +484,29 @@ BCDMul2 u3 (8'h25,8'h18,o3);
 BCDMul2 u4 (8'h37,8'h21,o4);
 
 endmodule
-*/
-module BCDToBin(clk, i, o);
-input clk;
+
+module BinToBCD(i, o);
 input [7:0] i;
-output reg [7:0] o;
+output [11:0] o;
 
-always_ff @(posedge clk)
-	o <= {i[7:4],3'b0} + {i[7:4],1'b0} + i[3:0];
-
-endmodule
-
-module BinToBCD(clk, i, o);
-input clk;
-input [7:0] i;
-output reg [11:0] o;
-
-(* ram_style="block" *)
-reg [11:0] tbl [0:511];
-reg [7:0] ireg;
+reg [11:0] tbl [0:255];
 
 genvar g;
 generate begin : gTbl
+reg [3:0] n0 [0:255];
+reg [3:0] n1 [0:255];
+reg [3:0] n2 [0:255];
 
-for (g = 0; g < 512; g = g + 1) begin
+for (g = 0; g < 256; g = g + 1) begin
 	initial begin
-		tbl[g][3:0] = g % 10;
-		tbl[g][7:4] = (g % 100) / 10;
-		tbl[g][11:8] = g / 100;
+		n0[g] = g % 10;
+		n1[g] = g / 10;
+		n2[g] = g / 100;
+		tbl[g] <= {n2[g],n1[g],n0[g]};
 	end
 end
 
-always_ff @(posedge clk)
-	ireg <= i;
-always_comb
-	o <= tbl[ireg];
+assign o = tbl[i];
 
 end
 endgenerate
@@ -828,13 +525,13 @@ reg [N:0] c;
 
 genvar g;
 generate begin
-always_comb
+always @*
 	c[N] = ci;
 for (g = N - 1; g >= 0; g = g - 1)
-always_comb
+always @*
 	c[g] = i[g*4];
 for (g = N - 1; g >= 0; g = g - 1)
-always_comb
+always @*
 begin
 	o[g*4+3:g*4] = {1'b0,i[g*4+3:g*4+1]};
 	// Because there is a divide by two, the value will range between 0 and 4.
