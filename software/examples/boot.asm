@@ -2244,10 +2244,13 @@ cmdCore:
 
 cmdTestFP:
 	bsr ignBlanks
-	bsr GetHexNumber
+	bsr GetDecNumber
 	move.l d1,d3
 	bsr ignBlanks
-	bsr GetHexNumber
+	bsr FromScreen
+	move.b d1,d7
+	bsr ignBlanks
+	bsr GetDecNumber
 	move.l d1,d2
 	bsr CRLF
 	fmove.l d3,fp0					; this should do I2FP
@@ -2260,13 +2263,34 @@ cmdTestFP:
 	fmove.l d2,fp1					; this should do I2FP
 	fmove.p fp0,fpBuf
 	fmove.p fp1,fpBuf+16
+	cmpi.b #'+',d7
+	bne .0001
 	fadd fp1,fp0
+	bra .0002
+.0001
+	cmpi.b #'-',d7
+	bne .0003
+	fsub fp1,fp0
+	bra .0002
+.0003
+	cmpi.b #'*',d7
+	bne .0004
+	fmul fp1,fp0
+	bra .0002
+.0004
+	cmpi.b #'/',d7
+	bne .0005
+	fdiv fp1,fp0
+	bra .0002
+.0002
 	fmove.p fp0,fpBuf+32
+	lea _fpBuf,a1						; a0 = pointer to buffer to use
 	moveq #39,d0
 	moveq #40,d1
 	moveq #30,d2
 	moveq #'e',d3
 	trap #15
+.0005
 	bsr CRLF
 	bra Monitor
 		
@@ -2764,10 +2788,10 @@ GetHexNumber:
 	move.l	d2,-(a7)
 	clr.l		d2
 	moveq		#0,d0
-.0002:
+.0002
 	bsr			FromScreen
 	bsr			AsciiToHexNybble
-	cmp.b		#$ff,d1
+	cmpi.b	#$ff,d1
 	beq.s		.0001
 	lsl.l		#4,d2
 	andi.l	#$0f,d1
@@ -2775,12 +2799,36 @@ GetHexNumber:
 	addq		#1,d0
 	cmpi.b	#8,d0
 	blo.s		.0002
-.0001:
+.0001
 	move.l	d2,d1
 	move.l	(a7)+,d2
 	tst.b		d0
 	rts	
 
+GetDecNumber:
+	movem.l d2/d3,-(a7)
+	clr.l d2
+	clr.l d0
+.0002
+	bsr FromScreen					; grab a character off the screen
+	bsr	AsciiToHexNybble		; convert to an ascii nybble
+	cmpi.b #$ff,d1
+	beq.s	.0001
+	andi.b #$0F,d1					; d1 = 0 to 9
+	move.l d2,d3						; d3 = current number
+	add.l d3,d3							; d3*2
+	lsl.l #3,d2							; current number * 8
+	add.l d3,d2							; current number * 10
+	add.l d1,d2							; add in new digit
+	addq #1,d0							; increment number of digits
+	cmpi.b #9,d0						; make sure 9 or fewer
+	blo .0002
+.0001
+	move.l d2,d1						; return number in d1
+	movem.l (a7)+,d2/d3
+	tst.b d0
+	rts
+	
 ;------------------------------------------------------------------------------
 ; Convert ASCII character in the range '0' to '9', 'a' tr 'f' or 'A' to 'F'
 ; to a hex nybble.
@@ -3920,24 +3968,106 @@ ReceiveMsg:
 DispatchMsg:
 	rts
 
-;------------------------------------------------------------------------------
-; a0 = pointer to string buffer
-; d6 = exponent
-;------------------------------------------------------------------------------
+	code
+;==============================================================================
+; Decimal-Floating point to string conversion routine.
+;
+; Modifies
+;		_fpWork work area
+; Register Usage:
+; 	fp0 = input decimal-float to convert
+;		fp1 = constant holder, 1.0, 10.0
+;		fp2 = 1.0e<fp0 exponent> value for conversion
+;		fp3 = holds digit value during significand conversion
+; 	a0 = pointer to string buffer, updated to point to NULL at end of string
+;		a1 = pointer to "Nan" or "Inf" message string
+;		d0 = temporary
+;		d1 = digit value during exponent, significand conversion
+; 	d6 = exponent
+;==============================================================================
 	align 4
-	if 0
-_dfOne	dc.w $25ff,$c000,$0000,$0000,$0000,$0000,$0000,$0000
-_dfTen	dc.w $2600,$0000,$0000,$0000,$0000,$0000,$0000,$0000
-_dfMil  dc.w $2601,$4000,$0000,$0000,$0000,$0000,$0000,$0000
-	endif
 _dfOne	dc.l $25ff0000,$00000000,$00000000
 _dfTen	dc.l $2600C000,$00000000,$00000000
 _dfMil  dc.l $2606DDFA,$1C000000,$00000000
 
 _msgNan	dc.b "NaN",0
 _msgInf dc.b "Inf",0
+	even
 
 ;------------------------------------------------------------------------------
+; Check for the special Nan and infinity values. Output the appropriate string.
+;
+; Modifies
+;		_fpWork area
+;		d0,a1,a0
+; Parameters:
+;		fp0 = dbl
+;------------------------------------------------------------------------------
+
+_CheckNan:
+	fmove.p fp0,_fpWork
+	move.b _fpWork,d0				; get sign+combo
+	andi.b #$7C,d0					; mask for combo bits
+	cmpi.b #$7C,d0					; is it the Nan combo?
+	bne .notNan
+	lea _msgNan,a1					; output "Nan"
+	bra .outStr
+.notNan
+	cmpi.b #$78,d0					; is it infinity combo?
+	bne .notInf
+	lea _msgInf,a1
+.outStr
+	move.b (a1)+,(a0)+			; output "Inf"
+	move.b (a1)+,(a0)+
+	move.b (a1)+,(a0)+
+	clr.b (a0)
+.twoup
+	addq #4,sp							; pop return address for two up return
+.notInf
+	rts
+
+;------------------------------------------------------------------------------
+; Check for a zero value. Output a single "0" if zero,
+;
+; Modifies:
+;		a0
+; Parameters:
+;		fp0 = dbl
+;------------------------------------------------------------------------------
+
+_CheckZero:
+	ftst fp0								; check if number is zero
+	fbne .0003
+	move.b #'0',(a0)+				; if zero output "0"
+	clr.b (a0)
+	addq #4,sp							; pop return address for two up return
+.0003
+	rts
+
+;------------------------------------------------------------------------------
+; Check for a negative number. This includes Nans and Infinities. Output a "-"
+; if negative.
+;
+;	Modifies
+;		a0
+; Parameters:
+;		fp0 = dbl
+;------------------------------------------------------------------------------
+
+_CheckNegative:
+	ftst fp0								; is number negative?
+	fbge .0002
+	move.b #'-',(a0)+				; yes, output '-'
+	fneg fp0								; make fp0 positive
+.0002
+	rts
+
+;------------------------------------------------------------------------------
+; Make the input value larger so that digits may appear before the decimal
+; point.
+;
+; Modifies:
+;		fp0,fp1,d6
 ; Parameters:
 ;		fp0 = dbl
 ;------------------------------------------------------------------------------
@@ -3950,8 +4080,7 @@ _msgInf dc.b "Inf",0
 ;	}
 
 _MakeBig:
-	fmove.p _dfOne,fp1
-	fmove.p _dfMil,fp2
+	fmove.w #1,fp1
 .0002
 	fcmp fp1,fp0						; is fp0 > 1?
 	fbge .0001							; yes, return
@@ -3959,9 +4088,15 @@ _MakeBig:
 	subi.w #6,d6						; decrement exponent by six
 	bra .0002								; keep trying until number is > 1
 .0001
+	fmove.p fp0,_fpWork+24	; debugging
 	rts
 	
 ;------------------------------------------------------------------------------
+;	Create a number dbl2 on the same order of magnitude as dbl, but
+;	less than dbl. The number will be 1.0e<dbl's exponent>
+;
+; Modifies:
+;		d6,fp2
 ; Parameters:
 ;		fp0 = dbl
 ;------------------------------------------------------------------------------
@@ -3985,25 +4120,28 @@ _MakeBig:
 ;	}
 
 _LessThanDbl:
-	fmove.p _dfOne,fp2	; setup fp2 = 1
-	fmove.p _dfTen,fp1	; setup fp1 = 10
+	fmove.w #1,fp2			; setup fp2 = 1
 	fcmp fp2,fp0				; if (dbl > dbl2)
 	fble .0004
 .0006
 	fcmp fp0,fp2				; while (dbl2 <= dbl)
 	fbgt .0005
-	fscale.l #1,fp2			; dbl2 *= 10 (increase exponent by one)
+	fscale.w #1,fp2			; dbl2 *= 10 (increase exponent by one)
 	addi.w #1,d6				; exp++
 	bra .0006
 .0005
 	fscale.l #-1,fp2		; dbl2 /= 10 (decrease exponent by one)
 	subi.w #1,d6				; exp--;
 .0004	
-	fmove.p fp0,_fpWork
+	fmove.p fp0,_fpWork	; debugging
 	fmove.p fp2,_fpWork+12
 	rts
 
 ;------------------------------------------------------------------------------
+; Compute the number of digits before the decimal point.
+;
+; Modifies:
+;		d0,d6,_digits_before_decpt
 ; Parameters:
 ;		d6 = exponent
 ;------------------------------------------------------------------------------
@@ -4026,29 +4164,30 @@ _ComputeDigitsBeforeDecpt:
 	addi.w #1,d0
 	move.w d0,_digits_before_decpt	
 	clr.w d6
-	bra .0008
+	rts
 .0007
 	cmpi.w #-6,d6
 	blt .0009
 	move.w #1,_digits_before_decpt
-	bra .0008
+	rts
 .0009
 	move.w #-1,_digits_before_decpt
-.0008
 	rts
 
 ;------------------------------------------------------------------------------
+;	Spit out a leading zero before the decimal point for a small number.
+;
 ; Parameters:
 ;		d6 = exponent
 ;------------------------------------------------------------------------------
 
-;	// Spit out a leading zero before the decimal point for a small number.
 ;  if (exp < -6) {
 ;		 buf[ndx] = '0';
 ;		 ndx++;
 ;    buf[ndx] = '.';
 ;    ndx++;
 ;  }
+
 _LeadingZero:
 	cmpi.w #-6,d6
 	bge .0010
@@ -4058,11 +4197,18 @@ _LeadingZero:
 	rts
 
 ;------------------------------------------------------------------------------
+; Extract the digits of the significand.
+;
+; Modifies:
+;		_precision variable
 ; Register Usage
 ;		d1 = digit
 ;		fp0 = dbl
 ;		fp2 = dbl2
+;		fp3 = digit as decimal float
+;		fp7 = dbla
 ; Parameters:
+;		fp0
 ;------------------------------------------------------------------------------
 
 ;	// Now loop processing one digit at a time.
@@ -4094,34 +4240,34 @@ _LeadingZero:
 ;  }
 	
 _SpitOutDigits:
-	move.w #24,d0		; d0 = nn
+	move.w #24,d0			; d0 = nn
+	fmove.l #10,fp1		; fp1 = 10.0
 .0017	
 	tst.l _precision
 	ble .0011
-	moveq #0,d1			; digit = 0
-	fmove fp0,fp7		; dbla = dbl
+	moveq #0,d1				; digit = 0
+	fmove fp0,fp7			; dbla = dbl
 .0013
 	fcmp fp2,fp0
 	fblt .0012
-	fsub fp2,fp0		; dbl -= dbl2
-	addi.b #1,d1
+	fsub fp2,fp0			; dbl -= dbl2
+	addi.b #1,d1			; digit++
 	bra .0013
 .0012
-	addi.b #'0',d1
-	move.b d1,(a0)
-	subi.b #'0',d1
-	cmpi.b #2,d1
-	ble .0014
-	ext.w d1
-	ext.l d1
-	fmove.l d1,fp3
-	fmul fp2,fp3		; fp3 = dbl2 * digit
-	fmove fp7,fp0
-	fsub fp3,fp0		; dbl = dbla - dbl2 * digit
+	addi.b #'0',d1		; convert digit to ascii
+	move.b d1,(a0)+		; and store
+	subi.b #'0',d1		; d1 = binary digit again
+;	cmpi.b #2,d1
+;	ble .0014
+
+;	ext.w d1
+;	ext.l d1
+;	fmove.l d1,fp3		; fp3 = digit
+;	fmul fp2,fp3			; fp3 = dbl2 * digit
+;	fmove fp7,fp0
+;	fsub fp3,fp0			; dbl = dbla - dbl2 * digit
 .0014
-	addq #1,a0			; ndx++
 	subi.w #1,_digits_before_decpt
-	tst.w _digits_before_decpt
 	bne .0015
 	move.b #'.',(a0)+
 .0015
@@ -4129,24 +4275,71 @@ _SpitOutDigits:
 	bge .0016
 	subi.l #1,_precision
 .0016
-	fmove.p _dfTen,fp3
-	fmul fp3,fp0
+	fscale.l #-1,fp2		; dbl *= 10.0
 	dbra d0,.0017
 .0011	
 	rts
 
 ;------------------------------------------------------------------------------
 ; If the number ends in a decimal point, trim off the point.
+;
+; Registers Modified:
+;		none
+; Parameters:
+;		a0 = pointer to end of number
+; Returns:
+;		a0 = updated to point just past last digit.
 ;------------------------------------------------------------------------------
 
 _TrimTrailingPoint:
 	cmpi.b #'.',-1(a0)
 	bne .0001
-	move.b #0,-(a0)
+	clr.b -(a0)
+	rts
 .0001
+	cmpi.b #'.',(a0)
+	bne .0002
+	cmpi.b #0,1(a0)
+	bne .0002
+	clr.b (a0)
+	subq #1,a0
+.0002
 	rts
 	
 ;------------------------------------------------------------------------------
+; If the number ends in .0 get rid of the .0
+;
+; Registers Modified:
+;		none
+; Parameters:
+;		a0 = pointer to last digits of number
+; Returns:
+;		a0 = updated to point just past last digit.
+;------------------------------------------------------------------------------
+
+_TrimDotZero:
+	tst.b (a0)
+	bne .0004
+	cmpi.b #'0',-1(a0)
+	bne .0004
+	cmpi.b #'.',-2(a0)
+	bne .0004
+	clr.b -2(a0)
+	subq #2,a0
+.0004
+	rts
+
+;------------------------------------------------------------------------------
+; Trim trailing zeros from the number. Generally there is no need to display
+; trailing zeros.
+; Turns a number like 652.000000000000000000000 into 650.0
+;
+; Registers Modified:
+;		none
+; Parameters:
+;		a0 = pointer to last digits of number
+; Returns:
+;		a0 = updated to point just past last digit.
 ;------------------------------------------------------------------------------
 
 ;	// Trim trailing zeros from the number
@@ -4164,6 +4357,14 @@ _TrimTrailingZeros:
 	rts
 
 ;------------------------------------------------------------------------------
+; Output 'e+' or 'e-'
+;
+; Registers Modified:
+;		d6.w (if negative)
+; Parameters:
+;		a0 = pointer to last digits of number
+; Returns:
+;		a0 = updated to point just past '+' or '-'.
 ;------------------------------------------------------------------------------
 
 ;	// Spit out +/-E
@@ -4192,96 +4393,76 @@ _SpitOutE:
 	rts
 
 ;------------------------------------------------------------------------------
+; Extract a single digit of the exponent. Extract works from the leftmost digit
+; to the rightmost.
+;
+; Register Usage
+;		d2 = history of zeros
+;		d3 = digit
+; Modifies
+;		d2,d3,d6,a0
+; Parameter
+; 	d1.w = power of ten
+;		d6.w = exponent
 ;------------------------------------------------------------------------------
 
-_ExtractExpDigits:
-_ExtractExp1000sDigit:
-	clr.b d1						; this needed here only for 96 bit floats
-	clr.b _digit
-.0026
-	cmpi.w #1000,d6
-	blt .0027
-	subi.w #1000,d6
-	addi.b #1,_digit
-	bra .0026
-.0027
-	move.b _digit,d2
-	move.b d2,d7
-	or.b d1,d7
-	beq .0028
-	move.b d2,d7
-	addi.b #'0',d7
-	move.b d7,(a0)+
-.0028
-
-;------------------------------------------------------------------------------
-;------------------------------------------------------------------------------
-
-_ExtractExp100sDigit:
-	clr.b _digit
-.0029
-	cmpi.w #100,d6
-	blt .0030
-	subi.w #100,d6
-	addi.b #1,_digit
-	bra .0029
-.0030
-	move.b _digit,d3
-	move.b d3,d7
-	or.b d2,d7
-	or.b d1,d7
-	beq .0031
-	move.b d3,d7
-	addi.b #'0',d7
-	move.b d7,(a0)+
-.0031
-
-;------------------------------------------------------------------------------
-;------------------------------------------------------------------------------
-
-_ExtractExp10sDigit:
-	clr.b _digit
-.0032
-	cmpi.w #10,d6
-	blt .0033
-	subi.w #10,d6
-	addi.b #1,_digit
-	bra .0032
-.0033
-	move.b _digit,d4
-	move.b d4,d7
-	or.b d3,d7
-	or.b d2,d7
-	or.b d1,d7
-	beq .0034
-	move.b d4,d7
-	addi.b #'0',d7
-	move.b d7,(a0)+
-.0034
-
-;------------------------------------------------------------------------------
-;------------------------------------------------------------------------------
-
-_ExtractExp1sDigit:
-	clr.b _digit
-.0035
-	cmpi.w #1,d6
-	blt .0036
-	subi.w #1,d6
-	addi.b #1,_digit
-	bra .0035
-.0036
-	move.b _digit,d5
-	move.b d5,d7
-	addi.b #'0',d7
-	move.b d7,(a0)+
-	move.b #0,(a0)
+_ExtExpDigit:
+	ext.l d6				; make d6 a long
+	divu d1,d6			; divide by power of ten
+	move.b d6,d3		; d3 = quotient (0 to 9)
+	swap d6					; d6 = remainder, setup for next digit
+	or.b d3,d2
+	tst.b d3
+	bne .0003
+	tst.b d2	
+	beq .0004
+.0003
+	addi.b #'0',d3	; convert to ascii
+	move.b d3,(a0)+
+.0004
 	rts
 
 ;------------------------------------------------------------------------------
+; Extract all the digits of the exponent.
+;
+; Register Usage
+;		d1 = power of 10
+;		d2 = history of zeros
+; Parameters
+;		a0 = pointer to string buffer
+;		d6 = exponent
 ;------------------------------------------------------------------------------
 
-;	// Now pad the number on the left or right as requested.
+;	// If the number is times 10^0 don't output the exponent
+;  if (exp==0) {
+;    buf[ndx]='\0';
+;    goto prt;
+;  }
+
+_ExtExpDigits:
+	tst.w d6							; is exponent zero?
+	beq .0002
+	bsr _SpitOutE					; exponent is non-zero e+
+	clr.b d2							; d2 = history of zeros
+	move.w #1000,d1
+	bsr _ExtExpDigit
+	move.w #100,d1
+	bsr _ExtExpDigit
+	move.w #10,d1
+	bsr _ExtExpDigit
+	move.w #1,d1
+	bsr _ExtExpDigit
+.0002:
+	move.b #0,(a0)				; NULL terminate string
+	rts										; and return
+
+;------------------------------------------------------------------------------
+; Pad the left side of the output string.
+;
+; Modifies:
+;		d0,d1,d2,d3
+;------------------------------------------------------------------------------
+
 ;  // pad left
 ;  if (width > 0) {
 ;    if (ndx < width) {
@@ -4321,6 +4502,10 @@ _PadLeft:
 	rts
 
 ;------------------------------------------------------------------------------
+; Pad the right side of the output string.
+;
+; Modifies:
+;		d0
 ; Returns:
 ;		d0 = length of string
 ;------------------------------------------------------------------------------
@@ -4356,6 +4541,7 @@ _PadRight:
 	rts
 
 ;------------------------------------------------------------------------------
+; 
 ;------------------------------------------------------------------------------
 
 _IsZero:
@@ -4374,38 +4560,18 @@ _IsZero:
 ; Output a string representation of a decimal floating point number to a 
 ; buffer.
 ;
+; Register Usage
+;		a0 = pointer to string buffer
+;		d6 = exponent
 ; Parameters:
 ;		fp0 = number to convert
 ;------------------------------------------------------------------------------
 
 _sprtflt:
-	fmove.p fp0,_fpWork
-	move.b _fpWork,d0				; get sign+combo
-	andi.b #$7C,d0					; mask for combo bits
-	cmpi.b #$7C,d0					; is it the Nan combo?
-	bne .notNan
-	move.l _msgNan,_fpBuf		; output "Nan"
-	rts
-.notNan
-	cmpi.b #$78,d0					; is it infinity combo?
-	bne .notInf
-	move.l _msgInf,_fpBuf		; output "Inf"
-	rts
-.notInf
-.0001
-	lea _fpBuf,a0						; a0 = pointer to string buffer
-	tst.b _fpWork						; is number negative?
-	bpl .0002
-	move.b #'-',(a0)+				; yes, output '-'
-.0002
-	bsr _IsZero							; check if number is zero
-	tst.w d0
-	bne .0003
-	move.b #'0',(a0)+				; if zero output "0"
-	clr.b (a0)+
-	rts	
+	bsr _CheckNegative			; is number negative?
+	bsr _CheckZero					; check for zero
+	bsr _CheckNan						; check for Nan or infinity
 	; Now the fun begins
-.0003
 	clr.l d6
 	bsr _MakeBig
 	bsr _LessThanDbl
@@ -4413,78 +4579,38 @@ _sprtflt:
 	bsr _LeadingZero
 	bsr _SpitOutDigits
 	bsr _TrimTrailingZeros
-
-	; If the number ends with a '.' remove the '.'
-	cmpi.b #'.',-1(a0)
-	bne .0005
-	move.b #0,-1(a0)
-	subq #1,a0
-
-.0005
-	; If the number ends in .0 get rid of the .0
-	cmpi.b #'0',-1(a0)
-	bne .0004
-	cmpi.b #'.',-2(a0)
-	bne .0004
-	move.b #0,-2(a0)
-	subq #1,a0
-.0004
-
-;	// Make sure we have at least one digit after the decimal point.
-;	if (buf[ndx-1]=='.') {
-;		buf[ndx]='0';
-;		ndx++;
-;    buf[ndx]='\0';
-;	}
-
-	cmpi.b #'.',-1(a0)
-	bne .0019
-	move.b '0',(a0)+
-	move.b #0,(a0)
-.0019
-
-;	// If the number is times 10^0 don't output the exponent
-;  if (exp==0) {
-;    buf[ndx]='\0';
-;    goto prt;
-;  }
-	
-	tst.w d6
-	bne .0020
-	move.b #0,(a0)			; NULL terminate string
-	bra .prt						; goto padding number
-.0020
-
-	bsr _SpitOutE
-	bsr _ExtractExpDigits
-
-.prt
-	bsr _PadLeft
+	bsr _TrimTrailingPoint
+	bsr _TrimDotZero
+	bsr _ExtExpDigits				; extract exponent digits
+	bsr _PadLeft						; pad the number to the left or right
 	bra _PadRight
 
 ;------------------------------------------------------------------------------
-; Trap #15, function 39
+; Trap #15, function 39 - convert floating-point to string and display
 ;
 ; Parameters
-;		fp0 0 number to print
+;		a0 = pointer to buffer
+;		fp0 = number to print
 ;		d1 = width of print field
 ;		d2 = precision
 ;		d3 = 'E' or 'e'
 ;------------------------------------------------------------------------------
 
 prtflt:
-	movem.l d0/d1/d2/a1,-(a7)
-	fmove.p fp0,-(a7)
+	movem.l d0/d1/d2/d3/d6/a1,-(a7)
+;	fmove.p fp0,-(a7)
+	move.l a1,a0						; a0 = pointer to buffer to use
 	move.b d1,_width
 	move.l d2,_precision
 	move.b d3,_E
 	bsr _sprtflt
-	lea _fpBuf,a1
 	bsr DisplayString
-	fmove.p (a7)+,fp0
-	movem.l (a7)+,d0/d1/d2/a1
+;	fmove.p (a7)+,fp0
+	movem.l (a7)+,d0/d1/d2/d3/d6/a1
 	rts
 
+;==============================================================================
+;==============================================================================
 ;------------------------------------------------------------------------------
 ;------------------------------------------------------------------------------
 
