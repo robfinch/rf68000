@@ -425,11 +425,19 @@ typedef enum logic [7:0] {
 	FETCH_HEXI2,
 	FETCH_HEXI3,
 	FETCH_HEXI4,
+	FETCH_NOP_HEXI,
 	STORE_HEXI1,
 	STORE_HEXI2,
 	STORE_HEXI3,
 	STORE_HEXI4,
 
+	FMOVEM1,
+
+	FETCH_IMM96,
+	FETCH_IMM96b,
+	FETCH_IMM96c,
+	FETCH_IMM96d,
+	
 	FSDATA2
 } state_t;
 
@@ -493,6 +501,7 @@ state_t state_stk1;
 state_t state_stk2;
 state_t state_stk3;
 state_t state_stk4;
+state_t state_stk5;
 state_t sz_state;
 flag_update_t flag_update;
 reg [31:0] d0 = 'd0;
@@ -573,6 +582,7 @@ reg [3:0] ifmt;
 reg [7:0] fpcnt;
 reg [31:0] pc;
 reg [31:0] opc;			// pc for branch references
+reg [31:0] fpiar;
 reg [31:0] ssp,usp;
 reg [31:0] disp;
 reg [31:0] s,d,dd,imm,immx;
@@ -748,8 +758,9 @@ reg [2:0] shift_op;
 reg rtr;
 reg bsr;
 reg lea;
-reg fsub;
+reg fsub,fabs;
 reg bcdsub, bcdneg;
+reg fmovem;
 reg [31:0] dati_buf;	// input data from bus error
 reg [31:0] dato_buf;
 
@@ -1183,8 +1194,10 @@ if (rst_i) begin
 	lea <= 1'b0;
 	divs <= 1'b0;
 	fsub <= 1'b0;
+	fabs <= 1'b0;
 	bcdsub <= 1'b0;
 	bcdneg <= 1'b0;
+	fmovem <= 1'b0;
 	icnt <= 'd0;
 	is_bus_err <= 1'b0;
 	is_adr_err <= 1'b0;
@@ -1795,12 +1808,15 @@ IFETCH:
 		bsr <= 1'b0;
 		lea <= 1'b0;
 		fsub <= 1'b0;
+		fabs <= 1'b0;
 		bcdsub <= 1'b0;
 		bcdneg <= 1'b0;
+		fmovem <= 1'b0;
 		is_illegal <= 1'b0;
 		use_sfc <= 1'b0;
 		use_dfc <= 1'b0;
 		fpcnt <= 'd0;
+		fpiar <= pc;
 		if (!cyc_o) begin
 			is_nmi <= 1'b0;
 			is_irq <= 1'b0;
@@ -2638,21 +2654,34 @@ DECODE:
 				casez(ir2[15:8])
 				8'h6?,8'h7?:	// FMOVE to memory
 					begin
-						if (ir2[12:10]==3'b000) begin
-							fps <= rfoFpdst;
-							goto (DF2I1);
-						end
-						else begin
-							fpd <= rfoFpdst;
-							fs_data(mmm,rrr,STORE_HEXI1,D);
-						end
+						case(ir2[12:10])
+						3'b000,3'b100,3'b110:
+							begin
+								fps <= rfoFpdst;
+								goto (DF2I1);
+							end
+						3'b011:
+							begin
+								fpd <= rfoFpdst;
+								fs_data(mmm,rrr,STORE_HEXI1,D);
+							end
+						default:
+							begin
+								fpd <= rfoFpdst;
+								fs_data(mmm,rrr,STORE_HEXI1,D);
+							end
+						endcase
 					end
 				8'b10????00:	// PG 4-71
 					if (ir2[13])
 						case(ir2[7:0])
 						8'h00:	// FMOVE
 							case(ir2[12:10])
-							3'b001:	tIllegal();	// FPIAR
+							3'b001:	// FPIAR
+								begin
+									d <= fpiar;
+									fs_data(mmm,rrr,STORE_LWORD,D);
+								end
 							3'b010:	// FPSR
 								begin
 									d <= fpsr;
@@ -2665,15 +2694,32 @@ DECODE:
 						endcase
 					else
 						tIllegal();
+				8'b11??????:	// FMOVEM
+					begin
+						fmovem <= 1'b1;
+						if (ir2[11]) begin	// dynamic list?
+							rrr <= ir2[6:4];
+							goto (FMOVEM1);
+						end
+						else begin
+							imm <= ir2[7:0];
+							if (ir2[13])
+								goto(MOVEM_Xn2D);
+							else
+								goto(MOVEM_s2Xn);
+						end
+					end
 				8'h??:
 					case(ir2[6:0])
 					7'b0000000:	// FMOVE
 						if (ir2[14]) begin	// RM
 							push(FMOVE);
-							if (ir2[12:10]==3'b000)
-								fs_data(mmm,rrr,FETCH_LWORD,S);
-							else
-								fs_data(mmm,rrr,FETCH_HEXI1,S);
+							case(ir[12:10])
+							3'b000:	fs_data(mmm,rrr,FETCH_LWORD,S);
+							3'b100:	fs_data(mmm,rrr,FETCH_WORD,S);
+							3'b110:	fs_data(mmm,rrr,FETCH_BYTE,S);
+							default:	fs_data(mmm,rrr,FETCH_HEXI1,S);
+							endcase
 						end
 						else begin
 							fps <= rfoFpsrc;
@@ -2725,6 +2771,17 @@ DECODE:
 							fps <= rfoFpsrc;
 							goto(FADD);
 						end
+					7'b0011000:	// FABS
+						if (ir2[14]) begin	// RM
+							fabs <= 1'b1;
+							push(FNEG);
+							fs_data(mmm,rrr,FETCH_HEXI1,S);
+						end
+						else begin
+							fabs <= 1'b1;
+							fps <= rfoFpsrc;
+							goto(FNEG);
+						end
 					7'b0011010:	// FNEG
 						if (ir2[14]) begin	// RM
 							push(FNEG);
@@ -2748,7 +2805,13 @@ DECODE:
 					7'b0111010:	// FTST
 						if (ir2[14]) begin
 							push (FTST);
-							fs_data(mmm,rrr,FETCH_HEXI1,S);
+							case(ir2[12:10])
+							3'b000:	fs_data(mmm,rrr,FETCH_LWORD,S);
+							3'b011:	fs_data(mmm,rrr,FETCH_HEXI1,S);
+							3'b100:	fs_data(mmm,rrr,FETCH_WORD,S);
+							3'b110:	fs_data(mmm,rrr,FETCH_BYTE,S);
+							default:	fs_data(mmm,rrr,FETCH_HEXI1,S);
+							endcase
 						end
 						else begin
 							fnf <= rfoFpsrc[95];
@@ -2768,8 +2831,7 @@ DECODE:
 						end
 						else begin
 							fpd <= rfoFpdst;
-							push(FSCALE);
-							fs_data(3'b000,FLTSRC,FETCH_LWORD,S);
+							fps <= rfoFpsrc;
 							goto(FSCALE);
 						end
 /*						
@@ -4264,6 +4326,40 @@ FETCH_IMM32b:
 		pc <= pc + 32'd4;
 		ret();
 	end
+	
+`ifdef SUPPORT_DECFLT
+FETCH_IMM96:
+	begin
+		call(FETCH_IMM32,FETCH_IMM96b);
+	end
+FETCH_IMM96b:
+	begin
+`ifdef BIG_ENDIAN
+		fps[95:64] <= imm;
+`else
+		fps[31: 0] <= imm;
+`endif
+		call(FETCH_IMM32,FETCH_IMM96c);
+	end
+FETCH_IMM96c:
+	begin
+`ifdef BIG_ENDIAN
+		fps[63:32] <= imm;
+`else
+		fps[63:32] <= imm;
+`endif
+		call(FETCH_IMM32,FETCH_IMM96d);
+	end
+FETCH_IMM96d:
+	begin
+`ifdef BIG_ENDIAN
+		fps[31: 0] <= imm;
+`else
+		fps[95:64] <= imm;
+`endif
+		ret();
+	end
+`endif
 
 // Fetch 32 bit displacement
 //
@@ -4569,166 +4665,92 @@ FETCH_LWORDa:
 	end
 
 `ifdef SUPPORT_DECFLT
-/*
 FETCH_HEXI1:
-	if (!cyc_o) begin
-		fc_o <= {sf,2'b01};
-		cyc_o <= 1'b1;
-		stb_o <= 1'b1;
-		sel_o <= 4'b1111;
-		adr_o <= ea;
-	end
-	else if (ack_i) begin
+	call (FETCH_LWORD,FETCH_HEXI2);
+FETCH_HEXI2:
+	begin
 `ifdef BIG_ENDIAN
 		if (ds==S)
-			fps[127:96] <= rbo(dat_i);
+			fps[95:64] <= s;
 		else
-			fpd[127:96] <= rbo(dat_i);
+			fpd[95:64] <= d;
 `else
 		if (ds==S)
-			fps[31:0] <= dat_i;
+			fps[31: 0] <= s;
 		else
-			fpd[31:0] <= dat_i;
+			fpd[31: 0] <= d;
 `endif
-		stb_o <= 1'b0;
-		goto (FETCH_HEXI2);
+		ea <= ea + 4'd4;			
+		call (FETCH_LWORD,FETCH_HEXI3);
 	end
-*/
-FETCH_HEXI1:
-	if (!stb_o) begin
-		fc_o <= {sf,2'b01};
-		cyc_o <= 1'b1;
-		stb_o <= 1'b1;
-		sel_o <= 4'b1111;
-		adr_o <= ea + 4'd0;
-	end
-	else if (ack_i) begin
+FETCH_HEXI2:
+	begin
 `ifdef BIG_ENDIAN
 		if (ds==S)
-			fps[95:64] <= rbo(dat_i);
+			fps[63:32] <= s;
 		else
-			fpd[95:64] <= rbo(dat_i);
+			fpd[63:32] <= d;
 `else
 		if (ds==S)
-			fps[63:32] <= dat_i;
+			fps[63:32] <= s;
 		else
-			fpd[63:32] <= dat_i;
-`endif
-		stb_o <= 1'b0;
-		goto (FETCH_HEXI3);
-	end
-FETCH_HEXI3:
-	if (!stb_o) begin
-		stb_o <= 1'b1;
-		adr_o <= ea + 4'd4;
-	end
-	else if (ack_i) begin
-`ifdef BIG_ENDIAN
-		if (ds==S)
-			fps[63:32] <= rbo(dat_i);
-		else
-			fpd[63:32] <= rbo(dat_i);
-`else
-		if (ds==S)
-			fps[95:64] <= dat_i;
-		else
-			fpd[95:64] <= dat_i;
-`endif
-		stb_o <= 1'b0;
-		goto (FETCH_HEXI4);
+			fpd[63:32] <= d;
+`endif			
+		ea <= ea + 4'd4;
+		call (FETCH_LWORD,FETCH_HEXI4);
 	end
 FETCH_HEXI4:
-	if (!stb_o) begin
-		stb_o <= 1'b1;
-		adr_o <= ea + 4'd8;
-	end
-	else if (ack_i) begin
+	begin
 `ifdef BIG_ENDIAN
 		if (ds==S)
-			fps[31:0] <= rbo(dat_i);
+			fps[31: 0] <= s;
 		else
-			fpd[31:0] <= rbo(dat_i);
+			fpd[31: 0] <= d;
 `else
 		if (ds==S)
-			fps[127:96] <= dat_i;
+			fps[95:64] <= s;
 		else
-			fpd[127:96] <= dat_i;
+			fpd[95:64] <= d;
 `endif
-		cyc_o <= 1'b0;
-		stb_o <= 1'b0;
-		sel_o <= 4'b0000;
+		ea <= ea - 4'd8;			
 		ret();
 	end
 
-/*
 STORE_HEXI1:
-	if (!cyc_o) begin
-		fc_o <= {sf,2'b01};
-		cyc_o <= 1'b1;
-		stb_o <= 1'b1;
-		we_o <= 1'b1;
-		sel_o <= 4'b1111;
-		adr_o <= ea;
+	begin
 `ifdef BIG_ENDIAN
-		dat_o <= rbo(fpd[127:96]);
+		d <= fpd[95:64];
 `else
-		dat_o <= fpd[31:0];
+		d <= fpd[31: 0];
 `endif
+		call (STORE_LWORD,STORE_HEXI2);
 	end
-	else if (ack_i) begin
-		stb_o <= 1'b0;
-		goto (STORE_HEXI2);
-	end
-*/
-STORE_HEXI1:
-	if (!stb_o) begin
-		fc_o <= {sf,2'b01};
-		cyc_o <= 1'b1;
-		stb_o <= 1'b1;
-		we_o <= 1'b1;
-		sel_o <= 4'b1111;
-		adr_o <= ea + 4'd0;
+STORE_HEXI2:
+	begin
 `ifdef BIG_ENDIAN
-		dat_o <= rbo(fpd[95:64]);
+		d <= fpd[63:32];
 `else
-		dat_o <= fpd[63:32];
+		d <= fpd[63:32];
 `endif
-	end
-	else if (ack_i) begin
-		stb_o <= 1'b0;
-		goto (STORE_HEXI3);
+		ea <= ea + 4'd4;
+		call (STORE_LWORD,STORE_HEXI3);
 	end
 STORE_HEXI3:
-	if (!stb_o) begin
-		stb_o <= 1'b1;
-		adr_o <= ea + 4'd4;
+	begin
 `ifdef BIG_ENDIAN
-		dat_o <= rbo(fpd[63:32]);
+		d <= fpd[31: 0];
 `else
-		dat_o <= fpd[95:64];
+		d <= fpd[95:32];
 `endif
-	end
-	else if (ack_i) begin
-		stb_o <= 1'b0;
-		goto (STORE_HEXI4);
+		ea <= ea + 4'd4;
+		call (STORE_LWORD,STORE_HEXI4);
 	end
 STORE_HEXI4:
-	if (!stb_o) begin
-		stb_o <= 1'b1;
-		adr_o <= ea + 4'd8;
-`ifdef BIG_ENDIAN
-		dat_o <= rbo(fpd[31:0]);
-`else
-		dat_o <= fpd[127:96];
-`endif
-	end
-	else if (ack_i) begin
-		cyc_o <= 1'b0;
-		stb_o <= 1'b0;
-		we_o <= 1'b0;
-		sel_o <= 4'b0000;
+	begin
+		ea <= ea - 4'd8;
 		ret();
 	end
+
 `endif
 
 STORE_BYTE:
@@ -5376,14 +5398,14 @@ MOVEM_Xn2D:
 `ifdef OPT_PERF
 	if (imm[15:0]!=16'h0000) begin
 		push(MOVEM_Xn2D2);
-		fs_data(mmm,rrr,ir[6] ? FETCH_NOP_LWORD : FETCH_NOP_WORD,D);
+		fs_data(mmm,rrr,fmovem ? FETCH_NOP_HEXI : ir[6] ? FETCH_NOP_LWORD : FETCH_NOP_WORD,D);
 	end
 	else
-		fs_data(mmm,rrr,ir[6] ? FETCH_NOP_LWORD : FETCH_NOP_WORD,D);
+		fs_data(mmm,rrr,fmovem ? FETCH_NOP_HEXI : ir[6] ? FETCH_NOP_LWORD : FETCH_NOP_WORD,D);
 `else
 	begin
 		push(MOVEM_Xn2D2);
-		fs_data(mmm,rrr,ir[6] ? FETCH_NOP_LWORD : FETCH_NOP_WORD,D);
+		fs_data(mmm,rrr,fmovem ? FETCH_NOP_HEXI : ir[6] ? FETCH_NOP_LWORD : FETCH_NOP_WORD,D);
 	end
 `endif
 MOVEM_Xn2D2:
@@ -5395,7 +5417,7 @@ MOVEM_Xn2D2:
 			3'b100:	// -(An)
 				begin
 					Rt <= {1'b1,rrr};
-					resL <= ea + (ir[6] ? 32'd4 : 32'd2);
+					resL <= ea + (fmovem ? 32'd12 : ir[6] ? 32'd4 : 32'd2);
 					rfwrL <= 1'b1;
 				end
 			endcase
@@ -5405,34 +5427,42 @@ MOVEM_Xn2D2:
 			if (imm[0]) begin
 				imm[0] <= 1'b0;
 				rrrr <= 4'd0;
+				FLTSRC <= 3'd7;
 			end
 			else if (imm[1]) begin
 				imm[1] <= 1'b0;
 				rrrr <= 4'd1;
+				FLTSRC <= 3'd6;
 			end
 			else if (imm[2]) begin
 				imm[2] <= 1'b0;
 				rrrr <= 4'd2;
+				FLTSRC <= 3'd5;
 			end
 			else if (imm[3]) begin
 				imm[3] <= 1'b0;
 				rrrr <= 4'd3;
+				FLTSRC <= 3'd4;
 			end
 			else if (imm[4]) begin
 				imm[4] <= 1'b0;
 				rrrr <= 4'd4;
+				FLTSRC <= 3'd3;
 			end
 			else if (imm[5]) begin
 				imm[5] <= 1'b0;
 				rrrr <= 4'd5;
+				FLTSRC <= 3'd2;
 			end
 			else if (imm[6]) begin
 				imm[6] <= 1'b0;
 				rrrr <= 4'd6;
+				FLTSRC <= 3'd1;
 			end
 			else if (imm[7]) begin
 				imm[7] <= 1'b0;
 				rrrr <= 4'd7;
+				FLTSRC <= 3'd0;
 			end
 			else if (imm[8]) begin
 				imm[8] <= 1'b0;
@@ -5471,34 +5501,42 @@ MOVEM_Xn2D2:
 			if (imm[0]) begin
 				imm[0] <= 1'b0;
 				rrrr <= 4'd15;
+				FLTSRC <= 3'd0;
 			end
 			else if (imm[1]) begin
 				imm[1] <= 1'b0;
 				rrrr <= 4'd14;
+				FLTSRC <= 3'd1;
 			end
 			else if (imm[2]) begin
 				imm[2] <= 1'b0;
 				rrrr <= 4'd13;
+				FLTSRC <= 3'd2;
 			end
 			else if (imm[3]) begin
 				imm[3] <= 1'b0;
 				rrrr <= 4'd12;
+				FLTSRC <= 3'd3;
 			end
 			else if (imm[4]) begin
 				imm[4] <= 1'b0;
 				rrrr <= 4'd11;
+				FLTSRC <= 3'd4;
 			end
 			else if (imm[5]) begin
 				imm[5] <= 1'b0;
 				rrrr <= 4'd10;
+				FLTSRC <= 3'd5;
 			end
 			else if (imm[6]) begin
 				imm[6] <= 1'b0;
 				rrrr <= 4'd9;
+				FLTSRC <= 3'd6;
 			end
 			else if (imm[7]) begin
 				imm[7] <= 1'b0;
 				rrrr <= 4'd8;
+				FLTSRC <= 3'd7;
 			end
 			else if (imm[8]) begin
 				imm[8] <= 1'b0;
@@ -5538,17 +5576,21 @@ MOVEM_Xn2D3:
 	begin
 		resL <= rfoRnn;
 		resW <= rfoRnn[15:0];
-		d <= rfoRnn;
+		if (fmovem)
+			fpd <= rfoFpsrc;
+		else
+			d <= rfoRnn;
 		ds <= D;
-		call(ir[6] ? STORE_LWORD : STORE_WORD,MOVEM_Xn2D4);
+		call(fmovem ? STORE_HEXI1 : ir[6] ? STORE_LWORD : STORE_WORD,MOVEM_Xn2D4);
 	end
 MOVEM_Xn2D4:
 	begin
 		case(mmm)
-		3'b011:	ea <= ea + (ir[6] ? 32'd4 : 32'd2);
-		3'b100:	ea <= ea - (ir[6] ? 32'd4 : 32'd2);
+		// ea is updated by STORE_HEXI1, incremented by 8
+		3'b011:	ea <= ea + (fmovem ? 32'd12 : ir[6] ? 32'd4 : 32'd2);
+		3'b100:	ea <= ea - (fmovem ? 32'd12 : ir[6] ? 32'd4 : 32'd2);
 		default:
-			ea <= ea + (ir[6] ? 32'd4 : 32'd2);
+			ea <= ea + (fmovem ? 32'd12 : ir[6] ? 32'd4 : 32'd2);
 		endcase
 		if (imm[15:0]!=16'h0000)
 			state <= MOVEM_Xn2D3;
@@ -5557,7 +5599,7 @@ MOVEM_Xn2D4:
 			3'b011:
 				begin
 					Rt <= {1'b1,rrr};
-					resL <= ea + (ir[6] ? 32'd4 : 32'd2);
+					resL <= ea + (fmovem ? 32'd12 : ir[6] ? 32'd4 : 32'd2);
 					rfwrL <= 1'b1;
 				end
 			3'b100:
@@ -5573,34 +5615,42 @@ MOVEM_Xn2D4:
 			if (imm[0]) begin
 				imm[0] <= 1'b0;
 				rrrr <= 4'd0;
+				FLTSRC <= 3'd7;
 			end
 			else if (imm[1]) begin
 				imm[1] <= 1'b0;
 				rrrr <= 4'd1;
+				FLTSRC <= 3'd6;
 			end
 			else if (imm[2]) begin
 				imm[2] <= 1'b0;
 				rrrr <= 4'd2;
+				FLTSRC <= 3'd5;
 			end
 			else if (imm[3]) begin
 				imm[3] <= 1'b0;
 				rrrr <= 4'd3;
+				FLTSRC <= 3'd4;
 			end
 			else if (imm[4]) begin
 				imm[4] <= 1'b0;
 				rrrr <= 4'd4;
+				FLTSRC <= 3'd3;
 			end
 			else if (imm[5]) begin
 				imm[5] <= 1'b0;
 				rrrr <= 4'd5;
+				FLTSRC <= 3'd2;
 			end
 			else if (imm[6]) begin
 				imm[6] <= 1'b0;
 				rrrr <= 4'd6;
+				FLTSRC <= 3'd1;
 			end
 			else if (imm[7]) begin
 				imm[7] <= 1'b0;
 				rrrr <= 4'd7;
+				FLTSRC <= 3'd0;
 			end
 			else if (imm[8]) begin
 				imm[8] <= 1'b0;
@@ -5639,34 +5689,42 @@ MOVEM_Xn2D4:
 			if (imm[0]) begin
 				imm[0] <= 1'b0;
 				rrrr <= 4'd15;
+				FLTSRC <= 3'd0;
 			end
 			else if (imm[1]) begin
 				imm[1] <= 1'b0;
 				rrrr <= 4'd14;
+				FLTSRC <= 3'd1;
 			end
 			else if (imm[2]) begin
 				imm[2] <= 1'b0;
 				rrrr <= 4'd13;
+				FLTSRC <= 3'd2;
 			end
 			else if (imm[3]) begin
 				imm[3] <= 1'b0;
 				rrrr <= 4'd12;
+				FLTSRC <= 3'd3;
 			end
 			else if (imm[4]) begin
 				imm[4] <= 1'b0;
 				rrrr <= 4'd11;
+				FLTSRC <= 3'd4;
 			end
 			else if (imm[5]) begin
 				imm[5] <= 1'b0;
 				rrrr <= 4'd10;
+				FLTSRC <= 3'd5;
 			end
 			else if (imm[6]) begin
 				imm[6] <= 1'b0;
 				rrrr <= 4'd9;
+				FLTSRC <= 3'd6;
 			end
 			else if (imm[7]) begin
 				imm[7] <= 1'b0;
 				rrrr <= 4'd8;
+				FLTSRC <= 3'd7;
 			end
 			else if (imm[8]) begin
 				imm[8] <= 1'b0;
@@ -5708,20 +5766,20 @@ MOVEM_s2Xn:
 `ifdef OPT_PERF
 	if (imm[15:0]!=16'h0000) begin
 		push(MOVEM_s2Xn2);
-		fs_data(mmm,rrr,ir[6] ? FETCH_NOP_LWORD : FETCH_NOP_WORD,S);
+		fs_data(mmm,rrr,fmovem ? FETCH_NOP_HEXI : ir[6] ? FETCH_NOP_LWORD : FETCH_NOP_WORD,S);
 	end
 	else
-		fs_data(mmm,rrr,ir[6] ? FETCH_NOP_LWORD : FETCH_NOP_WORD,S);
+		fs_data(mmm,rrr,fmovem ? FETCH_NOP_HEXI : ir[6] ? FETCH_NOP_LWORD : FETCH_NOP_WORD,S);
 `else
 	begin
 		push(MOVEM_s2Xn2);
-		fs_data(mmm,rrr,ir[6] ? FETCH_NOP_LWORD : FETCH_NOP_WORD,S);
+		fs_data(mmm,rrr,fmovem ? FETCH_NOP_HEXI : ir[6] ? FETCH_NOP_LWORD : FETCH_NOP_WORD,S);
 	end
 `endif
 MOVEM_s2Xn2:
 	if (imm[15:0] != 16'h0000) begin
 		ds <= S;
-		call(ir[6] ? FETCH_LWORD : FETCH_WORD,MOVEM_s2Xn3);
+		call(fmovem ? FETCH_HEXI1 : ir[6] ? FETCH_LWORD : FETCH_WORD,MOVEM_s2Xn3);
 	end
 	else begin
 		case(mmm)
@@ -5734,7 +5792,7 @@ MOVEM_s2Xn2:
 		3'b100:	// -(An)
 			begin
 				Rt <= {1'b1,rrr};
-				resL <= ea + (ir[6] ? 32'd4 : 32'd2);
+				resL <= ea + (fmovem ? 32'd12 : ir[6] ? 32'd4 : 32'd2);
 				rfwrL <= 1'b1;
 			end
 		endcase
@@ -5743,10 +5801,10 @@ MOVEM_s2Xn2:
 MOVEM_s2Xn3:
 	begin
 		case(mmm)
-		3'b011:	ea <= ea + (ir[6] ? 32'd4 : 32'd2);
-		3'b100:	ea <= ea - (ir[6] ? 32'd4 : 32'd2);
+		3'b011:	ea <= ea + (fmovem ? 32'd12 : ir[6] ? 32'd4 : 32'd2);
+		3'b100:	ea <= ea - (fmovem ? 32'd12 : ir[6] ? 32'd4 : 32'd2);
 		default:
-			ea <= ea + (ir[6] ? 32'd4 : 32'd2);
+			ea <= ea + (fmovem ? 32'd12 : ir[6] ? 32'd4 : 32'd2);
 		endcase
 		goto (MOVEM_s2Xn2);
 		// Another bizzare gotcha. Word values moved to a data register are sign
@@ -5756,38 +5814,39 @@ MOVEM_s2Xn3:
 			resL <= s;
 		else
 			resL <= {{16{s[15]}},s[15:0]};
+		resF <= fps;
 		if (mmm!=3'b100) begin
 			if (imm[0]) begin
 				imm[0] <= 1'b0;
-				Rt <= 4'd0;
+				Rt <= 4'd0 ^ {3{fmovem}};
 			end
 			else if (imm[1]) begin
 				imm[1] <= 1'b0;
-				Rt <= 4'd1;
+				Rt <= 4'd1 ^ {3{fmovem}};
 			end
 			else if (imm[2]) begin
 				imm[2] <= 1'b0;
-				Rt <= 4'd2;
+				Rt <= 4'd2 ^ {3{fmovem}};
 			end
 			else if (imm[3]) begin
 				imm[3] <= 1'b0;
-				Rt <= 4'd3;
+				Rt <= 4'd3 ^ {3{fmovem}};
 			end
 			else if (imm[4]) begin
 				imm[4] <= 1'b0;
-				Rt <= 4'd4;
+				Rt <= 4'd4 ^ {3{fmovem}};
 			end
 			else if (imm[5]) begin
 				imm[5] <= 1'b0;
-				Rt <= 4'd5;
+				Rt <= 4'd5 ^ {3{fmovem}};
 			end
 			else if (imm[6]) begin
 				imm[6] <= 1'b0;
-				Rt <= 4'd6;
+				Rt <= 4'd6 ^ {3{fmovem}};
 			end
 			else if (imm[7]) begin
 				imm[7] <= 1'b0;
-				Rt <= 4'd7;
+				Rt <= 4'd7 ^ {3{fmovem}};
 			end
 			else if (imm[8]) begin
 				imm[8] <= 1'b0;
@@ -5825,35 +5884,35 @@ MOVEM_s2Xn3:
 		else begin
 			if (imm[0]) begin
 				imm[0] <= 1'b0;
-				Rt <= 4'd15;
+				Rt <= 4'd15 ^ {4{fmovem}};
 			end
 			else if (imm[1]) begin
 				imm[1] <= 1'b0;
-				Rt <= 4'd14;
+				Rt <= 4'd14 ^ {4{fmovem}};
 			end
 			else if (imm[2]) begin
 				imm[2] <= 1'b0;
-				Rt <= 4'd13;
+				Rt <= 4'd13 ^ {4{fmovem}};
 			end
 			else if (imm[3]) begin
 				imm[3] <= 1'b0;
-				Rt <= 4'd12;
+				Rt <= 4'd12 ^ {4{fmovem}};
 			end
 			else if (imm[4]) begin
 				imm[4] <= 1'b0;
-				Rt <= 4'd11;
+				Rt <= 4'd11 ^ {4{fmovem}};
 			end
 			else if (imm[5]) begin
 				imm[5] <= 1'b0;
-				Rt <= 4'd10;
+				Rt <= 4'd10 ^ {4{fmovem}};
 			end
 			else if (imm[6]) begin
 				imm[6] <= 1'b0;
-				Rt <= 4'd9;
+				Rt <= 4'd9 ^ {4{fmovem}};
 			end
 			else if (imm[7]) begin
 				imm[7] <= 1'b0;
-				Rt <= 4'd8;
+				Rt <= 4'd8 ^ {4{fmovem}};
 			end
 			else if (imm[8]) begin
 				imm[8] <= 1'b0;
@@ -6154,12 +6213,12 @@ FSCALE:
 			ret();
 		end
 	end
-FNEG:
+FNEG:	// Also FABS
 	begin
 		if (DECFLT) begin
-			resF <= {~fps[95],fps[94:0]};
+			resF <= {~fps[95] & ~fabs,fps[94:0]};
 			fzf <= fps[94:0]==95'd0;
-			fnf <= ~fps[95];
+			fnf <= ~fps[95] & ~fabs;
 			Rt <= {1'b0,FLTDST};
 			rfwrF <= 1'b1;
 		end
@@ -6182,8 +6241,15 @@ FMUL2:
 	end
 	else
 		ret();
+	// For divide the done signal may take several cycles to go inactive after
+	// the load signal is activated. Prevent a premature recognition of done
+	// using a counter.
 FDIV1:
-	goto (FDIV2);
+	begin
+		fpcnt <= fpcnt + 2'd1;
+		if (fpcnt == 8'd50)
+			goto (FDIV2);
+	end
 FDIV2:
 	if (dfdivdone) begin
 		if (DECFLT) begin
@@ -6212,10 +6278,33 @@ FCMP:
 FMOVE:
 	begin
 		if (DECFLT) begin
-			if (ir2[12:10]==3'b000) begin
-				fps <= {64'd0,s};
-				goto (I2DF1);
-			end
+			if (ir2[14])
+				case(ir2[12:10])
+				3'b000:
+					begin
+						fps <= {64'd0,s};
+						goto (I2DF1);
+					end
+				3'b100:
+					begin
+						fps <= {80'd0,s[15:0]};
+						goto (I2DF1);
+					end
+				3'b110:
+					begin
+						fps <= {88'd0,s[7:0]};
+						goto (I2DF1);
+					end
+				default:
+					begin
+						resF <= fps[95:0];
+						fzf <= fps[94:0]==95'd0;
+						fnf <= fps[95];
+						Rt <= {1'b0,FLTDST};
+						rfwrF <= 1'b1;
+						ret();
+					end
+				endcase
 			else begin
 				resF <= fps[95:0];
 				fzf <= fps[94:0]==95'd0;
@@ -6251,14 +6340,22 @@ DF2I2:
 	begin
 		if (DECFLT) begin
 			if (df2idone) begin
+				case(ir2[12:10])
+				3'b000:	fs_data(mmm,rrr,STORE_LWORD,D);
+				3'b100:	fs_data(mmm,rrr,STORE_WORD,D);
+				3'b110:	fs_data(mmm,rrr,STORE_BYTE,D);
+				default:	ret();
+				endcase
 				resF <= df2io;
-				resL <= df2io;
+				resL <= df2io[31:0];
+				resW <= df2io[15:0];
+				resB <= df2io[ 7:0];
+				d <= df2io;
 				fzf <= df2io[94:0]==95'd0;
 				fnf <= df2io[95];
 				fvf <= df2iover;
-				Rt <= {1'b0,FLTDST};
-				rfwrL <= 1'b1;
-				ret();
+				//Rt <= {1'b0,FLTDST};
+				//rfwrL <= 1'b1;
 			end
 		end
 		else
@@ -6266,8 +6363,18 @@ DF2I2:
 	end
 FTST:
 	begin
-		fnf <= fps[95];
-		fzf <= fps[94:0]=='d0;
+		case(ir2[12:10])
+		3'b000:	begin fnf <= s[31]; fzf <= s[31:0]==32'd0; fnanf <= 1'b0; fvf <= 1'b0; end
+		3'b100:	begin fnf <= s[15]; fzf <= s[15:0]==16'd0; fnanf <= 1'b0; fvf <= 1'b0; end
+		3'b110:	begin fnf <= s[ 7]; fzf <= s[ 7:0]== 8'd0; fnanf <= 1'b0; fvf <= 1'b0; end
+		default:
+			begin
+				fnf <= fps[95];
+				fzf <= fps[94:0]=='d0;
+				fnanf <= fps[94:90]==5'b11111;
+				fvf <= fps[94:90]==5'b11110;
+			end
+		endcase
 		ret();
 	end
 FBCC:
@@ -6285,6 +6392,15 @@ FCOPYEXP:
 		ret();
 	end
 */
+FMOVEM1:
+	begin
+		imm <= rfoDnn[7:0];
+		if (ir2[13])
+			goto(MOVEM_Xn2D);
+		else
+			goto(MOVEM_s2Xn);
+	end
+
 `endif
 
 default:
@@ -6398,7 +6514,7 @@ begin
 				FETCH_WORD,STORE_WORD:	resL <= (MMMRRR ? rfoAna : rfoAn) + 4'd2;
 				FETCH_LWORD,STORE_LWORD:	resL <= (MMMRRR ? rfoAna : rfoAn) + 4'd4;
 `ifdef SUPPORT_DECFLT				
-				FETCH_HEXI1,STORE_HEXI1: resL <= (MMMRRR ? rfoAna : rfoAn) + 5'd12;
+				FETCH_HEXI1,STORE_HEXI1: resL <= rfoAn + 5'd12;
 `endif				
 				default:	;
 				endcase
@@ -6414,7 +6530,7 @@ begin
 				FETCH_NOP_WORD,FETCH_WORD,STORE_WORD:	ea <= (MMMRRR ? rfoAna : rfoAn) - 4'd2;
 				FETCH_NOP_LWORD,FETCH_LWORD,STORE_LWORD:	ea <= (MMMRRR ? rfoAna : rfoAn) - 4'd4;
 `ifdef SUPPORT_DECFLT				
-				FETCH_HEXI1,STORE_HEXI1: ea <= (MMMRRR ? rfoAna : rfoAn) - 5'd12;
+				FETCH_NOP_HEXI,FETCH_HEXI1,STORE_HEXI1: ea <= rfoAn - 5'd12;
 `endif				
 				default:	;
 				endcase
@@ -6423,7 +6539,7 @@ begin
 				FETCH_WORD,STORE_WORD:	resL <= (MMMRRR ? rfoAna : rfoAn) - 4'd2;
 				FETCH_LWORD,STORE_LWORD:	resL <= (MMMRRR ? rfoAna : rfoAn) - 4'd4;
 `ifdef SUPPORT_DECFLT				
-				FETCH_HEXI1,STORE_HEXI1: resL <= (MMMRRR ? rfoAna : rfoAn) - 5'd12;
+				FETCH_HEXI1,STORE_HEXI1: resL <= rfoAn - 5'd12;
 `endif
 				default:	;
 				endcase
@@ -6481,7 +6597,7 @@ begin
 						end
 						// ToDo: add FETCH_IMM128
 				3'd4:	begin	// #i16
-							goto((size_state==FETCH_LWORD||size_state==FETCH_NOP_LWORD)?FETCH_IMM32:FETCH_IMM16);
+							goto(size_state==FETCH_NOP_HEXI ? FETCH_IMM96:(size_state==FETCH_LWORD||size_state==FETCH_NOP_LWORD)?FETCH_IMM32:FETCH_IMM16);
 						end
 				3'd5:	begin	// #i32
 							state <= FETCH_IMM32;
@@ -6528,7 +6644,7 @@ begin
 							call(FETCH_NDX,size_state);
 						end
 				3'd4:	begin	// #i16
-							goto((size_state==FETCH_LWORD||size_state==FETCH_NOP_LWORD)?FETCH_IMM32:FETCH_IMM16);
+							goto((size_state==FETCH_LWORD||size_state==FETCH_NOP_LWORD||size_state==FETCH_NOP_HEXI)?FETCH_IMM32:FETCH_IMM16);
 							end
 				3'd5:	begin	// #i32
 							state <= FETCH_IMM32;
@@ -6554,6 +6670,7 @@ begin
 	state_stk2 <= state_stk1;
 	state_stk3 <= state_stk2;
 	state_stk4 <= state_stk3;
+	state_stk5 <= state_stk4;
 	state <= tgt;
 end
 endtask
@@ -6566,6 +6683,7 @@ begin
 	state_stk2 <= state_stk1;
 	state_stk3 <= state_stk2;
 	state_stk4 <= state_stk3;
+	state_stk5 <= state_stk4;
 	state <= tgt;
 end
 endtask
@@ -6577,6 +6695,7 @@ begin
 	state_stk2 <= state_stk1;
 	state_stk3 <= state_stk2;
 	state_stk4 <= state_stk3;
+	state_stk5 <= state_stk4;
 end
 endtask
 
@@ -6627,6 +6746,7 @@ begin
 	state_stk1 <= state_stk2;
 	state_stk2 <= state_stk3;
 	state_stk3 <= state_stk4;
+	state_stk4 <= state_stk5;
 end
 endtask
 

@@ -66,8 +66,8 @@ reg ovf;
 reg [WID-1:0] aa,bb;
 reg so, rs;
 reg [2:0] state;
-reg [7:0] cnt;
-wire cnt_done = cnt==8'd0;
+reg [8:0] cnt;
+wire cnt_done = cnt=='d0;
 assign done = state==DONE||(state==IDLE && !ld);
 assign idle = state==IDLE;
 reg ce1;
@@ -91,7 +91,7 @@ if (rst) begin
 	r <= {WID{1'b0}};
 	qo <= {WID{1'b0}};
 	ro <= {WID{1'b0}};
-	cnt <= 8'd0;
+	cnt <= 'd0;
 	dvByZr <= 1'b0;
 	ovf <= 1'b0;
 	so <= 1'b0;
@@ -101,9 +101,9 @@ end
 else
 begin
 if (abort)
-    cnt <= 8'd00;
+    cnt <= 'd0;
 else if (!cnt_done)
-	cnt <= cnt - 8'd1;
+	cnt <= cnt - 1'd1;
 
 case(state)
 IDLE:
