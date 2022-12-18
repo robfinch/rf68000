@@ -1,3 +1,4 @@
+  "canary",  -1,              m68000up,
   "ccr",     -1,              m68000up|mcf,
   "sr",      -1,              m68000up|mcf,
   "usp",     -1,              m68000up|mcfusp,
@@ -118,6 +119,7 @@
   "mmus",		 0x014,						m68010up,
   "ios",		 0x015,						m68010up,
   "iops",		 0x016,						m68010up,
+  "canary",	 0x020,						m68010up,
   "usp",     0x800,           m68010up|cpu32|mcfb|mcfc,
   "vbr",     0x801,           m68010up|cpu32|mcf,
   "caar",    0x802,           m68020|m68030,
