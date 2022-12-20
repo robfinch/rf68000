@@ -2723,7 +2723,7 @@ DECODE:
 					7'b0000000:	// FMOVE
 						if (ir2[14]) begin	// RM
 							push(FMOVE);
-							case(ir[12:10])
+							case(ir2[12:10])
 							3'b000:	fs_data(mmm,rrr,FETCH_LWORD,S);
 							3'b100:	fs_data(mmm,rrr,FETCH_WORD,S);
 							3'b110:	fs_data(mmm,rrr,FETCH_BYTE,S);

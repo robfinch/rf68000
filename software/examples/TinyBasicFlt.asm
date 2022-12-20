@@ -75,8 +75,9 @@ CSTART	MOVE.L	ENDMEM,SP	initialize stack pointer
 	SUB.L #STRAREASIZE,D0
 	MOVE.L D0,StrArea
 	MOVE.L D0,LastStr
-	clr.l StrArea
-	clr.l StrArea+4
+	move.l StrArea,a0
+	clr.l (a0)+
+	clr.l (a0)+
 WSTART
 	CLR.L	D0		initialize internal variables
 	move.l #1,_fpTextIncr
@@ -123,8 +124,8 @@ ST4
 	SUB.L	A0,D0
 	CMP.L	#3,D0		is it just a line no. & CR?
 	BEQ	ST3		if so, it was just a delete
-	MOVE.L	TXTUNF,A3	compute new end
-	MOVE.L	A3,A6
+	MOVE.L TXTUNF,A3	compute new end
+	MOVE.L A3,A6
 	ADD.L	D0,A3
 	MOVE.L StrArea,D0	see if there's enough room
 	CMP.L	A3,D0
@@ -445,9 +446,8 @@ RUNSML
 	BRA	EXEC		and execute it
 
 GOTO	
-	bsr	NUM_EXPR	; evaluate the following expression
+	bsr	INT_EXPR	; evaluate the following expression
 	bsr	ENDCHK		; must find end of line
-	fmove.l fp0,d0
 	move.l d0,d1
 	bsr	FNDLN			; find the target line
 	bne	QHOW			; no such line no.
@@ -460,9 +460,8 @@ GOTO
 ;******************************************************************
 
 ONIRQ:
-	bsr	NUM_EXPR		; evaluate the following expression
+	bsr	INT_EXPR		; evaluate the following expression
 	bsr ENDCHK			; must find end of line
-	fmove.l fp0,d0
 	move.l d0,d1
 	bsr FNDLN				; find the target line
 	bne	ONIRQ1
@@ -470,7 +469,7 @@ ONIRQ:
 	bra	FINISH
 ONIRQ1:
 	move.l a1,IRQROUT
-	jmp		FINISH
+	jmp	FINISH
 
 
 WAITIRQ:
@@ -537,25 +536,20 @@ PR2
 	bsr	CRLF		also give CR-LF and
 	BRA	RUNNXL		execute the next line
 PR0
-	bsr	TSTC		else is it a format?
-	DC.B	'#',PR1-*
-	bsr	NUM_EXPR		yes, evaluate expression
-	FMOVE.L	FP0,D4		and save it as print width
-	BRA	PR3		look for more to print
+	bsr	TSTC				; else is it a format?
+	dc.b '#',PR1-*
+	bsr	INT_EXPR		; yes, evaluate expression
+	move.l d0,d4		; and save it as print width
+	bra	PR3					; look for more to print
 PR1
-	bsr	TSTC		is character expression? (MRL)
-	DC.B	'$',PR4-*
-	bsr	NUM_EXPR		yep. Evaluate expression (MRL)
-	FMOVE.L FP0,D0
-	BSR	GOOUT		print low byte (MRL)
-	BRA	PR3		look for more. (MRL)
-PR4
-	bra PR8
-	bsr	QTSTG						; is it a string?
-	BRA.S	PR8						; if not, must be an expression
+	bsr	TSTC				; is character expression? (MRL)
+	dc.b '$',PR8-*
+	bsr	INT_EXPR		; yep. Evaluate expression (MRL)
+	bsr	GOOUT				; print low byte (MRL)
+	bra	PR3					; look for more. (MRL)
 PR3
 	bsr	TSTC						; if ",", go find next
-	DC.B	',',PR6-*
+	dc.b ',',PR6-*
 	bsr	FIN							; in the list.
 	BRA	PR0
 PR6
@@ -567,7 +561,7 @@ PR8
 	move.l (sp)+,d4			; restore the width
 	cmpi.l #DT_STRING,d0	; is it a string?
 	beq PR9
-	fmove FP0,FP1
+	fmove fp0,fp1
 	move.l #35,d4
 	bsr	PRTNUM					; print its value
 	bra	PR3							; more to print?
@@ -606,10 +600,9 @@ GOSUB:
 	sub.l #128,sp		; allocate storage for local variables
 	move.l sp,STKFP
 	bsr	PUSHA				; save the current 'FOR' parameters
-	bsr	NUM_EXPR		; get line number
+	bsr	INT_EXPR		; get line number
 	MOVE.L	A0,-(SP)	save text pointer
-	FMOVE.L FP0,D0
-	FMOVE.L	FP0,D1
+	move.l	d0,d1
 	bsr	FNDLN		find the target line
 	BNE	AHOW		if not there, say "How?"
 	MOVE.L	CURRNT,-(SP)	found it, save old 'CURRNT'...
@@ -686,7 +679,7 @@ FR5
 	MOVE.L	SP,A6		dig into the stack to find 'LOPVAR'
 	BRA	FR7
 FR6
-	ADD.L	#26,A6		look at next stack frame
+	ADD.L	#40,A6		look at next stack frame
 FR7
 	MOVE.L	(A6),D0 	is it zero?
 	BEQ	FR8		if so, we're done
@@ -694,7 +687,7 @@ FR7
 	BNE	FR6		nope, look some more
 	MOVE.L	SP,A2		Else remove 5 long words from...
 	MOVE.L	A6,A1		inside the stack.
-	LEA	26,A3
+	LEA	40,A3
 	ADD.L	A1,A3
 	bsr	MVDOWN
 	MOVE.L	A3,SP		set the SP 5 long words up
@@ -772,11 +765,12 @@ REM
 	BRA	IF2		skip the rest of the line
 
 IF
-	bsr	NUM_EXPR		evaluate the expression
+	bsr	INT_EXPR		evaluate the expression
 IF1
-	FTST	FP0		is it zero?
-	FBNE	RUNSML		if not, continue
-IF2	MOVE.L	A0,A1
+	TST.l	d0		is it zero?
+	BNE	RUNSML		if not, continue
+IF2
+	MOVE.L	A0,A1
 	CLR.L	D1
 	bsr	FNDSKP		if so, skip the rest of the line
 	BCC	RUNTSL		and run the next line
@@ -972,12 +966,12 @@ POKE
 	addq #1,a0
 	move.b d1,d7
 .0001
-	BSR	NUM_EXPR		get the memory address
+	BSR	INT_EXPR		get the memory address
 	bsr	TSTC		it must be followed by a comma
 	DC.B	',',PKER-*
-	FMOVE.L	FP0,-(SP)	save the address
-	BSR	NUM_EXPR		get the byte to be POKE'd
-	MOVE.L	(SP)+,A1	get the address back
+	move.l d0,-(sp)		; save the address
+	BSR	NUM_EXPR			; get the value to be POKE'd
+	move.l	(sp)+,a1	; get the address back
 	CMPI.B #'B',D7
 	BNE .0003
 	FMOVE.B	FP0,(A1) 	store the byte in memory
@@ -1002,11 +996,10 @@ PKER
 	BRA	QWHAT		if no comma, say "What?"
 
 CALL	
-	BSR	NUM_EXPR		; get the subroutine's address
-	FTST FP0				; make sure we got a valid address
-	FBEQ QHOW				; if not, say "How?"
+	BSR	INT_EXPR		; get the subroutine's address
+	TST.l d0				; make sure we got a valid address
+	BEQ QHOW				; if not, say "How?"
 	MOVE.L A0,-(SP)	; save the text pointer
-	FMOVE.L	FP0,D0
 	MOVE.L D0,A1
 	JSR	(A1)				; jump to the subroutine
 	MOVE.L (SP)+,A0	; restore the text pointer
@@ -1038,7 +1031,7 @@ CALL
 PushString:
 	move.l a1,-(sp)
 	move.l StrSp,a1					; get string stack pointer
-	cmpa.l #STRSTK,a1				; ensure not too deeep
+	cmpa.l STRSTK,a1				; ensure not too deeep
 	bls QHOW
 	subq.l #4,a1						; decrement sp
 	move.l a1,StrSp
@@ -1053,9 +1046,8 @@ PushString:
 
 PopString:
 	move.l a1,-(sp)
-	move.l StrSp,d2					; remove string from string stack
-	move.l STRSTK,a1
-	clr.l (a1,d2.l)					; clear the string pointer
+	move.l StrSp,a1					; remove string from string stack
+	clr.l (a1)							; clear the string pointer
 	add.l #4,StrSp
 	move.l (sp)+,a1
 	rts
@@ -1114,17 +1106,28 @@ XP_POP1:
 ; Get and expression and make sure it is numeric.
 ;-------------------------------------------------------------------------------
 
-NUM_EXPR
+NUM_EXPR:
 	bsr EXPR
 	cmpi.l #DT_NUMERIC,d0
 	bne ETYPE
 	rts
 
 ;-------------------------------------------------------------------------------
+; Get and expression and make sure it is numeric. Convert to integer.
+;-------------------------------------------------------------------------------
+
+INT_EXPR:
+	bsr EXPR
+	cmpi.l #DT_NUMERIC,d0
+	bne ETYPE
+	fmove.l fp0,d0
+	rts
+
+;-------------------------------------------------------------------------------
 ; The top level of the expression parser.
 ; Get an expression, string or numeric.
 ;
-; EXEC will smash a lot of vars, so push the current expression value before
+; EXEC will smash a lot of regs, so push the current expression value before
 ; doing EXEC
 ;-------------------------------------------------------------------------------
 
@@ -1192,11 +1195,11 @@ CheckNumeric:
 ;-------------------------------------------------------------------------------
 
 EXPR_REL
-	BSR	EXPR2
+	bsr	EXPR2
 	bsr XP_PUSH
 	LEA	TAB8,A1 				; look up a relational operator
 	LEA	TAB8_1,A2
-	BRA	EXEC		go do it
+	bra	EXEC		go do it
 
 XP11
 	bsr XP_POP
@@ -1246,15 +1249,15 @@ XPRT1
 	RTS
 
 XP17								; it's not a rel. operator
-	bsr XP_POP
-	rts								;		return FP0=<EXPR2>
+	bsr XP_POP				;	return FP0=<EXPR2>
+	rts
 
 XP18
 	bsr XP_PUSH
-	BSR	EXPR2					; do second <EXPR2>
+	bsr	EXPR2					; do second <EXPR2>
 	bsr XP_POP1
 	bsr CheckNumeric
-	FCMP FP0,FP1			; compare with the first result
+	fcmp fp0,fp1			; compare with the first result
 	RTS								; return the result
 
 ;-------------------------------------------------------------------------------
@@ -1300,31 +1303,34 @@ XP24
 ;	bhs QHOW
 ;	move.l STRSTK,a4
 ;	move.l a1,(a4,d1.l)		; save pointer on string stack
-	lea 4(a1),a4					; save pointer to allocated string
+	lea 4(a1),a5					; save pointer to allocated string
 	move.l a1,a2
 	move.l _fpWork+4,a4
-	move.w _fpWork,d2
+	subq.l #4,a4
+	move.l _fpWork,d2			; d2 = length of first string
 	move.l a1,a3
 	add.l d2,a3	
 	addq.l #4,a3					; four bytes for length
 	move.l d2,(a2)				; save length
 	addq.l #4,a2
-	move.l a4,a1					; move past length to text area
+	move.l a5,a1					; move past length to text area
 	bsr MVUP							; move from A1 to A2 until A1=A3
 	move.l _fpWork+20,a1	; a1 = pointer to second string text
 	move.l a1,a3
 	move.l _fpWork+16,d2
 	add.l d2,a3
 	bsr MVUP							; concatonate on second string
+	add.l _fpWork,d2
 	move.l d2,_fpWork			; save total string length in fp work
+	addq.l #4,a4
 	move.l a4,_fpWork+4		; save pointer in fp work area
 	moveq #DT_STRING,d0		; set return data type = string
 	fmove.x _fpWork,fp0		; fp0 = string descriptor
 	rts
 
 XP25
-	bsr	TSTC		subtract?
-	DC.B	'-',XP27-*
+	bsr	TSTC							; subtract?
+	dc.b	'-',XP27-*
 XP26
 	bsr XP_PUSH
 	BSR	EXPR3					; get second <EXPR3>
@@ -1334,43 +1340,41 @@ XP26
 	JMP	XP24					; and do an addition
 
 XP27
-	RTS
+	rts
 
 ;-------------------------------------------------------------------------------
 ; Multiply / Divide operator level, *,/,%
 ;-------------------------------------------------------------------------------
 
 EXPR3
-	BSR	EXPR4					; get first <EXPR4>
+	bsr	EXPR4					; get first <EXPR4>
 XP31
+	bsr XP_PUSH
 	bsr	TSTC					; multiply?
-	DC.B	'*',XP34-*
-	bsr XP_PUSH
-	BSR	EXPR4					; get second <EXPR4>
+	dc.b	'*',XP34-*
+	bsr	EXPR4					; get second <EXPR4>
 	bsr XP_POP1
 	bsr CheckNumeric
-	FMUL FP1,FP0			; multiply the two
-	BRA	XP31					; then look for more terms
+	fmul fp1,fp0			; multiply the two
+	bra	XP31					; then look for more terms
 XP34
-	bsr	TSTC		divide?
-	DC.B	'/',XP35-*
-	bsr XP_PUSH
-	BSR	EXPR4					; get second <EXPR4>
+	bsr	TSTC					; divide?
+	dc.b	'/',XP35-*
+	bsr	EXPR4					; get second <EXPR4>
 	bsr XP_POP1
 	bsr CheckNumeric
-	FDIV FP1,FP0			; do the division
-	BRA	XP31					; go back for any more terms
+	fdiv fp1,fp0			; do the division
+	bra	XP31					; go back for any more terms
 XP35
 	bsr TSTC
-	DC.B '%',XP36-*
-	bsr XP_PUSH
-	BSR	EXPR4					; get second <EXPR4>
+	dc.b '%',XP36-*
+	bsr	EXPR4					; get second <EXPR4>
 	bsr XP_POP1
 	bsr CheckNumeric
 	FDIV FP1,FP0			; do the division
 	BRA	XP31					; go back for any more terms
-	
 XP36
+	bsr XP_POP
 	rts
 
 ;-------------------------------------------------------------------------------
@@ -1402,7 +1406,9 @@ XP41
 	beq	EXP4RT				; if so, return it in FP0
 XPSTNG
 	bsr TSTC					; is it a string constant?
-	dc.b '"',PARN-*
+	dc.b '"',XP44-*
+	move.b #'"',d3
+XP45
 	move.l a0,a1			; record start of string in a1
 	move.l #511,d2		; max 512 characters
 .0003	
@@ -1410,20 +1416,25 @@ XPSTNG
 	beq .0001					; should not be a NULL
 	cmpi.b #CR,d0			; CR means the end of line was hit without a close quote
 	beq .0001
-	cmpi.b #'"',d0		; close quote?
+	cmp.b d3,d0				; close quote?
 	beq .0002
 	dbra d2,.0003			; no close quote, go back for next char
 .0001
 	bra QHOW
 .0002
-	sub.l a1,a0				; compute string length + 1
-	move.l a0,d0
+	move.l a0,d0			; d0 = end of string pointer
+	sub.l a1,d0				; compute string length + 1
 	subq #1,d0				; subtract out closing quote
 	move.l d0,_fpWork	; length and pointer
 	move.l a1,_fpWork+4
 	fmove.x _fpWork,fp0	; put string descriptor into fp0
 	moveq #DT_STRING,d0	; return string data type
 	rts
+XP44
+	bsr TSTC					; alternate string constant?
+	dc.b '''',PARN-*
+	move.b #'''',d3
+	bra XP45
 PARN
 	bsr	TSTC					; else look for ( EXPR )
 	DC.B	'(',XP43-*
@@ -1433,7 +1444,7 @@ PARN
 XP42	
 	rts
 XP43
-	BRA	QWHAT					; else say "What?"
+	bra	QWHAT					; else say "What?"
 
 ;-------------------------------------------------------------------------------	
 ; Allocate storage for a string variable.
@@ -1441,26 +1452,29 @@ XP43
 ; Parameters:
 ;		d2 = number of bytes needed
 ; Returns:
-;		a1 = pointer to string area
+;		a1 = pointer to string text area
 ;-------------------------------------------------------------------------------	
 
 AllocateString:
 	move.l VARBGN,d4
-	move.l LastStr,a1
-	sub.l (a1),d4
-	sub.l LastStr,d4
-	cmp.l d4,d2
+	move.l LastStr,a1			; a1 = last string
+	sub.l (a1),d4					; subtract off length
+	subq.l #4,d4					; size of length field
+	sub.l LastStr,d4			; and start position
+	cmp.l d4,d2						; is there enough room?
 	bhi .needMoreRoom
 .0001
 	move.l LastStr,a1
 	move.l a1,a3
+	addq.l #4,a1					; point a1 to text part of string
 	move.l d2,(a3)
 	add.l d2,a3
 	addq.l #7,a3
 	move.l a3,d3
 	andi.l #$FFFFFFFC,d3
 	move.l d3,a3
-	move.l a3,LastStr
+	move.l a3,LastStr			; set new last str position
+	clr.l (a3)						; set zero length
 	rts
 .needMoreRoom
 	bsr GarbageCollectStrings
@@ -1536,9 +1550,9 @@ StringInVar:
 	cmp.l #DT_STRING,(a4)			; check data type = string
 	bne .0001
 	move.l 8(a4),d2		; look a pointer match
+	subq.l #4,d2
 	cmp.l d2,a1				;
 	bne .0001
-	addq.l #8,a4
 	ori #1,ccr				; set carry if in use
 	rts
 .0001
@@ -1554,9 +1568,9 @@ StringInVar:
 	cmp.l #DT_STRING,(a4)
 	bne .0004
 	move.l 8(a4),d2
+	subq.l #4,d2
 	cmp.l d2,a1
 	bne .0004
-	addq.l #8,a4
 	ori #1,ccr
 	rts
 .0004
@@ -1586,7 +1600,6 @@ StringOnStack:
 	andi #$FE,ccr
 	rts
 .0001
-	subq #4,a4
 	ori #1,ccr
 	rts
 	
@@ -1603,9 +1616,11 @@ UpdateStringPointers:
 	cmp.l #DT_STRING,(a4)		; check the data type
 	bne .0001								; not a string, go to next
 	move.l 8(a4),d2
+	subq.l #4,d2
 	cmp.l d2,a1							; does pointer match old pointer?
 	bne .0001
 	move.l a2,8(a4)					; copy in new pointer
+	addi.l #4,8(a4)					; point to string text
 .0001
 	addq.l #8,a4
 	addq.l #8,a4
@@ -1619,9 +1634,11 @@ USP1:
 	cmp.l #DT_STRING,(a4)		; check data type
 	bne .0001
 	move.l 8(a4),d2
+	subq.l #4,d2
 	cmp.l d2,a1							; does pointer match old pointer?
 	bne .0001
 	move.l a2,8(a4)					; copy in new pointer
+	addi.l #4,8(a4)					; point to string text
 .0001
 	addq.l #8,a4
 	addq.l #8,a4
@@ -1661,14 +1678,15 @@ TSTV:
 	BCS	QHOW
 	ADD.L	D0,D0
 	BCS	QHOW
-	MOVE.L D0,-(SP)		; save the index
+	move.l d0,-(sp)		; save the index
 	bsr	SIZE					; get amount of free memory
-	MOVE.L (SP)+,D1		; get back the index
-	CMP.L	D1,D0				; see if there's enough memory
-	BLS	QSORRY				; if not, say "Sorry"
-	MOVE.L VARBGN,D0	; put address of array element...
-	SUB.L	D1,D0				; into D0
-	RTS
+	move.l (sp)+,d1		; get back the index
+	fmove.l fp0,d0		; convert to integer
+	cmp.l	d1,d0				; see if there's enough memory
+	bls	QSORRY				; if not, say "Sorry"
+	move.l VARBGN,d0	; put address of array element...
+	sub.l	d1,d0				; into D0
+	rts
 TV1
 	CMP.B	#27,D0			; if not @, is it A through Z?
 	EOR	#1,CCR
@@ -1740,6 +1758,8 @@ PEEK
 	move.b (a0)+,d7
 .0001
 	BSR	PARN		get the memory address
+	cmpi.l #DT_NUMERIC,d0
+	bne ETYPE
 	FMOVE.L FP0,D0
 	MOVE.L D0,A1
 	cmpi.b #'B',d7
@@ -1778,6 +1798,8 @@ PEEK
 
 RND:
 	bsr	PARN			; get the upper limit
+	cmpi.l #DT_NUMERIC,d0
+	bne ETYPE
 	ftst.x fp0		; it must be positive and non-zero
 	fbeq QHOW
 	fblt QHOW
@@ -1800,10 +1822,10 @@ ABS:
 
 SIZE:
 	move.l StrArea,d0		; get the number of free bytes...
-	sub.l	 TXTUNF,d0		; between 'TXTUNF' and 'StrArea2'
-	moveq #DT_NUMERIC,d0	; data type is a number
+	sub.l	 TXTUNF,d0		; between 'TXTUNF' and 'StrArea'
 	fmove.l d0,fp0
-	rts									; return the number in d0/fp0
+	moveq #DT_NUMERIC,d0	; data type is a number
+	rts										; return the number in fp0
 	
 ; ===== The TICK function returns the processor tick register in D0.
 
@@ -2102,7 +2124,8 @@ MVDOWN
 	MOVE.B	-(A1),-(A3)
 	BRA	MVDOWN
 
-POPA	MOVE.L	(SP)+,A6	A6 = return address
+POPA
+	MOVE.L	(SP)+,A6	A6 = return address
 	MOVE.L	(SP)+,LOPVAR	restore LOPVAR, but zero means no more
 	BEQ	PP1
 	MOVE.L	(SP)+,LOPINC+8	if not zero, restore the rest
@@ -2113,9 +2136,11 @@ POPA	MOVE.L	(SP)+,A6	A6 = return address
 	MOVE.L	(SP)+,LOPLMT
 	MOVE.L	(SP)+,LOPLN
 	MOVE.L	(SP)+,LOPPT
-PP1	JMP	(A6)		return
+PP1
+	JMP	(A6)		return
 
-PUSHA	MOVE.L	STKLMT,D1	Are we running out of stack room?
+PUSHA
+	MOVE.L	STKLMT,D1	Are we running out of stack room?
 	SUB.L	SP,D1
 	BCC	QSORRY		if so, say we're sorry
 	MOVE.L	(SP)+,A6	else get the return address
@@ -2133,7 +2158,6 @@ PU1
 	MOVE.L	D1,-(SP)
 	JMP	(A6)		return
 
-*
 *******************************************************************
 *
 * *** PRTSTG *** QTSTG *** PRTNUM *** PRTLN ***
@@ -2228,6 +2252,26 @@ PRTNUM:
 	cchk 44(a0)
 	unlk a2
 	rts
+
+; Debugging
+	if 0
+PRTFP0:
+	link a2,#-48
+	move.l _canary,44(a0)
+	movem.l d0/d1/d2/d3/a1,(sp)
+	fmove.x fp0,20(sp)
+	lea _fpBuf,a1						; a1 = pointer to buffer to use
+	moveq #39,d0						; d0 = function #39 print float
+	moveq #30,d1						; d1 = width
+	moveq #25,d2						; d2 = precision max
+	moveq #'e',d3
+	trap #15
+	movem.l (sp),d0/d1/d2/d3/a1
+	fmove.x 20(sp),fp0
+	cchk 44(a0)
+	unlk a2
+	rts
+	endif
 
 PRTLN:
 	CLR.L	D1
@@ -2490,9 +2534,8 @@ AUXIN:
 *	AND.B	#$7F,D0 	zero out the high bit
 AXIRET	RTS
 
-*
-* ===== Return to the resident monitor, operating system, etc.
-*
+; ===== Return to the resident monitor, operating system, etc.
+;
 BYEBYE	
 	move.l #8,_fpTextIncr
 	bra		Monitor
