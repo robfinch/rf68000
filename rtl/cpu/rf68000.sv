@@ -438,6 +438,8 @@ typedef enum logic [7:0] {
 	FETCH_IMM96c,
 	FETCH_IMM96d,
 	
+	CCHK,
+	
 	FSDATA2
 } state_t;
 
@@ -776,6 +778,7 @@ reg [7:0] cpl;
 reg [31:0] tr;
 reg [31:0] tcba;
 reg [31:0] mmus, ios, iops;
+reg [31:0] canary;
 assign mmus_o = adr_o[31:20] == mmus[31:20];
 assign iops_o = adr_o[31:16] == iops[31:16];
 assign ios_o  = adr_o[31:20] == ios [31:20];
@@ -1215,6 +1218,7 @@ if (rst_i) begin
 	ios  <= 32'hFD000000;
 	iops <= 32'hFD100000;
 	mmus <= 32'hFDC00000;
+	canary <= 'd0;
 end
 else begin
 
@@ -2637,6 +2641,11 @@ DECODE:
 					begin
 						d <= rfoDnn;
 						goto (BCD2BIN1);
+					end
+				16'h0003:
+					begin
+						push(CCHK);
+						fs_data(mmm,rrr,FETCH_LWORD,S);
 					end
 				default:	tIllegal();
 				endcase
@@ -4601,17 +4610,13 @@ FETCH_LWORD:
 `ifdef BIG_ENDIAN
       if (ds==D)
         d[31:16] <= {dat_i[23:16],dat_i[31:24]};
-      else begin
+      else
         s[31:16] <= {dat_i[23:16],dat_i[31:24]};
-        fps[31:16] <= {dat_i[23:16],dat_i[31:24]};
-      end
 `else			
       if (ds==D)
         d[15:0] <= dat_i[31:16];
-      else begin
+      else
         s[15:0] <= dat_i[31:16];
-        fps[15:0] <= dat_i[31:16];
-      end
 `endif          
   		goto (FETCH_LWORDa);
     end
@@ -4620,17 +4625,13 @@ FETCH_LWORD:
 `ifdef BIG_ENDIAN
       if (ds==D)
         d <= rbo(dat_i);
-      else begin
+      else
         s <= rbo(dat_i);
-        fps <= rbo(dat_i);
-      end
 `else        
       if (ds==D)
         d <= dat_i;
-      else begin
+      else
         s <= dat_i;
-        fps <= dat_i;
-      end
 `endif            
       ret();
     end
@@ -4649,17 +4650,13 @@ FETCH_LWORDa:
 `ifdef BIG_ENDIAN
 		if (ds==D)
 			d[15:0] <= {dat_i[7:0],dat_i[15:8]};
-		else begin
+		else
 			s[15:0] <= {dat_i[7:0],dat_i[15:8]};
-			fps[15:0] <= {dat_i[7:0],dat_i[15:8]};
-		end
 `else		
 		if (ds==D)
 			d[31:16] <= dat_i[15:0];
-		else begin
+		else
 			s[31:16] <= dat_i[15:0];
-			fps[31:16] <= dat_i[15:0];
-		end
 `endif			
 		ret();
 	end
@@ -4683,7 +4680,7 @@ FETCH_HEXI2:
 		ea <= ea + 4'd4;			
 		call (FETCH_LWORD,FETCH_HEXI3);
 	end
-FETCH_HEXI2:
+FETCH_HEXI3:
 	begin
 `ifdef BIG_ENDIAN
 		if (ds==S)
@@ -6095,6 +6092,7 @@ MOVERn2Rc2:
 	12'h014:	begin mmus <= rfoRnn; ret(); end
 	12'h015:	begin ios <= rfoRnn; ret(); end
 	12'h016:	begin iops <= rfoRnn; ret(); end
+	12'h020:	begin canary <= rfoRnn; ret(); end
 	12'h800:	begin usp <= rfoRnn; ret(); end
 	12'h801:	begin vbr <= rfoRnn; ret(); end
 /*	
@@ -6134,6 +6132,7 @@ MOVERc2Rn:
 	12'h014:  begin resL <= mmus; Rt <= imm[15:12]; rfwrL <= 1'b1; ret(); end
 	12'h015:  begin resL <= ios; Rt <= imm[15:12]; rfwrL <= 1'b1; ret(); end
 	12'h016:  begin resL <= iops; Rt <= imm[15:12]; rfwrL <= 1'b1; ret(); end
+	12'h020:  begin resL <= canary; Rt <= imm[15:12]; rfwrL <= 1'b1; ret(); end
 	12'h800:	begin resL <= usp; Rt <= imm[15:12]; rfwrL <= 1'b1; ret(); end
 	12'h801:	begin resL <= vbr; Rt <= imm[15:12]; rfwrL <= 1'b1; ret(); end
 	12'hFE0:	begin resL <= coreno_i; Rt <= imm[15:12]; rfwrL <= 1'b1; ret(); end
@@ -6179,6 +6178,18 @@ BCD2BIN3:
 		rfwrL <= 1'b1;
 		Rt <= {1'b0,rrr};
 		ret();
+	end
+CCHK:
+	begin
+		if (s != canary) begin
+  		isr <= srx;
+  		tf <= 1'b0;
+  		sf <= 1'b1;
+			vecno <= `CHK_VEC;
+	    goto (TRAP3);
+		end
+		else
+			ret();
 	end
 `ifdef SUPPORT_DECFLT
 FADD:
