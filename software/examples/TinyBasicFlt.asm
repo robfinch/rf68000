@@ -5,18 +5,15 @@
 * Derived from Palo Alto Tiny BASIC as published in the May 1976 *
 * issue of Dr. Dobb's Journal.  Adapted to the 68000 by:         *
 *	Gordon Brandly						 *
-*	12147 - 51 Street					 *
-*	Edmonton AB  T5W 3G8					 *
-*	Canada							 *
-*	(updated mailing address for 1996)			 *
-* Modified 2022 for the rf68000. Robert Finch
-*								 *
-* This version is for MEX68KECB Educational Computer Board I/O.  *
 *								 *
 ******************************************************************
 *    Copyright (C) 1984 by Gordon Brandly. This program may be	 *
 *    freely distributed for personal use only. All commercial	 *
 *		       rights are reserved.			 *
+******************************************************************
+* Modified (c) 2022 for the rf68000. Robert Finch
+* Numerics changed to floating-point
+* added string handling
 ******************************************************************
 
 * Vers. 1.0  1984/7/17	- Original version by Gordon Brandly
@@ -33,7 +30,13 @@
 ;CTRLS	EQU	$13
 ;CTRLX	EQU	$18
 
+DT_NONE equ 0
+DT_NUMERIC equ 1
+DT_STRING equ 2		; string descriptor
+DT_TEXTPTR equ 3	; pointer into program text
+
 BUFLEN	EQU	80		length of keyboard input buffer
+STRAREASIZE	EQU	2048	; size of string area
 	CODE
 *	ORG	$10000		first free address using Tutor
 *
@@ -64,9 +67,16 @@ CSTART	MOVE.L	ENDMEM,SP	initialize stack pointer
 	MOVE.L	TXTBGN,TXTUNF	init. end-of-program pointer
 	MOVE.L	ENDMEM,D0	get address of end of memory
 	SUB.L	#4096,D0	reserve 4K for the stack
+	MOVE.L D0,STRSTK
+	ADD.L #32,D0
 	MOVE.L	D0,STKLMT
 	SUB.L	#512,D0 	reserve variable area (32 16 byte floats)
 	MOVE.L	D0,VARBGN
+	SUB.L #STRAREASIZE,D0
+	MOVE.L D0,StrArea
+	MOVE.L D0,LastStr
+	clr.l StrArea
+	clr.l StrArea+4
 WSTART
 	CLR.L	D0		initialize internal variables
 	move.l #1,_fpTextIncr
@@ -74,7 +84,13 @@ WSTART
 	MOVE.L	D0,LOPVAR
 	MOVE.L	D0,STKGOS
 	MOVE.L	D0,CURRNT	current line number pointer = 0
-	MOVE.L	ENDMEM,SP	init S.P. again, just in case
+	MOVE.L	ENDMEM,SP		; init S.P. again, just in case
+	moveq #7,d0
+	move.l STRSTK,a1
+	move.l STRSTK+28,StrSp	; set string stack stack pointer
+.0001
+	clr.l (a1)+					; clear the string stack
+	dbra d0,.0001
 	LEA	OKMSG,A6	display "OK"
 	bsr	PRMESG
 ST3
@@ -110,7 +126,7 @@ ST4
 	MOVE.L	TXTUNF,A3	compute new end
 	MOVE.L	A3,A6
 	ADD.L	D0,A3
-	MOVE.L VARBGN,D0	see if there's enough room
+	MOVE.L StrArea,D0	see if there's enough room
 	CMP.L	A3,D0
 	BLS	QSORRY		if not, say so
 	MOVE.L	A3,TXTUNF	if so, store new end position
@@ -167,6 +183,7 @@ TAB1
 	DC.B	'NE',('W'+$80)
 	DC.B	'RU',('N'+$80)
 	DC.B	'SAV',('E'+$80)
+	DC.B 	'CL',('S'+$80)
 TAB2
 	DC.B	'NEX',('T'+$80)         Direct / statement
 	DC.B	'LE',('T'+$80)
@@ -229,6 +246,7 @@ TAB1_1
 	DC.L	NEW
 	DC.L	RUN
 	DC.L	SAVE
+	DC.L	CLS
 TAB2_1
 	DC.L	NEXT			Direct / statement
 	DC.L	LET
@@ -247,7 +265,7 @@ TAB2_1
 	DC.L	ONIRQ
 	DC.L	DEFLT
 TAB4_1
-	DC.L	PEEK			Functions
+	DC.L	PEEK			; Functions
 	DC.L	RND
 	DC.L	ABS
 	DC.L	SIZE
@@ -255,10 +273,10 @@ TAB4_1
 	DC.L	CORENO
 	DC.L	XP40
 TAB5_1
-	DC.L	FR1			"TO" in "FOR"
+	DC.L	FR1			; "TO" in "FOR"
 	DC.L	QWHAT
 TAB6_1
-	DC.L	FR2			"STEP" in "FOR"
+	DC.L	FR2			; "STEP" in "FOR"
 	DC.L	FR3
 TAB8_1
 	DC.L	XP11	>=		Relational operators
@@ -375,10 +393,12 @@ OUTCON
 * 'GOTO expr<CR>' evaluates the expression, finds the target
 * line, and jumps to 'RUNTSL' to do it.
 *
-NEW	bsr	ENDCHK
+NEW
+	bsr	ENDCHK
 	MOVE.L	TXTBGN,TXTUNF	set the end pointer
 
-STOP	bsr	ENDCHK
+STOP
+	bsr	ENDCHK
 	BRA	WSTART
 
 RUN
@@ -425,7 +445,7 @@ RUNSML
 	BRA	EXEC		and execute it
 
 GOTO	
-	bsr	EXPR			; evaluate the following expression
+	bsr	NUM_EXPR	; evaluate the following expression
 	bsr	ENDCHK		; must find end of line
 	fmove.l fp0,d0
 	move.l d0,d1
@@ -440,7 +460,7 @@ GOTO
 ;******************************************************************
 
 ONIRQ:
-	bsr	EXPR				; evaluate the following expression
+	bsr	NUM_EXPR		; evaluate the following expression
 	bsr ENDCHK			; must find end of line
 	fmove.l fp0,d0
 	move.l d0,d1
@@ -491,57 +511,78 @@ LIST
 	bsr	TSTNUM		see if there's a line no.
 	bsr	ENDCHK		if not, we get a zero
 	bsr	FNDLN		find this or next line
-LS1	BCS	FINISH		warm start if we passed the end
+LS1
+	BCS	FINISH		warm start if we passed the end
 	bsr	PRTLN		print the line
 	bsr	CHKIO		check for listing halt request
 	BEQ	LS3
 	CMP.B	#CTRLS,D0	pause the listing?
 	BNE	LS3
-LS2	bsr	CHKIO		if so, wait for another keypress
+LS2
+	bsr	CHKIO		if so, wait for another keypress
 	BEQ	LS2
-LS3	bsr	FNDLNP		find the next line
+LS3
+	bsr	FNDLNP		find the next line
 	BRA	LS1
 
-PRINT	MOVE	#11,D4		D4 = number of print spaces
+PRINT	
+	MOVE.L #11,D4		D4 = number of print spaces
 	bsr	TSTC		if null list and ":"
 	DC.B	':',PR2-*
 	bsr	CRLF		give CR-LF and continue
 	BRA	RUNSML		execution on the same line
-PR2	bsr	TSTC		if null list and <CR>
+PR2	
+	bsr	TSTC		if null list and <CR>
 	DC.B	CR,PR0-*
 	bsr	CRLF		also give CR-LF and
 	BRA	RUNNXL		execute the next line
-PR0	bsr	TSTC		else is it a format?
+PR0
+	bsr	TSTC		else is it a format?
 	DC.B	'#',PR1-*
-	bsr	EXPR		yes, evaluate expression
+	bsr	NUM_EXPR		yes, evaluate expression
 	FMOVE.L	FP0,D4		and save it as print width
 	BRA	PR3		look for more to print
-PR1	bsr	TSTC		is character expression? (MRL)
+PR1
+	bsr	TSTC		is character expression? (MRL)
 	DC.B	'$',PR4-*
-	bsr	EXPR		yep. Evaluate expression (MRL)
+	bsr	NUM_EXPR		yep. Evaluate expression (MRL)
 	FMOVE.L FP0,D0
 	BSR	GOOUT		print low byte (MRL)
 	BRA	PR3		look for more. (MRL)
-PR4	bsr	QTSTG		is it a string?
-	BRA.S	PR8		if not, must be an expression
-PR3	bsr	TSTC		if ",", go find next
+PR4
+	bra PR8
+	bsr	QTSTG						; is it a string?
+	BRA.S	PR8						; if not, must be an expression
+PR3
+	bsr	TSTC						; if ",", go find next
 	DC.B	',',PR6-*
-	bsr	FIN		in the list.
+	bsr	FIN							; in the list.
 	BRA	PR0
-PR6	bsr	CRLF		list ends here
+PR6
+	bsr	CRLF						; list ends here
 	BRA	FINISH
-PR8	MOVE	D4,-(SP)	save the width value
-	bsr	EXPR		evaluate the expression
-	MOVE	(SP)+,D4	restore the width
-	FMOVE.X FP0,FP1
-;	MOVE.L	D0,D1
-	bsr	PRTNUM		print its value
-	BRA	PR3		more to print?
+PR8
+	move.l d4,-(SP)			; save the width value
+	bsr	EXPR						; evaluate the expression
+	move.l (sp)+,d4			; restore the width
+	cmpi.l #DT_STRING,d0	; is it a string?
+	beq PR9
+	fmove FP0,FP1
+	move.l #35,d4
+	bsr	PRTNUM					; print its value
+	bra	PR3							; more to print?
+	; Print a string
+PR9
+	fmove.x fp0,_fpWork
+	move.l _fpWork,d1
+	move.l _fpWork+4,a1
+	bsr PRTSTR2
+	bra PR3
 
-FINISH	bsr	FIN		Check end of command
-	BRA	QWHAT		print "What?" if wrong
+FINISH
+	bsr	FIN			; Check end of command
+	BRA	QWHAT		; print "What?" if wrong
 
-*
 *******************************************************************
 *
 * *** GOSUB *** & RETURN ***
@@ -564,8 +605,8 @@ FINISH	bsr	FIN		Check end of command
 GOSUB:
 	sub.l #128,sp		; allocate storage for local variables
 	move.l sp,STKFP
-	bsr	PUSHA		save the current 'FOR' parameters
-	bsr	EXPR		get line number
+	bsr	PUSHA				; save the current 'FOR' parameters
+	bsr	NUM_EXPR		; get line number
 	MOVE.L	A0,-(SP)	save text pointer
 	FMOVE.L FP0,D0
 	FMOVE.L	FP0,D1
@@ -619,23 +660,23 @@ RETURN:
 * 'FOR'.  If it's outside the limit, the save area is purged and
 * execution continues.
 *
-FOR	bsr	PUSHA		save the old 'FOR' save area
+FOR
+	bsr	PUSHA		save the old 'FOR' save area
 	bsr	SETVAL		set the control variable
 	MOVE.L	A6,LOPVAR	save its address
 	LEA	TAB5,A1 	use 'EXEC' to test for 'TO'
 	LEA	TAB5_1,A2
 	BRA	EXEC
 FR1	
-	bsr	EXPR		evaluate the limit
+	bsr	NUM_EXPR		evaluate the limit
 	FMOVE.X	FP0,LOPLMT	save that
 	LEA	TAB6,A1 	use 'EXEC' to look for the
 	LEA	TAB6_1,A2	word 'STEP'
 	BRA	EXEC
 FR2
-	bsr	EXPR		found it, get the step value
+	bsr	NUM_EXPR		found it, get the step value
 	BRA	FR4
 FR3
-;	MOVEQ	#1,D0		not found, step defaults to 1
 	FMOVE.B #1,FP0	; not found, step defaults to 1
 FR4
 	FMOVE.X	FP0,LOPINC	save that too
@@ -692,7 +733,6 @@ NX2
 	bsr	POPA		purge this loop
 	BRA	FINISH
 
-*
 *******************************************************************
 *
 * *** REM *** IF *** INPUT *** LET (& DEFLT) ***
@@ -727,11 +767,14 @@ NX2
 * expression.  The interpreter evaluates the expression and sets
 * the variable to that value.  The interpreter will also handle
 * 'LET' commands without the word 'LET'.  This is done by 'DEFLT'.
-*
-REM	BRA	IF2		skip the rest of the line
 
-IF	bsr	EXPR		evaluate the expression
-IF1	FTST	FP0		is it zero?
+REM
+	BRA	IF2		skip the rest of the line
+
+IF
+	bsr	NUM_EXPR		evaluate the expression
+IF1
+	FTST	FP0		is it zero?
 	FBNE	RUNSML		if not, continue
 IF2	MOVE.L	A0,A1
 	CLR.L	D1
@@ -744,14 +787,16 @@ INPERR	MOVE.L	STKINP,SP	restore the old stack pointer
 	ADDQ.L	#4,SP
 	MOVE.L	(SP)+,A0	and old text pointer
 
-INPUT	MOVE.L	A0,-(SP)	save in case of error
+INPUT	
+	MOVE.L	A0,-(SP)	save in case of error
 	bsr	QTSTG		is next item a string?
 	BRA.S	IP2		nope
 	bsr	TSTV		yes, but is it followed by a variable?
 	BCS	IP4		if not, branch
 	MOVE.L	D0,A2		put away the variable's address
 	BRA	IP3		if so, input to variable
-IP2	MOVE.L	A0,-(SP)	save for 'PRTSTG'
+IP2
+	MOVE.L	A0,-(SP)	save for 'PRTSTG'
 	bsr	TSTV		must be a variable now
 	BCS	QWHAT		"What?" it isn't?
 	MOVE.L	D0,A2		put away the variable's address
@@ -761,7 +806,8 @@ IP2	MOVE.L	A0,-(SP)	save for 'PRTSTG'
 	MOVE.L	(SP)+,A1
 	bsr	PRTSTG		print string as prompt
 	MOVE.B	D2,(A0) 	restore text
-IP3	MOVE.L	A0,-(SP)	save in case of error
+IP3
+	MOVE.L	A0,-(SP)	save in case of error
 	MOVE.L	CURRNT,-(SP)	also save 'CURRNT'
 	MOVE.L	#-1,CURRNT	flag that we are in INPUT
 	MOVE.L	SP,STKINP	save the stack pointer too
@@ -771,18 +817,21 @@ IP3	MOVE.L	A0,-(SP)	save in case of error
 	LEA	BUFFER,A0	point to the buffer
 	bsr	EXPR		evaluate the input
 	MOVE.L	(SP)+,A2	restore the variable address
-	FMOVE.X	FP0,(A2) 	save value in variable
+	move.l d0,(a2)			; save data type
+	FMOVE.X	FP0,4(A2) 	; save value in variable
 	MOVE.L	(SP)+,CURRNT	restore old 'CURRNT'
 	MOVE.L	(SP)+,A0	and the old text pointer
-IP4	ADDQ.L	#4,SP		clean up the stack
+IP4
+	ADDQ.L	#4,SP		clean up the stack
 	bsr	TSTC		is the next thing a comma?
 	DC.B	',',IP5-*
 	BRA	INPUT		yes, more items
-IP5	BRA	FINISH
+IP5
+	BRA	FINISH
 
 DEFLT
-	CMP.B	#CR,(A0)	empty line is OK
-	BEQ	LT1		else it is 'LET'
+	CMP.B	#CR,(A0)	; empty line is OK
+	BEQ	FINISH			; else it is 'LET'
 
 LET
 	bsr	SETVAL		 	; do the assignment
@@ -892,7 +941,6 @@ PBYTE2	BSR	GOAUXO		send it out
 	DBRA	D2,PBYTE1	then send the next nybble
 	RTS
 
-*
 *******************************************************************
 *
 * *** POKE *** & CALL ***
@@ -924,11 +972,11 @@ POKE
 	addq #1,a0
 	move.b d1,d7
 .0001
-	BSR	EXPR		get the memory address
+	BSR	NUM_EXPR		get the memory address
 	bsr	TSTC		it must be followed by a comma
 	DC.B	',',PKER-*
 	FMOVE.L	FP0,-(SP)	save the address
-	BSR	EXPR		get the byte to be POKE'd
+	BSR	NUM_EXPR		get the byte to be POKE'd
 	MOVE.L	(SP)+,A1	get the address back
 	CMPI.B #'B',D7
 	BNE .0003
@@ -950,17 +998,18 @@ POKE
 	FMOVE.X FP0,(A1)
 	BRA FINISH
 .0006
-PKER	BRA	QWHAT		if no comma, say "What?"
+PKER
+	BRA	QWHAT		if no comma, say "What?"
 
 CALL	
-	BSR	EXPR		get the subroutine's address
-	FTST FP0			; make sure we got a valid address
-	BEQ	QHOW		if not, say "How?"
-	MOVE.L	A0,-(SP)	save the text pointer
+	BSR	NUM_EXPR		; get the subroutine's address
+	FTST FP0				; make sure we got a valid address
+	FBEQ QHOW				; if not, say "How?"
+	MOVE.L A0,-(SP)	; save the text pointer
 	FMOVE.L	FP0,D0
 	MOVE.L D0,A1
-	JSR	(A1)		jump to the subroutine
-	MOVE.L	(SP)+,A0	restore the text pointer
+	JSR	(A1)				; jump to the subroutine
+	MOVE.L (SP)+,A0	; restore the text pointer
 	BRA	FINISH
 
 *******************************************************************
@@ -982,33 +1031,140 @@ CALL
 * as an index, functions can have an <EXPR> as arguments, and
 * <EXPR4> can be an <EXPR> in parenthesis.
 
+;-------------------------------------------------------------------------------
+; Push string whose string descriptor is in fp0 on string stack.
+;-------------------------------------------------------------------------------
+
+PushString:
+	move.l a1,-(sp)
+	move.l StrSp,a1					; get string stack pointer
+	cmpa.l #STRSTK,a1				; ensure not too deeep
+	bls QHOW
+	subq.l #4,a1						; decrement sp
+	move.l a1,StrSp
+	fmove.x fp0,_fpWork			; save descriptor in temp area
+	move.l _fpWork+4,(a1)		; copy string pointer to stack
+	move.l (sp)+,a1
+	rts
+
+;-------------------------------------------------------------------------------
+; Pop string from string stack.
+;-------------------------------------------------------------------------------
+
+PopString:
+	move.l a1,-(sp)
+	move.l StrSp,d2					; remove string from string stack
+	move.l STRSTK,a1
+	clr.l (a1,d2.l)					; clear the string pointer
+	add.l #4,StrSp
+	move.l (sp)+,a1
+	rts
+	
+;-------------------------------------------------------------------------------
+; Push a value on the stack.
+;-------------------------------------------------------------------------------
+
+XP_PUSH:
+	move.l (sp)+,a1				; a1 = return address
+	move.l _canary,-(sp)	; push the canary
+	sub.l #16,sp					; allocate for value
+	move.l d0,(sp)				; push data type
+	fmove.x fp0,4(sp)			; and value
+	cmpi.l #DT_STRING,d0	; if it is a string
+	bne .0001
+	bsr PushString				; push string on string stack
+.0001
+	jmp (a1)
+
+;-------------------------------------------------------------------------------
+; Pop value from stack into first operand.
+;-------------------------------------------------------------------------------
+	
+XP_POP:
+	move.l (sp)+,a1			; get return address
+	move.l (sp),d0			; pop data type
+	fmove.x 4(sp),fp0		; and data element
+	add.l #16,SP
+	cchk (SP)						; check the canary
+	add.l #4,SP					; pop canary	
+	cmpi.l #DT_STRING,d0
+	bne .0001						; if a string
+	bsr PopString				; pop string from string stack
+.0001
+	jmp (a1)
+
+;-------------------------------------------------------------------------------
+; Pop value from stack into second operand.
+;-------------------------------------------------------------------------------
+
+XP_POP1:
+	move.l (sp)+,a1			; get return address
+	move.l (sp),d1			; pop data type
+	fmove.x 4(sp),fp1		; and data element
+	add.l #16,sp
+	cchk (sp)						; check the canary
+	add.l #4,sp					; pop canary
+	cmpi.l #DT_STRING,d1
+	bne .0001						; if a string
+	bsr PopString				; pop string from string stack
+.0001
+	jmp (a1)
+
+;-------------------------------------------------------------------------------
+; Get and expression and make sure it is numeric.
+;-------------------------------------------------------------------------------
+
+NUM_EXPR
+	bsr EXPR
+	cmpi.l #DT_NUMERIC,d0
+	bne ETYPE
+	rts
+
+;-------------------------------------------------------------------------------
+; The top level of the expression parser.
+; Get an expression, string or numeric.
+;
+; EXEC will smash a lot of vars, so push the current expression value before
+; doing EXEC
+;-------------------------------------------------------------------------------
+
 EXPR
 EXPR_OR
 	BSR EXPR_AND
-	FMOVE.X FP0,-(SP)
+	BSR XP_PUSH
 	LEA TAB10,A1
 	LEA TAB10_1,A2
 	BRA EXEC
 	
+;-------------------------------------------------------------------------------
+; Boolean 'Or' level
+;-------------------------------------------------------------------------------
+
 XP_OR
 	BSR EXPR_AND
-	FMOVE.X (SP)+,FP1
+	bsr XP_POP1
+	bsr CheckNumeric
 	FMOVE.L FP1,D1
 	FMOVE.L FP0,D0
 	OR.L D1,D0
 	FMOVE.L D0,FP0
-	RTS
+	rts
 	
+;-------------------------------------------------------------------------------
+; Boolean 'And' level
+;-------------------------------------------------------------------------------
+
 EXPR_AND
-	BSR EXPR_REL
-	FMOVE.X FP0,-(SP)
+	bsr EXPR_REL
+	bsr XP_PUSH
 	LEA TAB9,A1
 	LEA TAB9_1,A2
 	BRA EXEC
 
 XP_AND
 	BSR EXPR_REL
-	FMOVE.X (SP)+,FP1
+	bsr XP_POP1
+	bsr CheckNumeric
 	FMOVE.L FP1,D1
 	FMOVE.L FP0,D0
 	AND.L D1,D0
@@ -1017,42 +1173,57 @@ XP_AND
 	
 XP_ANDX
 XP_ORX
-	FMOVE.X (SP)+,FP0
+	bsr XP_POP
+	rts
+
+;-------------------------------------------------------------------------------
+; Check that two numeric values are being used.
+;-------------------------------------------------------------------------------
+
+CheckNumeric:
+	CMPI.B #DT_NUMERIC,D1
+	BNE ETYPE
+	CMPI.B #DT_NUMERIC,D0
+	BNE ETYPE
 	RTS
+
+;-------------------------------------------------------------------------------
+; Relational operator level, <,<=,>=,>,=,<>
+;-------------------------------------------------------------------------------
 
 EXPR_REL
 	BSR	EXPR2
-	FMOVE.X	FP0,-(SP)		; save <EXPR2> value
+	bsr XP_PUSH
 	LEA	TAB8,A1 				; look up a relational operator
 	LEA	TAB8_1,A2
 	BRA	EXEC		go do it
 
 XP11
-	FMOVE.X (SP)+,FP0	
+	bsr XP_POP
 	BSR	XP18		is it ">="?
 	FBLT XPRT0		no, return D0=0
 	BRA	XPRT1		else return D0=1
 
 XP12
-	FMOVE.X (SP)+,FP0	
+	bsr XP_POP
 	BSR	XP18		is it "<>"?
 	FBEQ XPRT0		no, return D0=0
 	BRA	XPRT1		else return D0=1
 
 XP13
-	FMOVE.X (SP)+,FP0	
+	bsr XP_POP
 	BSR	XP18		is it ">"?
 	FBLE XPRT0		no, return D0=0
 	BRA	XPRT1		else return D0=1
 
 XP14
-	FMOVE.X (SP)+,FP0	
+	bsr XP_POP
 	BSR	XP18		is it "<="?
 	FBGT XPRT0		no, return D0=0
 	BRA	XPRT1		else return D0=1
 
 XP15
-	FMOVE.X (SP)+,FP0	
+	bsr XP_POP
 	BSR	XP18		is it "="?
 	FBNE XPRT0		if not, return D0=0
 	BRA	XPRT1		else return D0=1
@@ -1060,11 +1231,10 @@ XP15RT
 	RTS
 
 XP16
-	FMOVE.X (SP)+,FP0	
+	bsr XP_POP
 	BSR	XP18		is it "<"?
 	FBGE XPRT0		if not, return D0=0
 	BRA	XPRT1		else return D0=1
-XP16RT
 	RTS
 
 XPRT0
@@ -1076,15 +1246,20 @@ XPRT1
 	RTS
 
 XP17								; it's not a rel. operator
-	FMOVE.X (SP)+,FP0
-	RTS								;		return FP0=<EXPR2>
+	bsr XP_POP
+	rts								;		return FP0=<EXPR2>
 
 XP18
-	FMOVE.X	FP0,-(SP)	; save <EXPR2> value
+	bsr XP_PUSH
 	BSR	EXPR2					; do second <EXPR2>
-	FMOVE.X (SP)+,FP1	; get stacked value
+	bsr XP_POP1
+	bsr CheckNumeric
 	FCMP FP0,FP1			; compare with the first result
 	RTS								; return the result
+
+;-------------------------------------------------------------------------------
+; Add/Subtract operator level, +,-
+;-------------------------------------------------------------------------------
 
 EXPR2
 	bsr	TSTC		; negative sign?
@@ -1099,58 +1274,156 @@ XP22
 XP23
 	bsr	TSTC		; add?
 	DC.B	'+',XP25-*
-	FMOVE.X FP0,-(SP)	; yes, save the value
+	bsr XP_PUSH
 	BSR	EXPR3					; get the second <EXPR3>
 XP24
-	FMOVE.X (SP)+,FP1
+	bsr XP_POP1
+	CMP.B #DT_NUMERIC,d0
+	BNE .notNum
+	CMP.B #DT_NUMERIC,d1
+	BNE .notNum
 	FADD FP1,FP0			; add it to the first <EXPR3>
 ;	FBVS	QHOW		branch if there's an overflow
 	BRA	XP23		else go back for more operations
+.notNum
+	CMP.L #DT_STRING,d0
+	bne ETYPE
+	CMP.L #DT_STRING,d1
+	bne ETYPE
+	fmove.x fp0,_fpWork
+	fmove.x fp1,_fpWork+16
+	move.l _fpWork,d2			; d2 = length of first string
+	add.l	_fpWork+16,d2		; add length of second string
+	bsr AllocateString		; allocate
+;	move.l StrStkPtr,d1
+;	cmpi.l #32,d1
+;	bhs QHOW
+;	move.l STRSTK,a4
+;	move.l a1,(a4,d1.l)		; save pointer on string stack
+	lea 4(a1),a4					; save pointer to allocated string
+	move.l a1,a2
+	move.l _fpWork+4,a4
+	move.w _fpWork,d2
+	move.l a1,a3
+	add.l d2,a3	
+	addq.l #4,a3					; four bytes for length
+	move.l d2,(a2)				; save length
+	addq.l #4,a2
+	move.l a4,a1					; move past length to text area
+	bsr MVUP							; move from A1 to A2 until A1=A3
+	move.l _fpWork+20,a1	; a1 = pointer to second string text
+	move.l a1,a3
+	move.l _fpWork+16,d2
+	add.l d2,a3
+	bsr MVUP							; concatonate on second string
+	move.l d2,_fpWork			; save total string length in fp work
+	move.l a4,_fpWork+4		; save pointer in fp work area
+	moveq #DT_STRING,d0		; set return data type = string
+	fmove.x _fpWork,fp0		; fp0 = string descriptor
+	rts
+
 XP25
 	bsr	TSTC		subtract?
-	DC.B	'-',XP42-*
+	DC.B	'-',XP27-*
 XP26
-	FMOVE.X	FP0,-(SP)	; yes, save the result of 1st <EXPR3>
+	bsr XP_PUSH
 	BSR	EXPR3					; get second <EXPR3>
+	cmpi.b #DT_NUMERIC,d0
+	bne ETYPE
 	FNEG FP0					; change its sign
 	JMP	XP24					; and do an addition
+
+XP27
+	RTS
+
+;-------------------------------------------------------------------------------
+; Multiply / Divide operator level, *,/,%
+;-------------------------------------------------------------------------------
 
 EXPR3
 	BSR	EXPR4					; get first <EXPR4>
 XP31
 	bsr	TSTC					; multiply?
 	DC.B	'*',XP34-*
-	FMOVE.X FP0,-(SP)	; yes, save that first result
+	bsr XP_PUSH
 	BSR	EXPR4					; get second <EXPR4>
-	FMOVE.X (SP)+,FP1
+	bsr XP_POP1
+	bsr CheckNumeric
 	FMUL FP1,FP0			; multiply the two
 	BRA	XP31					; then look for more terms
 XP34
 	bsr	TSTC		divide?
-	DC.B	'/',XP42-*
-	FMOVE.X FP0,-(SP)	; save result of 1st <EXPR4>
+	DC.B	'/',XP35-*
+	bsr XP_PUSH
 	BSR	EXPR4					; get second <EXPR4>
-	FMOVE.X FP0,FP1
-	FMOVE.X (SP)+,FP0
+	bsr XP_POP1
+	bsr CheckNumeric
 	FDIV FP1,FP0			; do the division
 	BRA	XP31					; go back for any more terms
+XP35
+	bsr TSTC
+	DC.B '%',XP36-*
+	bsr XP_PUSH
+	BSR	EXPR4					; get second <EXPR4>
+	bsr XP_POP1
+	bsr CheckNumeric
+	FDIV FP1,FP0			; do the division
+	BRA	XP31					; go back for any more terms
+	
+XP36
+	rts
+
+;-------------------------------------------------------------------------------
+; Lowest Level of expression evaluation.
+;	Check for
+;		a function or
+;		a variable or
+;		a number or
+;		a string or
+;		( expr )
+;-------------------------------------------------------------------------------
 
 EXPR4
 	LEA	TAB4,A1 			; find possible function
 	LEA	TAB4_1,A2
 	BRA	EXEC
 XP40
-	BSR	TSTV					; nope, not a function
-	BCS	XP41					; nor a variable
-	MOVE.L	D0,A1			; A1 = variable address
-	FMOVE.X (A1),FP0	; if a variable, return its value in FP0
+	bsr	TSTV					; nope, not a function
+	bcs	XP41					; nor a variable
+	move.l d0,a1			; a1 = variable address
+	move.l (a1),d0		; return type in d0
+	fmove.x 4(a1),fp0	; if a variable, return its value in fp0
 EXP4RT
-	RTS
+	rts
 XP41
 	bsr	TSTNUM				; or is it a number?
-	FMOVE.X FP1,FP0
-	TST.w	D2					; (if not, # of digits will be zero)
-	BNE	EXP4RT				; if so, return it in FP0
+	fmove fp1,fp0
+	cmpi.l #DT_NUMERIC,d0
+	beq	EXP4RT				; if so, return it in FP0
+XPSTNG
+	bsr TSTC					; is it a string constant?
+	dc.b '"',PARN-*
+	move.l a0,a1			; record start of string in a1
+	move.l #511,d2		; max 512 characters
+.0003	
+	move.b (a0)+,d0		; get a character
+	beq .0001					; should not be a NULL
+	cmpi.b #CR,d0			; CR means the end of line was hit without a close quote
+	beq .0001
+	cmpi.b #'"',d0		; close quote?
+	beq .0002
+	dbra d2,.0003			; no close quote, go back for next char
+.0001
+	bra QHOW
+.0002
+	sub.l a1,a0				; compute string length + 1
+	move.l a0,d0
+	subq #1,d0				; subtract out closing quote
+	move.l d0,_fpWork	; length and pointer
+	move.l a1,_fpWork+4
+	fmove.x _fpWork,fp0	; put string descriptor into fp0
+	moveq #DT_STRING,d0	; return string data type
+	rts
 PARN
 	bsr	TSTC					; else look for ( EXPR )
 	DC.B	'(',XP43-*
@@ -1158,11 +1431,215 @@ PARN
 	bsr	TSTC
 	DC.B	')',XP43-*
 XP42	
-	RTS
+	rts
 XP43
 	BRA	QWHAT					; else say "What?"
 
+;-------------------------------------------------------------------------------	
+; Allocate storage for a string variable.
+;
+; Parameters:
+;		d2 = number of bytes needed
+; Returns:
+;		a1 = pointer to string area
+;-------------------------------------------------------------------------------	
 
+AllocateString:
+	move.l VARBGN,d4
+	move.l LastStr,a1
+	sub.l (a1),d4
+	sub.l LastStr,d4
+	cmp.l d4,d2
+	bhi .needMoreRoom
+.0001
+	move.l LastStr,a1
+	move.l a1,a3
+	move.l d2,(a3)
+	add.l d2,a3
+	addq.l #7,a3
+	move.l a3,d3
+	andi.l #$FFFFFFFC,d3
+	move.l d3,a3
+	move.l a3,LastStr
+	rts
+.needMoreRoom
+	bsr GarbageCollectStrings
+	move.l VARBGN,d4
+	move.l LastStr,a1
+	sub.l (a1),d4
+	sub.l LastStr,d4
+	cmp.l d4,d2
+	blo .0001
+	lea NOSTRING,a6
+	bra ERROR
+		
+;-------------------------------------------------------------------------------	
+; Garbage collect strings. This copies all strings in use to the lower end of
+; the string area and adjusts the string pointers in variables and on the
+; string stack to point to the new location.
+;-------------------------------------------------------------------------------	
+
+GarbageCollectStrings:
+	move.l StrArea,a1
+	move.l StrArea,a2
+	move.l VARBGN,a6			; a6 = top of string area
+	move.l LastStr,a5
+.0001
+	bsr StringInVar				; check if the string is used by a variable
+	bcs .moveString
+	bsr StringOnStack			; check if string is on string expression stack
+	bcc .nextString				; if not on stack or in a var then move to next string
+	
+	; The string is in use, copy to active string area
+.moveString:
+	bsr UpdateStringPointers	; update pointer to string on stack or in variable
+	move.l a1,a3					; a3 = pointer to string
+	add.l (a1),a3					; add string length to pointer
+	addq.l #7,a3					; size +3+4 for length lword
+	move.l a3,d3
+	andi.l #$FFFFFFFC,d3	; round address to even long word
+	move.l d3,a3
+	bsr MVUP							; move from A1 to A2 until A1=A3
+.0003
+	move.l a2,d3
+	andi.l #$FFFFFFFC,d3	; make sure at even long word address
+	move.l d3,a2
+.0005
+	move.l a3,a1					; point to next string in area
+	cmp.l a5,a3
+	bls .0001
+	move.l a2,LastStr			; update last string pointer
+	rts
+.nextString:
+	move.l a1,a3
+	add.l (a1),a3					; add length of string
+	addq.l #7,a3					; plus 3 for rounding
+	move.l a3,d3
+	andi.l #$FFFFFFFC,d3	; round address to even long word
+	move.l d3,a3
+	bra .0005
+
+;-------------------------------------------------------------------------------	
+; Check if a variable is using a string
+;
+; Parameters:
+;		a1 = pointer to string descriptor
+; Returns:
+;		a4 = string pointer slot in variable (variable address plus 8)
+;		cf = 1 if string in use, 0 otherwise
+;-------------------------------------------------------------------------------	
+
+StringInVar:
+	move.l VARBGN,a4
+	moveq #31,d3			; 32 vars
+.0002
+	cmp.l #DT_STRING,(a4)			; check data type = string
+	bne .0001
+	move.l 8(a4),d2		; look a pointer match
+	cmp.l d2,a1				;
+	bne .0001
+	addq.l #8,a4
+	ori #1,ccr				; set carry if in use
+	rts
+.0001
+	addq.l #8,a4
+	addq.l #8,a4
+	dbra d3,.0002
+;	andi #$FE,ccr			; clear carry if not in use
+	
+	; now check local vars
+	move.l STKFP,a4
+	moveq #7,d3
+.0003
+	cmp.l #DT_STRING,(a4)
+	bne .0004
+	move.l 8(a4),d2
+	cmp.l d2,a1
+	bne .0004
+	addq.l #8,a4
+	ori #1,ccr
+	rts
+.0004
+	addq.l #8,a4
+	addq.l #8,a4
+	dbra d3,.0003
+	andi #$FE,ccr
+	rts
+
+;-------------------------------------------------------------------------------	
+; Check if the string is a temporary on stack
+;
+; Parameters:
+;		a1 = pointer to string
+; Returns:
+;		a4 = stack entry
+;		cf = 1 if string in use, 0 otherwise
+;-------------------------------------------------------------------------------	
+
+StringOnStack:
+	moveq #7,d3
+	move.l STRSTK,a4
+.0002
+	cmp.l (a4)+,a1
+	beq .0001
+	dbra d3,.0002
+	andi #$FE,ccr
+	rts
+.0001
+	subq #4,a4
+	ori #1,ccr
+	rts
+	
+;-------------------------------------------------------------------------------	
+; Update pointers to string to point to new area. All string areas must be
+; completely checked because there may be more than one pointer to the string.
+;-------------------------------------------------------------------------------	
+
+UpdateStringPointers:
+	; check variable space
+	move.l VARBGN,a4
+	moveq #31,d3						; 32 vars to check
+.0002
+	cmp.l #DT_STRING,(a4)		; check the data type
+	bne .0001								; not a string, go to next
+	move.l 8(a4),d2
+	cmp.l d2,a1							; does pointer match old pointer?
+	bne .0001
+	move.l a2,8(a4)					; copy in new pointer
+.0001
+	addq.l #8,a4
+	addq.l #8,a4
+	dbra d3,.0002
+
+	; check local variable space
+USP1:
+	move.l STKFP,a4
+	moveq #7,d3							; 8 locals to check
+.0002
+	cmp.l #DT_STRING,(a4)		; check data type
+	bne .0001
+	move.l 8(a4),d2
+	cmp.l d2,a1							; does pointer match old pointer?
+	bne .0001
+	move.l a2,8(a4)					; copy in new pointer
+.0001
+	addq.l #8,a4
+	addq.l #8,a4
+	dbra d3,.0002
+
+	; check string stack
+USP2:
+	move.l STRSTK,a4	
+	moveq #7,d3							; 8 entries on stack
+.0002
+	cmp.l (a4),a1						; does pointer match old pointer?
+	bne .0001
+	move.l a2,(a4)					; copy in new pointer
+.0001
+	addq.l #4,a4
+	dbra d3,.0002
+	rts
+	
 ; ===== Test for a valid variable name.  Returns Carry=1 if not
 ;	found, else returns Carry=0 and the address of the
 ;	variable in D0.
@@ -1250,10 +1727,10 @@ DIV4	DBRA	D3,DIV3
 	NEG.L	D1
 DIVRT	RTS
 
-*
-* ===== The PEEK function returns the byte stored at the address
-*	contained in the following expression.
-*
+
+; ===== The PEEK function returns the byte stored at the address
+;	contained in the following expression.
+
 PEEK
 	MOVE.B #'B',d7
 	MOVE.B (a0),d1
@@ -1268,25 +1745,32 @@ PEEK
 	cmpi.b #'B',d7
 	bne .0002
 .0005
-	CLR.L	D0		upper 3 bytes will be zero
-	FMOVE.B	(A1),FP0 	get the addressed byte
-	RTS			and return it
+	CLR.L	D0				; upper 3 bytes will be zero
+	MOVE.B (A1),D0
+	FMOVE.B	D0,FP0 	; get the addressed byte
+	moveq #DT_NUMERIC,d0					; data type is a number
+	RTS							; and return it
 .0002
 	cmpi.b #'W',d7
 	bne .0003
 	CLR.L d0
-	FMOVE.W	(A1),FP0 	get the addressed byte
-	RTS			and return it
+	MOVE.W (A1),D0
+	FMOVE.W	D0,FP0	;	get the addressed word
+	moveq #DT_NUMERIC,d0					; data type is a number
+	RTS							; and return it
 .0003
 	cmpi.b #'L',d7
 	bne .0004
 	CLR.L d0
-	FMOVE.L	(A1),FP0 		; get the lword
-	RTS			and return it
+	MOVE.L (A1),D0
+	FMOVE.L	D0,FP0 	; get the lword
+	moveq #DT_NUMERIC,d0					; data type is a number
+	RTS							; and return it
 .0004
 	cmpi.b #'F',d7
 	bne .0005
 	FMOVE.X	(A1),FP0 		; get the addressed float
+	moveq #DT_NUMERIC,d0					; data type is a number
 	RTS			and return it
 
 ; ===== The RND function returns a random number from 0 to
@@ -1297,10 +1781,11 @@ RND:
 	ftst.x fp0		; it must be positive and non-zero
 	fbeq QHOW
 	fblt QHOW
-	fmove.x fp0,fp2
+	fmove fp0,fp2
 	moveq #40,d0	; function #40 get random float
 	trap #15
-	fmul.x fp2,fp0
+	fmul fp2,fp0
+	moveq #DT_NUMERIC,d0					; data type is a number
 	rts
 
 ; ===== The ABS function returns an absolute value in D0.
@@ -1308,13 +1793,15 @@ RND:
 ABS:	
 	bsr	PARN			; get the following expr.'s value
 	fabs.x fp0
+	moveq #DT_NUMERIC,d0					; data type is a number
 	rts
 
 ; ===== The SIZE function returns the size of free memory in D0.
 
 SIZE:
-	move.l VARBGN,d0		; get the number of free bytes...
-	sub.l	 TXTUNF,d0		; between 'TXTUNF' and 'VARBGN'
+	move.l StrArea,d0		; get the number of free bytes...
+	sub.l	 TXTUNF,d0		; between 'TXTUNF' and 'StrArea2'
+	moveq #DT_NUMERIC,d0	; data type is a number
 	fmove.l d0,fp0
 	rts									; return the number in d0/fp0
 	
@@ -1323,6 +1810,7 @@ SIZE:
 TICK:
 	movec tick,d0
 	fmove.l d0,fp0
+	moveq #DT_NUMERIC,d0					; data type is a number
 	rts
 
 ; ===== The CORENO function returns the core number in D0.
@@ -1330,7 +1818,50 @@ TICK:
 CORENO:
 	movec coreno,d0
 	fmove.l d0,fp0
+	moveq #DT_NUMERIC,d0					; data type is a number
 	rts
+
+LEFT:
+	bsr	TSTC						; else look for ( EXPR, EXPR )
+	dc.b	'(',LEFT1-*
+	bsr	EXPR
+	cmpi.l #DT_STRING,d0
+	bne ETYPE
+	bsr XP_PUSH
+	bsr TSTC
+	dc.b ',',LEFT1-*
+	bsr EXPR
+	cmpi.l #DT_NUMERIC,d0
+	bne ETYPE
+	bsr	TSTC
+	dc.b	')',LEFT1-*
+	bsr XP_POP1
+	fmove.l fp0,d2			; d2 = required length
+	fmove.x fp1,_fpWork
+	move.l _fpWork+4,a1	; a1 = source string pointer
+	cmp.l _fpWork,d2		; is string longer than requested?
+	bhs .0001
+	bsr AllocateString
+	move.l a1,a2				; a2 = target string
+	move.l d2,_fpWork		; length
+	move.l a2,_fpWork+4	; prep to return target string
+	move.l a1,a3
+	add.l d2,a3
+	addq.l #4,a3				; move 4 more bytes for length
+	bsr MVUP
+	move.l _fpWork+4,a1
+	move.l d2,(a1)			; update with new string length
+	moveq #DT_STRING,d0	; data type is a string
+	fmove.x _fpWork,fp0	; string descriptor in fp0
+	rts
+	; Here the requested length was greater than the number of characters in the
+	; string. Just return the original string.
+.0001
+	moveq #DT_STRING,d0
+	fmove.x fp1,fp0
+	rts
+LEFT1
+	bra QHOW
 
 *******************************************************************
 *
@@ -1370,36 +1901,40 @@ SETVAL
 	dc.b	'=',SV1-*
 	bsr	EXPR					; evaluate the expression
 	move.l (sp)+,a6
-	fmove.x fp0,(a6) 	; and save its value in the variable
+	move.l d0,(a6)		; save type
+	fmove.x fp0,4(a6) ; and save its value in the variable
 	rts
 SV1
 	bra	QWHAT					; if no "=" sign
 
 FIN
-	bsr	TSTC		*** FIN ***
-	DC.B	':',FI1-*
-	ADDQ.L	#4,SP		if ":", discard return address
-	BRA	RUNSML		continue on the same line
+	bsr	TSTC					; *** FIN ***
+	DC.B ':',FI1-*
+	ADDQ.L #4,SP			; if ":", discard return address
+	BRA	RUNSML				; continue on the same line
 FI1
-	bsr	TSTC		not ":", is it a CR?
+	bsr	TSTC					; not ":", is it a CR?
 	DC.B	CR,FI2-*
-	ADDQ.L	#4,SP		yes, purge return address
-	BRA	RUNNXL		execute the next line
+	ADDQ.L #4,SP			; yes, purge return address
+	BRA	RUNNXL				; execute the next line
 FI2
-	RTS			else return to the caller
+	RTS								; else return to the caller
 
 ENDCHK
 	bsr	IGNBLK
 	CMP.B #':',(a0)
 	BEQ ENDCHK1
-	CMP.B	#CR,(A0)	does it end with a CR?
-	BNE	QWHAT		if not, say "WHAT?"
+	CMP.B	#CR,(A0)		; does it end with a CR?
+	BNE	QWHAT					; if not, say "WHAT?"
 ENDCHK1:
 	RTS
 
-QWHAT	MOVE.L	A0,-(SP)
-AWHAT	LEA	WHTMSG,A6
-ERROR	bsr	PRMESG		display the error message
+QWHAT
+	MOVE.L A0,-(SP)
+AWHAT
+	LEA	WHTMSG,A6
+ERROR
+	bsr	PRMESG		display the error message
 	MOVE.L	(SP)+,A0	restore the text pointer
 	MOVE.L	CURRNT,D0	get the current line number
 	BEQ	WSTART		if zero, do a warm start
@@ -1416,13 +1951,20 @@ ERROR	bsr	PRMESG		display the error message
 	SUBQ.L	#1,A1		point back to the error char.
 	bsr	PRTSTG		display the rest of the line
 	BRA	WSTART		and do a warm start
-QSORRY	MOVE.L	A0,-(SP)
-ASORRY	LEA	SRYMSG,A6
+QSORRY
+	MOVE.L	A0,-(SP)
+ASORRY
+	LEA	SRYMSG,A6
 	BRA	ERROR
-QHOW	MOVE.L	A0,-(SP)	Error: "How?"
-AHOW	LEA	HOWMSG,A6
+QHOW
+	MOVE.L	A0,-(SP)	Error: "How?"
+AHOW
+	LEA	HOWMSG,A6
 	BRA	ERROR
-*
+ETYPE
+	lea TYPMSG,a6
+	bra ERROR
+
 *******************************************************************
 *
 * *** GETLN *** FNDLN (& friends) ***
@@ -1449,7 +1991,7 @@ AHOW	LEA	HOWMSG,A6
 * 'FNDLNP' will start with A1 and search for the line no.
 * 'FNDNXT' will bump A1 by 2, find a CR and then start search.
 * 'FNDSKP' uses A1 to find a CR, and then starts the search.
-*
+
 GETLN
 	BSR	GOOUT		display the prompt
 	MOVE.B	#' ',D0         and a space
@@ -1532,7 +2074,6 @@ FNDSKP
 	BLO		FNDSKP
 	BRA		FNDLNP		check if end of text
 
-*
 *******************************************************************
 *
 * *** MVUP *** MVDOWN *** POPA *** PUSHA ***
@@ -1547,13 +2088,16 @@ FNDSKP
 *
 * 'PUSHA' stacks for 'FOR' loop variable save area onto the stack
 *
-MVUP	CMP.L	A1,A3		see the above description
+MVUP
+	CMP.L	A1,A3		see the above description
 	BEQ	MVRET
 	MOVE.B	(A1)+,(A2)+
 	BRA	MVUP
-MVRET	RTS
+MVRET
+	RTS
 
-MVDOWN	CMP.L	A1,A2		see the above description
+MVDOWN
+	CMP.L	A1,A2		see the above description
 	BEQ	MVRET
 	MOVE.B	-(A1),-(A3)
 	BRA	MVDOWN
@@ -1615,8 +2159,10 @@ PU1
 * 'PRTLN' prints the saved text line pointed to by A1
 * with line no. and all.
 *
-PRTSTG	MOVE.B	D0,D1		save the stop character
-PS1	MOVE.B	(A1)+,D0	get a text character
+PRTSTG:
+	MOVE.B	D0,D1		save the stop character
+PS1
+	MOVE.B	(A1)+,D0	get a text character
 	CMP.B	D0,D1		same as stop character?
 	BEQ	PRTRET		if so, return
 	BSR	GOOUT		display the char.
@@ -1624,38 +2170,53 @@ PS1	MOVE.B	(A1)+,D0	get a text character
 	BNE	PS1		no, go back for more
 	MOVE.B	#LF,D0		yes, add a L.F.
 	BSR	GOOUT
-PRTRET	RTS			then return
+PRTRET
+	RTS			then return
 
-QTSTG	bsr	TSTC		*** QTSTG ***
+PRTSTR2a
+	move.b (a1)+,d0
+	bsr GOOUT
+PRTSTR2:
+	dbra d1,PRTSTR2a
+	rts
+	
+QTSTG
+	bsr	TSTC		*** QTSTG ***
 	DC.B	'"',QT3-*
 	MOVE.B	#'"',D0         it is a "
-QT1	MOVE.L	A0,A1
+QT1
+	MOVE.L	A0,A1
 	BSR	PRTSTG		print until another
 	MOVE.L	A1,A0
 	MOVE.L	(SP)+,A1	pop return address
 	CMP.B	#LF,D0		was last one a CR?
 	BEQ	RUNNXL		if so, run next line
-QT2	ADDQ.L	#2,A1		skip 2 bytes on return
+QT2
+	ADDQ.L	#2,A1		skip 2 bytes on return
 	JMP	(A1)		return
-QT3	bsr	TSTC		is it a single quote?
+QT3
+	bsr	TSTC		is it a single quote?
 	DC.B	'''',QT4-*
 	MOVE.B	#'''',D0        if so, do same as above
 	BRA	QT1
-QT4	bsr	TSTC		is it an underline?
+QT4
+	bsr	TSTC		is it an underline?
 	DC.B	'_',QT5-*
 	MOVE.B	#CR,D0		if so, output a CR without LF
 	bsr	GOOUT
 	MOVE.L	(SP)+,A1	pop return address
 	BRA	QT2
-QT5	RTS			none of the above
+QT5
+	RTS			none of the above
 
 PRTNUM:
-	link a2,#-36
-	move.l _canary,32(a0)
+	link a2,#-48
+	move.l _canary,44(a0)
 	movem.l d0/d1/d2/d3/a1,(sp)
 	fmove.x fp0,20(sp)
+	fmove.x fp1,32(sp)
 	fmove.x fp1,fp0					; fp0 = number to print
-	lea _fpBuf,a1						; a0 = pointer to buffer to use
+	lea _fpBuf,a1						; a1 = pointer to buffer to use
 	moveq #39,d0						; d0 = function #39 print float
 	move.l d4,d1						; d1 = width
 	move.l d4,d2						; d2 = precision max
@@ -1663,17 +2224,18 @@ PRTNUM:
 	trap #15
 	movem.l (sp),d0/d1/d2/d3/a1
 	fmove.x 20(sp),fp0
-	cchk 32(a0)
+	fmove.x 32(sp),fp1
+	cchk 44(a0)
 	unlk a2
 	rts
 
 PRTLN:
 	CLR.L	D1
-	MOVE.B	(A1)+,D1	get the binary line number
+	MOVE.B (A1)+,D1	get the binary line number
 	LSL	#8,D1
-	MOVE.B	(A1)+,D1
+	MOVE.B (A1)+,D1
 	FMOVE.W D1,FP1
-	MOVEQ	#5,D4		display a 5 digit line no.
+	MOVEQ	#5,D4			; display a 5 digit line no.
 	BSR	PRTNUM
 	MOVE.B	#' ',D0         followed by a blank
 	BSR	GOOUT
@@ -1712,13 +2274,14 @@ TC1
 TSTNUM
 	link a2,#-32
 	move.l _canary,28(sp)
-	movem.l d0/d1/a1,(sp)
+	movem.l d1/a1,(sp)
 	fmove.x fp0,16(sp)
 	moveq #41,d0						; function #41, get float
 	moveq #1,d1							; d1 = input stride
 	move.l a0,a1						; a1 = pointer to input buffer
 	trap #15								; call BIOS get float function
 	move.l a1,a0						; set text pointer
+	moveq #DT_NUMERIC,d0		; default data type = number
 	fmove.x fp0,fp1					; return expected in fp1
 	tst.w d1								; check if a number (digits > 0?)
 	beq .0002
@@ -1726,10 +2289,11 @@ TSTNUM
 	move.w d1,d2						; d2 = number of digits
 	bra .0001
 .0002											; not a number, return with orignal text pointer
+	moveq #0,d0							; data type = not a number
 	moveq #0,d2							; d2 = 0
 	fmove.l d2,fp1					; return a zero
 .0001
-	movem.l (sp),d0/d1/a1
+	movem.l (sp),d1/a1
 	fmove.x 16(sp),fp0
 	cchk 28(sp)
 	unlk a2
@@ -1792,44 +2356,55 @@ TOUPRET RTS
 * control-C is read, 'CHKIO' will warm-start BASIC and will not
 * return to the caller.
 *
-CHKIO	bsr	GOIN		get input if possible
+CHKIO
+	bsr	GOIN		get input if possible
 	BEQ	CHKRET		if Zero, no input
 	CMP.B	#CTRLC,D0	is it control-C?
 	BNE	CHKRET		if not
 	BRA	WSTART		if so, do a warm start
-CHKRET	RTS
+CHKRET
+	RTS
 
 *
 * ===== Display a CR-LF sequence
 *
 ;CRLF	LEA	CLMSG,A6
 
-*
-* ===== Display a zero-ended string pointed to by register A6
-*
-PRMESG	MOVE.B	(A6)+,D0	get the char.
-	BEQ	PRMRET		if it's zero, we're done
-	BSR	GOOUT		else display it
+
+; ===== Display a zero-ended string pointed to by register A6
+
+PRMESG
+	MOVE.B (A6)+,D0		; get the char.
+	BEQ	PRMRET				; if it's zero, we're done
+	BSR	GOOUT					; else display it
 	BRA	PRMESG
-PRMRET	RTS
+PRMRET
+	RTS
 
 ******************************************************
 * The following routines are the only ones that need *
 * to be changed for a different I/O environment.     *
 ******************************************************
 
-*
-* ===== Output character to the console (Port 1) from register D0
-*	(Preserves all registers.)
-*
-OUTC
+; ===== Clear screen and home cursor
+
+CLS:
+	moveq #11,d0			; set cursor position
+	move.w #$FF00,d1	; home cursor and clear screen
+	trap #15
+	bra FINISH
+
+; ===== Output character to the console (Port 1) from register D0
+;(Preserves all registers.)
+
+OUTC:
 	move.l	a6,-(a7)
 	move.l	OUTPTR,a6
 	jsr			(a6)
 	move.l	(a7)+,a6
 	rts
 
-OUTC1
+OUTC1:
 	movem.l		d0/d1,-(a7)
 	move.l		d0,d1
 	moveq.l		#6,d0
@@ -1924,10 +2499,12 @@ BYEBYE
 ;	MOVE.B	#228,D7 	return to Tutor
 ;	TRAP	#14
 
-INITMSG DC.B	CR,LF,'Finch''s MC68000 Tiny Float BASIC, v1.2',CR,LF,LF,0
+INITMSG DC.B	CR,LF,'MC68000 Tiny Float BASIC, v1.0',CR,LF,LF,0
 OKMSG	DC.B	CR,LF,'OK',CR,LF,0
 HOWMSG	DC.B	'How?',CR,LF,0
 WHTMSG	DC.B	'What?',CR,LF,0
+TYPMSG	DC.B	'Type?',CR,LF,0
+NOSTRING	DC.B 'No string space',CR,LF,0
 SRYMSG	DC.B	'Sorry.'
 CLMSG	DC.B	CR,LF,0
 	DC.B	0	<- for aligning on a word boundary
@@ -1949,6 +2526,10 @@ LOPLMT	DS.L	3		limit
 LOPLN	DS.L	1		line number
 LOPPT	DS.L	1		text pointer
 IRQROUT	DS.L	1
+STRSTK	DS.L	1		; string pointer stack area, 8 entries
+StrSp		DS.L	1		; string stack stack pointer
+StrArea	DS.L	1		; pointer to string area
+LastStr	DS.L	1		; pointer to last used string in area
 TXTUNF	DS.L	1		points to unfilled text area
 VARBGN	DS.L	1		points to variable area
 STKLMT	DS.L	1		holds lower limit for stack growth

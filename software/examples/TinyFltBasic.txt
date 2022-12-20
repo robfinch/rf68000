@@ -1,0 +1,25 @@
+TinyFltBasic Notes
+s 111 11 0	<= qnan
+s 111 11 1 <= snan
+
+String:
+	32 bit length
+	32 bit pointer
+	---------------
+	64 bits
+
+Data Type
+	0 - none
+	1 - float (number)
+	2 - string
+
+
+How variables are stored:
+
+|      Data Type    |       Value          |
+| <--- 32 bits ---> | <----  96 bits ----> |
+
+String:
+|      Data Type       |       											Value                            |
+| <--- 2, 32 bits ---> | <----  Pointer, 32 bits ----> | <---- Unused 64 bits ---- > |
+
