@@ -3276,23 +3276,26 @@ EXG1:
 	end
 
 //-----------------------------------------------------------------------------
+// The destination store for the MOVE instruction.
+// Flags are not updated if the target is an address register.
 //-----------------------------------------------------------------------------
+
 STORE_IN_DEST:
 	begin
-//		state <= IFETCH;	// In event of bad ir
-//		ret();
 		resL <= s;
 		resW <= s[15:0];
 		resB <= s[7:0];
 		d <= s;
-		case(ir[15:12])
-		4'd1:	begin zf <= s[ 7:0]== 8'h00; nf <= s[7]; end
-		4'd3:	begin zf <= s[15:0]==16'h00; nf <= s[15]; end
-		4'd2:	begin zf <= s[31:0]==32'd0;  nf <= s[31]; end
-		default:	;
-		endcase
-		cf <= 1'b0;
-		vf <= 1'b0;
+		if (ir[8:6]!=3'b001) begin
+			case(ir[15:12])
+			4'd1:	begin zf <= s[ 7:0]== 8'h00; nf <= s[7]; end
+			4'd3:	begin zf <= s[15:0]==16'h00; nf <= s[15]; end
+			4'd2:	begin zf <= s[31:0]==32'd0;  nf <= s[31]; end
+			default:	;
+			endcase
+			cf <= 1'b0;
+			vf <= 1'b0;
+		end
 		case(ir[15:12])
 		4'd1:	fs_data(MMM,RRR,STORE_BYTE,D);
 		4'd2:	fs_data(MMM,RRR,STORE_LWORD,D);
@@ -3464,6 +3467,7 @@ ADD:
 	begin
 		flag_update <= FU_ADD;
 		if (sz==2'b11) begin
+			flag_update <= FU_NONE;
 			Rt <= {1'b1,AAA};
 			if (ir[8]) begin
 				rfwrL <= 1'b1;
@@ -3525,6 +3529,7 @@ SUB:
 	begin
 		flag_update <= FU_SUB;
 		if (sz==2'b11) begin
+			flag_update <= FU_NONE;
 			Rt <= {1'b1,AAA};
 			if (ir[8]) begin
 				rfwrL <= 1'b1;
