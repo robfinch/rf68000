@@ -179,12 +179,13 @@ RAND_SEMA		EQU	4
 SCREEN_SEMA	EQU	5
 MEMORY_SEMA EQU 6
 TCB_SEMA 		EQU	7
+FMTK_SEMA		EQU	8
 
 	data
 	dc.l		$00040FFC
 	dc.l		start
 	dc.l		bus_err
-	dc.l		0
+	dc.l		addr_err
 	dc.l		illegal_trap		* ILLEGAL instruction
 	dc.l		0
 	dc.l		chk_exception		; CHK
@@ -363,6 +364,8 @@ TextCols		equ	$4008D
 _fpTextIncr	equ $40094
 _canary			equ $40098
 IRQFlag			equ $400A0
+InputDevice	equ $400A4
+OutputDevice	equ $400A8
 Regsave			equ	$40100
 numBreakpoints	equ		8
 BreakpointFlag	equ		$40200
@@ -400,8 +403,6 @@ SerRcvXoff	equ	$00100165
 SerRcvBuf		equ	$00101000
 RTCBuf			equ $00100200	; to $0010023F
 
-	include "..\Femtiki\source\kernel\Femtiki_vars.x68"
-
 	code
 	align		2
 start:
@@ -433,6 +434,7 @@ start:
 .0111:
 	clr.l	(a0)+								; clear the memory area
 	dbra d0,.0111
+	move.b #1,OutputDevice		; select stdout
 	move.l #$1fffff,fgColor		; set foreground / background color
 	move.l #$00003f,bkColor
 	movec.l	coreno,d0					; get core number (2 to 9)
@@ -622,33 +624,35 @@ RandInit:
 
 RandGetNum:
 	movem.l	d0/d2,-(a7)
-	moveq #37,d0								; lock semaphore
-	moveq	#RAND_SEMA,d1
-	trap #15
+	moveq #RAND_SEMA,d1
+	bsr T15LockSemaphore
 	movec	coreno,d0
 	lsl.l	#6,d0
 	move.l d0,RAND_STRM					; select the stream
 	move.l RAND_NUM,d2					; d2 = random number
 	clr.l	RAND_NUM							; generate next number
-	moveq #38,d0								; unlock semaphore
-	moveq	#RAND_SEMA,d1
-	trap #15
+	bsr T15UnlockSemaphore
 	move.l d2,d1
 	movem.l	(a7)+,d0/d2
 	rts
 
 ;------------------------------------------------------------------------------
+; Modifies:
+;		none
 ; Returns
 ;		fp0 = random float between 0 and 1.
 ;------------------------------------------------------------------------------
 
 _GetRand:
+	move.l d1,-(sp)
+	fmove.x fp1,-(sp)
 	bsr RandGetNum
-	fmove d1,fp0
-	fmove.l #$80000000,fp1
+	lsr.l #1,d1									; make number between 0 and 2^31
+	fmove.l d1,fp0
+	fmove.l #$7FFFFFFF,fp1			; divide by 2^31
 	fdiv fp1,fp0
-	fmove.w #$2,fp1
-	fdiv fp1,fp0
+	fmove.x (sp)+,fp1
+	move.l (sp)+,d1
 	rts
 
 ;------------------------------------------------------------------------------
@@ -818,7 +822,7 @@ T15Abort:
 	bra Monitor
 
 chk_exception:
-	move.l 4(sp),d1
+	move.l 2(sp),d1
 	bsr DisplayTetra
 	lea msgChk,a1
 	bsr DisplayStringCRLF
@@ -858,8 +862,8 @@ Delay3s2:
 	rts
 
 	include "cputest.asm"
-	include "TinyBasicFlt.asm"
-	include "..\Femtiki\source\kernel\Femtiki.x68"
+	include "TinyBasicFlt.x68"
+	include "..\Femtiki\FemtikiTop.x68"
 
 ; -----------------------------------------------------------------------------
 ; Gets the screen color in d0 and d1.
@@ -1206,17 +1210,18 @@ BlankLastLine:
 	rts
 
 ;------------------------------------------------------------------------------
-; Display a string on the screen.
+; Display a string on standard output.
 ;------------------------------------------------------------------------------
 
 DisplayString:
 	movem.l	d0/d1/a1,-(a7)
 dspj1:
-	clr.l		d1						; clear upper bits of d1
-	move.b	(a1)+,d1			; move string char into d1
-	beq.s		dsret					; is it end of string ?
-	bsr			DisplayChar		; display character
-	bra.s		dspj1					; go back for next character
+	clr.l d1							; clear upper bits of d1
+	move.b (a1)+,d1				; move string char into d1
+	beq.s dsret						; is it end of string ?
+	moveq #6,d0						; output character function
+	trap #15
+	bra.s	dspj1						; go back for next character
 dsret:
 	movem.l	(a7)+,d0/d1/a1
 	rts
@@ -1239,10 +1244,11 @@ DisplayStringLimited:
 	andi.w	#$00FF,d2			; limit to 255 chars
 	bra.s		.0003					; enter loop at bottom
 .0001:
-	clr.l		d1						; clear upper bits of d1
-	move.b	(a1)+,d1			; move string char into d1
-	beq.s		.0002					; is it end of string ?
-	bsr			DisplayChar		; display character
+	clr.l d1							; clear upper bits of d1
+	move.b (a1)+,d1				; move string char into d1
+	beq.s .0002						; is it end of string ?
+	moveq #6,d0						; output character function
+	trap #15
 .0003:
 	dbra		d2,.0001			; go back for next character
 .0002:
@@ -1307,12 +1313,14 @@ SyncCursor:
 ;==============================================================================
 
 TRAP15:
+	subq.l #2,sp						; keep stack lword aligned
 	movem.l	d0/a0,-(a7)
-	lea			T15DispatchTable,a0
-	asl.l		#2,d0
-	move.l	(a0,d0.w),a0
-	jsr			(a0)
-	movem.l	(a7)+,d0/a0
+	lea T15DispatchTable,a0
+	asl.l #2,d0
+	move.l (a0,d0.w),a0
+	jsr (a0)
+	movem.l (a7)+,d0/a0
+	addq.l #2,sp
 	rte
 
 		align	2
@@ -1323,7 +1331,7 @@ T15DispatchTable:
 	dc.l	StubRout
 	dc.l	StubRout
 	dc.l	GetKey
-	dc.l	DisplayChar
+	dc.l	OutputChar
 	dc.l	CheckForKey
 	dc.l	StubRout
 	dc.l	StubRout
@@ -1364,6 +1372,7 @@ T15DispatchTable:
 	dc.l  _GetRand
 	dc.l	T15GetFloat
 	dc.l	T15Abort
+	dc.l	T15FloatToString
 
 ;------------------------------------------------------------------------------
 ; Cursor positioning / Clear screen
@@ -1376,23 +1385,24 @@ T15DispatchTable:
 ;------------------------------------------------------------------------------
 
 Cursor1:
-	move.l		d1,-(a7)
-	cmpi.w		#$FF00,d1
-	bne.s			.0002
-	bsr				clear_screen
-	bra				HomeCursor
+	move.l d1,-(a7)
+	cmpi.w #$FF00,d1
+	bne.s .0002
+	bsr	clear_screen
+	move.l (a7)+,d1
+	bra	HomeCursor
 .0002:
-	cmp.b			TextRows,d1		; if cursor pos out of range, ignore setting
-	bhs.s			.0003
-	move.b		d1,CursorRow
+	cmp.b TextRows,d1		; if cursor pos out of range, ignore setting
+	bhs.s	.0003
+	move.b d1,CursorRow
 .0003:
-	ror.w			#8,d1
-	cmp.b			TextCols,d1
-	bhs.s			.0001
-	move.b		d1,CursorCol
+	ror.w	#8,d1
+	cmp.b	TextCols,d1
+	bhs.s	.0001
+	move.b d1,CursorCol
 .0001:
-	bsr				SyncCursor		; update hardware cursor
-	move.l		(a7)+,d1
+	bsr SyncCursor			; update hardware cursor
+	move.l (a7)+,d1
 	rts
 
 ;------------------------------------------------------------------------------
@@ -2166,6 +2176,7 @@ cmdString:
 	dc.b	'F','B'+$80				; FB fill with byte
 	dc.b	'F','W'+$80				; FW fill with wyde
 	dc.b	'F','L'+$80				; FL fill with long wyde
+	dc.b	'FMT','K'+$80			; FMTK run Femtiki OS
 	dc.b	'B','A'+$80				; BA start Tiny Basic
 	dc.b	'B','R'+$80				; BR breakpoint
 	dc.b	'D','R'+$80				; DR dump registers
@@ -2191,6 +2202,7 @@ cmdTable:
 	dc.w	cmdFillB
 	dc.w	cmdFillW
 	dc.w	cmdFillL
+	dc.w	cmdFMTK
 	dc.w	cmdTinyBasic
 	dc.w	cmdBreakpoint
 	dc.w	cmdDumpRegs
@@ -2326,6 +2338,10 @@ cmdCore:
 	subi.b	#'0',d1					; convert ascii to binary
 	bsr			select_iofocus
 	bra			Monitor
+
+cmdFMTK:
+	bsr FemtikiInit
+	bra Monitor
 
 cmdTestFP:
 	moveq #41,d0						; function #41, get float
@@ -2469,6 +2485,7 @@ HelpMsg:
 	dc.b	"CLS = clear screen",LF,CR
 	dc.b	": = Edit memory bytes",LF,CR
 	dc.b	"FB = Fill memory bytes, FW, FL",LF,CR
+	dc.b	"FMTK = run Femtiki OS",LF,CR
 	dc.b	"L = Load S19 file",LF,CR
 	dc.b	"D = Dump memory, DR = dump registers",LF,CR
 	dc.b	"BA = start tiny basic",LF,CR
@@ -3062,321 +3079,9 @@ DisplayNybble:
 ;	dbeq	d2,disphnum1
 ;	jmp		(a5)
 
-;===============================================================================
-;    Perform ram test. (Uses checkerboard testing).
-; 
-;    Local ram, which does not get tested, is used for the stack.
-;===============================================================================
-
-DisplayAddr:
-	move.l a0,d1
-	lsr.l #8,d1
-	lsr.l #8,d1
-	lsr.l #4,d1
-	subi.w #512,d1
-	bin2bcd d1
-	bsr	DisplayWyde
-	move.b #CR,d1
-	bra DisplayChar
-	btst #$83,d0
+	include "ramtest.x68"
+	include "LoadS19.x68"
 	
-cmdTestRAM:
-ramtest:
-	move.w	#$A5A5,leds		; diagnostics
-  move.l #$aaaaaaaa,d3
-  move.l #$55555555,d4
-  bsr ramtest0
-  ; switch checkerboard pattern and repeat test.
-  exg d3,d4
-  bsr ramtest0
-	; Save last ram address in end of memory pointer.
-rmtst5:
-	moveq #37,d0					; lock semaphore
-	moveq #MEMORY_SEMA,d1
-	trap #15
-  move.l a0,memend
-	; Create very first memory block.
-  suba.l #12,a0
-  move.l a0,$20000004		; length of block
-  move.l #$46524545,$20000000
-	moveq #38,d0					; unlock semaphore
-	moveq #MEMORY_SEMA,d1
-	trap #15
-  rts
-
-ramtest0:
-	move.l d3,d0
-  movea.l #$20000000,a0
-;-----------------------------------------------------------
-;   Write checkerboard pattern to ram then read it back to
-; find the highest usable ram address (maybe). This address
-; must be lower than the start of the rom (0xe00000).
-;-----------------------------------------------------------
-ramtest1:
-  move.l d3,(a0)+
-  move.l d4,(a0)+
-  move.l a0,d1
-  tst.w	d1
-  bne.s rmtst1
-  bsr DisplayAddr
-  bsr CheckForCtrlC
-rmtst1:
-  cmpa.l #$3FFFFFF8,a0
-  blo.s ramtest1
-  bsr	CRLF
-;------------------------------------------------------
-;   Save maximum useable address for later comparison.
-;------------------------------------------------------
-ramtest6:
-	move.w	#$A7A7,leds		; diagnostics
-  movea.l a0,a2
-  movea.l #$20000000,a0
-;--------------------------------------------
-;   Read back checkerboard pattern from ram.
-;--------------------------------------------
-ramtest2
-  move.l (a0)+,d5
-  move.l (a0)+,d6
-  cmpa.l a2,a0
-  bhs.s	ramtest3
-  move.l a0,d1
-  tst.w	d1
-  bne.s	rmtst2
-  bsr	DisplayAddr
-	bsr CheckForCtrlC
-rmtst2
-  cmp.l d3,d5
-  bne.s rmtst3
-  cmp.l d4,d6
-  beq.s ramtest2
-;----------------------------------
-; Report error in ram.
-;----------------------------------
-rmtst3
-	bsr CRLF
-	moveq	#'E',d1
-	bsr DisplayChar
-	bsr DisplaySpace
-	move.l a0,d1
-	bsr DisplayTetra
-	bsr DisplaySpace
-	move.l d5,d1
-	bsr DisplayTetra
-	bsr CheckForCtrlC
-	bra ramtest2
-ramtest3
-	rts
-
-;==============================================================================
-; Load an S19 format file
-;==============================================================================
-
-cmdLoadS19:
-	bsr			CRLF
-	bra			ProcessRec
-NextRec:
-	bsr			sGetChar
-	cmpi.b	#LF,d1
-	bne			NextRec
-	move.b	#'.',d1
-	bsr			DisplayChar
-ProcessRec:
-	bsr			CheckForCtrlC	; check for CTRL-C once per record
-	bsr			sGetChar
-	cmpi.b	#CR,d1
-	beq.s		ProcessRec
-	clr.b		S19Checksum
-	move.b	d1,d4
-	cmpi.b	#CTRLZ,d4			; CTRL-Z ?
-	beq			Monitor
-	cmpi.b	#'S',d4				; All records must begin with an 'S'
-	bne.s		NextRec
-	bsr			sGetChar
-	move.b	d1,d4
-	cmpi.b	#'0',d4				; Record type must be between '0' and '9'
-	blo.s		NextRec
-	cmpi.b	#'9',d4				; d4 = record type
-	bhi.s		NextRec
-	bsr			sGetChar			; get byte count for record
-	bsr			AsciiToHexNybble
-	move.b	d1,d2
-	bsr			sGetChar
-	bsr			AsciiToHexNybble
-	lsl.b		#4,d2
-	or.b		d2,d1					; d1 = byte count
-	move.b	d1,d3					; d3 = byte count
-	add.b		d3,S19Checksum
-	cmpi.b	#'0',d4				; manufacturer ID record, ignore
-	beq			NextRec
-	cmpi.b	#'1',d4
-	beq			ProcessS1
-	cmpi.b	#'2',d4
-	beq			ProcessS2
-	cmpi.b	#'3',d4
-	beq			ProcessS3
-	cmpi.b	#'5',d4				; record count record, ignore
-	beq			NextRec
-	cmpi.b	#'7',d4
-	beq			ProcessS7
-	cmpi.b	#'8',d4
-	beq			ProcessS8
-	cmpi.b	#'9',d4
-	beq			ProcessS9
-	bra			NextRec
-
-pcssxa:
-	move.l	a1,d1
-	bsr			DisplayTetra
-	move.b	#CR,d1
-	bsr			DisplayChar
-	andi.w	#$ff,d3
-	subi.w	#1,d3			; one less for dbra
-.0001:
-	clr.l		d2
-	bsr			sGetChar
-	bsr			AsciiToHexNybble
-	lsl.l		#4,d2
-	or.b		d1,d2
-	bsr			sGetChar
-	bsr			AsciiToHexNybble
-	lsl.l		#4,d2
-	or.b		d1,d2
-	add.b		d2,S19Checksum
-	move.b	d2,(a1)+			; move byte to memory
-	dbra		d3,.0001
-	; Get the checksum byte
-	clr.l		d2
-	bsr			sGetChar
-	bsr			AsciiToHexNybble
-	lsl.l		#4,d2
-	or.b		d1,d2
-	bsr			sGetChar
-	bsr			AsciiToHexNybble
-	lsl.l		#4,d2
-	or.b		d1,d2
-	eor.b		#$FF,d2
-	cmp.b		S19Checksum,d2
-	beq			NextRec
-	move.b	#'E',d1
-	bsr			DisplayChar
-	bra			NextRec
-
-ProcessS1:
-	bsr			S19Get16BitAddress
-	bra			pcssxa
-ProcessS2:
-	bsr			S19Get24BitAddress
-	bra			pcssxa
-ProcessS3:
-	bsr			S19Get32BitAddress
-	bra			pcssxa
-ProcessS7:
-	bsr			S19Get32BitAddress
-	move.l	a1,S19StartAddress
-	bsr			_KeybdInit
-	bra			Monitor
-ProcessS8:
-	bsr			S19Get24BitAddress
-	move.l	a1,S19StartAddress
-	bsr			_KeybdInit
-	bra			Monitor
-ProcessS9:
-	bsr			S19Get16BitAddress
-	move.l	a1,S19StartAddress
-	bsr			_KeybdInit
-	bra			Monitor
-
-S19Get16BitAddress:
-	clr.l		d2
-	bsr			sGetChar
-	bsr			AsciiToHexNybble
-	move.b	d1,d2
-	bra			S1932b
-
-S19Get24BitAddress:
-	clr.l		d2
-	bsr			sGetChar
-	bsr			AsciiToHexNybble
-	move.b	d1,d2
-	bra			S1932a
-
-S19Get32BitAddress:
-	clr.l		d2
-	bsr			sGetChar
-	bsr			AsciiToHexNybble
-	move.b	d1,d2
-	bsr			sGetChar
-	bsr			AsciiToHexNybble
-	lsl.l		#4,d2
-	or.b		d1,d2
-	bsr			sGetChar
-	bsr			AsciiToHexNybble
-	lsl.l		#4,d2
-	or.b		d1,d2
-S1932a:
-	bsr			sGetChar
-	bsr			AsciiToHexNybble
-	lsl.l		#4,d2
-	or.b		d1,d2
-	bsr			sGetChar
-	bsr			AsciiToHexNybble
-	lsl.l		#4,d2
-	or.b		d1,d2
-S1932b:
-	bsr			sGetChar
-	bsr			AsciiToHexNybble
-	lsl.l		#4,d2
-	or.b		d1,d2
-	bsr			sGetChar
-	bsr			AsciiToHexNybble
-	lsl.l		#4,d2
-	or.b		d1,d2
-	bsr			sGetChar
-	bsr			AsciiToHexNybble
-	lsl.l		#4,d2
-	or.b		d1,d2
-	clr.l		d4
-	move.l	d2,a1
-	; Add bytes from address value to checksum
-	add.b		d2,S19Checksum
-	lsr.l		#8,d2
-	add.b		d2,S19Checksum
-	lsr.l		#8,d2
-	add.b		d2,S19Checksum
-	lsr.l		#8,d2
-	add.b		d2,S19Checksum
-	rts
-
-;------------------------------------------------------------------------------
-; Get a character from auxillary input. Waiting for a character is limited to
-; 32000 tries. If a character is not available within the limit, then a return
-; to the monitor is done.
-;
-;	Parameters:
-;		none
-; Returns:
-;		d1 = character from receive buffer or -1 if no char available
-;------------------------------------------------------------------------------
-
-sGetChar:
-	movem.l	d0/d2,-(a7)
-	move.w	#32000,d2
-.0001:
-	moveq		#36,d0				; serial get char from buffer
-	trap		#15
-	tst.w		d1						; was there a char available?
-	bpl.s		.0002
-	dbra		d2,.0001			; no - try again
-	movem.l	(a7)+,d0/d2
-.0003:
-	bsr			_KeybdInit
-	bra			Monitor				; ran out of tries
-.0002:
-	movem.l	(a7)+,d0/d2
-	cmpi.b	#CTRLZ,d1			; receive end of file?
-	beq			.0003
-	rts
-
 AudioInputTest:
 	rts
 BouncingBalls:
@@ -4082,7 +3787,7 @@ DispatchMsg:
 ; Trap #15, function 39 - convert floating-point to string and display
 ;
 ; Parameters
-;		a0 = pointer to buffer
+;		a1 = pointer to buffer
 ;		fp0 = number to print
 ;		d1 = width of print field
 ;		d2 = precision
@@ -4090,20 +3795,52 @@ DispatchMsg:
 ;------------------------------------------------------------------------------
 
 prtflt:
-	movem.l d0/d1/d2/d3/d6/a1,-(a7)
-;	fmove.x fp0,-(a7)
+	link a2,#-48
+	move.l _canary,44(sp)
+	movem.l d0/d1/d2/d3/d6/a0/a1/a2,(sp)
+	fmove.x fp0,32(sp)
 	move.l a1,a0						; a0 = pointer to buffer to use
 	move.b d1,_width
 	move.l d2,_precision
 	move.b d3,_E
 	bsr _FloatToString
 	bsr DisplayString
-;	fmove.x (a7)+,fp0
-	movem.l (a7)+,d0/d1/d2/d3/d6/a1
+	fmove.x 32(sp),fp0
+	movem.l (sp),d0/d1/d2/d3/d6/a0/a1/a2
+	cchk 44(sp)
+	unlk a2
+	rts
+
+T15FloatToString:
+	link a2,#-44
+	move.l _canary,40(sp)
+	movem.l d0/d1/d2/d3/d6/a0/a1,(sp)
+	fmove.x fp0,28(sp)
+	move.l a1,a0						; a0 = pointer to buffer to use
+	move.b d1,_width
+	move.l d2,_precision
+	move.b d3,_E
+	bsr _FloatToString
+	fmove.x 28(sp),fp0
+	movem.l (sp),d0/d1/d2/d3/d6/a0/a1
+	cchk 40(sp)
+	unlk a2
 	rts
 
 ;==============================================================================
 ;==============================================================================
+
+OutputChar:
+	cmpi.b #1,OutputDevice	; stdout
+	bne .0001
+	bra DisplayChar
+.0001
+	cmpi.b #2,OutputDevice
+	bne .0002
+	bra	SerialPutChar
+.0002
+	rts
+
 ;------------------------------------------------------------------------------
 ;------------------------------------------------------------------------------
 
@@ -4235,6 +3972,16 @@ nmi_rout:
 	movem.l	(a7)+,d0/d1/a0		; return
 	rte
 
+addr_err:
+	addq		#2,sp						; get rid of sr
+	move.l	(sp)+,d1				; pop exception address
+	bsr			DisplayTetra		; and display it
+	lea			msgAddrErr,a1	; followed by message
+	bsr			DisplayStringCRLF
+.0001:
+	bra			.0001
+	bra			Monitor
+	
 brdisp_trap:
 	movem.l	d0/d1/d2/d3/d4/d5/d6/d7/a0/a1/a2/a3/a4/a5/a6/a7,Regsave
 	move.w	(a7)+,Regsave+$40
@@ -4275,6 +4022,8 @@ msg_start:
 ;	dc.b	"rf68k System Starting",CR,LF,0
 msg_core_start:
 	dc.b	" core starting",CR,LF,0
+msgAddrErr
+	dc.b	" address err",0
 msg_illegal:
 	dc.b	" illegal opcode",CR,LF,0
 msg_bad_branch_disp:
