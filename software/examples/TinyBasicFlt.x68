@@ -58,19 +58,21 @@ ENDMEM	DC.L	$47FF0		end of available memory
 *
 * The main interpreter starts here:
 *
-CSTART	MOVE.L	ENDMEM,SP	initialize stack pointer
-	move.l	#INC1,INPPTR
+CSTART
+	MOVE.L ENDMEM,SP	initialize stack pointer
+	move.l #INC1,INPPTR
 	move.b #0,InputDevice
 	move.b #1,OutputDevice
 	move.l #1,_fpTextIncr
 	LEA	INITMSG,A6	tell who we are
 	BSR	PRMESG
-	MOVE.L	TXTBGN,TXTUNF	init. end-of-program pointer
-	MOVE.L	ENDMEM,D0	get address of end of memory
+	MOVE.L TXTBGN,TXTUNF	init. end-of-program pointer
+	MOVE.L ENDMEM,D0	get address of end of memory
+	move.l ENDMEM,STKFP
 	SUB.L	#4096,D0	reserve 4K for the stack
 	MOVE.L D0,STRSTK
 	ADD.L #32,D0
-	MOVE.L	D0,STKLMT
+	MOVE.L D0,STKLMT
 	SUB.L	#512,D0 	reserve variable area (32 16 byte floats)
 	MOVE.L D0,VARBGN
 	bsr ClearStringArea
@@ -81,7 +83,7 @@ WSTART
 	MOVE.L	D0,LOPVAR
 	MOVE.L	D0,STKGOS
 	MOVE.L	D0,CURRNT	; current line number pointer = 0
-	MOVE.L	ENDMEM,SP	; init S.P. again, just in case
+	MOVE.L ENDMEM,SP	; init S.P. again, just in case
 	bsr ClearStringStack
 	LEA	OKMSG,A6			; display "OK"
 	bsr	PRMESG
@@ -448,8 +450,9 @@ RUNNXL
 	clr.b IRQFlag
 
 	; same code as GOSUB	
-	sub.l #128,sp		; allocate storage for local variables
-	move.l sp,STKFP
+;	sub.l #128,sp		; allocate storage for local variables
+;	move.l STKFP,-(sp)
+;	move.l sp,STKFP
 	bsr	PUSHA				; save the current 'FOR' parameters
 	MOVE.L A0,-(SP)	; save text pointer
 	MOVE.L CURRNT,-(SP)	found it, save old 'CURRNT'...
@@ -608,27 +611,28 @@ FINISH
 	bsr	FIN			; Check end of command
 	BRA	QWHAT		; print "What?" if wrong
 
-*******************************************************************
-*
-* *** GOSUB *** & RETURN ***
-*
-* 'GOSUB expr:' or 'GOSUB expr<CR>' is like the 'GOTO' command,
-* except that the current text pointer, stack pointer, etc. are
-* saved so that execution can be continued after the subroutine
-* 'RETURN's.  In order that 'GOSUB' can be nested (and even
-* recursive), the save area must be stacked.  The stack pointer
-* is saved in 'STKGOS'.  The old 'STKGOS' is saved on the stack.
-* If we are in the main routine, 'STKGOS' is zero (this was done
-* in the initialization section of the interpreter), but we still
-* save it as a flag for no further 'RETURN's.
-*
-* 'RETURN<CR>' undoes everything that 'GOSUB' did, and thus
-* returns the execution to the command after the most recent
-* 'GOSUB'.  If 'STKGOS' is zero, it indicates that we never had
-* a 'GOSUB' and is thus an error.
-*
+;******************************************************************
+;
+; *** GOSUB *** & RETURN ***
+;
+; 'GOSUB expr:' or 'GOSUB expr<CR>' is like the 'GOTO' command,
+; except that the current text pointer, stack pointer, etc. are
+; saved so that execution can be continued after the subroutine
+; 'RETURN's.  In order that 'GOSUB' can be nested (and even
+; recursive), the save area must be stacked.  The stack pointer
+; is saved in 'STKGOS'.  The old 'STKGOS' is saved on the stack.
+; If we are in the main routine, 'STKGOS' is zero (this was done
+; in the initialization section of the interpreter), but we still
+; save it as a flag for no further 'RETURN's.
+;
+; 'RETURN<CR>' undoes everything that 'GOSUB' did, and thus
+; returns the execution to the command after the most recent
+; 'GOSUB'.  If 'STKGOS' is zero, it indicates that we never had
+; a 'GOSUB' and is thus an error.
+
 GOSUB:
 	sub.l #128,sp		; allocate storage for local variables
+	move.l STKFP,-(sp)
 	move.l sp,STKFP
 	bsr	PUSHA				; save the current 'FOR' parameters
 	bsr	INT_EXPR		; get line number
@@ -643,17 +647,18 @@ GOSUB:
 	BRA	RUNTSL
 
 RETURN:
-	bsr	ENDCHK		there should be just a <CR>
-	MOVE.L	STKGOS,D1	get old stack pointer
-	BEQ	QWHAT		if zero, it doesn't exist
-	MOVE.L	D1,SP		else restore it
-	MOVE.L	(SP)+,STKGOS	and the old 'STKGOS'
-	MOVE.L	(SP)+,CURRNT	and the old 'CURRNT'
-	MOVE.L	(SP)+,A0	and the old text pointer
-	bsr	POPA		and the old 'FOR' parameters
-	move.l STKFP,sp
-	add.l #128,sp
-	BRA	FINISH		and we are back home
+	bsr	ENDCHK					; there should be just a <CR>
+	MOVE.L	STKGOS,D1		; get old stack pointer
+	BEQ	QWHAT						; if zero, it doesn't exist
+	MOVE.L	D1,SP				; else restore it
+	MOVE.L	(SP)+,STKGOS	; and the old 'STKGOS'
+	MOVE.L	(SP)+,CURRNT	; and the old 'CURRNT'
+	MOVE.L	(SP)+,A0		; and the old text pointer
+	bsr	POPA						; and the old 'FOR' parameters
+;	move.l STKFP,sp
+	move.l (sp)+,STKFP
+	add.l #128,sp				; remove local variable storage
+	BRA	FINISH					; and we are back home
 
 *******************************************************************
 *
@@ -683,19 +688,19 @@ RETURN:
 * the limit, control loops back to the command following the
 * 'FOR'.  If it's outside the limit, the save area is purged and
 * execution continues.
-*
+
 FOR
-	bsr	PUSHA		save the old 'FOR' save area
-	bsr	SETVAL		set the control variable
-	MOVE.L	A6,LOPVAR	save its address
-	LEA	TAB5,A1 	use 'EXEC' to test for 'TO'
+	bsr	PUSHA			; save the old 'FOR' save area
+	bsr	SETVAL		; set the control variable
+	move.l a6,LOPVAR		; save its address
+	LEA	TAB5,A1 	; use 'EXEC' to test for 'TO'
 	LEA	TAB5_1,A2
 	BRA	EXEC
 FR1	
-	bsr	NUM_EXPR		evaluate the limit
-	FMOVE.X	FP0,LOPLMT	save that
-	LEA	TAB6,A1 	use 'EXEC' to look for the
-	LEA	TAB6_1,A2	word 'STEP'
+	bsr	NUM_EXPR		; evaluate the limit
+	FMOVE.X	FP0,LOPLMT	; save that
+	LEA	TAB6,A1 		; use 'EXEC' to look for the
+	LEA	TAB6_1,A2		; word 'STEP'
 	BRA	EXEC
 FR2
 	bsr	NUM_EXPR		found it, get the step value
@@ -710,39 +715,40 @@ FR5
 	MOVE.L	SP,A6		dig into the stack to find 'LOPVAR'
 	BRA	FR7
 FR6
-	ADD.L	#40,A6		look at next stack frame
+	lea 36(a6),a6			; look at next stack frame
+	cmp.l ENDMEM,a6		; safety check
+	bhs QWHAT
 FR7
-	MOVE.L	(A6),D0 	is it zero?
-	BEQ	FR8		if so, we're done
-	CMP.L	LOPVAR,D0	same as current LOPVAR?
-	BNE	FR6		nope, look some more
-	MOVE.L	SP,A2		Else remove 5 long words from...
-	MOVE.L	A6,A1		inside the stack.
-	LEA	40,A3
-	ADD.L	A1,A3
+	MOVE.L	(A6),D0 	; is it zero?
+	BEQ	FR8						; if so, we're done
+	CMP.L	LOPVAR,D0		; same as current LOPVAR?
+	BNE	FR6						; nope, look some more
+	MOVE.L	SP,A2			; Else remove 9 long words from...
+	MOVE.L	A6,A1			; inside the stack.
+	lea	36(a1),a3
 	bsr	MVDOWN
-	MOVE.L	A3,SP		set the SP 5 long words up
+	MOVE.L	A3,SP		set the SP 9 long words up
 FR8
 	BRA	FINISH		and continue execution
 
 NEXT	
-	bsr	TSTV		get address of variable
-	BCS	QWHAT		if no variable, say "What?"
-	MOVE.L	D0,A1		save variable's address
+	bsr	TSTV						; get address of variable
+	bcs	QWHAT						; if no variable, say "What?"
+	move.l d0,a1				; save variable's address
 NX0
-	MOVE.L	LOPVAR,D0	If 'LOPVAR' is zero, we never...
-	BEQ	QWHAT		had a FOR loop, so say "What?"
-	CMP.L	D0,A1		else we check them
-	BEQ	NX3		OK, they agree
-	bsr	POPA		nope, let's see the next frame
-	BRA	NX0
+	move.l LOPVAR,D0		; If 'LOPVAR' is zero, we never...
+	beq	QWHAT						; had a FOR loop, so say "What?"
+	cmp.l	d0,a1					; else we check them
+	beq	NX3							; OK, they agree
+	bsr	POPA						; nope, let's see the next frame
+	bra	NX0
 NX3	
-	FMOVE.X	(A1),FP0 	get control variable's value
-	FADD	LOPINC,FP0	add in loop increment
+	fmove.x	4(a1),fp0		; get control variable's value
+	fadd.x LOPINC,fp0		; add in loop increment
 ;	BVS	QHOW		say "How?" for 32-bit overflow
-	FMOVE.X	FP0,(A1) 	save control variable's new value
-	FMOVE.X	LOPLMT,FP1	get loop's limit value
-	FTST LOPINC
+	fmove.x	fp0,4(a1)		; save control variable's new value
+	fmove.x	LOPLMT,fp1	; get loop's limit value
+	ftst LOPINC
 	FBGE NX1				; branch if loop increment is positive
 	FMOVE.X FP0,-(a7)	; exchange FP0,FP1
 	FMOVE.X FP1,FP0
@@ -1067,34 +1073,6 @@ CALL
 * <EXPR4> can be an <EXPR> in parenthesis.
 
 ;-------------------------------------------------------------------------------
-; Push string whose string descriptor is in fp0 on string stack.
-;-------------------------------------------------------------------------------
-
-PushString:
-	move.l a1,-(sp)
-	move.l StrSp,a1					; get string stack pointer
-	cmpa.l STRSTK,a1				; ensure not too deeep
-	bls QHOW
-	subq.l #4,a1						; decrement sp
-	move.l a1,StrSp
-	fmove.x fp0,_fpWork			; save descriptor in temp area
-	move.l _fpWork+4,(a1)		; copy string pointer to stack
-	move.l (sp)+,a1
-	rts
-
-;-------------------------------------------------------------------------------
-; Pop string from string stack.
-;-------------------------------------------------------------------------------
-
-PopString:
-	move.l a1,-(sp)
-	move.l StrSp,a1					; remove string from string stack
-	clr.l (a1)							; clear the string pointer
-	add.l #4,StrSp
-	move.l (sp)+,a1
-	rts
-	
-;-------------------------------------------------------------------------------
 ; Push a value on the stack.
 ;-------------------------------------------------------------------------------
 
@@ -1104,10 +1082,6 @@ XP_PUSH:
 	sub.l #16,sp					; allocate for value
 	move.l d0,(sp)				; push data type
 	fmove.x fp0,4(sp)			; and value
-	cmpi.l #DT_STRING,d0	; if it is a string
-	bne .0001
-	bsr PushString				; push string on string stack
-.0001
 	jmp (a1)
 
 ;-------------------------------------------------------------------------------
@@ -1118,13 +1092,9 @@ XP_POP:
 	move.l (sp)+,a1			; get return address
 	move.l (sp),d0			; pop data type
 	fmove.x 4(sp),fp0		; and data element
-	add.l #16,SP
-	cchk (SP)						; check the canary
-	add.l #4,SP					; pop canary	
-	cmpi.l #DT_STRING,d0
-	bne .0001						; if a string
-	bsr PopString				; pop string from string stack
-.0001
+	add.l #16,sp
+	cchk (sp)						; check the canary
+	add.l #4,sp					; pop canary	
 	jmp (a1)
 
 ;-------------------------------------------------------------------------------
@@ -1138,10 +1108,6 @@ XP_POP1:
 	add.l #16,sp
 	cchk (sp)						; check the canary
 	add.l #4,sp					; pop canary
-	cmpi.l #DT_STRING,d1
-	bne .0001						; if a string
-	bsr PopString				; pop string from string stack
-.0001
 	jmp (a1)
 
 ;-------------------------------------------------------------------------------
@@ -1300,7 +1266,7 @@ XP18
 	bsr XP_POP1
 	bsr CheckNumeric
 	fcmp fp0,fp1			; compare with the first result
-	RTS								; return the result
+	rts								; return the result
 
 ;-------------------------------------------------------------------------------
 ; Add/Subtract operator level, +,-
@@ -1331,9 +1297,9 @@ XP24
 ;	FBVS	QHOW		branch if there's an overflow
 	BRA	XP23		else go back for more operations
 .notNum
-	CMP.L #DT_STRING,d0
+	cmp.l #DT_STRING,d0
 	bne ETYPE
-	CMP.L #DT_STRING,d1
+	cmp.l #DT_STRING,d1
 	bne ETYPE
 	bsr ConcatString
 	rts
@@ -1384,8 +1350,6 @@ ConcatString:
 	ext.l d3
 	add.l d3,a3						; a3 points to end of second string
 	bsr MVUP							; concatonate on second string
-	move.w _fpWork+16,d2	; d2 = length of string 2
-	add.w _fpWork,d2			; d2 = total string length
 	move.w d2,_fpWork			; save total string length in fp work
 	move.l a4,_fpWork+4		; save pointer in fp work area
 	moveq #DT_STRING,d0		; set return data type = string
@@ -1398,6 +1362,7 @@ ConcatString:
 
 EXPR3
 	bsr	EXPR4					; get first <EXPR4>
+XP36
 	bsr XP_PUSH
 XP30
 	lea TAB11,a1
@@ -1410,17 +1375,16 @@ XP31
 	bsr XP_POP1
 	bsr CheckNumeric
 	fmul fp1,fp0			; multiply the two
-	bsr XP_PUSH
-	bra	XP30					; then look for more terms
+	bra	XP36					; then look for more terms
 XP34
 	bsr	TSTC					; divide?
 	dc.b	'/',XP35-*
 	bsr	EXPR4					; get second <EXPR4>
 	bsr XP_POP1
 	bsr CheckNumeric
-	fdiv fp1,fp0			; do the division
-	bsr XP_PUSH
-	bra	XP30					; go back for any more terms
+	fdiv fp0,fp1			; do the division
+	fmove fp1,fp0
+	bra	XP36					; go back for any more terms
 XP35
 	bsr XP_POP
 	rts
@@ -1434,8 +1398,7 @@ XP_MOD:
 	fsub fp3,fp1			; subtract from original number
 	fmove.x fp1,fp0		; return difference in fp0
 	moveq #DT_NUMERIC,d0
-	bsr XP_PUSH				; stack result
-	bra XP30					; go back and check for more multiply ops
+	bra XP36					; go back and check for more multiply ops
 	
 ;-------------------------------------------------------------------------------
 ; Lowest Level of expression evaluation.
@@ -1565,13 +1528,16 @@ AllocateString:
 ;-------------------------------------------------------------------------------	
 ; Garbage collect strings. This copies all strings in use to the lower end of
 ; the string area and adjusts the string pointers in variables and on the
-; string stack to point to the new location.
+; stack to point to the new location.
+;
+; Modifies:
+;		none
 ;-------------------------------------------------------------------------------	
 
 GarbageCollectStrings:
+	movem.l a1/a2/a3/a5,-(sp)
 	move.l StrArea,a1			; source area pointer
 	move.l StrArea,a2			; target area pointer
-;	move.l VARBGN,a6			; a6 = top of string area
 	move.l LastStr,a5
 .0001
 	bsr StringInVar				; check if the string is used by a variable
@@ -1583,12 +1549,13 @@ GarbageCollectStrings:
 .moveString:
 	bsr UpdateStringPointers	; update pointer to string on stack or in variable
 	bsr NextString				; a3 = pointer to next string
-	bsr MVUP
+	bsr MVUPW							; will copy the length and string text
 .0005
 	cmp.l a5,a1						; is it the last string?
 	bls .0001
 	move.l a2,LastStr			; update last string pointer
 	clr.w (a2)						; set zero length
+	movem.l (sp)+,a1/a2/a3/a5
 	rts
 .nextString:
 	bsr NextString
@@ -1625,26 +1592,36 @@ NextString:
 ;-------------------------------------------------------------------------------	
 
 StringInVar:
+	; check global vars
 	move.l VARBGN,a4
 	moveq #31,d3			; 32 vars
-.0002
-	cmp.l #DT_STRING,(a4)			; check data type = string
-	bne .0001
-	move.l 8(a4),d2		; look a pointer match
-	subq.l #2,d2
-	cmp.l d2,a1				;
-	bne .0001
-	ori #1,ccr				; set carry if in use
-	rts
-.0001
-	addq.l #8,a4
-	addq.l #8,a4
-	dbra d3,.0002
-;	andi #$FE,ccr			; clear carry if not in use
-	
+	bsr SIV1
 	; now check local vars
 	move.l STKFP,a4
+.0001
+	addq.l #4,a4			; point to variable area
 	moveq #7,d3
+	bsr SIV1					; check variable area
+	move.l -4(a4),a4	; get previous frame pointer
+	cmp.l ENDMEM,a4
+	blo .0001
+	rts
+
+;-------------------------------------------------------------------------------	
+; SIV1 - string in variable helper. This routine does a two-up return if the
+; string is found in a variable. No need to keep searching.
+;
+; Modifies:
+;		d2,d3,a4
+; Parameters:
+;		d3 = number of variables-1 to check
+;		a4 = string space
+;		a1 = pointer to string descriptor
+; Returns:
+;		cf = 1 if string in use, 0 otherwise
+;-------------------------------------------------------------------------------	
+
+SIV1:
 .0003
 	cmp.l #DT_STRING,(a4)
 	bne .0004
@@ -1652,12 +1629,39 @@ StringInVar:
 	subq.l #2,d2
 	cmp.l d2,a1
 	bne .0004
+	addq.l #4,sp			; pop return address
 	ori #1,ccr
-	rts
+	rts								; do two up return
 .0004
-	addq.l #8,a4
+	addq.l #8,a4			;  increment pointer by 16
 	addq.l #8,a4
 	dbra d3,.0003
+	andi #$FE,ccr
+	rts
+
+;-------------------------------------------------------------------------------	
+; Check if a value could be a pointer into the string area.
+; Even if the data type indicated a string, it may not be. It could just be a
+; coincidence. So check that the pointer portion is pointing into string
+; memory. It is extremely unlikely to have a data type and a valid pointer
+; match and it not be a string.
+;
+; Returns
+;		d3 = pointer to string
+;		cf=1 if points into string area, 0 otherwise
+;-------------------------------------------------------------------------------	
+
+PointsIntoStringArea:
+	cmp.l #DT_STRING,(a4)		; is it a string data type?
+	bne .0001
+	move.l 8(a4),d3					; likely a string if
+	cmp.l StrArea,d3				; flagged as a string, and pointer is into string area
+	blo .0001
+	cmp.l VARBGN,d3
+	bhs .0001
+	ori #1,ccr
+	rts
+.0001
 	andi #$FE,ccr
 	rts
 
@@ -1665,22 +1669,30 @@ StringInVar:
 ; Check if the string is a temporary on stack
 ;
 ; Parameters:
-;		a1 = pointer to string
+;		a3 = pointer to old string text area
 ; Returns:
-;		a4 = stack entry
 ;		cf = 1 if string in use, 0 otherwise
 ;-------------------------------------------------------------------------------	
 
 StringOnStack:
+	movem.l d2/a2/a4,-(sp)
 	moveq #7,d3
-	move.l STRSTK,a4
+	move.l sp,a4
 .0002
-	cmp.l (a4)+,a1
-	beq .0001
-	dbra d3,.0002
+	bsr PointsIntoStringArea
+	bcc .0003
+	move.l 8(a4),d2			; d2 = string text pointer
+	cmp.l d2,a3					; compare string pointers
+	beq .0001						; same pointer?
+.0003
+	addq.l #4,a4				; bump pointer into stack
+	cmp.l ENDMEM,a4			; have we hit end of stack yet?
+	blo .0002
+	movem.l (sp)+,d2/a2/a4
 	andi #$FE,ccr
 	rts
 .0001
+	movem.l (sp)+,d2/a2/a4
 	ori #1,ccr
 	rts
 	
@@ -1696,54 +1708,54 @@ StringOnStack:
 ;-------------------------------------------------------------------------------	
 
 UpdateStringPointers:
-	; check variable space
+	move.l a3,-(sp)
+	lea 2(a1),a3						; a3 points to old string text area
+	; check global variable space
 	move.l VARBGN,a4
 	moveq #31,d3						; 32 vars to check
+	bsr USP1
+	; check stack for strings
+	move.l sp,a4						; start at stack bottom and work towards top
+.0002
+	bsr PointsIntoStringArea
+	bcc .0001
+	; Here we probably have a string, one last check
+	cmp.l a2,d3							; should be >= a2 as we are packing the space
+	blo .0001
+	move.l a2,8(a4)					; update pointer on stack with new address
+	addi.w #2,8(a4)					; bump up to text part of string
+.0001
+	addq.l #4,a4
+	cmp.l ENDMEM,a4
+	blo .0002
+	move.l (sp)+,a3
+	rts
+
+;-------------------------------------------------------------------------------	
+; Both global and local variable spaces are updated in the same manner.
+;
+; Parameters:
+;		a1 = old pointer to string
+;		a2 = new pointer to string
+;		a4 = start of string space
+;		d3 = number of string variables
+;-------------------------------------------------------------------------------	
+
+USP1:
 .0002
 	cmp.l #DT_STRING,(a4)		; check the data type
 	bne .0001								; not a string, go to next
-	move.l 8(a4),d2
-	subq.l #2,d2
-	cmp.l d2,a1							; does pointer match old pointer?
+	move.l 8(a4),d2					; d2 = pointer to string text
+	cmp.l d2,a3							; does pointer match old pointer?
 	bne .0001
 	move.l a2,8(a4)					; copy in new pointer
 	addi.l #2,8(a4)					; point to string text
 .0001
+	addq.l #8,a4						; increment pointer by 16
 	addq.l #8,a4
-	addq.l #8,a4
-	dbra d3,.0002
-
-	; check local variable space
-USP1:
-	move.l STKFP,a4
-	moveq #7,d3							; 8 locals to check
-.0002
-	cmp.l #DT_STRING,(a4)		; check data type
-	bne .0001
-	move.l 8(a4),d2
-	subq.l #2,d2
-	cmp.l d2,a1							; does pointer match old pointer?
-	bne .0001
-	move.l a2,8(a4)					; copy in new pointer
-	addi.l #2,8(a4)					; point to string text
-.0001
-	addq.l #8,a4
-	addq.l #8,a4
-	dbra d3,.0002
-
-	; check string stack
-USP2:
-	move.l STRSTK,a4	
-	moveq #7,d3							; 8 entries on stack
-.0002
-	cmp.l (a4),a1						; does pointer match old pointer?
-	bne .0001
-	move.l a2,(a4)					; copy in new pointer
-.0001
-	addq.l #4,a4
 	dbra d3,.0002
 	rts
-	
+
 ;-------------------------------------------------------------------------------	
 ; ===== Test for a valid variable name.  Returns Carry=1 if not
 ;	found, else returns Carry=0 and the address of the
@@ -1791,6 +1803,7 @@ TV1
 	addq #1,a0			; bump text pointer
 	lsl.l #4,d0			; *16 bytes per var
 	add.l STKFP,d0
+	add.l #4,d0
 	rts
 TV2
 	LSL.L #4,D0			; compute the variable's address
@@ -2137,7 +2150,11 @@ CHR:
 * 'AWHAT' just gets the "What?" message and jumps to 'ERROR'.
 * 'QSORRY' and 'ASORRY' do the same kind of thing.
 * 'QHOW' and 'AHOW' also do this for "How?".
-*
+
+; SETVAL
+; Returns:
+;		a6 pointer to variable
+
 SETVAL	
 	bsr	TSTV					; variable name?
 	bcs	QWHAT					; if not, say "What?"
@@ -2319,28 +2336,38 @@ FNDSKP
 	BLO		FNDSKP
 	BRA		FNDLNP		check if end of text
 
-*******************************************************************
-*
-* *** MVUP *** MVDOWN *** POPA *** PUSHA ***
-*
-* 'MVUP' moves a block up from where A1 points to where A2 points
-* until A1=A3
-*
-* 'MVDOWN' moves a block down from where A1 points to where A3
-* points until A1=A2
-*
-* 'POPA' restores the 'FOR' loop variable save area from the stack
-*
-* 'PUSHA' stacks for 'FOR' loop variable save area onto the stack
-*
+;******************************************************************
+;
+; *** MVUP *** MVDOWN *** POPA *** PUSHA ***
+;
+; 'MVUP' moves a block up from where A1 points to where A2 points
+; until A1=A3
+;
+; 'MVDOWN' moves a block down from where A1 points to where A3
+; points until A1=A2
+;
+; 'POPA' restores the 'FOR' loop variable save area from the stack
+;
+; 'PUSHA' stacks for 'FOR' loop variable save area onto the stack
+;
 
 MVUP
-	CMP.L	A1,A3		see the above description
-	BEQ	MVRET
+	CMP.L	A1,A3					; see the above description
+	BLS	MVRET
 	MOVE.B	(A1)+,(A2)+
 	BRA	MVUP
 MVRET
 	RTS
+
+; For string movements only suitable in some circumstances
+
+MVUPW
+	cmp.l a3,a1
+	bhs .0001
+	move.w (a1)+,(a2)+
+	bra MVUPW
+.0001
+	rts
 
 MVDOWN
 	CMP.L	A1,A2		see the above description
@@ -2349,9 +2376,9 @@ MVDOWN
 	BRA	MVDOWN
 
 POPA
-	MOVE.L	(SP)+,A6	A6 = return address
+	MOVE.L	(SP)+,A6			; A6 = return address
 	MOVE.L	(SP)+,LOPVAR	restore LOPVAR, but zero means no more
-	BEQ	PP1
+	BEQ	.0001
 	MOVE.L	(SP)+,LOPINC+8	if not zero, restore the rest
 	MOVE.L	(SP)+,LOPINC+4
 	MOVE.L	(SP)+,LOPINC
@@ -2360,17 +2387,17 @@ POPA
 	MOVE.L	(SP)+,LOPLMT
 	MOVE.L	(SP)+,LOPLN
 	MOVE.L	(SP)+,LOPPT
-PP1
+.0001
 	JMP	(A6)		return
 
 PUSHA
-	MOVE.L	STKLMT,D1	Are we running out of stack room?
+	MOVE.L	STKLMT,D1		; Are we running out of stack room?
 	SUB.L	SP,D1
-	BCC	QSORRY		if so, say we're sorry
-	MOVE.L	(SP)+,A6	else get the return address
-	MOVE.L	LOPVAR,D1	save loop variables
-	BEQ	PU1		if LOPVAR is zero, that's all
-	MOVE.L	LOPPT,-(SP)	else save all the others
+	BCC	QSORRY					; if so, say we're sorry
+	MOVE.L	(SP)+,A6		; else get the return address
+	MOVE.L	LOPVAR,D1		; save loop variables
+	BEQ	.0001						; if LOPVAR is zero, that's all
+	MOVE.L	LOPPT,-(SP)	; else save all the others
 	MOVE.L	LOPLN,-(SP)
 	MOVE.L	LOPLMT,-(SP)
 	MOVE.L	LOPLMT+4,-(SP)
@@ -2378,7 +2405,7 @@ PUSHA
 	MOVE.L	LOPINC,-(SP)
 	MOVE.L	LOPINC+4,-(SP)
 	MOVE.L	LOPINC+8,-(SP)
-PU1	
+.0001
 	MOVE.L	D1,-(SP)
 	JMP	(A6)		return
 
