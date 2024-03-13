@@ -1,7 +1,7 @@
 `timescale 1ns / 1ps
 // ============================================================================
 //        __
-//   \\__/ o\    (C) 2008-2022  Robert Finch, Waterloo
+//   \\__/ o\    (C) 2008-2023  Robert Finch, Waterloo
 //    \  __ /    All rights reserved.
 //     \/_//     robfinch<remove>@finitron.ca
 //       ||
@@ -49,6 +49,7 @@
 `define SUPPORT_BITPAIRS 1'b1
 
 `define SUPPORT_DECFLT 1'b1
+`define SUPPORT_NANO_CACHE	1'b1
 
 //`define HAS_MMU 1'b1
 
@@ -420,6 +421,7 @@ typedef enum logic [7:0] {
 	FBCC,
 	FSCALE,
 	FCOPYEXP,
+	FINTRZ,
 
 	FETCH_HEXI1,
 	FETCH_HEXI2,
@@ -495,6 +497,10 @@ wire DECFLT = coreno_i==32'd2;
 reg em;							// emulation mode
 reg [15:0] ir;
 reg [15:0] ir2;			// second word for ir
+`ifdef SUPPORT_NANO_CACHE
+reg [15:0] fetchbuf [0:7];
+reg [31:0] fetchbuf_tag [0:7];
+`endif
 reg ext_ir;
 reg [31:0] icnt;
 state_t state;
@@ -782,6 +788,7 @@ reg [31:0] canary;
 assign mmus_o = adr_o[31:20] == mmus[31:20];
 assign iops_o = adr_o[31:16] == iops[31:16];
 assign ios_o  = adr_o[31:20] == ios [31:20];
+integer n;
 
 wire [16:0] lfsr_o;
 lfsr17 ulfsr1
@@ -949,7 +956,7 @@ rf68000_divider udiv1
 );
 
 wire [95:0] dfaddsubo, dfmulo, dfdivo, i2dfo, df2io;
-wire [95:0] dfscaleo;
+wire [95:0] dfscaleo, dftrunco;
 wire dfmulinf;
 wire dfmuldone, dfmulover, dfmulunder;
 wire dfdivdone, dfdivover, dfdivunder;
@@ -1069,6 +1076,15 @@ DFPScaleb96 udfscale1
 	.o(dfscaleo)
 );
 
+DFPTrunc96 udftrunc1
+(
+	.clk(clk_g),
+	.ce(1'b1),
+	.i(fps),
+	.o(dftrunco),
+	.overflow()
+);
+
 `endif
 
 always_comb
@@ -1156,6 +1172,22 @@ wire [15:0] iri = pc[1] ? dat_i[31:16] : dat_i[15:0];
 
 assign clk_g = clk_i;
 
+`ifdef SUPPORT_NANO_CACHE
+integer n1;
+reg fetchbuf_found;
+reg [15:0] fetchbuf_ir;
+always_comb
+begin
+	fetchbuf_found = 1'b0;
+	for (n1 = 0; n1 < 8; n1 = n1 + 1) begin
+		if (fetchbuf_tag[n1]==pc) begin
+			fetchbuf_ir = fetchbuf[n1];
+			fetchbuf_found = 1'b1;
+		end
+	end
+end
+`endif
+
 always_ff @(posedge clk_g)
 if (rst_i) begin
 	em <= 1'b0;
@@ -1219,6 +1251,12 @@ if (rst_i) begin
 	iops <= 32'hFD100000;
 	mmus <= 32'hFDC00000;
 	canary <= 'd0;
+`ifdef SUPPORT_NANO_CACHE
+	for (n = 0; n < 16; n = n + 1) begin
+		fetchbuf[n] <= 16'h4E71;	// NOP
+		fetchbuf_tag[n] <= 32'hFFFFFFFF;
+	end
+`endif
 end
 else begin
 
@@ -1841,12 +1879,24 @@ IFETCH:
 				gosub(TRAP);
 			end
 			else begin
-				fc_o <= {sf,2'b10};
-				cyc_o <= 1'b1;
-				stb_o <= 1'b1;
-				sel_o <= 4'b1111;
-				adr_o <= pc;
-				goto (IFETCH);
+`ifdef SUPPORT_NANO_CACHE				
+				if (fetchbuf_found) begin
+					ir <= fetchbuf_ir;
+					mmm <= fetchbuf_ir[5:3];
+					rrr <= fetchbuf_ir[2:0];
+					rrrr <= fetchbuf_ir[3:0];
+					gosub (DECODE);
+				end
+				else
+`endif				
+				begin
+					fc_o <= {sf,2'b10};
+					cyc_o <= 1'b1;
+					stb_o <= 1'b1;
+					sel_o <= 4'b1111;
+					adr_o <= pc;
+					goto (IFETCH);
+				end
 			end
 		end
 		else if (ack_i) begin
@@ -1857,28 +1907,49 @@ IFETCH:
 			mmm <= iri[5:3];
 			rrr <= iri[2:0];
 			rrrr <= iri[3:0];
+`ifdef SUPPORT_NANO_CACHE			
+			for (n = 0; n < 7; n = n + 1) begin
+				fetchbuf_tag[n+1] <= fetchbuf_tag[n];
+				fetchbuf[n+1] <= fetchbuf[n];
+			end
+			fetchbuf_tag[0] <= pc;
+			fetchbuf[0] <= iri;
+`endif			
 			gosub (DECODE);
 		end
 	end
 IFETCH2:
-	if (!cyc_o) begin
-		fc_o <= {sf,2'b10};
-		cyc_o <= 1'b1;
-		stb_o <= 1'b1;
-		sel_o <= 4'b1111;
-		adr_o <= pc;
-		ext_ir <= 1'b1;
-		goto (IFETCH2);
-	end
-	else if (ack_i) begin
-		cyc_o <= 1'b0;
-		stb_o <= 1'b0;
-		sel_o <= 2'b00;
-		ext_ir <= 1'b1;
-		ir2 <= iri;
-		FLTSRC <= iri[12:10];
-		FLTDST <= iri[ 9: 7];
-		goto (DECODE);
+	begin
+`ifdef SUPPORT_NANO_CACHE			
+		if (fetchbuf_found) begin
+			ir2 <= fetchbuf_ir;
+			FLTSRC <= fetchbuf_ir[12:10];
+			FLTDST <= fetchbuf_ir[ 9: 7];
+			goto (DECODE);
+		end
+		else
+`endif			
+		begin
+			if (!cyc_o) begin
+				fc_o <= {sf,2'b10};
+				cyc_o <= 1'b1;
+				stb_o <= 1'b1;
+				sel_o <= 4'b1111;
+				adr_o <= pc;
+				ext_ir <= 1'b1;
+				goto (IFETCH2);
+			end
+			else if (ack_i) begin
+				cyc_o <= 1'b0;
+				stb_o <= 1'b0;
+				sel_o <= 2'b00;
+				ext_ir <= 1'b1;
+				ir2 <= iri;
+				FLTSRC <= iri[12:10];
+				FLTDST <= iri[ 9: 7];
+				goto (DECODE);
+			end
+		end
 	end
 
 //-----------------------------------------------------------------------------
@@ -2733,6 +2804,24 @@ DECODE:
 						else begin
 							fps <= rfoFpsrc;
 							goto(FMOVE);
+						end
+					7'b0000001,	// FINT
+					7'b0000011:	// FINTRZ
+						if (ir2[14]) begin
+							tIllegal();
+							/*
+							push(FINTRZ);
+							case(ir2[12:10])
+							3'b000:	fs_data(mmm,rrr,FETCH_LWORD,S);
+							3'b100:	fs_data(mmm,rrr,FETCH_WORD,S);
+							3'b110:	fs_data(mmm,rrr,FETCH_BYTE,S);
+							default:	fs_data(mmm,rrr,FETCH_HEXI1,S);
+							endcase
+							*/
+						end
+						else begin
+							fps <= rfoFpsrc;
+							goto(FINTRZ);
 						end
 					7'b0100000:	// FDIV
 						if (ir2[14]) begin	// RM
@@ -4329,9 +4418,9 @@ FETCH_IMM32a:
 `else
 		imm[31:16] <= dat_i[15:0];
 		if (ds==D)
-			d[31:26] <= dat_i[15:0];
+			d[31:16] <= dat_i[15:0];
 		else
-			s[31:26] <= dat_i[15:0];
+			s[31:16] <= dat_i[15:0];
 `endif
 		goto (FETCH_IMM32b);
 	end
@@ -6212,6 +6301,17 @@ FADD:
 			end
 			ret();
 		end
+	end
+FINTRZ:	// Also FINT
+	begin
+		if (DECFLT) begin
+			resF <= dftrunco;
+			fzf <= dftrunco[94:0]==95'd0;
+			fnf <= dftrunco[95];
+			Rt <= {1'b0,FLTDST};
+			rfwrF <= 1'b1;
+		end
+		ret();
 	end
 FSCALE:
 	begin
