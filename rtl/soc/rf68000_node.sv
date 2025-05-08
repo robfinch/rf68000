@@ -1,7 +1,7 @@
 `timescale 1ns / 1ps
 // ============================================================================
 //        __
-//   \\__/ o\    (C) 2022  Robert Finch, Waterloo
+//   \\__/ o\    (C) 2022-2025  Robert Finch, Waterloo
 //    \  __ /    All rights reserved.
 //     \/_//     robfinch<remove>@finitron.ca
 //       ||
@@ -38,6 +38,7 @@ import nic_pkg::*;
 
 module rf68000_node(id, rst1, rst2, clk, clken1, clken2, packet_i, packet_o, 
 	rpacket_i, rpacket_o, ipacket_i, ipacket_o);
+parameter SUPPORT_DECFLT = 1'b0;
 input [4:0] id;
 input rst1;
 input rst2;
@@ -282,7 +283,7 @@ rf68000_node_arbiter undarb2
 	.ram_dato(ram2_dato)
 );
 
-rf68000 ucpu1
+rf68000 #(.SUPPORT_DECFLT(SUPPORT_DECFLT)) ucpu1
 (
 	.coreno_i({26'd0,id,1'b0}),
 	.clken_i(clken1),
@@ -310,7 +311,7 @@ rf68000 ucpu1
 	.dat_o(dato1)
 );
 
-rf68000 ucpu2
+rf68000 #(.SUPPORT_DECFLT(SUPPORT_DECFLT)) ucpu2
 (
 	.coreno_i({26'd0,id,1'b1}),
 	.clken_i(clken2),
@@ -378,7 +379,7 @@ rf68000 ucpu2
       .CASCADE_HEIGHT(0),             // DECIMAL
       .CLOCKING_MODE("common_clock"), // String
       .ECC_MODE("no_ecc"),            // String
-      .MEMORY_INIT_FILE("rom.mem"),    // String
+      .MEMORY_INIT_FILE("rom68k.mem"),    // String
       .MEMORY_INIT_PARAM("0"),        // String
       .MEMORY_OPTIMIZATION("true"),   // String
       .MEMORY_PRIMITIVE("block"),      // String
@@ -519,7 +520,7 @@ ack_gen uag2
    // Xilinx Parameterized Macro, version 2022.2
 
    xpm_memory_spram #(
-      .ADDR_WIDTH_A(12),              // DECIMAL
+      .ADDR_WIDTH_A(13),              // DECIMAL
       .AUTO_SLEEP_TIME(0),           // DECIMAL
       .BYTE_WRITE_WIDTH_A(8),       // DECIMAL
       .CASCADE_HEIGHT(0),            // DECIMAL
@@ -528,7 +529,7 @@ ack_gen uag2
       .MEMORY_INIT_PARAM("0"),       // String
       .MEMORY_OPTIMIZATION("true"),  // String
       .MEMORY_PRIMITIVE("auto"),     // String
-      .MEMORY_SIZE(32768*4),            // DECIMAL
+      .MEMORY_SIZE(32768*8),            // DECIMAL
       .MESSAGE_CONTROL(0),           // DECIMAL
       .READ_DATA_WIDTH_A(32),        // DECIMAL
       .READ_LATENCY_A(2),            // DECIMAL
@@ -550,7 +551,7 @@ ack_gen uag2
       .sbiterra(),             // 1-bit output: Status signal to indicate single bit error occurrence
                                        // on the data output of port A.
 
-      .addra(adr1[13:2]),          // ADDR_WIDTH_A-bit input: Address for port A write and read operations.
+      .addra(adr1[14:2]),          // ADDR_WIDTH_A-bit input: Address for port A write and read operations.
       .clka(clk),                     // 1-bit input: Clock signal for port A.
       .dina(dato1),                     // WRITE_DATA_WIDTH_A-bit input: Data input for port A write operations.
       .ena(cs_spram1),                       // 1-bit input: Memory enable signal for port A. Must be high on clock
@@ -588,7 +589,7 @@ ack_gen uag2
    // Xilinx Parameterized Macro, version 2022.2
 
    xpm_memory_spram #(
-      .ADDR_WIDTH_A(12),              // DECIMAL
+      .ADDR_WIDTH_A(13),              // DECIMAL
       .AUTO_SLEEP_TIME(0),           // DECIMAL
       .BYTE_WRITE_WIDTH_A(8),       // DECIMAL
       .CASCADE_HEIGHT(0),            // DECIMAL
@@ -597,7 +598,7 @@ ack_gen uag2
       .MEMORY_INIT_PARAM("0"),       // String
       .MEMORY_OPTIMIZATION("true"),  // String
       .MEMORY_PRIMITIVE("auto"),     // String
-      .MEMORY_SIZE(32768*4),            // DECIMAL
+      .MEMORY_SIZE(32768*8),            // DECIMAL
       .MESSAGE_CONTROL(0),           // DECIMAL
       .READ_DATA_WIDTH_A(32),        // DECIMAL
       .READ_LATENCY_A(2),            // DECIMAL
@@ -619,7 +620,7 @@ ack_gen uag2
       .sbiterra(),             // 1-bit output: Status signal to indicate single bit error occurrence
                                        // on the data output of port A.
 
-      .addra(adr2[13:2]),          // ADDR_WIDTH_A-bit input: Address for port A write and read operations.
+      .addra(adr2[14:2]),          // ADDR_WIDTH_A-bit input: Address for port A write and read operations.
       .clka(clk),                     // 1-bit input: Clock signal for port A.
       .dina(dato2),                     // WRITE_DATA_WIDTH_A-bit input: Data input for port A write operations.
       .ena(cs_spram2),                       // 1-bit input: Memory enable signal for port A. Must be high on clock
