@@ -44,6 +44,12 @@ FADD, FSUB, FMUL, FDIV, FNEG, FSCALE, FCMP, FTST, FBcc, FMOVE
 Decimal floating-point primitives are found in the ft816float project at
 opencores.org.
 
+## System-on-Chip
+There is a demo system-on-chip including multiple rf68000 cores connected in a loop.
+Pressing Alt-Tab on the keyboard switches between cores.
+There is a small monitor program allowing the cores to be tested. TinyBasic is included.
+Pressing '?' on the keyboard displays help.
+
 ## License
 BSD-3
 
