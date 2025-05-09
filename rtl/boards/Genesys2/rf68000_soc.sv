@@ -113,7 +113,11 @@ wire xrst = ~cpu_reset_n;
 wire locked;
 wire clk20, clk40, clk50, clk100, clk200;
 wire xclk_bufg;
-wire node_clk = clk50;
+wire node_clk = clk20;
+wire node_clk1;
+wire node_clk2;
+wire node_clk3;
+wire node_clk4;
 wire dot_clk = clk40;
 wb_cmd_request256_t ch7req;
 wb_cmd_request256_t ch7dreq;	// DRAM request
@@ -970,6 +974,7 @@ BUFGCE uce3 (.CE(clken_reg[3]), .I(node_clk), .O(node_clk3));
 assign node_clk2 = node_clk;
 assign node_clk3 = node_clk;
 `endif
+assign node_clk4 = node_clk;
 
 rf68000_node #(.SUPPORT_DECFLT(1'b1)) unode1
 (
@@ -1007,11 +1012,11 @@ rf68000_node #(.SUPPORT_DECFLT(1'b0)) unode3
 	.rst1(rst|rsts[6]),
 	.rst2(rst|rsts[7]),
 	.clk(node_clk3),
-	.packet_i(clken_reg[2] ? packet[1] : packet[0]),
+	.packet_i(packet[1]),//clken_reg[2] ? packet[1] : packet[0]),
 	.packet_o(packet[2]),
-	.rpacket_i(clken_reg[2] ? rpacket[1] : rpacket[0]),
+	.rpacket_i(rpacket[1]),//clken_reg[2] ? rpacket[1] : rpacket[0]),
 	.rpacket_o(rpacket[2]),
-	.ipacket_i(clken_reg[2] ? ipacket[1] : ipacket[0]),
+	.ipacket_i(ipacket[1]),//clken_reg[2] ? ipacket[1] : ipacket[0]),
 	.ipacket_o(ipacket[2])
 );
 
@@ -1021,7 +1026,7 @@ rf68000_node #(.SUPPORT_DECFLT(1'b0)) unode4
 	.id(5'd4),
 	.rst1(rst|rsts[8]),
 	.rst2(rst|rsts[9]),
-	.clk(node_clk),
+	.clk(node_clk4),
 	.packet_i(packet[2]),
 	.packet_o(packet[3]),
 	.rpacket_i(rpacket[2]),

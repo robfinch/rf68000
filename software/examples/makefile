@@ -23,10 +23,12 @@ BIOS:
 #	cc64 $(CFLAGS) SieveOfE.c
 #	cc64 $(CFLAGS) os_stub.c
 
+	vbccm68k sieve.c
+#	vbccm68k prtflt.c -fpu=68881
 #	vasmrf68000_mot_win32.exe -Fvobj -L fibonacci.lst fibonacci.asm -o fibonacci.o
 	vasmrf68000_mot_win32.exe -Fvobj -L LEDTest.lst LEDTest.asm -o LEDTest.o
 	vasmrf68000_mot_win32.exe -Fvobj -L cputest.lst cputest.asm -o cputest.o
-	vasmrf68000_mot_win32.exe -Fvobj -L boot.lst boot.asm -o boot.o -m68010
+	vasmrf68000_mot_win32.exe -Fvobj -L boot.lst boot.x68 -o boot.o -m68010 -m68881
 #	vasmrfPhoenix_std_win32.exe -Fvobj -L add.lst add.asm -o add.o
 #	vlink -T rom_bios.cmd -brawbin1 fibonacci.o -o fibonacci.bin
 #	vlink -T rom_bios.cmd -brawbin1 LEDTest.o -o LEDTest.bin

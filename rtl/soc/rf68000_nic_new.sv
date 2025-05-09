@@ -37,7 +37,6 @@
 //                                                                          
 // ============================================================================
 
-import const_pkg::*;
 import nic_pkg::*;
 
 module rf68000_nic(id, rst_i, clk_i, s_cti_i, s_atag_o,
@@ -103,16 +102,17 @@ output reg [7:0] cause_o;
 reg [5:0] state;
 parameter ST_IDLE = 6'd0;
 parameter ST_READ = 6'd1;
-parameter ST_READ_ACK = 6'd2;
+parameter ST_READWRITE_ACK = 6'd2;
 parameter ST_ACK = 6'd3;
 parameter ST_ACK_ACK = 6'd4;
 parameter ST_WRITE = 6'd5;
-parameter ST_WRITE_ACK = 6'd6;
 parameter ST_XMIT = 6'd7;
 parameter ST_AACK = 6'd8;
 parameter ST_RETRY = 6'd9;
 parameter ST_ERR = 6'd10;
 parameter ST_VPA = 6'd11;
+reg [3:0] rsp_state;
+reg [11:0] mto;
 
 packet_t packet_rx, packet_tx;
 packet_t rpacket_rx, rpacket_tx;
@@ -140,7 +140,6 @@ always_comb
 	s_ack_o <= s_ack1 & s_cyc_i & s_stb_i;
 
 // Bus timeout for bus mastering.
-reg [11:0] mto;
 wire timeout = mto[8];
 always_ff @(posedge clk_i)
 if (rst_i)
@@ -189,6 +188,7 @@ if (rst_i) begin
 	firq_o <= 'd0;
 	cause_o <= 'd0;
 	state <= ST_IDLE;
+	rsp_state <= ST_IDLE;
 end
 else begin
 	// This signal just pulses once.
@@ -199,15 +199,6 @@ else begin
 	ipacket_o <= ipacket_i;
 	rpacket_o <= rpacket_i;
 
-	if (((packet_i.sid|packet_i.did)==6'd0) && packet_tx.did) begin
-		packet_o <= packet_tx;
-		packet_tx <= {$bits(packet_t){1'b0}};
-	end
-	if (((rpacket_i.sid|rpacket_i.did)==6'd0) && rpacket_tx.did) begin
-		rpacket_o <= rpacket_tx;
-		rpacket_tx <= {$bits(packet_t){1'b0}};
-	end
-	
 	// Look for slave cycle termination.
 	if (~(s_cyc_i & s_stb_i)) begin
 		rw_done <= TRUE;
@@ -226,7 +217,7 @@ else begin
 		ipacket_o.cause <= cause_i;
 	end
 	if (ipacket_i.did==id) begin
-		ipacket_o <= 'd0;
+		ipacket_o.did <= 6'd0;
 		irq_o <= ipacket_i.irq;
 		firq_o <= ipacket_i.firq;
 		cause_o <= ipacket_i.cause;
@@ -242,181 +233,196 @@ else begin
 		cause_o <= 'd0;
 	end
 
-	case(state)
-	ST_IDLE:
-		begin
-			if (rpacket_i.did==id || rpacket_i.did==6'd63) begin
-				rpacket_rx <= rpacket_i;
-				// Remove packet only if not a broadcast packet
-				if (rpacket_i.did==id) begin
-					case (rpacket_i.typ)
-					PT_VPA:
-						begin
-							rpacket_o <= {$bits(packet_t){1'b0}};
-							state <= ST_VPA;
-						end
-					PT_ERR:
-						begin
-							rpacket_o <= {$bits(packet_t){1'b0}};
-							state <= ST_ERR;
-						end
-					PT_RETRY:
-						begin
-							rpacket_o <= {$bits(packet_t){1'b0}};
-							state <= ST_RETRY;
-						end
-					PT_ACK:
-						begin
-							rpacket_o <= {$bits(packet_t){1'b0}};
-							state <= ST_ACK;
-						end
-					PT_AACK:
-						begin
-							rpacket_o <= {$bits(packet_t){1'b0}};
-							state <= ST_AACK;
-						end
-					default:	;
-					endcase
-				end
+	// Receive response packet, even when not IDLE
+	// Remove packet only if not a broadcast packet
+	if ((rpacket_i.did==id || rpacket_i.did==6'd63) && rpacket_rx.did==6'd0) begin
+		if (rpacket_i.did == id)
+			rpacket_o.did <= 6'd0;
+		rpacket_rx <= rpacket_i;
+		case (rpacket_i.typ)
+		PT_VPA:	rsp_state <= ST_VPA;
+		PT_ERR:	rsp_state <= ST_ERR;
+		PT_RETRY:	rsp_state <= ST_RETRY;
+		PT_ACK:	rsp_state <= ST_ACK;
+		PT_AACK:	rsp_state <= ST_AACK;
+		default:	
+			begin
+				rpacket_rx.did <= 6'd0;
+				rsp_state <= ST_IDLE;
 			end
-			// Was this packet for us?
-			if (packet_i.did==id || packet_i.did==6'd63) begin
-				packet_rx <= packet_i;
-				// Remove packet only if not a broadcast packet
-				if (packet_i.did==id) begin
-					case (packet_i.typ)
-					PT_READ,PT_AREAD:
-						if (~|rpacket_tx) begin
-							packet_o <= {$bits(packet_t){1'b0}};
-							state <= ST_READ;
-						end
-					PT_WRITE:	
-						begin
-							packet_o <= {$bits(packet_t){1'b0}};
-							state <= ST_WRITE;
-						end
-					default:	;
-					endcase
-				end
-				// Have we seen packet already?
-				// If not, add to seen list and process, otherwise ignore
-				else if (!seen_gbl) begin
-					for (n1 = 0; n1 < 7; n1 = n1 + 1)
-						gbl_packets[n1+1] <= gbl_packets[n1];
-					gbl_packets[0] <= packet_i;
-					case (packet_i.typ)
-					//PT_ACK:		state <= ST_ACK;
-					//PT_READ:	state <= ST_READ;
-					PT_WRITE:	state <= ST_WRITE;
-					default:	;
-					endcase
-				end
+		endcase
+	end
+
+	// Was this request packet for us?
+	// Remove packet only if not a broadcast packet
+	if ((packet_i.did==id || packet_i.did==6'd63) && packet_rx.did==6'd0) begin
+		if (packet_i.did == id)
+			packet_o.did <= 6'd0;
+		packet_rx <= packet_i;
+		case (packet_i.typ)
+		PT_READ,PT_AREAD:	state <= ST_READ;
+		PT_WRITE:	state <= ST_WRITE;
+		default:
+			begin	
+				packet_rx.did <= 6'd0;
+				state <= ST_IDLE;
 			end
-			// If previous op is complete, and theres nothing in the transmit buffer.
-			else if (rw_done && ~|packet_tx) begin
-				tSetupReadWrite();
-			end
+		endcase
+		// Have we seen packet already?
+		// If not, add to seen list and process, otherwise ignore
+		if (packet_i.did==6'd63 && !seen_gbl) begin
+			for (n1 = 0; n1 < 7; n1 = n1 + 1)
+				gbl_packets[n1+1] <= gbl_packets[n1];
+			gbl_packets[0] <= packet_i;
+			case (packet_i.typ)
+			PT_WRITE:	state <= ST_WRITE;
+			default:	
+				begin
+					packet_rx.did <= 6'd0;
+					state <= ST_IDLE;
+				end
+			endcase
 		end
+	end
+
+	// Transmit waiting transmit buffers.
+	if (packet_i.did==6'd0 && packet_tx.did!=6'd0) begin
+		packet_o <= packet_tx;
+		packet_tx.did <= 6'd0;
+	end
+	if (rpacket_i.did==6'd0 && rpacket_tx.did!=6'd0) begin
+		rpacket_o <= rpacket_tx;
+		rpacket_tx.did <= 6'd0;
+	end
+	
+	if (packet_tx.did==6'd0)
+		tSetupReadWrite(s_cyc_i & s_stb_i, s_we_i, s_adr_i, s_dat_i);
+
+	// Process request
+	case(state)
+	ST_IDLE:	;
 
 	ST_READ:
 		if (!m_ack_i) begin
-			m_cyc_o <= TRUE;
-			m_stb_o <= TRUE;
-			m_we_o <= FALSE;
-			m_sel_o <= 4'hF;
-			m_asid_o <= packet_rx.asid;
-			m_adr_o <= packet_rx.adr;
-			m_mmus_o <= packet_rx.mmus;
-			m_ios_o <= packet_rx.ios;
-			m_iops_o <= packet_rx.iops;
-			state <= ST_READ_ACK;
-		end
-	ST_READ_ACK:
-		if (m_ack_i) begin
-			tClearBus();
-			tSetupResponse(packet_rx.typ==PT_AREAD ? PT_AACK : PT_ACK);
-			state <= ST_IDLE;
-		end
-		else if (m_err_i) begin
-			tClearBus();
-			tSetupResponse(PT_ERR);
-			state <= ST_IDLE;
-		end
-		else if (m_vpa_i) begin
-			tClearBus();
-			tSetupResponse(PT_VPA);
-			state <= ST_IDLE;
-		end
-		else if (timeout) begin
-			tClearBus();
-			tSetupResponse(PT_ERR);
-			state <= ST_IDLE;
+			tBusCycle(FALSE,packet_rx);
+			state <= ST_READWRITE_ACK;
 		end
 
 	ST_WRITE:
 		if (!m_ack_i) begin
-			m_cyc_o <= TRUE;
-			m_stb_o <= TRUE;
-			m_we_o <= TRUE;
-			m_sel_o <= packet_rx.sel;
-			m_asid_o <= packet_rx.asid;
-			m_mmus_o <= packet_rx.mmus;
-			m_ios_o <= packet_rx.ios;
-			m_iops_o <= packet_rx.iops;
-			m_adr_o <= packet_rx.adr;
-			m_dat_o <= packet_rx.dat;
-			state <= ST_WRITE_ACK;
-		end
-	ST_WRITE_ACK:
-		if (m_ack_i) begin
-			tClearBus();
-			state <= ST_IDLE;
-		end
-		else if (m_err_i) begin
-			tClearBus();
-			state <= ST_IDLE;
-		end
-		else if (m_vpa_i) begin
-			tClearBus();
-			state <= ST_IDLE;
+			tBusCycle(TRUE,packet_rx);
+			state <= ST_READWRITE_ACK;
 		end
 
-	ST_ACK:
-		// If there is an active read cycle
-		if (s_cyc_i & s_stb_i & ~s_we_i) begin
-			if (s_adr_i == rpacket_rx.adr) begin
-				s_dat_o <= rpacket_rx.dat;
-				s_ack1 <= TRUE;
-				state <= ST_ACK_ACK;
+	// Writes are posted so they do not generate a response.
+	ST_READWRITE_ACK:
+		begin
+			if (m_ack_i) begin
+				tClearBus();
+				if (!m_we_o)
+					tSetupResponsePacket(
+						packet_rx.typ==PT_AREAD ? PT_AACK : PT_ACK,
+						id,
+						packet_rx.sid,
+						packet_rx.adr,
+						m_dat_i
+					);
+				packet_rx.did <= 6'd0;
+				state <= ST_IDLE;
 			end
-			else begin
-				s_rty_o <= TRUE;
+			else if (m_err_i) begin
+				tClearBus();
+				if (!m_we_o)
+					tSetupResponsePacket(
+						PT_ERR,
+						id,
+						packet_rx.sid,
+						packet_rx.adr,
+						m_dat_i
+					);
+				packet_rx.did <= 6'd0;
+				state <= ST_IDLE;
+			end
+			else if (m_vpa_i) begin
+				tClearBus();
+				if (!m_we_o)
+					tSetupResponsePacket(
+						PT_VPA,
+						id,
+						packet_rx.sid,
+						packet_rx.adr,
+						m_dat_i
+					);
+				packet_rx.did <= 6'd0;
+				state <= ST_IDLE;
+			end
+			else if (timeout) begin
+				tClearBus();
+				if (!m_we_o)
+					tSetupResponsePacket(
+						PT_ERR,
+						id,
+						packet_rx.sid,
+						packet_rx.adr,
+						m_dat_i
+					);
+				packet_rx.did <= 6'd0;
 				state <= ST_IDLE;
 			end
 		end
-		else
-			state <= ST_IDLE;
+
+	default:
+		state <= ST_IDLE;
+	endcase
+
+	// Process response packet
+	case(rsp_state)
+	ST_IDLE:	;
+	ST_ACK:
+		begin
+			// If there is an active cycle
+			if (s_cyc_i & s_stb_i) begin
+				if (s_adr_i == rpacket_rx.adr) begin
+					s_dat_o <= rpacket_rx.dat;
+					s_ack1 <= TRUE;
+					rsp_state <= ST_ACK_ACK;
+				end
+				else begin
+					s_rty_o <= TRUE;
+					rsp_state <= ST_ACK_ACK;
+				end
+			end
+			else begin
+				rpacket_rx.did <= 6'd0;
+				rsp_state <= ST_IDLE;
+			end
+		end
 	ST_ACK_ACK:
 		// Wait for the slave cycle to finish.
-		if (~(s_cyc_i & s_stb_i))
-			state <= ST_IDLE;
+		if (~(s_cyc_i & s_stb_i)) begin
+			rpacket_rx.did <= 6'd0;
+			rsp_state <= ST_IDLE;
+		end
 	ST_VPA:
 		begin
 			s_vpa_o <= TRUE;
 			s_atag_o <= rpacket_rx.adr[3:0];
-			state <= ST_IDLE;
+			rpacket_rx.did <= 6'd0;
+			rsp_state <= ST_IDLE;
 		end
 	ST_RETRY:
 		begin
 			s_rty_o <= TRUE;
 			s_atag_o <= rpacket_rx.adr[3:0];
-			state <= ST_IDLE;
+			rpacket_rx.did <= 6'd0;
+			rsp_state <= ST_IDLE;
 		end
 	ST_ERR:
 		begin
 			s_err_o <= TRUE;
 			s_atag_o <= rpacket_rx.adr[3:0];
-			state <= ST_IDLE;
+			rpacket_rx.did <= 6'd0;
+			rsp_state <= ST_IDLE;
 		end
 		
 	// Asynchronous acknowledge; there does not need to be an active slave cycle.
@@ -426,100 +432,25 @@ else begin
 			s_aack_o <= TRUE;
 			s_atag_o <= rpacket_rx.adr[3:0];
 			s_dat_o <= rpacket_rx.dat;
-			state <= ST_IDLE;
+			rpacket_rx.did <= 6'd0;
+			rsp_state <= ST_IDLE;
 		end
 
 	default:
-		state <= ST_IDLE;
+		rsp_state <= ST_IDLE;
 	endcase
-
 end
 
-task tSetupReadWrite;
-begin
-	if (s_cyc_i && s_stb_i) begin
-		rw_done <= FALSE;
-		packet_tx.sid <= id;
-		packet_tx.age <= 6'd0;
-		packet_tx.ack <= 1'b0;
-		packet_tx.typ <= s_we_i ? PT_WRITE : burst ? PT_AREAD : PT_READ;
-		packet_tx.pad2 <= 2'b0;
-		packet_tx.we <= s_we_i;
-		packet_tx.sel <= s_sel_i;
-		packet_tx.asid <= s_asid_i;
-		packet_tx.mmus <= s_mmus_i;
-		packet_tx.ios <= s_ios_i;
-		packet_tx.iops <= s_iops_i;
-		packet_tx.adr <= s_adr_i;
-		packet_tx.dat <= s_dat_i;
-		casez(s_adr_i[31:24])
-		// Read global ROM? / INTA
-		8'hFF:	
-			if (!s_we_i) begin
-				packet_tx.did <= 6'd62;
-				s_ack1 <= burst;
-				rw_done <= burst;
-			end
-			else begin
-				packet_tx <= {$bits(packet_t){1'b0}};
-				s_ack1 <= s_we_i;
-			end
-		/* I/O area */
-		8'hFD,
-		8'h01:	// virtual address
-			begin
-				packet_tx.did <= 6'd62;
-				s_ack1 <= s_we_i|burst;
-			end
-		// Global broadcast
-		8'hDF:
-			begin
-				packet_tx.did <= 6'd63;
-				packet_tx.age <= 6'd30;
-				s_ack1 <= s_we_i|burst;
-			end
-		// C0xyyyyy
-		8'hC0:
-			begin
-				packet_tx.did <= {2'd0,s_adr_i[23:20]};
-				s_ack1 <= s_we_i|burst;
-			end
-		8'h4?,8'h5?,8'h6?,8'h7?,8'h8?,8'h9?,8'hA?,8'hB?:
-			begin
-				packet_tx.did <= 6'd62;
-				s_ack1 <= s_we_i|burst;
-			end
-		/* Global DRAM area */
-		8'h2?,8'h3?:
-			begin
-				packet_tx.did <= 6'd62;
-				s_ack1 <= s_we_i|burst;
-			end
-		8'h00:
-			if (s_adr_i[23:20]>=4'h1) begin
-				packet_tx.did <= 6'd62;
-				s_ack1 <= s_we_i|burst;
-			end
-			else begin
-				packet_tx <= {$bits(packet_t){1'b0}};
-				rw_done <= TRUE;
-			end
-		default:
-			begin
-				packet_tx <= {$bits(packet_t){1'b0}};
-				rw_done <= TRUE;
-			end
-		endcase
-	end
-end
-endtask
-
-task tSetupResponse;
+task tSetupResponsePacket;
 input [5:0] typ;
+input [5:0] id;
+input [5:0] sid;
+input [31:0] adr;
+input [31:0] dat;
 begin
 	rpacket_tx <= {$bits(packet_t){1'b0}};
 	rpacket_tx.sid <= id;
-	rpacket_tx.did <= packet_rx.sid;
+	rpacket_tx.did <= sid;
 	rpacket_tx.age <= 6'd0;
 	rpacket_tx.typ <= typ;
 	rpacket_tx.ack <= TRUE;
@@ -527,20 +458,120 @@ begin
 	rpacket_tx.mmus <= m_mmus_o;
 	rpacket_tx.ios <= m_ios_o;
 	rpacket_tx.iops <= m_iops_o;
-	rpacket_tx.adr <= m_adr_o;
-	rpacket_tx.dat <= m_dat_i;
+	rpacket_tx.adr <= adr;
+	rpacket_tx.dat <= dat;
+end
+endtask
+
+task tSetupReadWrite;
+input cyc;
+input wr;
+input [31:0] adr;
+input [31:0] dat;
+begin
+	if (cyc) begin
+		rw_done <= FALSE;
+		packet_tx.sid <= id;
+		packet_tx.age <= 6'd0;
+		packet_tx.ack <= 1'b0;
+		packet_tx.typ <= wr ? PT_WRITE : burst ? PT_AREAD : PT_READ;
+		packet_tx.pad2 <= 2'b0;
+		packet_tx.we <= wr;
+		packet_tx.sel <= s_sel_i;
+		packet_tx.asid <= s_asid_i;
+		packet_tx.mmus <= s_mmus_i;
+		packet_tx.ios <= s_ios_i;
+		packet_tx.iops <= s_iops_i;
+		packet_tx.adr <= adr;
+		packet_tx.dat <= dat;
+		casez(adr[31:24])
+		// Read global ROM? / INTA
+		8'hFF:	
+			if (!wr) begin
+				packet_tx.did <= 6'd62;
+				s_ack1 <= burst;
+				rw_done <= burst;
+			end
+			else begin
+				packet_tx.did <= 6'd62;
+				s_ack1 <= wr;
+			end
+		/* I/O area */
+		8'hFD,
+		8'h01:	// virtual address
+			begin
+				packet_tx.did <= 6'd62;
+				s_ack1 <= wr|burst;
+			end
+		// Global broadcast
+		8'hDF:
+			begin
+				packet_tx.did <= 6'd63;
+				packet_tx.age <= 6'd30;
+				s_ack1 <= wr|burst;
+			end
+		// C0xyyyyy
+		8'hC0:
+			begin
+				packet_tx.did <= {2'd0,adr[23:20]};
+				s_ack1 <= wr|burst;
+			end
+		8'h8?,8'h9?,8'hA?,8'hB?:
+			begin
+				packet_tx.did <= 6'd62;
+				s_ack1 <= wr|burst;
+			end
+		/* Global DRAM area */
+		8'h4?,8'h5?,8'h6?,8'h7?:
+			begin
+				packet_tx.did <= 6'd62;
+				s_ack1 <= wr|burst;
+			end
+		8'h00:
+			if (adr[23:20]>=4'h1) begin
+				packet_tx.did <= 6'd62;
+				s_ack1 <= wr|burst;
+			end
+			else begin
+				packet_tx.did <= 6'd0;
+				rw_done <= TRUE;
+			end
+		default:
+			begin
+				packet_tx.did <= 6'd0;
+				rw_done <= TRUE;
+			end
+		endcase
+	end
+end
+endtask
+
+task tBusCycle;
+input wr;
+input packet_t packet_rx;
+begin
+	m_cyc_o <= TRUE;
+	m_stb_o <= TRUE;
+	m_we_o <= wr;
+	m_sel_o <= packet_rx.sel;
+	m_asid_o <= packet_rx.asid;
+	m_adr_o <= packet_rx.adr;
+	m_dat_o <= packet_rx.dat;
+	m_mmus_o <= packet_rx.mmus;
+	m_ios_o <= packet_rx.ios;
+	m_iops_o <= packet_rx.iops;
 end
 endtask
 
 task tClearBus;
 begin
-	m_cyc_o <= LOW;
-	m_stb_o <= LOW;
-	m_we_o <= LOW;
+	m_cyc_o <= FALSE;
+	m_stb_o <= FALSE;
+	m_we_o <= FALSE;
 	m_sel_o <= 4'h0;
-	m_mmus_o <= LOW;
-	m_ios_o <= LOW;
-	m_iops_o <= LOW;
+	m_mmus_o <= FALSE;
+	m_ios_o <= FALSE;
+	m_iops_o <= FALSE;
 end
 endtask
 
