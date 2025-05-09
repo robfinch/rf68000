@@ -1,7 +1,7 @@
 `timescale 1ns / 1ps
 // ============================================================================
 //        __
-//   \\__/ o\    (C) 2013-2022  Robert Finch, Waterloo
+//   \\__/ o\    (C) 2013-2025  Robert Finch, Waterloo
 //    \  __ /    All rights reserved.
 //     \/_//     robfinch<remove>@opencores.org
 //       ||
@@ -46,9 +46,10 @@
 // ============================================================================
 //
 
-module IOBridge(rst_i, clk_i,
+module IOBridge(rst_i, clk_i, s1_core_i, s1_core_o,
 	s1_cyc_i, s1_stb_i, s1_ack_o, s1_we_i, s1_sel_i, s1_adr_i, s1_dat_i, s1_dat_o,
 	s2_cyc_i, s2_stb_i, s2_ack_o, s2_we_i, s2_sel_i, s2_adr_i, s2_dat_i, s2_dat_o,
+	m_core_o, m_core_i,
 	m_cyc_o, m_stb_o, m_ack_i, m_we_o, m_sel_o, m_adr_o, m_dat_i, m_dat_o);
 parameter IDLE = 3'd0;
 parameter WAIT_ACK = 3'd1;
@@ -58,6 +59,7 @@ parameter WR_ACK2 = 3'd4;
 
 input rst_i;
 input clk_i;
+input [5:0] s1_core_i;
 input s1_cyc_i;
 input s1_stb_i;
 output reg s1_ack_o;
@@ -66,6 +68,7 @@ input [3:0] s1_sel_i;
 input [31:0] s1_adr_i;
 input [31:0] s1_dat_i;
 output reg [31:0] s1_dat_o;
+output reg [5:0] s1_core_o;
 
 input s2_cyc_i;
 input s2_stb_i;
@@ -76,6 +79,7 @@ input [31:0] s2_adr_i;
 input [31:0] s2_dat_i;
 output reg [31:0] s2_dat_o;
 
+output reg [5:0] m_core_o;
 output reg m_cyc_o;
 output reg m_stb_o;
 input m_ack_i;
@@ -84,6 +88,7 @@ output reg [3:0] m_sel_o;
 output reg [31:0] m_adr_o;
 input [31:0] m_dat_i;
 output reg [31:0] m_dat_o;
+input [5:0] m_core_i;
 
 reg which;
 reg [2:0] state;
@@ -101,6 +106,7 @@ else
 
 always @(posedge clk_i)
 if (rst_i) begin
+	m_core_o <= 6'd0;
 	m_cyc_o <= 1'b0;
 	m_stb_o <= 1'b0;
 	m_we_o <= 1'b0;
@@ -120,6 +126,7 @@ IDLE:
 	    // Filter requests to the I/O address range
 	    if (s1_cyc_i && s1_adr_i[31:20]==12'hFD0) begin
 	    	which <= 1'b0;
+	    	m_core_o <= s1_core_i;
 	      m_cyc_o <= 1'b1;
 	      m_stb_o <= 1'b1;
 	      m_sel_o <= s1_sel_i;
@@ -159,6 +166,7 @@ IDLE:
 		    m_adr_o <= {12'hFD0,s2_adr_i[19:0]};	// fix the upper 12 bits of the address to help trim cores
 	    end
 	    else begin
+	    	m_core_o <= 6'd0;
 	    	m_cyc_o <= 1'b0;
 	    	m_stb_o <= 1'b0;
 	    	m_we_o <= 1'b0;
@@ -184,6 +192,7 @@ WR_ACK:
 		if (!which & !s1_stb_i)
 			s_ack <= 1'b0;
 		if (m_ack_i) begin
+			m_core_o <= 6'd0;
 			m_cyc_o <= 1'b0;
 			m_stb_o <= 1'b0;
 			m_we_o <= 1'b0;
@@ -217,17 +226,24 @@ WAIT_ACK:
 //		m_adr_o <= 32'h0;
 //		m_dat_o <= 32'd0;
 		s_ack <= 1'b1;
-		if (!which) s1_dat_o <= m_dat_i;
-		if ( which) s2_dat_o <= m_dat_i;
+		if (!which) begin
+			s1_dat_o <= m_dat_i;
+			s1_core_o <= m_core_i;
+		end
+		if ( which) begin
+			s2_dat_o <= m_dat_i;
+		end
 		state <= WAIT_NACK;
 	end
 	else if (!s2_cyc_i && !s1_cyc_i) begin
+		m_core_o <= 6'd0;
 		m_cyc_o <= 1'b0;
 		m_stb_o <= 1'b0;
 		m_we_o <= 1'b0;
 		state <= IDLE;
 	end
 	else if (which ? !s2_cyc_i : !s1_cyc_i) begin
+		m_core_o <= 6'd0;
 		m_cyc_o <= 1'b0;
 		m_stb_o <= 1'b0;
 		m_we_o <= 1'b0;
@@ -240,21 +256,26 @@ WAIT_ACK:
 // Wait for falling edge on strobe or strobe low.
 WAIT_NACK:
 	if (!s2_stb_i && !s1_stb_i) begin
+		m_core_o <= 6'd0;
 		m_cyc_o <= 1'b0;
 		m_stb_o <= 1'b0;
 		m_we_o <= 1'b0;
 		s_ack <= 1'b0;
 		s1_dat_o <= 'h0;
 		s2_dat_o <= 'h0;
+		s1_core_o <= 6'd0;
 		state <= IDLE;
 	end
 	else if (which ? !s2_stb_i : !s1_stb_i) begin
+		m_core_o <= 6'd0;
 		m_cyc_o <= 1'b0;
 		m_stb_o <= 1'b0;
 		m_we_o <= 1'b0;
 		s_ack <= 1'b0;
-		if (!s1_stb_i)
+		if (!s1_stb_i) begin
+			s1_core_o <= 6'd0;
 			s1_dat_o <= 'h0;
+		end
 		if (!s2_stb_i)
 			s2_dat_o <= 'h0;
 		state <= IDLE;

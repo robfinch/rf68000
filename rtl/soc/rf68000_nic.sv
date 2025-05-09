@@ -44,12 +44,13 @@ module rf68000_nic(id, rst_i, clk_i, s_cti_i, s_atag_o,
 	s_cyc_i, s_stb_i, s_ack_o, s_aack_o, s_rty_o, s_err_o, s_vpa_o, 
 	s_we_i, s_sel_i, s_asid_i, s_adr_i, s_dat_i, s_dat_o,
 	s_mmus_i, s_ios_i, s_iops_i,
-	m_cyc_o, m_stb_o, m_ack_i, m_err_i, m_vpa_i,
-	m_we_o, m_sel_o, m_asid_o, m_adr_o, m_dat_o, m_dat_i,
+	m_core_o, m_cyc_o, m_stb_o, m_ack_i, m_err_i, m_vpa_i,
+	m_we_o, m_sel_o, m_asid_o, m_adr_o, m_dat_o, m_dat_i, m_core_i,
 	m_mmus_o, m_ios_o, m_iops_o,
 	packet_i, packet_o, ipacket_i, ipacket_o,
 	rpacket_i, rpacket_o,
 	irq_i, firq_i, cause_i, iserver_i, irq_o, firq_o, cause_o);
+parameter SYNC_WRITE = 1'b1;
 input [5:0] id;
 input rst_i;
 input clk_i;
@@ -71,6 +72,7 @@ output reg [31:0] s_dat_o;
 input s_mmus_i;
 input s_ios_i;
 input s_iops_i;
+output reg [5:0] m_core_o;
 output reg m_cyc_o;
 output reg m_stb_o;
 input m_ack_i;
@@ -82,6 +84,7 @@ output reg [7:0] m_asid_o;
 output reg [31:0] m_adr_o;
 output reg [31:0] m_dat_o;
 input [31:0] m_dat_i;
+input [5:0] m_core_i;
 output reg m_mmus_o;
 output reg m_ios_o;
 output reg m_iops_o;
@@ -113,6 +116,7 @@ parameter ST_AACK = 6'd8;
 parameter ST_RETRY = 6'd9;
 parameter ST_ERR = 6'd10;
 parameter ST_VPA = 6'd11;
+parameter ST_WRITE_ACK_ASYNC = 6'd12;
 
 packet_t packet_rx, packet_tx;
 packet_t rpacket_rx, rpacket_tx;
@@ -175,6 +179,7 @@ if (rst_i) begin
 	rcv <= 1'b0;
 	rw_done <= TRUE;
 	wait_ack <= 1'b0;
+	m_core_o <= 6'd0;
 	m_cyc_o <= 1'b0;
 	m_stb_o <= 1'b0;
 	m_we_o <= 1'b0;
@@ -199,13 +204,15 @@ else begin
 	ipacket_o <= ipacket_i;
 	rpacket_o <= rpacket_i;
 
-	if (((packet_i.sid|packet_i.did)==6'd0) && packet_tx.did) begin
+	if (((packet_i.sid|packet_i.did)==6'd0) && packet_tx.did!=6'd0) begin
 		packet_o <= packet_tx;
-		packet_tx <= {$bits(packet_t){1'b0}};
+		packet_tx.did <= 6'd0;
+		packet_tx.sid <= 6'd0;
 	end
-	if (((rpacket_i.sid|rpacket_i.did)==6'd0) && rpacket_tx.did) begin
+	if (((rpacket_i.sid|rpacket_i.did)==6'd0) && rpacket_tx.did!=6'd0) begin
 		rpacket_o <= rpacket_tx;
-		rpacket_tx <= {$bits(packet_t){1'b0}};
+		rpacket_tx.did <= 6'd0;
+		rpacket_tx.sid <= 6'd0;
 	end
 	
 	// Look for slave cycle termination.
@@ -252,50 +259,65 @@ else begin
 					case (rpacket_i.typ)
 					PT_VPA:
 						begin
-							rpacket_o <= {$bits(packet_t){1'b0}};
+							rpacket_o.did <= 6'd0;
+							rpacket_o.sid <= 6'd0;
 							state <= ST_VPA;
 						end
 					PT_ERR:
 						begin
-							rpacket_o <= {$bits(packet_t){1'b0}};
+							rpacket_o.did <= 6'd0;
+							rpacket_o.sid <= 6'd0;
 							state <= ST_ERR;
 						end
 					PT_RETRY:
 						begin
-							rpacket_o <= {$bits(packet_t){1'b0}};
+							rpacket_o.did <= 6'd0;
+							rpacket_o.sid <= 6'd0;
 							state <= ST_RETRY;
 						end
 					PT_ACK:
 						begin
-							rpacket_o <= {$bits(packet_t){1'b0}};
+							rpacket_o.did <= 6'd0;
+							rpacket_o.sid <= 6'd0;
 							state <= ST_ACK;
 						end
 					PT_AACK:
 						begin
-							rpacket_o <= {$bits(packet_t){1'b0}};
+							rpacket_o.did <= 6'd0;
+							rpacket_o.sid <= 6'd0;
 							state <= ST_AACK;
 						end
-					default:	;
+					default:
+						begin
+							rpacket_o.did <= 6'd0;
+							rpacket_o.sid <= 6'd0;
+						end
 					endcase
 				end
 			end
 			// Was this packet for us?
-			if (packet_i.did==id || packet_i.did==6'd63) begin
+			else if (packet_i.did==id || packet_i.did==6'd63) begin
 				packet_rx <= packet_i;
 				// Remove packet only if not a broadcast packet
 				if (packet_i.did==id) begin
 					case (packet_i.typ)
 					PT_READ,PT_AREAD:
-						if (~|rpacket_tx) begin
-							packet_o <= {$bits(packet_t){1'b0}};
+						if (rpacket_tx.did==6'd0) begin
+							packet_o.did <= 6'd0;
+							packet_o.sid <= 6'd0;
 							state <= ST_READ;
 						end
 					PT_WRITE:	
 						begin
-							packet_o <= {$bits(packet_t){1'b0}};
+							packet_o.did <= 6'd0;
+							packet_o.sid <= 6'd0;
 							state <= ST_WRITE;
 						end
-					default:	;
+					default:
+						begin
+							packet_o.did <= 6'd0;
+							packet_o.sid <= 6'd0;
+						end
 					endcase
 				end
 				// Have we seen packet already?
@@ -313,13 +335,14 @@ else begin
 				end
 			end
 			// If previous op is complete, and theres nothing in the transmit buffer.
-			else if (rw_done && ~|packet_tx) begin
+			else if (packet_tx.did==6'd0) begin
 				tSetupReadWrite();
 			end
 		end
 
 	ST_READ:
 		if (!m_ack_i) begin
+			m_core_o <= packet_rx.sid;
 			m_cyc_o <= TRUE;
 			m_stb_o <= TRUE;
 			m_we_o <= FALSE;
@@ -334,27 +357,28 @@ else begin
 	ST_READ_ACK:
 		if (m_ack_i) begin
 			tClearBus();
-			tSetupResponse(packet_rx.typ==PT_AREAD ? PT_AACK : PT_ACK);
+			tSetupResponse(packet_rx.sid,packet_rx.typ==PT_AREAD ? PT_AACK : PT_ACK);
 			state <= ST_IDLE;
 		end
 		else if (m_err_i) begin
 			tClearBus();
-			tSetupResponse(PT_ERR);
+			tSetupResponse(packet_rx.sid,PT_ERR);
 			state <= ST_IDLE;
 		end
 		else if (m_vpa_i) begin
 			tClearBus();
-			tSetupResponse(PT_VPA);
+			tSetupResponse(packet_rx.sid,PT_VPA);
 			state <= ST_IDLE;
 		end
 		else if (timeout) begin
 			tClearBus();
-			tSetupResponse(PT_ERR);
+			tSetupResponse(packet_rx.sid,PT_ERR);
 			state <= ST_IDLE;
 		end
 
 	ST_WRITE:
 		if (!m_ack_i) begin
+			m_core_o <= packet_rx.sid;
 			m_cyc_o <= TRUE;
 			m_stb_o <= TRUE;
 			m_we_o <= TRUE;
@@ -370,21 +394,44 @@ else begin
 	ST_WRITE_ACK:
 		if (m_ack_i) begin
 			tClearBus();
+			if (SYNC_WRITE)
+				tSetupResponse(packet_rx.sid,PT_ACK);
 			state <= ST_IDLE;
 		end
 		else if (m_err_i) begin
 			tClearBus();
+			if (SYNC_WRITE)
+				tSetupResponse(packet_rx.sid,PT_ERR);
 			state <= ST_IDLE;
 		end
 		else if (m_vpa_i) begin
 			tClearBus();
+			if (SYNC_WRITE)
+				tSetupResponse(packet_rx.sid,PT_VPA);
+			state <= ST_IDLE;
+		end
+		else if (timeout) begin
+			tClearBus();
+			if (SYNC_WRITE)
+				tSetupResponse(packet_rx.sid,PT_ERR);
 			state <= ST_IDLE;
 		end
 
 	ST_ACK:
 		// If there is an active read cycle
 		if (s_cyc_i & s_stb_i & ~s_we_i) begin
-			if (s_adr_i == rpacket_rx.adr) begin
+			if (TRUE || s_adr_i == rpacket_rx.adr) begin
+				s_dat_o <= rpacket_rx.dat;
+				s_ack1 <= TRUE;
+				state <= ST_ACK_ACK;
+			end
+			else begin
+				s_rty_o <= TRUE;
+				state <= ST_IDLE;
+			end
+		end
+		else if (s_cyc_i & s_stb_i & s_we_i & SYNC_WRITE) begin
+			if (TRUE || s_adr_i == rpacket_rx.adr) begin
 				s_dat_o <= rpacket_rx.dat;
 				s_ack1 <= TRUE;
 				state <= ST_ACK_ACK;
@@ -462,43 +509,43 @@ begin
 			end
 			else begin
 				packet_tx <= {$bits(packet_t){1'b0}};
-				s_ack1 <= s_we_i;
+				s_ack1 <= (s_we_i & ~SYNC_WRITE);
 			end
 		/* I/O area */
 		8'hFD,
 		8'h01:	// virtual address
 			begin
 				packet_tx.did <= 6'd62;
-				s_ack1 <= s_we_i|burst;
+				s_ack1 <= (s_we_i & ~SYNC_WRITE)|burst;
 			end
 		// Global broadcast
 		8'hDF:
 			begin
 				packet_tx.did <= 6'd63;
 				packet_tx.age <= 6'd30;
-				s_ack1 <= s_we_i|burst;
+				s_ack1 <= (s_we_i & ~SYNC_WRITE)|burst;
 			end
 		// C0xyyyyy
 		8'hC0:
 			begin
 				packet_tx.did <= {2'd0,s_adr_i[23:20]};
-				s_ack1 <= s_we_i|burst;
+				s_ack1 <= (s_we_i & ~SYNC_WRITE)|burst;
 			end
 		8'h4?,8'h5?,8'h6?,8'h7?,8'h8?,8'h9?,8'hA?,8'hB?:
 			begin
 				packet_tx.did <= 6'd62;
-				s_ack1 <= s_we_i|burst;
+				s_ack1 <= (s_we_i & ~SYNC_WRITE)|burst;
 			end
 		/* Global DRAM area */
 		8'h2?,8'h3?:
 			begin
 				packet_tx.did <= 6'd62;
-				s_ack1 <= s_we_i|burst;
+				s_ack1 <= (s_we_i & ~SYNC_WRITE)|burst;
 			end
 		8'h00:
 			if (s_adr_i[23:20]>=4'h1) begin
 				packet_tx.did <= 6'd62;
-				s_ack1 <= s_we_i|burst;
+				s_ack1 <= (s_we_i & ~SYNC_WRITE)|burst;
 			end
 			else begin
 				packet_tx <= {$bits(packet_t){1'b0}};
@@ -515,11 +562,12 @@ end
 endtask
 
 task tSetupResponse;
+input [5:0] did;
 input [5:0] typ;
 begin
 	rpacket_tx <= {$bits(packet_t){1'b0}};
 	rpacket_tx.sid <= id;
-	rpacket_tx.did <= packet_rx.sid;
+	rpacket_tx.did <= did;
 	rpacket_tx.age <= 6'd0;
 	rpacket_tx.typ <= typ;
 	rpacket_tx.ack <= TRUE;

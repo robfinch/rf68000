@@ -1,7 +1,7 @@
 `timescale 1ns / 1ps
 // ============================================================================
 //        __
-//   \\__/ o\    (C) 2005-2022  Robert Finch, Waterloo
+//   \\__/ o\    (C) 2005-2025  Robert Finch, Waterloo
 //    \  __ /    All rights reserved.
 //     \/_//     robfinch<remove>@finitron.ca
 //       ||
@@ -170,6 +170,7 @@ wire os_100us_done = os==p100us;
 reg [10:0] q;	// receive register
 reg tc;			// transmit complete indicator
 reg [1:0] s_rx;	// keyboard receive state
+reg [7:0] scbuf,statbuf;
 reg [7:0] kq;
 reg [15:0] kqc;
 // Use majority logic for bit capture
@@ -210,10 +211,15 @@ edge_det ed1 (.rst(rst_i), .clk(clk_i), .ce(1'b1), .i(cs), .pe(pe_cs), .ne(), .e
 always_ff @(posedge clk_i)
 if (cs_i)
 	case(adr_i[1:0])
-	2'd0:	dat_o <= {q[8:1]};
-	2'd1:	dat_o <= {~q[0],tc,~kack,4'b0,~^q[9:1]};
-	2'd2:	dat_o <= {q[8:1]};
-	2'd3:	dat_o <= {~q[0],tc,~kack,4'b0,~^q[9:1]};
+	2'd0:	dat_o <= scbuf;
+	2'd1:
+		begin
+			dat_o <= {~q[0],tc,~kack,4'b0,~^q[9:1]};
+			scbuf <= q[8:1];
+			statbuf <= {~q[0],tc,~kack,4'b0,~^q[9:1]};
+		end
+	2'd2:	dat_o <= scbuf;
+	2'd3:	dat_o <= statbuf;
 	endcase
 else
 	dat_o <= 'd0;
