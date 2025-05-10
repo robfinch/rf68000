@@ -70,13 +70,13 @@ parameter FALSE = 1'b0;
 reg w1;
 
 typedef enum logic [3:0] {
-	ST_IDLE = 6'd0,
-	ST_ACK = 6'd1,
-	ST_RD1 = 6'd2,
-	ST_RD2 = 6'd3,
-	ST_RD3 = 6'd4,
-	ST_RD4 = 6'd5,
-	ST_ACKC = 6'd6
+	ST_IDLE = 4'd0,
+	ST_ACK = 4'd1,
+	ST_RD1 = 4'd2,
+	ST_RD2 = 4'd3,
+	ST_RD3 = 4'd4,
+	ST_RD4 = 4'd5,
+	ST_ACKC = 4'd6
 } state_t;
 state_t state;
 

@@ -49,6 +49,7 @@ module rf68000_nic(id, rst_i, clk_i, s_cti_i, s_atag_o,
 	packet_i, packet_o, ipacket_i, ipacket_o,
 	rpacket_i, rpacket_o,
 	irq_i, firq_i, cause_i, iserver_i, irq_o, firq_o, cause_o);
+parameter SYNC_WRITE = 1'b1;
 input [5:0] id;
 input rst_i;
 input clk_i;
@@ -119,8 +120,12 @@ packet_t rpacket_rx, rpacket_tx;
 packet_t [7:0] gbl_packets;
 reg seen_gbl;
 reg s_ack1;
+reg cyc,cycd;
 
 integer n,n1,n2;
+
+always_comb
+	cyc = s_cyc_i & s_stb_i;
 
 always_comb
 begin
@@ -189,8 +194,11 @@ if (rst_i) begin
 	cause_o <= 'd0;
 	state <= ST_IDLE;
 	rsp_state <= ST_IDLE;
+	cycd <= 1'b0;
 end
 else begin
+	cycd <= cyc;
+
 	// This signal just pulses once.
 	s_aack_o <= FALSE;
 
@@ -199,8 +207,8 @@ else begin
 	ipacket_o <= ipacket_i;
 	rpacket_o <= rpacket_i;
 
-	// Look for slave cycle termination.
-	if (~(s_cyc_i & s_stb_i)) begin
+	// Look for slave cycle termination. High to low transition on cyc.
+	if (~cyc & cycd) begin
 		rw_done <= TRUE;
 		s_ack1 <= FALSE;
 		s_rty_o <= FALSE;
@@ -255,7 +263,9 @@ else begin
 
 	// Was this request packet for us?
 	// Remove packet only if not a broadcast packet
-	if ((packet_i.did==id || packet_i.did==6'd63) && packet_rx.did==6'd0) begin
+	if ((packet_i.did==id || packet_i.did==6'd63) && 
+		packet_rx.did==6'd0 &&
+		rpacket_tx.did==6'd0) begin
 		if (packet_i.did == id)
 			packet_o.did <= 6'd0;
 		packet_rx <= packet_i;
@@ -295,8 +305,8 @@ else begin
 		rpacket_tx.did <= 6'd0;
 	end
 	
-	if (packet_tx.did==6'd0)
-		tSetupReadWrite(s_cyc_i & s_stb_i, s_we_i, s_adr_i, s_dat_i);
+	if (packet_tx.did==6'd0 && rw_done)
+		tSetupReadWrite(cyc, s_we_i, s_adr_i, s_dat_i);
 
 	// Process request
 	case(state)
@@ -319,7 +329,7 @@ else begin
 		begin
 			if (m_ack_i) begin
 				tClearBus();
-				if (!m_we_o)
+				if (!m_we_o || SYNC_WRITE)
 					tSetupResponsePacket(
 						packet_rx.typ==PT_AREAD ? PT_AACK : PT_ACK,
 						id,
@@ -332,7 +342,7 @@ else begin
 			end
 			else if (m_err_i) begin
 				tClearBus();
-				if (!m_we_o)
+				if (!m_we_o || SYNC_WRITE)
 					tSetupResponsePacket(
 						PT_ERR,
 						id,
@@ -345,7 +355,7 @@ else begin
 			end
 			else if (m_vpa_i) begin
 				tClearBus();
-				if (!m_we_o)
+				if (!m_we_o || SYNC_WRITE)
 					tSetupResponsePacket(
 						PT_VPA,
 						id,
@@ -358,7 +368,7 @@ else begin
 			end
 			else if (timeout) begin
 				tClearBus();
-				if (!m_we_o)
+				if (!m_we_o || SYNC_WRITE)
 					tSetupResponsePacket(
 						PT_ERR,
 						id,
@@ -381,10 +391,24 @@ else begin
 	ST_ACK:
 		begin
 			// If there is an active cycle
-			if (s_cyc_i & s_stb_i) begin
-				if (s_adr_i == rpacket_rx.adr) begin
+			if (cyc & ~s_we_i) begin
+				if (TRUE || s_adr_i == rpacket_rx.adr) begin
 					s_dat_o <= rpacket_rx.dat;
 					s_ack1 <= TRUE;
+					rsp_state <= ST_ACK_ACK;
+				end
+				else begin
+					s_rty_o <= TRUE;
+					rsp_state <= ST_ACK_ACK;
+				end
+			end
+			// If we got an ack for an asynch write cycle and the cycle is still active
+			// treat it like a sync write.
+			else if (cyc & s_we_i) begin
+				if (TRUE || s_adr_i == rpacket_rx.adr) begin
+					if (TRUE || SYNC_WRITE) begin
+						s_ack1 <= TRUE;
+					end
 					rsp_state <= ST_ACK_ACK;
 				end
 				else begin
@@ -399,7 +423,7 @@ else begin
 		end
 	ST_ACK_ACK:
 		// Wait for the slave cycle to finish.
-		if (~(s_cyc_i & s_stb_i)) begin
+		if (~cyc) begin
 			rpacket_rx.did <= 6'd0;
 			rsp_state <= ST_IDLE;
 		end
@@ -494,43 +518,43 @@ begin
 			end
 			else begin
 				packet_tx.did <= 6'd62;
-				s_ack1 <= wr;
+				s_ack1 <= wr & ~SYNC_WRITE;
 			end
 		/* I/O area */
 		8'hFD,
 		8'h01:	// virtual address
 			begin
 				packet_tx.did <= 6'd62;
-				s_ack1 <= wr|burst;
+				s_ack1 <= (wr & ~SYNC_WRITE)|burst;
 			end
 		// Global broadcast
 		8'hDF:
 			begin
 				packet_tx.did <= 6'd63;
 				packet_tx.age <= 6'd30;
-				s_ack1 <= wr|burst;
+				s_ack1 <= (wr & ~SYNC_WRITE)|burst;
 			end
 		// C0xyyyyy
 		8'hC0:
 			begin
 				packet_tx.did <= {2'd0,adr[23:20]};
-				s_ack1 <= wr|burst;
+				s_ack1 <= (wr & ~SYNC_WRITE)|burst;
 			end
 		8'h8?,8'h9?,8'hA?,8'hB?:
 			begin
 				packet_tx.did <= 6'd62;
-				s_ack1 <= wr|burst;
+				s_ack1 <= (wr & ~SYNC_WRITE)|burst;
 			end
 		/* Global DRAM area */
 		8'h4?,8'h5?,8'h6?,8'h7?:
 			begin
 				packet_tx.did <= 6'd62;
-				s_ack1 <= wr|burst;
+				s_ack1 <= (wr & ~SYNC_WRITE)|burst;
 			end
 		8'h00:
 			if (adr[23:20]>=4'h1) begin
 				packet_tx.did <= 6'd62;
-				s_ack1 <= wr|burst;
+				s_ack1 <= (wr & ~SYNC_WRITE)|burst;
 			end
 			else begin
 				packet_tx.did <= 6'd0;

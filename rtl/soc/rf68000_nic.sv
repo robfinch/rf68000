@@ -204,12 +204,12 @@ else begin
 	ipacket_o <= ipacket_i;
 	rpacket_o <= rpacket_i;
 
-	if (((packet_i.sid|packet_i.did)==6'd0) && packet_tx.did!=6'd0) begin
+	if (packet_i.did==6'd0 && packet_tx.did!=6'd0) begin
 		packet_o <= packet_tx;
 		packet_tx.did <= 6'd0;
 		packet_tx.sid <= 6'd0;
 	end
-	if (((rpacket_i.sid|rpacket_i.did)==6'd0) && rpacket_tx.did!=6'd0) begin
+	if (rpacket_i.did==6'd0 && rpacket_tx.did!=6'd0) begin
 		rpacket_o <= rpacket_tx;
 		rpacket_tx.did <= 6'd0;
 		rpacket_tx.sid <= 6'd0;
