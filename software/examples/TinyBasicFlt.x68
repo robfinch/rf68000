@@ -1053,24 +1053,24 @@ CALL
 	MOVE.L (SP)+,A0	; restore the text pointer
 	BRA	FINISH
 
-*******************************************************************
-*
-* *** EXPR ***
-*
-* 'EXPR' evaluates arithmetical or logical expressions.
-* <EXPR>::=<EXPR2>
-*	   <EXPR2><rel.op.><EXPR2>
-* where <rel.op.> is one of the operators in TAB8 and the result
-* of these operations is 1 if true and 0 if false.
-* <EXPR2>::=(+ or -)<EXPR3>(+ or -)<EXPR3>(...
-* where () are optional and (... are optional repeats.
-* <EXPR3>::=<EXPR4>( <* or /><EXPR4> )(...
-* <EXPR4>::=<variable>
-*	    <function>
-*	    (<EXPR>)
-* <EXPR> is recursive so that the variable '@' can have an <EXPR>
-* as an index, functions can have an <EXPR> as arguments, and
-* <EXPR4> can be an <EXPR> in parenthesis.
+;******************************************************************
+;
+; *** EXPR ***
+;
+; 'EXPR' evaluates arithmetical or logical expressions.
+; <EXPR>::=<EXPR2>
+;	   <EXPR2><rel.op.><EXPR2>
+; where <rel.op.> is one of the operators in TAB8 and the result
+; of these operations is 1 if true and 0 if false.
+; <EXPR2>::=(+ or -)<EXPR3>(+ or -)<EXPR3>(...
+; where () are optional and (... are optional repeats.
+; <EXPR3>::=<EXPR4>( <* or /><EXPR4> )(...
+; <EXPR4>::=<variable>
+;	    <function>
+;	    (<EXPR>)
+; <EXPR> is recursive so that the variable '@' can have an <EXPR>
+; as an index, functions can have an <EXPR> as arguments, and
+; <EXPR4> can be an <EXPR> in parenthesis.
 
 ;-------------------------------------------------------------------------------
 ; Push a value on the stack.
@@ -1139,8 +1139,8 @@ INT_EXPR:
 ; doing EXEC
 ;-------------------------------------------------------------------------------
 
-EXPR
-EXPR_OR
+EXPR:
+EXPR_OR:
 	BSR EXPR_AND
 	BSR XP_PUSH
 	LEA TAB10,A1
@@ -1151,7 +1151,7 @@ EXPR_OR
 ; Boolean 'Or' level
 ;-------------------------------------------------------------------------------
 
-XP_OR
+XP_OR:
 	BSR EXPR_AND
 	bsr XP_POP1
 	bsr CheckNumeric
@@ -1165,14 +1165,14 @@ XP_OR
 ; Boolean 'And' level
 ;-------------------------------------------------------------------------------
 
-EXPR_AND
+EXPR_AND:
 	bsr EXPR_REL
 	bsr XP_PUSH
 	LEA TAB9,A1
 	LEA TAB9_1,A2
 	BRA EXEC
 
-XP_AND
+XP_AND:
 	BSR EXPR_REL
 	bsr XP_POP1
 	bsr CheckNumeric
@@ -1182,7 +1182,7 @@ XP_AND
 	FMOVE.L D0,FP0
 	RTS
 	
-XP_ANDX
+XP_ANDX:
 XP_ORX
 	bsr XP_POP
 	rts
@@ -1202,65 +1202,65 @@ CheckNumeric:
 ; Relational operator level, <,<=,>=,>,=,<>
 ;-------------------------------------------------------------------------------
 
-EXPR_REL
+EXPR_REL:
 	bsr	EXPR2
 	bsr XP_PUSH
 	LEA	TAB8,A1 				; look up a relational operator
 	LEA	TAB8_1,A2
 	bra	EXEC		go do it
 
-XP11
+XP11:
 	bsr XP_POP
 	BSR	XP18		is it ">="?
 	FBLT XPRT0		no, return D0=0
 	BRA	XPRT1		else return D0=1
 
-XP12
+XP12:
 	bsr XP_POP
 	BSR	XP18		is it "<>"?
 	FBEQ XPRT0		no, return D0=0
 	BRA	XPRT1		else return D0=1
 
-XP13
+XP13:
 	bsr XP_POP
 	BSR	XP18		is it ">"?
 	FBLE XPRT0		no, return D0=0
 	BRA	XPRT1		else return D0=1
 
-XP14
+XP14:
 	bsr XP_POP
-	BSR	XP18		is it "<="?
-	FBGT XPRT0		no, return D0=0
-	BRA	XPRT1		else return D0=1
+	BSR	XP18		;is it "<="?
+	FBGT XPRT0	;	no, return D0=0
+	BRA	XPRT1		;else return D0=1
 
-XP15
+XP15:
 	bsr XP_POP
-	BSR	XP18		is it "="?
-	FBNE XPRT0		if not, return D0=0
-	BRA	XPRT1		else return D0=1
+	BSR	XP18		; is it "="?
+	FBNE XPRT0	;	if not, return D0=0
+	BRA	XPRT1		;else return D0=1
 XP15RT
 	RTS
 
-XP16
+XP16:
 	bsr XP_POP
-	BSR	XP18		is it "<"?
-	FBGE XPRT0		if not, return D0=0
-	BRA	XPRT1		else return D0=1
+	BSR	XP18		; is it "<"?
+	FBGE XPRT0	;	if not, return D0=0
+	BRA	XPRT1		; else return D0=1
 	RTS
 
-XPRT0
+XPRT0:
 	FMOVE.B #0,FP0	; return fp0 = 0 (false)
 	RTS
 
-XPRT1	
+XPRT1:
 	FMOVE.B #1,FP0	; return fp0 = 1 (true)
 	RTS
 
-XP17								; it's not a rel. operator
+XP17:								; it's not a rel. operator
 	bsr XP_POP				;	return FP0=<EXPR2>
 	rts
 
-XP18
+XP18:
 	bsr XP_PUSH
 	bsr	EXPR2					; do second <EXPR2>
 	bsr XP_POP1
@@ -2096,8 +2096,9 @@ INT:
 	bsr PARN
 	cmpi.l #DT_NUMERIC,d0
 	bne ETYPE
-	fmove.l fp0,d0
-	fmove.l d0,fp0
+	fintrz fp0,fp0
+;	fmove.l fp0,d0
+;	fmove.l d0,fp0
 	moveq #DT_NUMERIC,d0
 	rts
 

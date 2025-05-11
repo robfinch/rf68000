@@ -10,9 +10,10 @@ DisplayAddr:
 	lsr.l #8,d1
 	lsr.l #8,d1
 	lsr.l #4,d1
-	subi.w #512,d1
+	subi.w #1024,d1
 	bin2bcd d1
 	bsr	DisplayWyde
+	bsr DisplaySpace
 	move.b #CR,d1
 	bra DisplayChar
 	btst #$83,d0
@@ -30,20 +31,22 @@ ramtest:
 rmtst5:
 	moveq #37,d0					; lock semaphore
 	moveq #MEMORY_SEMA,d1
-	trap #15
+;	trap #15
+  movea.l #$7FFFFFF8,a0
   move.l a0,memend
 	; Create very first memory block.
-  suba.l #12,a0
-  move.l a0,$20000004		; length of block
-  move.l #$46524545,$20000000
+  movea.l #$3FFFFFF4,a0
+  move.l a0,$40000004		; length of block
+  move.l #$46524545,$40000000
 	moveq #38,d0					; unlock semaphore
 	moveq #MEMORY_SEMA,d1
 	trap #15
-  rts
+	bra Monitor
+;  rts
 
 ramtest0:
 	move.l d3,d0
-  movea.l #$20000000,a0
+  movea.l #$40000000,a0
 ;-----------------------------------------------------------
 ;   Write checkerboard pattern to ram then read it back to
 ; find the highest usable ram address (maybe). This address
@@ -58,7 +61,7 @@ ramtest1:
   bsr DisplayAddr
   bsr CheckForCtrlC
 rmtst1:
-  cmpa.l #$3FFFFFF8,a0
+  cmpa.l #$7FFFFFF8,a0
   blo.s ramtest1
   bsr	CRLF
 ;------------------------------------------------------
@@ -67,7 +70,7 @@ rmtst1:
 ramtest6:
 	move.w	#$A7A7,leds		; diagnostics
   movea.l a0,a2
-  movea.l #$20000000,a0
+  movea.l #$40000000,a0
 ;--------------------------------------------
 ;   Read back checkerboard pattern from ram.
 ;--------------------------------------------

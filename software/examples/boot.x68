@@ -468,7 +468,7 @@ start:
 	bsr	_KeybdInit
 ;	bsr	InitIRQ
 	bsr	SerialInit
-	bsr init_i2c
+;	bsr init_i2c
 ;	bsr rtc_read
 
 	; Write startup message to screen
@@ -561,9 +561,11 @@ InitMMU:
 
 GlobalReadLong:
 		move.l (a0),d1
+		rts
 		bra nd1
 GlobalWriteLong:
 		move.l d1,(a0)
+		rts
 net_delay:
 		bra nd1
 nd1	bra nd2
@@ -935,12 +937,8 @@ clear_screen:
 	swap		d0
 	rol.w		#8,d0
 loop3:
-	bsr GlobalWriteLong					; copy char plus bkcolor to cell
-	addq.l #4,a0
-	exg d0,d1
-	bsr GlobalWriteLong					; copy fgcolor to cell
-	addq.l #4,a0
-	exg d0,d1
+	move.l d1,(a0)+							; copy char plus bkcolor to cell
+	move.l d0,(a0)+							; copy fgcolor to cell
 	dbra d2,loop3
 	movec coreno,d0
 	swap d0	
@@ -1069,13 +1067,11 @@ dcx11:
 	rol.w		#8,d1					; text controller expects little endian data
 	swap		d1
 	rol.w		#8,d1
-	bsr GlobalWriteLong
+	move.l d1,(a0)+
 	rol.w		#8,d0					; swap bytes
 	swap		d0						; swap halfs
 	rol.w		#8,d0					; swap remaining bytes
-	move.l d0,d1
-	addq.l #4,a0
-	bsr GlobalWriteLong
+	move.l d0,(a0)+
 	bsr	IncCursorPos
 	bsr	SyncCursor
 	bra	dcx4
@@ -1104,15 +1100,11 @@ doDelete:
 	bsr	CalcScreenLoc				; a0 = screen location
 	move.b CursorCol,d0
 .0001:
-	lea 8(a0),a0						; pull remaining characters on line over 1
-	bsr GlobalReadLong
-	lea -8(a0),a0
-	bsr GlobalWriteLong
-	lea 12(a0),a0
-	bsr GlobalReadLong			; pull remaining characters on line over 1
-	lea -8(a0),a0
-	bsr GlobalWriteLong
-	lea	4(a0),a0
+	move.l 8(a0),d1					; pull remaining characters on line over 1
+	move.l d1,(a0)
+	move.l 12(a0),d1
+	move.l d1,4(a0)
+	adda.l #8,a0
 	addi.b #1,d0
 	cmp.b	TextCols,d0
 	blo.s	.0001
@@ -1121,8 +1113,7 @@ doDelete:
 	rol.w	#8,d1
 	swap d1
 	rol.w	#8,d1
-	lea -8(a0),a0
-	bsr GlobalWriteLong
+	move.l d1,-8(a0)
 	movem.l	(a7)+,d0/d1/a0
 	bra.s		dcx16				; finished
 
@@ -1180,14 +1171,14 @@ ScrollUp:
 	movec	coreno,d0
 	swap d0	
 	moveq	#SCREEN_SEMA,d1
-	bsr			LockSemaphore
-	bsr			get_screen_address
+	bsr	LockSemaphore
+	bsr	get_screen_address
 	move.l	a0,a5								; a5 = pointer to text screen
 .0003:								
-	move.b	TextCols,d0					; d0 = columns
-	move.b	TextRows,d1					; d1 = rows
-	ext.w		d0									; make cols into a word value
-	ext.w		d1									; make rows into a word value
+	move.b TextCols,d0					; d0 = columns
+	move.b TextRows,d1					; d1 = rows
+	ext.w d0										;	make cols into a word value
+	ext.w	d1										; make rows into a word value
 	asl.w		#3,d0								; make into cell index
 	lea			0(a5,d0.w),a0				; a0 = pointer to second row of text screen
 	lsr.w		#3,d0								; get back d0
@@ -1195,12 +1186,8 @@ ScrollUp:
 	mulu		d1,d0								; d0 = count of characters to move
 	add.l d0,d0									; d0*2 2 longs per char
 .0001:
-	bsr GlobalReadLong
-	exg a5,a0
-	bsr GlobalWriteLong
-	exg a5,a0
-	lea 4(a0),a0								; each char is 64 bits
-	lea 4(a5),a5
+	move.l (a0)+,d1
+	move.l d1,(a5)+
 	dbra d0,.0001
 	movec coreno,d0
 	swap d0	
@@ -1218,32 +1205,28 @@ BlankLastLine:
 	movec	coreno,d0
 	swap d0	
 	moveq	#SCREEN_SEMA,d1
-	bsr			LockSemaphore
-	bsr			get_screen_address
-	move.b	TextRows,d0					; d0 = rows
-	move.b	TextCols,d1					; d1 = columns
-	ext.w		d0
-	ext.w		d1
-	subq		#1,d0								; last row = #rows-1
-	mulu		d1,d0								; d0 = index of last line
-	lsl.w		#3,d0								; *8 bytes per char
-	lea			(a0,d0.w),a0				; point a0 to last row
-	move.b	TextCols,d2					; number of text cells to clear
-	ext.w		d2
-	subi.w	#1,d2								; count must be one less than desired
-	bsr			get_screen_color		; d0,d1 = screen color
-	move.w	#32,d1							; set the character for display in low 16 bits
-	bsr			rbo									; reverse the byte order
-	rol.w		#8,d0
-	swap		d0
-	rol.w		#8,d0
+	bsr	LockSemaphore
+	bsr	get_screen_address
+	move.b TextRows,d0					; d0 = rows
+	move.b TextCols,d1					; d1 = columns
+	ext.w	d0
+	ext.w	d1
+	subq #1,d0									; last row = #rows-1
+	mulu d1,d0									; d0 = index of last line
+	lsl.w	#3,d0									; *8 bytes per char
+	lea	(a0,d0.w),a0						; point a0 to last row
+	move.b TextCols,d2					; number of text cells to clear
+	ext.w	d2
+	subi.w #1,d2								; count must be one less than desired
+	bsr	get_screen_color				; d0,d1 = screen color
+	move.b #32,d1								; set the character for display in low 16 bits
+	bsr	rbo											; reverse the byte order
+	rol.w	#8,d0
+	swap d0
+	rol.w	#8,d0
 .0001:
-	exg d1,d0
-	bsr GlobalWriteLong
-	lea 4(a0),a0
-	exg d1,d0
-	bsr GlobalWriteLong
-	lea 4(a0),a0
+	move.l d0,(a0)+
+	move.l d1,(a0)+
 	dbra d2,.0001
 	movec	coreno,d0
 	swap d0	
@@ -1348,7 +1331,7 @@ SyncCursor:
 	swap d1
 	rol.w #8,d1
 	lea TEXTREG+$24,a0
-	bsr GlobalWriteLong
+	move.l d1,(a0)
 .0001:	
 	movem.l	(a7)+,a0/d0/d1/d2
 	rts
@@ -1504,7 +1487,6 @@ select_focus1:
 	swap d0										; get bits 16-31
 	rol.w	#8,d0								; swap byte order
 	move.l d0,TEXTREG+$28			; update screen address in text controller
-	bsr net_delay
 	bra	SyncCursor						; set cursor position
 
 ;==============================================================================
@@ -1522,17 +1504,17 @@ select_focus1:
 ;==============================================================================
 
 init_plic:
-	lea		PLIC,a0						; a0 points to PLIC
-	lea		$80+4*29(a0),a1		; point to timer registers (29)
-	move.l	#$0006033F,(a1)	; initialize, core=63,edge sensitive,enabled,irq6,vpa
-	lea			4(a1),a1				; point to keyboard registers (30)
-	move.l	#$3C060502,(a1)	; core=2,level sensitive,enabled,irq6,inta
-	lea			4(a1),a1				; point to nmi button register (31)
-	move.l	#$00070302,(a1)	; initialize, core=2,edge sensitive,enabled,irq7,vpa
-	lea		$80+4*16(a0),a1		; a1 points to ACIA register
-	move.l	#$3D030502,(a1)	; core=2,level sensitive,enabled,irq3,inta	
-	lea		$80+4*4(a0),a1		; a1 points to io_bitmap irq
-	move.l	#$3B060702,(a1)	; core=2,edge sensitive,enabled,irq6,inta	
+	lea	PLIC,a0							; a0 points to PLIC
+	lea	$80+4*29(a0),a1			; point to timer registers (29)
+	move.l #$0006033F,(a1)	; initialize, core=63,edge sensitive,enabled,irq6,vpa
+	lea	4(a1),a1						; point to keyboard registers (30)
+	move.l #$3C060502,(a1)	; core=2,level sensitive,enabled,irq6,inta
+	lea	4(a1),a1						; point to nmi button register (31)
+	move.l #$00070302,(a1)	; initialize, core=2,edge sensitive,enabled,irq7,vpa
+	lea	$80+4*16(a0),a1			; a1 points to ACIA register
+	move.l #$3D030502,(a1)	; core=2,level sensitive,enabled,irq3,inta	
+	lea	$80+4*4(a0),a1			; a1 points to io_bitmap irq
+	move.l #$3B060702,(a1)	; core=2,edge sensitive,enabled,irq6,inta	
 	rts
 
 ;==============================================================================
@@ -1635,7 +1617,8 @@ KeybdInit:
 	bsr			_KeybdGetStatus	; wait for response from keyboard
 	tst.b		d1
 	bpl			.0001					; is input buffer full ? no, branch
-	bsr			_KeybdGetScancode
+	bsr	_KeybdGetScancode
+	bsr _KeybdClearIRQ
 	cmpi.b	#$AA,d1				; keyboard Okay
 	beq			kbdi0005
 .0001:
@@ -1715,17 +1698,40 @@ msgXmitBusy:
 
 	even
 _KeybdGetStatus:
-	moveq		#0,d1
-	move.b	KEYBD+1,d1
-	bra net_delay
+	movec coreno,d1
+	cmpi.b #2,d1
+	bne .0001
+	moveq	#0,d1
+	move.b KEYBD+1,d1
+	rts
+.0001:
+	moveq #0,d1
+	move.b KEYBD+3,d1
+	rts
 
 ; Get the scancode from the keyboard port
 
 _KeybdGetScancode:
+	movec coreno,d1
+	cmpi.b #2,d1
+	bne .0001
 	moveq		#0,d1
 	move.b	KEYBD,d1				; get the scan code
+	rts
+.0001:
+	moveq #0,d1
+	move.b KEYBD+2,d1
+	rts
+
+_KeybdClearIRQ:
+	move.l d1,-(a7)
+	movec coreno,d1
+	cmpi.b #2,d1
+	bne .0001
 	move.b	#0,KEYBD+1			; clear receive register
-	bra net_delay
+.0001:
+	move.l (a7)+,d1
+	rts
 
 ; Recieve a byte from the keyboard, used after a command is sent to the
 ; keyboard in order to wait for a response.
@@ -1743,7 +1749,8 @@ KeybdRecvByte:
 	moveq		#-1,d1		; return -1
 	rts
 .0004:
-	bsr			_KeybdGetScancode
+	bsr	_KeybdGetScancode
+	bsr _KeybdClearIRQ
 	move.l	(a7)+,d3
 	rts
 
@@ -1755,13 +1762,13 @@ KeybdWaitTx:
 	movem.l	d2/d3,-(a7)
 	moveq		#100,d3		; wait a max of 1s
 .0001:
-	bsr			_KeybdGetStatus
-	btst		#6,d1				; check for transmit complete bit
-	bne	    .0002				; branch if bit set
-	bsr			Wait10ms		; delay a little bit
-	dbra		d3,.0001		; go back and try again
+	bsr	_KeybdGetStatus
+	btst #6,d1				; check for transmit complete bit
+	bne	.0002					; branch if bit set
+	bsr	Wait10ms			; delay a little bit
+	dbra d3,.0001			; go back and try again
 	movem.l	(a7)+,d2/d3
-	moveq		#-1,d1			; return -1
+	moveq	#-1,d1			; return -1
 	rts
 .0002:
 	movem.l	(a7)+,d2/d3
@@ -1788,8 +1795,8 @@ CheckForKey:
 ;	move.b	KEYBD+1,d1		; get keyboard port status
 ;	smi.b		d1						; set true/false
 ;	andi.b	#1,d1					; return true (1) if key available, 0 otherwise
-	tst.b		_KeybdCnt
-	sne.b		d1
+	tst.b	_KeybdCnt
+	sne.b	d1
 	rts
 
 ;------------------------------------------------------------------------------
@@ -1806,32 +1813,32 @@ GetKey:
 	move.l	d0,-(a7)					; push d0
 	move.b	IOFocus,d1				; Check if the core has the IO focus
 	movec.l	coreno,d0
-	cmp.b		d0,d1
-	bne.s		.0004							; go return no key available, if not in focus
-	bsr			KeybdGetCharNoWait	; get a character
-	tst.l		d1						; was a key available?
-	bmi.s		.0004
-	tst.b		KeybdEcho					; is keyboard echo on ?
-	beq.s		.0003							; no echo, just return the key
-	cmpi.b	#CR,d1						; convert CR keystroke into CRLF
-	bne.s		.0005
-	bsr			CRLF
-	bra.s		.0003
+	cmp.b	d0,d1
+	bne.s	.0004								; go return no key available, if not in focus
+	bsr	KeybdGetCharNoWait		; get a character
+	tst.l	d1									; was a key available?
+	bmi.s	.0004
+	tst.b	KeybdEcho						; is keyboard echo on ?
+	beq.s	.0003								; no echo, just return the key
+	cmpi.b #CR,d1							; convert CR keystroke into CRLF
+	bne.s	.0005
+	bsr	CRLF
+	bra.s	.0003
 .0005:
-	bsr			DisplayChar
+	bsr	DisplayChar
 .0003:
-	move.l	(a7)+,d0					; pop d0
+	move.l (a7)+,d0						; pop d0
 	rts												; return key
 ; Return -1 indicating no char was available
 .0004:
-	move.l	(a7)+,d0					; pop d0
-	moveq		#-1,d1						; return no key available
+	move.l (a7)+,d0						; pop d0
+	moveq	#-1,d1							; return no key available
 	rts
 
 CheckForCtrlC:
-	bsr			KeybdGetCharNoWait
-	cmpi.b	#CTRLC,d1
-	beq			Monitor
+	bsr	KeybdGetCharNoWait
+	cmpi.b #CTRLC,d1
+	beq	Monitor
 	rts
 
 ;------------------------------------------------------------------------------
@@ -1839,18 +1846,18 @@ CheckForCtrlC:
 
 KeybdGetCharNoWait:
 	clr.b	KeybdWaitFlag
-	bra		KeybdGetChar
+	bra	KeybdGetChar
 
 KeybdGetCharWait:
-	move.b	#-1,KeybdWaitFlag
+	move.b #-1,KeybdWaitFlag
 
 KeybdGetChar:
 	movem.l	d0/d2/d3/a0,-(a7)
 .0003:
-	movec		coreno,d0
-	swap		d0
-	moveq		#KEYBD_SEMA,d1
-	bsr			LockSemaphore
+	movec	coreno,d0
+	swap d0
+	moveq	#KEYBD_SEMA,d1
+	bsr	LockSemaphore
 	move.b	_KeybdCnt,d2		; get count of buffered scan codes
 	beq.s		.0015						;
 	move.b	_KeybdHead,d2		; d2 = buffer head
@@ -1883,7 +1890,8 @@ KeybdGetChar:
 	moveq		#-1,d1						; flag no char available
 	rts
 .0006:
-	bsr		_KeybdGetScancode
+	bsr	_KeybdGetScancode
+	bsr _KeybdClearIRQ
 .0001:
 	move.w	#1,leds
 	cmp.b	#SC_KEYUP,d1
@@ -2021,8 +2029,8 @@ KeybdSetLEDStatus:
 	rts
 
 KeybdSendByte:
-	move.b	d1,KEYBD
-	bra net_delay
+	move.b d1,KEYBD
+	rts
 	
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 ; Wait for 10 ms
@@ -2035,12 +2043,12 @@ KeybdSendByte:
 
 Wait10ms:
 	movem.l	d0/d1,-(a7)
-	movec		tick,d0
-	addi.l	#400000,d0			; 400,000 cycles at 40MHz
+	movec	tick,d0
+	addi.l #400000,d0			; 400,000 cycles at 40MHz
 .0001:
-	movec		tick,d1
-	cmp.l		d1,d0
-	bhi			.0001
+	movec	tick,d1
+	cmp.l	d1,d0
+	bhi	.0001
 	movem.l	(a7)+,d0/d1
 	rts
 
@@ -2066,51 +2074,52 @@ Wait300ms:
 
 ;--------------------------------------------------------------------------
 ; Keyboard IRQ routine.
+; - only core 2 processes keyboard interrupts.
+; - the keyboard buffer is in shared global scratchpad space.
 ;
 ; Returns:
 ; 	d1 = -1 if keyboard routine handled interrupt, otherwise positive.
 ;--------------------------------------------------------------------------
 
 KeybdIRQ:
-	move.w	#$2600,sr					; disable lower interrupts
+	move.w #$2600,sr					; disable lower interrupts
 	movem.l	d0/d1/a0,-(a7)
-	bsr			_KeybdGetStatus		; check if keyboard
-	tst.b		d1
-	bpl			.0001							; branch if not keyboard
-	movec		coreno,d0
-	swap		d0
-	moveq		#KEYBD_SEMA,d1
-	bsr			LockSemaphore
-	btst		#1,_KeyState2			; Is Alt down?
-	beq.s		.0003
-	move.b	KEYBD,d0					; get scan code
-	bsr net_delay
-	cmpi.b	#SC_TAB,d0				; is Alt-Tab?
-	bne.s		.0003
-	bsr			_KeybdGetScancode	; grab the scan code (clears interrupt)
-	bsr			rotate_iofocus
-	clr.b		_KeybdHead				; clear keyboard buffer
-	clr.b		_KeybdTail
-	clr.b		_KeybdCnt
-	bra			.0002							; do not store Alt-Tab
+	moveq	#0,d1								; check if keyboard IRQ
+	move.b KEYBD+1,d1					; get status reg
+	tst.b	d1
+	bpl	.0001									; branch if not keyboard
+	movec	coreno,d0
+	swap d0
+	moveq	#KEYBD_SEMA,d1
+	bsr LockSemaphore
+	move.b KEYBD,d1						; get scan code
+	move.b #0,KEYBD+1					; clear status register (clears IRQ AND scancode)
+	btst #1,_KeyState2				; Is Alt down?
+	beq.s	.0003
+	cmpi.b #SC_TAB,d1					; is Alt-Tab?
+	bne.s	.0003
+	bsr	rotate_iofocus
+	clr.b	_KeybdHead					; clear keyboard buffer
+	clr.b	_KeybdTail
+	clr.b	_KeybdCnt
+	bra	.0002									; do not store Alt-Tab
 .0003:
 	; Insert keyboard scan code into raw keyboard buffer
-	bsr			_KeybdGetScancode	; grab the scan code (clears interrupt)
-	cmpi.b	#32,_KeybdCnt			; see if keyboard buffer full
-	bhs.s		.0002
-	move.b	_KeybdTail,d0			; keyboard buffer not full, add to tail
-	ext.w		d0
-	lea			_KeybdBuf,a0			; a0 = pointer to buffer
-	move.b	d1,(a0,d0.w)			; put scancode in buffer
-	addi.b	#1,d0							; increment tail index
-	andi.b	#31,d0						; wrap at buffer limit
-	move.b	d0,_KeybdTail			; update tail index
-	addi.b	#1,_KeybdCnt			; increment buffer count
+	cmpi.b #32,_KeybdCnt			; see if keyboard buffer full
+	bhs.s	.0002
+	move.b _KeybdTail,d0			; keyboard buffer not full, add to tail
+	ext.w	d0
+	lea	_KeybdBuf,a0					; a0 = pointer to buffer
+	move.b d1,(a0,d0.w)				; put scancode in buffer
+	addi.b #1,d0							; increment tail index
+	andi.b #31,d0							; wrap at buffer limit
+	move.b d0,_KeybdTail			; update tail index
+	addi.b #1,_KeybdCnt				; increment buffer count
 .0002:
-	movec		coreno,d0
-	swap		d0
-	moveq		#KEYBD_SEMA,d1
-	bsr			UnlockSemaphore
+	movec	coreno,d0
+	swap d0
+	moveq	#KEYBD_SEMA,d1
+	bsr	UnlockSemaphore
 .0001:
 	movem.l	(a7)+,d0/d1/a0		; return
 	rte
@@ -2259,30 +2268,30 @@ cmdString:
 
 	align	2
 cmdTable:
-	dc.w	cmdHelp
-	dc.w	cmdLoadS19
-	dc.w	cmdFillB
-	dc.w	cmdFillW
-	dc.w	cmdFillL
-	dc.w	cmdFMTK
-	dc.w	cmdTinyBasic
-	dc.w	cmdBreakpoint
-	dc.w	cmdDumpRegs
-	dc.w	cmdDumpMemory
-	dc.w	cmdJump
-	dc.w	cmdEditMemory
-	dc.w	cmdClearScreen
-	dc.w	cmdCore
-	dc.w  cmdTestFP
-	dc.w	cmdTestGF
-	dc.w  cmdTestRAM
-	dc.w	cmdTestSerialReceive
-	dc.w	cmdTestCPU
-	dc.w	cmdSendSerial
-	dc.w	cmdReset
-	dc.w	cmdClock
-	dc.w	cmdReceiveSerial	
-	dc.w	cmdMonitor
+	dc.l	cmdHelp
+	dc.l	cmdLoadS19
+	dc.l	cmdFillB
+	dc.l	cmdFillW
+	dc.l	cmdFillL
+	dc.l	cmdFMTK
+	dc.l	cmdTinyBasic
+	dc.l	cmdBreakpoint
+	dc.l	cmdDumpRegs
+	dc.l	cmdDumpMemory
+	dc.l	cmdJump
+	dc.l	cmdEditMemory
+	dc.l	cmdClearScreen
+	dc.l	cmdCore
+	dc.l  cmdTestFP
+	dc.l	cmdTestGF
+	dc.l  cmdTestRAM
+	dc.l	cmdTestSerialReceive
+	dc.l	cmdTestCPU
+	dc.l	cmdSendSerial
+	dc.l	cmdReset
+	dc.l	cmdClock
+	dc.l	cmdReceiveSerial	
+	dc.l	cmdMonitor
 
 ; Get a word from screen memory and swap byte order
 
@@ -2347,7 +2356,7 @@ cmdDispatch:
 	beq.s		.foundCmd
 	tst.b		-1(a2)				; was end of table hit?
 	beq.s		.endOfTable
-	addi.w	#2,d4					; increment command counter
+	addi.w	#4,d4					; increment command counter
 	move.l	a3,a0					; reset input pointer
 	tst.b		-1(a2)				; were we at the end of the command?
 	bmi.s		.checkNextCmd	; if were at end continue, otherwise scan for enf of cmd
@@ -2362,7 +2371,7 @@ cmdDispatch:
 	bra			Monitor
 .foundCmd:
 	lea			cmdTable,a1		; a1 = pointer to command address table
-	move.w	(a1,d4.w),a1	; fetch command routine address from table
+	move.l	(a1,d4.w),a1	; fetch command routine address from table
 	jmp			(a1)					; go execute command
 
 cmdBreakpoint:
@@ -3962,33 +3971,37 @@ InstallIRQ:
 
 TickIRQ:
 	move.w	#$2600,sr					; disable lower level IRQs
-	movem.l	d1/d2/a0,-(a7)
+	movem.l	d1/d2/d3/a0,-(a7)
 	move.b #1,IRQFlag					; tick interrupt indicator in local memory
 	; ToDo: detect a tick interrupt
 ;	move.l	PLIC+$00,d1
 ;	rol.l		#8,d1
 ;	cmpi.b	#29,d1
 ;	bne.s		.notTick
-	movec		coreno,d1					; d1 = core number
-	cmpi.b	#2,d1
-	bne.s		.0001
-	move.l	#$1D000000,PLIC+$14	; reset edge sense circuit
+	movec	coreno,d1						; d1 = core number
+	move.l d1,d3
+	asl.l #3,d3								; 8 bytes per text cell
+;	cmpi.b #2,d1
+;	bne.s	.0001
+	move.l #$1D000000,PLIC+$14	; reset edge sense circuit
 .0001:	
-	move.l	TextScr,a0				; a0 = screen address
-	move.l	(a0),d2
-	rol.w		#8,d2							; reverse byte order of d2
-	swap		d2
-	rol.w		#8,d2
-	addi.b	#'0',d1						; binary to ascii core number
-	add.b		d2,d1
-	rol.w		#8,d1							; put bytes back in order
-	swap		d1
-	rol.w		#8,d1
-	move.l	d1,4(a0)					; update onscreen IRQ flag
-	addi.l	#1,(a0)						; flashy colors
+;	move.l TextScr,a0					; a0 = screen address
+	lea $FD000000,a0
+	adda.l #160,a0						; move over to display field
+	move.l 4(a0,d3.w),d2			; get char from screen
+	rol.l #8,d2								; extract char field
+	clr.b d2									; clear char field
+	addi.b #'0',d1						; binary to ascii core number
+	or.b	d1,d2								; insert core number
+	ror.l #8,d2								; reposition to proper place
+	addi.w #1,d2							; flashy colors
+	swap d2
+	addi.b #1,d2
+	swap d2
+	move.l d2,4(a0,d3.w)			; update onscreen IRQ flag
 ; addi.l	#1,40(a0)					; nice effect
-	bsr			ReceiveMsg
-	movem.l	(a7)+,d1/d2/a0
+	bsr	ReceiveMsg
+	movem.l	(a7)+,d1/d2/d3/a0
 	rte
 ;.notTick:
 ;	movem.l	(a7)+,d1/a0
