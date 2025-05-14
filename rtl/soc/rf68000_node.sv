@@ -36,12 +36,13 @@
 
 import nic_pkg::*;
 
-module rf68000_node(id, rst1, rst2, clk, clken1, clken2, packet_i, packet_o, 
+module rf68000_node(id, rst1, rst2, nic_rst, clk, clken1, clken2, packet_i, packet_o, 
 	rpacket_i, rpacket_o, ipacket_i, ipacket_o);
-parameter SUPPORT_DECFLT = 1'b0;
+parameter SUPPORT_DECFLT = 1'b1;
 input [4:0] id;
 input rst1;
 input rst2;
+input nic_rst;
 input clk;
 input clken1;
 input clken2;
@@ -82,6 +83,8 @@ wire [7:0] asid1, asid2;
 wire mmus1, mmus2;
 wire ios1, ios2;
 wire iops1, iops2;
+reg [31:0] icause1 [0:7];
+reg [31:0] icause2 [0:7];
 
 wire rst = rst1|rst2;
 
@@ -92,17 +95,26 @@ ipacket_t ipacket_x;
 assign ack1 = nic1_sack|ram1_ack|spram1_ack;
 assign ack2 = nic2_sack|ram2_ack|spram2_ack;
 always_comb
-	case(adr1[31:18])
-	14'h0:	dati1 <= ram1_dat;
-	14'h1:	dati1 <= spram1o;
+	casez({fc1,adr1[31:18]})
+	17'b111??????????????:	dati1 <= icause1[adr1[3:1]];
+	17'b???00000000000000:	dati1 <= ram1_dat;
+	17'b???00000000000001:	dati1 <= spram1o;
 	default:	dati1 <= nic1_sdato;
 	endcase
 always_comb
-	case(adr2[31:18])
-	14'h0:	dati2 <= ram2_dat;
-	14'h1:	dati2 <= spram2o;
+	casez({fc2,adr2[31:18]})
+	17'b111??????????????:	dati2 <= icause2[adr2[3:1]];
+	17'b???00000000000000:	dati2 <= ram2_dat;
+	17'b???00000000000001:	dati2 <= spram2o;
 	default:	dati2 <= nic2_sdato;
 	endcase
+
+always_ff @(posedge clk)
+	if (cpu1_irq!=3'b000)
+		icause1[cpu1_irq] <= {24'd0,cpu1_icause};
+always_ff @(posedge clk)
+	if (cpu2_irq!=3'b000)
+		icause2[cpu2_irq] <= {24'd0,cpu2_icause};
 
 /*
 always_comb
@@ -124,7 +136,7 @@ wire firq0;
 rf68000_nic unic1
 (
 	.id({id,1'b0}),
-	.rst_i(rst),
+	.rst_i(nic_rst),
 	.clk_i(clk),
 	.s_cti_i(3'd0),
 	.s_atag_o(),
@@ -176,7 +188,7 @@ rf68000_nic unic1
 rf68000_nic unic2
 (
 	.id({id,1'b1}),
-	.rst_i(rst),
+	.rst_i(nic_rst),
 	.clk_i(clk),
 	.s_cti_i(3'd0),
 	.s_atag_o(),
@@ -301,7 +313,7 @@ rf68000 #(.SUPPORT_DECFLT(SUPPORT_DECFLT)) ucpu1
 	.rty_i(1'b0),
 	.we_o(we1),
 	.sel_o(sel1),
-	.fc_o(),
+	.fc_o(fc1),
 	.asid_o(asid1),
 	.mmus_o(mmus1),
 	.ios_o(ios1),
@@ -329,7 +341,7 @@ rf68000 #(.SUPPORT_DECFLT(SUPPORT_DECFLT)) ucpu2
 	.rty_i(1'b0),
 	.we_o(we2),
 	.sel_o(sel2),
-	.fc_o(),
+	.fc_o(fc2),
 	.asid_o(asid2),
 	.mmus_o(mmus2),
 	.ios_o(ios2),

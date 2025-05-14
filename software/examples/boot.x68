@@ -1,6 +1,6 @@
 ; ============================================================================
 ;        __
-;   \\__/ o\    (C) 2022  Robert Finch, Waterloo
+;   \\__/ o\    (C) 2022-2025  Robert Finch, Waterloo
 ;    \  __ /    All rights reserved.
 ;     \/_//     robfinch<remove>@opencores.org
 ;       ||
@@ -57,6 +57,8 @@
 ; 00101000 +----------------+
 ;					 | serial rcvbuf  |
 ; 00102000 +----------------+
+;          | serial xmitbuf |
+; 00103000 +----------------+
 ;					 |    unused      |
 ; 40000000 +----------------+
 ;          |                |
@@ -83,6 +85,7 @@
 ;-------------------------------------------------------------------------------
 ;
 HAS_MMU equ 0
+NCORES equ 4
 
 CTRLC	EQU		$03
 CTRLH	EQU		$08
@@ -93,6 +96,8 @@ LF		EQU		$0A
 CR		EQU		$0D
 XON		EQU		$11
 XOFF	EQU		$13
+EOT		EQU		$04
+BLANK EQU		$20
 
 SC_F12  EQU    $07
 SC_C    EQU    $21
@@ -110,6 +115,13 @@ SC_LSHIFT	EQU		$12
 SC_DEL		EQU		$71		; extend
 SC_LCTRL	EQU		$58
 SC_TAB      EQU		$0D
+
+	include "..\Femtiki\device.x68"
+	include "..\Femtiki\FemtikiTop.x68"
+
+DDATA EQU $FFFFFFF0     ; DS.L    3
+HISPC EQU $FFFFFFFC     ; DS.L    1
+SCREEN_FORMAT = 1
 
 	if HAS_MMU
 TEXTREG		EQU	$1E3FF00	; virtual addresses
@@ -181,7 +193,16 @@ MEMORY_SEMA EQU 6
 TCB_SEMA 		EQU	7
 FMTK_SEMA		EQU	8
 
+macIRQ_proc	macro arg1
+	dc.l IRQ_proc\1
+endm
+
+macIRQ_proc_label	macro arg1
+IRQ_proc\1:
+endm
+
 	data
+	; 0
 	dc.l		$00040FFC
 	dc.l		start
 	dc.l		bus_err
@@ -220,7 +241,7 @@ FMTK_SEMA		EQU	8
 	; 30
 	dc.l		TickIRQ						; IRQ 30 - timer / keyboard
 	dc.l		nmi_rout
-	dc.l		0
+	dc.l		io_trap						; TRAP zero
 	dc.l		0
 	dc.l		0
 	dc.l		trap3							; breakpoint
@@ -258,89 +279,23 @@ FMTK_SEMA		EQU	8
 	dc.l		SerialIRQ
 	dc.l		0
 	dc.l		brdisp_trap
-	dc.l		0
-	dc.l		0
-	dc.l		0
-	dc.l		0
-	dc.l		0
-	dc.l		0
+	
+	; 64
+
+IRQ_trampolines:
+;	rept 192
+;	macIRQ_proc REPTN
+;	endr
 
 	org			$400
 
-InstalledIRQ:
-	dc.l		0
-	dc.l		0
-	dc.l		0
-	dc.l		0
-	dc.l		0
-	dc.l		0
-	dc.l		0
-	dc.l		0
+irq_list_tbl:
+	rept 192
+	dc.l 0
+	dc.l 0
+	endr
 
-	dc.l		0
-	dc.l		0
-	dc.l		0
-	dc.l		0
-	dc.l		0
-	dc.l		0
-	dc.l		0
-	dc.l		0
-
-	dc.l		0
-	dc.l		0
-	dc.l		0
-	dc.l		0
-	dc.l		0
-	dc.l		0
-	dc.l		0
-	dc.l		0
-
-	dc.l		0
-	dc.l		0
-	dc.l		0
-	dc.l		0
-	dc.l		0
-	dc.l		0
-	dc.l		0
-	dc.l		0
-
-	dc.l		0
-	dc.l		0
-	dc.l		0
-	dc.l		0
-	dc.l		0
-	dc.l		0
-	dc.l		0
-	dc.l		0
-
-	dc.l		0
-	dc.l		0
-	dc.l		0
-	dc.l		0
-	dc.l		0
-	dc.l		0
-	dc.l		0
-	dc.l		0
-
-	dc.l		0
-	dc.l		0
-	dc.l		0
-	dc.l		0
-	dc.l		0
-	dc.l		0
-	dc.l		0
-	dc.l		0
-
-	dc.l		0
-	dc.l		0
-	dc.l		0
-	dc.l		0
-	dc.l		0
-	dc.l		0
-	dc.l		0
-	dc.l		0
-
-	org			$500
+	org			$A00
 
 ;-------------------------------------------------------------------------------
 ;-------------------------------------------------------------------------------
@@ -382,6 +337,15 @@ _digits_before_decpt equ $40510
 _precision equ $40514
 _fpBuf equ $40520	; to $40560
 _fpWork equ $40600
+_dasmbuf	equ	$40800
+OFFSET equ $40880
+
+null_dcb equ $0040A00		; 0
+keybd_dcb equ $0040A40	; 1
+con_dcb equ $0040A80		; 2
+err_dcb equ $0040AC0		; 3
+serial_dcb equ $0040B40	; 5
+
 TimerStack	equ	$40BFC
 
 ; Keyboard buffer is in shared memory
@@ -393,14 +357,20 @@ _KeyState2	equ	$00100010
 _KeybdHead	equ	$00100011
 _KeybdTail	equ	$00100012
 _KeybdCnt		equ	$00100013
-KeybdID			equ	$00100016
+KeybdID			equ	$00100018
+_Keybd_tick	equ $0001001C
 _KeybdBuf		equ	$00100020
+_KeybdOBuf	equ	$00100080
 S19Checksum	equ	$00100150
 SerTailRcv	equ	$00100160
 SerHeadRcv	equ	$00100162
 SerRcvXon		equ	$00100164
 SerRcvXoff	equ	$00100165
+SerTailXmit	equ	$00100166
+SerHeadXmit	equ	$00100168
+SerXmitXoff	equ	$0010016A
 SerRcvBuf		equ	$00101000
+SerXmitBuf	equ	$00102000
 RTCBuf			equ $00100200	; to $0010023F
 
 	code
@@ -434,12 +404,25 @@ start:
 .0111:
 	clr.l	(a0)+								; clear the memory area
 	dbra d0,.0111
-	move.b #1,OutputDevice		; select stdout
-	move.l #$1fffff,fgColor		; set foreground / background color
-	move.l #$00003f,bkColor
+	bsr setup_null
+	bsr setup_keybd
+	bsr setup_console
+	bsr setup_serial
+	move.b #2,OutputDevice		; select text screen output
+	if (SCREEN_FORMAT==1)
+		move.l #$0000ff,fgColor		; set foreground / background color (white)
+		move.l #$000002,bkColor		; medium blue
+	else
+		move.l #$1fffff,fgColor		; set foreground / background color (white)
+		move.l #$00003f,bkColor		; medium blue
+	endif
 	movec.l	coreno,d0					; get core number (2 to 9)
 	subi.b #2,d0							; adjust (0 to 7)
-	mulu #16384,d0						; compute screen location
+	if (SCREEN_FORMAT==1)
+		mulu #8192,d0						; compute screen location
+	else
+		mulu #16384,d0						; compute screen location
+	endif
 	if HAS_MMU
 		addi.l #$01E00000,d0
 	else
@@ -554,7 +537,106 @@ InitMMU:
 	endif
 
 ;------------------------------------------------------------------------------
+; Setup the NULL device
 ;------------------------------------------------------------------------------
+
+null_init:
+setup_null:
+	moveq #31,d0
+	lea.l null_dcb,a0
+.0001:
+	clr.l (a0)+
+	dbra d0,.0001
+	move.l #$20424344,null_dcb+DCB_MAGIC				; 'DCB'
+	move.l #$4C4C554E,null_dcb+DCB_NAME					; 'NULL'
+	move.l #null_cmdproc,null_dcb+DCB_CMDPROC
+null_ret:
+	rts
+
+null_cmdproc:
+	rts
+
+;------------------------------------------------------------------------------
+; Setup the console device
+; stdout = text screen controller
+;------------------------------------------------------------------------------
+
+console_init:
+setup_console:
+	moveq #31,d0
+	lea.l con_dcb,a0
+.0001:
+	clr.l (a0)+
+	dbra d0,.0001
+	move.l #$20424344,con_dcb+DCB_MAGIC				; 'DCB'
+	move.l #$204E4F43,con_dcb+DCB_NAME				; 'CON'
+	move.l #console_cmdproc,con_dcb+DCB_CMDPROC
+	movec.l	coreno,d0					; get core number (2 to 9)
+	subi.b #2,d0							; adjust (0 to 7)
+	mulu #16384,d0						; compute screen location
+	if HAS_MMU
+		addi.l #$01E00000,d0
+	else
+		addi.l #$FD000000,d0
+	endif
+	move.l d0,con_dcb+DCB_INBUFPTR
+	move.l d0,con_dcb+DCB_OUTBUFPTR
+	move.l #16384,con_dcb+DCB_INBUFSIZE
+	move.l #16384,con_dcb+DCB_OUTBUFSIZE
+	move.b #64,con_dcb+DCB_OUTCOLS	; set rows and columns
+	move.b #32,con_dcb+DCB_OUTROWS
+	move.b #64,con_dcb+DCB_INCOLS		; set rows and columns
+	move.b #32,con_dcb+DCB_INROWS
+	rts
+
+	align 2
+CON_CMDTBL:
+	dc.l console_init
+	dc.l console_stat
+	dc.l console_putchar
+	dc.l console_putbuf
+	dc.l console_getchar
+	dc.l console_getbuf
+	dc.l console_set_inpos
+	dc.l console_set_outpos
+
+console_cmdproc:
+	cmpi.b #8,d6
+	bhs.s .0001
+	tst.b d6
+	bmi.s .0001
+	movem.l d6/a0,-(a7)
+	asl.b #2,d6
+	ext.w d6
+	lea CON_CMDTBL,a0
+	move.l (a0,d6.w),a0
+	jsr (a0)
+	movem.l (a7)+,d6/a0
+	rts
+.0001:
+	moveq #E_Func,d0
+	rts
+
+console_stat:
+	moveq #E_Ok,d0
+	rts
+
+console_putchar:
+	bsr DisplayChar
+	moveq #E_Ok,d0
+	rts
+
+console_getchar:
+	bsr FromScreen
+	moveq #E_Ok,d0
+	rts
+
+console_putbuf:
+console_getbuf:
+console_set_inpos:
+console_set_outpos:
+	moveq #E_NotSupported,d0
+	rts
 
 ;------------------------------------------------------------------------------
 ;------------------------------------------------------------------------------
@@ -884,26 +966,32 @@ Delay3s2:
 	dbra		d0,.0002
 	rts
 
-	include "cputest.asm"
+	include "cputest.x68"
 	include "TinyBasicFlt.x68"
-	include "..\Femtiki\FemtikiTop.x68"
 
 ; -----------------------------------------------------------------------------
 ; Gets the screen color in d0 and d1.
 ; -----------------------------------------------------------------------------
 
 get_screen_color:
-	move.l	fgColor,d0			; get foreground color
-	asl.l		#5,d0						; shift into position
-	ori.l		#$40000000,d0		; set priority
-	move.l	bkColor,d1
-	lsr.l		#8,d1
-	lsr.l		#8,d1
-	andi.l	#31,d1					; mask off extra bits
-	or.l		d1,d0						; set background color bits in upper long word
-	move.l	bkColor,d1			; get background color
-	asl.l		#8,d1						; shift into position for display ram
-	asl.l		#8,d1
+	if (SCREEN_FORMAT==1)
+		move.l fgColor,d0				; get foreground color in bits 0 to 7
+		asl.l #8,d0							; foreground color in bits 8 to 15
+		or.l bkColor,d0					;
+		swap d0									; foreground color in bits 24 to 31, bk in 16 to 23
+	else
+		move.l	fgColor,d0			; get foreground color
+		asl.l		#5,d0						; shift into position
+		ori.l		#$40000000,d0		; set priority
+		move.l	bkColor,d1
+		lsr.l		#8,d1
+		lsr.l		#8,d1
+		andi.l	#31,d1					; mask off extra bits
+		or.l		d1,d0						; set background color bits in upper long word
+		move.l	bkColor,d1			; get background color
+		asl.l		#8,d1						; shift into position for display ram
+		asl.l		#8,d1
+	endif
 	rts
 
 ; -----------------------------------------------------------------------------
@@ -922,23 +1010,32 @@ clear_screen:
 	swap		d0	
 ;	moveq		#SCREEN_SEMA,d1
 ;	bsr			LockSemaphore
-	bsr			get_screen_address	; a0 = pointer to screen area
+	bsr	get_screen_address			; a0 = pointer to screen area
 	move.b	TextRows,d0					; d0 = rows
 	move.b	TextCols,d2					; d2 = cols
 	ext.w		d0									; convert to word
 	ext.w		d2									; convert to word
-	mulu		d0,d2								; d2 = number of character cells to clear
-	bsr			get_screen_color		; get the color bits
-	ori.w		#32,d1							; load space character
-	rol.w		#8,d1								; swap endian, text controller expects little endian
-	swap		d1
-	rol.w		#8,d1
-	rol.w		#8,d0								; swap endian
-	swap		d0
-	rol.w		#8,d0
+	mulu d0,d2									; d2 = number of character cells to clear
+	bsr	get_screen_color				; get the color bits
+	if (SCREEN_FORMAT==1)
+		ori.w #32,d0
+		rol.w #8,d0
+		swap d0
+		rol.w #8,d0
 loop3:
-	move.l d1,(a0)+							; copy char plus bkcolor to cell
-	move.l d0,(a0)+							; copy fgcolor to cell
+		move.l d0,(a0)+						; copy to cell
+	else
+		ori.w	#32,d1							; load space character
+		rol.w	#8,d1								; swap endian, text controller expects little endian
+		swap d1
+		rol.w	#8,d1
+		rol.w	#8,d0								; swap endian
+		swap d0
+		rol.w	#8,d0
+loop3:
+		move.l d1,(a0)+						; copy char plus bkcolor to cell
+		move.l d0,(a0)+						; copy fgcolor to cell
+	endif
 	dbra d2,loop3
 	movec coreno,d0
 	swap d0	
@@ -948,12 +1045,14 @@ loop3:
 	rts
 
 CRLF:
-	move.l	d1,-(a7)
-	move.b	#13,d1
-	bsr			DisplayChar
-	move.b	#10,d1
-	bsr			DisplayChar
-	move.l	(a7)+,d1
+	movem.l d0/d1,-(a7)
+	move.b #13,d1
+	moveq #6,d0						; output character function
+	trap #15
+	move.b #10,d1
+	moveq #6,d0						; output character function
+	trap #15
+	movem.l (a7)+,d0/d1
 	rts
 
 ;------------------------------------------------------------------------------
@@ -978,11 +1077,15 @@ UpdateTextPos:
 ;------------------------------------------------------------------------------
 
 CalcScreenLoc:
-	bsr			UpdateTextPos
-	ext.l		d0								; make it into a long
-	asl.l		#3,d0							; 8 bytes per char
-	bsr			get_screen_address
-	add.l		d0,a0							; a0 = screen location
+	bsr	UpdateTextPos
+	ext.l	d0									;	 make it into a long
+	if (SCREEN_FORMAT==1)
+		asl.l #2,d0							; 4 bytes per char
+	else
+		asl.l	#3,d0							; 8 bytes per char
+	endif
+	bsr	get_screen_address
+	add.l	d0,a0								; a0 = screen location
 	rts
 
 ;------------------------------------------------------------------------------
@@ -1063,15 +1166,23 @@ dcx11:
 	bsr			CalcScreenLoc	; a0 = screen location
 	move.l	d1,d2					; d2 = char
 	bsr			get_screen_color	; d0,d1 = color
-	or.l		d2,d1					; d1 = char + color
-	rol.w		#8,d1					; text controller expects little endian data
-	swap		d1
-	rol.w		#8,d1
-	move.l d1,(a0)+
-	rol.w		#8,d0					; swap bytes
-	swap		d0						; swap halfs
-	rol.w		#8,d0					; swap remaining bytes
-	move.l d0,(a0)+
+	if (SCREEN_FORMAT==1)
+		or.l d1,d0
+		rol.w	#8,d0					; swap bytes
+		swap d0							; swap halfs
+		rol.w	#8,d0					; swap remaining bytes
+		move.l d0,(a0)+
+	else
+		or.l		d2,d1					; d1 = char + color
+		rol.w		#8,d1					; text controller expects little endian data
+		swap		d1
+		rol.w		#8,d1
+		move.l d1,(a0)+
+		rol.w		#8,d0					; swap bytes
+		swap		d0						; swap halfs
+		rol.w		#8,d0					; swap remaining bytes
+		move.l d0,(a0)+
+	endif
 	bsr	IncCursorPos
 	bsr	SyncCursor
 	bra	dcx4
@@ -1100,20 +1211,31 @@ doDelete:
 	bsr	CalcScreenLoc				; a0 = screen location
 	move.b CursorCol,d0
 .0001:
-	move.l 8(a0),d1					; pull remaining characters on line over 1
-	move.l d1,(a0)
-	move.l 12(a0),d1
-	move.l d1,4(a0)
-	adda.l #8,a0
+	if (SCREEN_FORMAT==1)
+		move.l 4(a0),(a0)				; pull remaining characters on line over 1
+		adda.l #4,a0
+	else
+		move.l 8(a0),(a0)				; pull remaining characters on line over 1
+		move.l 12(a0),4(a0)
+		adda.l #8,a0
+	endif
 	addi.b #1,d0
 	cmp.b	TextCols,d0
 	blo.s	.0001
 	bsr	get_screen_color
-	move.w #' ',d1					; terminate line with a space
-	rol.w	#8,d1
-	swap d1
-	rol.w	#8,d1
-	move.l d1,-8(a0)
+	if (SCREEN_FORMAT==1)
+		move.w #' ',d0
+		rol.w	#8,d0
+		swap d0
+		rol.w	#8,d0
+		move.l d0,-4(a0)
+	else
+		move.w #' ',d1					; terminate line with a space
+		rol.w	#8,d1
+		swap d1
+		rol.w	#8,d1
+		move.l d1,-8(a0)
+	endif
 	movem.l	(a7)+,d0/d1/a0
 	bra.s		dcx16				; finished
 
@@ -1130,7 +1252,7 @@ doCtrlX:
 	; DisplayChar is called recursively here
 	; It's safe to do because we know it won't recurse again due to the
 	; fact we know the character being displayed is a space char
-	bsr	DisplayChar			
+	bsr	OutputChar			
 	subq #1,d0
 	bne.s	.0001
 	clr.b	CursorCol			; now really go back to start of line
@@ -1173,21 +1295,31 @@ ScrollUp:
 	moveq	#SCREEN_SEMA,d1
 	bsr	LockSemaphore
 	bsr	get_screen_address
-	move.l	a0,a5								; a5 = pointer to text screen
+	move.l a0,a5								; a5 = pointer to text screen
 .0003:								
 	move.b TextCols,d0					; d0 = columns
 	move.b TextRows,d1					; d1 = rows
 	ext.w d0										;	make cols into a word value
 	ext.w	d1										; make rows into a word value
-	asl.w		#3,d0								; make into cell index
-	lea			0(a5,d0.w),a0				; a0 = pointer to second row of text screen
-	lsr.w		#3,d0								; get back d0
-	subq		#1,d1								; number of rows-1
-	mulu		d1,d0								; d0 = count of characters to move
-	add.l d0,d0									; d0*2 2 longs per char
+	if (SCREEN_FORMAT==1)
+		asl.w	#2,d0								; make into cell index
+	else
+		asl.w	#3,d0								; make into cell index
+	endif
+	lea	0(a5,d0.w),a0						; a0 = pointer to second row of text screen
+	if (SCREEN_FORMAT==1)
+		lsr.w	#2,d0								; get back d0
+	else
+		lsr.w	#3,d0								; get back d0
+	endif
+	subq #1,d1									; number of rows-1
+	mulu d1,d0									; d0 = count of characters to move
+	if (SCREEN_FORMAT==1)
+	else
+		add.l d0,d0									; d0*2 2 longs per char
+	endif
 .0001:
-	move.l (a0)+,d1
-	move.l d1,(a5)+
+	move.l (a0)+,(a5)+
 	dbra d0,.0001
 	movec coreno,d0
 	swap d0	
@@ -1213,20 +1345,32 @@ BlankLastLine:
 	ext.w	d1
 	subq #1,d0									; last row = #rows-1
 	mulu d1,d0									; d0 = index of last line
-	lsl.w	#3,d0									; *8 bytes per char
+	if (SCREEN_FORMAT==1)
+		lsl.w	#2,d0								; *4 bytes per char
+	else
+		lsl.w	#3,d0								; *8 bytes per char
+	endif
 	lea	(a0,d0.w),a0						; point a0 to last row
 	move.b TextCols,d2					; number of text cells to clear
 	ext.w	d2
 	subi.w #1,d2								; count must be one less than desired
 	bsr	get_screen_color				; d0,d1 = screen color
-	move.b #32,d1								; set the character for display in low 16 bits
-	bsr	rbo											; reverse the byte order
+	if (SCREEN_FORMAT==1)
+		move.b #32,d0
+	else
+		move.b #32,d1								; set the character for display in low 16 bits
+		bsr	rbo											; reverse the byte order
+	endif
 	rol.w	#8,d0
 	swap d0
 	rol.w	#8,d0
 .0001:
-	move.l d0,(a0)+
-	move.l d1,(a0)+
+	if (SCREEN_FORMAT==1)
+		move.l d0,(a0)+
+	else
+		move.l d0,(a0)+
+		move.l d1,(a0)+
+	endif
 	dbra d2,.0001
 	movec	coreno,d0
 	swap d0	
@@ -1344,14 +1488,12 @@ SyncCursor:
 ;==============================================================================
 
 TRAP15:
-	subq.l #2,sp						; keep stack lword aligned
 	movem.l	d0/a0,-(a7)
 	lea T15DispatchTable,a0
 	asl.l #2,d0
 	move.l (a0,d0.w),a0
 	jsr (a0)
 	movem.l (a7)+,d0/a0
-	addq.l #2,sp
 	rte
 
 		align	2
@@ -1450,7 +1592,7 @@ StubRout:
 select_iofocus:
 	cmpi.b	#2,d1
 	blo.s		.0001
-	cmpi.b	#9,d1
+	cmpi.b	#NCORES+1,d1
 	bhi.s		.0001
 	move.l	d1,d0
 	bra.s		select_focus1
@@ -1462,14 +1604,13 @@ select_iofocus:
 ;
 ; Modifies:
 ;		d0, IOFocus BIOS variable
-;		updates the PLIC to send IRQs to focus core
 ;		updates the text screen pointer
 ;------------------------------------------------------------------------------
 
 rotate_iofocus:
 	move.b IOFocus,d0					; d0 = focus, we can trash d0
 	add.b	#1,d0								; increment the focus
-	cmp.b	#9,d0								; limit to 2 to 9
+	cmp.b	#NCORES+1,d0				; limit to 2 to 9
 	bls.s	.0001
 	move.b #2,d0
 .0001:
@@ -1533,6 +1674,80 @@ init_plic:
 ; +-------- = extended
 ;
 ;==============================================================================
+
+;------------------------------------------------------------------------------
+; Setup the Keyboard device
+;------------------------------------------------------------------------------
+setup_keybd:
+keybd_init:
+	moveq #31,d0
+	lea.l keybd_dcb,a0
+.0001:
+	clr.l (a0)+
+	dbra d0,.0001
+	move.l #$20424344,keybd_dcb+DCB_MAGIC				; 'DCB'
+	move.l #$2044424B,keybd_dcb+DCB_NAME				; 'KBD'
+	move.l #keybd_cmdproc,con_dcb+DCB_CMDPROC
+	move.l #_KeybdBuf,keybd_dcb+DCB_INBUFPTR
+	move.l #_KeybdOBuf,keybd_dcb+DCB_OUTBUFPTR
+	move.l #32,keybd_dcb+DCB_INBUFSIZE
+	move.l #32,keybd_dcb+DCB_OUTBUFSIZE
+	clr.b keybd_dcb+DCB_OUTCOLS	; set rows and columns
+	clr.b keybd_dcb+DCB_OUTROWS
+	clr.b keybd_dcb+DCB_INCOLS		; set rows and columns
+	clr.b keybd_dcb+DCB_INROWS
+;	bsr KeybdInit
+	rts
+
+	align 2
+KBD_CMDTBL:
+	dc.l keybd_init
+	dc.l keybd_stat
+	dc.l keybd_putchar
+	dc.l keybd_putbuf
+	dc.l keybd_getchar
+	dc.l keybd_getbuf
+	dc.l keybd_set_inpos
+	dc.l keybd_set_outpos
+
+keybd_cmdproc:
+	cmpi.b #8,d6
+	bhs.s .0001
+	tst.b d6
+	bmi.s .0001
+	movem.l d6/a0,-(a7)
+	asl.b #2,d6
+	ext.w d6
+	lea KBD_CMDTBL,a0
+	move.l (a0,d6.w),a0
+	jsr (a0)
+	movem.l (a7)+,d6/a0
+	rts
+.0001:
+	moveq #E_Func,d0
+	rts
+
+keybd_stat:
+	bsr _KeybdGetStatus
+	moveq #E_Ok,d0
+	rts
+
+keybd_putchar:
+	bsr KeybdSendByte
+	moveq #E_Ok,d0
+	rts
+
+keybd_getchar:
+	bsr GetKey
+	moveq #E_Ok,d0
+	rts
+
+keybd_putbuf:
+keybd_getbuf:
+keybd_set_inpos:
+keybd_set_outpos:
+	moveq #E_NotSupported,d0
+	rts
 
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 ; Get ID - get the keyboards identifier code.
@@ -1825,7 +2040,7 @@ GetKey:
 	bsr	CRLF
 	bra.s	.0003
 .0005:
-	bsr	DisplayChar
+	bsr	OutputChar
 .0003:
 	move.l (a7)+,d0						; pop d0
 	rts												; return key
@@ -2098,6 +2313,12 @@ KeybdIRQ:
 	beq.s	.0003
 	cmpi.b #SC_TAB,d1					; is Alt-Tab?
 	bne.s	.0003
+	movec tick,d0
+	sub.l _Keybd_tick,d0
+	cmp.l #10,d0							; has it been 10 or more ticks?
+	blo.s .0002
+	movec tick,d0							; update tick of last ALT-Tab
+	move.l d0,_Keybd_tick
 	bsr	rotate_iofocus
 	clr.b	_KeybdHead					; clear keyboard buffer
 	clr.b	_KeybdTail
@@ -2250,10 +2471,11 @@ cmdString:
 	dc.b	'FMT','K'+$80			; FMTK run Femtiki OS
 	dc.b	'B','A'+$80				; BA start Tiny Basic
 	dc.b	'B','R'+$80				; BR breakpoint
+	dc.b	'D','I'+$80				; DI disassemble
 	dc.b	'D','R'+$80				; DR dump registers
 	dc.b	'D'+$80						; D dump memory
 	dc.b	'J'+$80						; J jump to code
-	dc.b	':'+$80						; : edit memory
+	dc.b	'E'+$80						; : edit memory
 	dc.b	"CL",'S'+$80			; CLS clear screen
 	dc.b	"COR",'E'+$80			; CORE <n> switch to core
 	dc.b	"TF",'P'+$80			; TFP test fp
@@ -2276,6 +2498,7 @@ cmdTable:
 	dc.l	cmdFMTK
 	dc.l	cmdTinyBasic
 	dc.l	cmdBreakpoint
+	dc.l	cmdDisassemble
 	dc.l	cmdDumpRegs
 	dc.l	cmdDumpMemory
 	dc.l	cmdJump
@@ -2296,115 +2519,123 @@ cmdTable:
 ; Get a word from screen memory and swap byte order
 
 FromScreen:
-	move.l	(a0),d1
-	bsr			rbo
-	lea			8(a0),a0	; increment screen pointer
+	move.l (a0),d1
+	bsr	rbo
+	if (SCREEN_FORMAT==1)
+		lea	4(a0),a0	; increment screen pointer
+	else
+		lea	8(a0),a0	; increment screen pointer
+	endif
 	rts
 
 StartMon:
-	clr.w		NumSetBreakpoints
-	bsr			ClearBreakpointList
+	clr.w	NumSetBreakpoints
+	bsr	ClearBreakpointList
 cmdMonitor:
 Monitor:
 	; Reset the stack pointer on each entry into the monitor
-	move.l	#$40FFC,sp	; reset core's stack
-	move.w	#$2200,sr		; enable level 2 and higher interrupts
-	movec		coreno,d0
-	swap		d0
-	moveq		#1,d1
-	bsr			UnlockSemaphore
-	clr.b		KeybdEcho		; turn off keyboard echo
+	move.l #$40FFC,sp		; reset core's stack
+	move.w #$2200,sr		; enable level 2 and higher interrupts
+	movec	coreno,d0
+	swap d0
+	moveq	#1,d1
+	bsr	UnlockSemaphore
+	clr.b KeybdEcho			; turn off keyboard echo
 PromptLn:
-	bsr			CRLF
-	move.b	#'$',d1
-	bsr			DisplayChar
+	bsr	CRLF
+	move.b #'$',d1
+	bsr OutputChar
 
 ; Get characters until a CR is keyed
 ;
 Prompt3:
-	bsr			GetKey
-	cmpi.b	#-1,d1
-	beq.s		Prompt3
-	cmpi.b	#CR,d1
-	beq.s		Prompt1
-	bsr			DisplayChar
-	bra.s		Prompt3
+	bsr	GetKey
+	cmpi.b #-1,d1
+	beq.s	Prompt3
+	cmpi.b #CR,d1
+	beq.s	Prompt1
+	bsr	OutputChar
+	bra.s	Prompt3
 
 ; Process the screen line that the CR was keyed on
 
 Prompt1:
-	clr.b		CursorCol			; go back to the start of the line
-	bsr			CalcScreenLoc	; a0 = screen memory location
+	clr.b	CursorCol				; go back to the start of the line
+	bsr	CalcScreenLoc			; a0 = screen memory location
 .0001:
-	bsr			FromScreen		; grab character off screen
-	cmpi.b	#'$',d1				; skip over '$' prompt character
-	beq.s		.0001
+	bsr	FromScreen				; grab character off screen
+	cmpi.b #'$',d1				; skip over '$' prompt character
+	beq.s	.0001
 	
 ; Dispatch based on command string
 
 cmdDispatch:
-	lea			cmdString,a2
-	clr.l		d4						; command counter
-	lea			-8(a0),a0			; backup a character
+	lea	cmdString,a2
+	clr.l	d4							; command counter
+	if (SCREEN_FORMAT==1)
+		lea	-4(a0),a0				; backup a character
+	else
+		lea	-8(a0),a0				; backup a character
+	endif
 	move.l	a0,a3					; a3 = start of command on screen
 .checkNextCmd:
-	bsr			FromScreen		; d1 = char from input screen
-	move.b	(a2)+,d5
-	eor.b		d5,d1					; does it match with command string?
-	beq.s		.checkNextCmd	; If it does, keep matching for longest match
-	cmpi.b	#$80,d1				; didn't match, was it the end of the command?
-	beq.s		.foundCmd
-	tst.b		-1(a2)				; was end of table hit?
-	beq.s		.endOfTable
-	addi.w	#4,d4					; increment command counter
-	move.l	a3,a0					; reset input pointer
-	tst.b		-1(a2)				; were we at the end of the command?
-	bmi.s		.checkNextCmd	; if were at end continue, otherwise scan for enf of cmd
+	bsr	FromScreen				; d1 = char from input screen
+	move.b (a2)+,d5
+	eor.b	d5,d1						; does it match with command string?
+	beq.s	.checkNextCmd		; If it does, keep matching for longest match
+	cmpi.b #$80,d1				; didn't match, was it the end of the command?
+	beq.s	.foundCmd
+	tst.b	-1(a2)					; was end of table hit?
+	beq.s	.endOfTable
+	addi.w #4,d4					; increment command counter
+	move.l a3,a0					; reset input pointer
+	tst.b	-1(a2)					; were we at the end of the command?
+	bmi.s	.checkNextCmd		; if were at end continue, otherwise scan for enf of cmd
 .scanToEndOfCmd
-	tst.b		(a2)+					; scan to end of command
-	beq.s		.endOfTable
-	bpl.s		.scanToEndOfCmd
-	bmi.s		.checkNextCmd
+	tst.b	(a2)+						; scan to end of command
+	beq.s	.endOfTable
+	bpl.s	.scanToEndOfCmd
+	bmi.s	.checkNextCmd
 .endOfTable
-	lea			msgUnknownCmd,a1
-	bsr			DisplayStringCRLF
-	bra			Monitor
+	lea	msgUnknownCmd,a1
+	bsr	DisplayStringCRLF
+	bra	Monitor
 .foundCmd:
-	lea			cmdTable,a1		; a1 = pointer to command address table
-	move.l	(a1,d4.w),a1	; fetch command routine address from table
-	jmp			(a1)					; go execute command
+	lea	cmdTable,a1				; a1 = pointer to command address table
+	move.l (a1,d4.w),a1		; fetch command routine address from table
+	jmp	(a1)							; go execute command
 
 cmdBreakpoint:
-	bsr			ignBlanks
-	bsr			FromScreen
+	bsr	ignBlanks
+	bsr	FromScreen
 	cmpi.b	#'+',d1
-	beq			ArmBreakpoint
+	beq	ArmBreakpoint
 	cmpi.b	#'-',d1
-	beq			DisarmBreakpoint
+	beq	DisarmBreakpoint
 	cmpi.b	#'L',d1
-	beq			ListBreakpoints
-	bra			Monitor
+	beq	ListBreakpoints
+	bra	Monitor
 
 cmdTinyBasic:
-	bra			CSTART
+	bra	CSTART
 
 cmdTestCPU:
-	bsr			cpu_test
-	lea			msg_test_done,a1
-	bsr			DisplayStringCRLF
-	bra			Monitor
+	bsr	cpu_test
+	lea	msg_test_done,a1
+	bsr	DisplayStringCRLF
+	bra	Monitor
 
 cmdClearScreen:
-	bsr			ClearScreen
-	bsr			HomeCursor
-	bra			Monitor
+	bsr	ClearScreen
+	bsr	HomeCursor
+	bra	Monitor
 
 cmdCore:
 	bsr			ignBlanks
 	bsr			FromScreen
 	cmpi.b	#'2',d1					; check range
 	blo			Monitor
-	cmpi.b	#'9',d1
+	cmpi.b	#'0'+NCORES+1,d1
 	bhi			Monitor
 	subi.b	#'0',d1					; convert ascii to binary
 	bsr			select_iofocus
@@ -2554,11 +2785,12 @@ HelpMsg:
 	dc.b  "CORE n = switch to core n, n = 2 to 9",LF,CR
 	dc.b  "RESET n = reset core n",LF,CR
 	dc.b	"CLS = clear screen",LF,CR
-	dc.b	": = Edit memory bytes",LF,CR
+	dc.b	"EB = Edit memory bytes, EW, EL",LF,CR
 	dc.b	"FB = Fill memory bytes, FW, FL",LF,CR
 	dc.b	"FMTK = run Femtiki OS",LF,CR
 	dc.b	"L = Load S19 file",LF,CR
 	dc.b	"D = Dump memory, DR = dump registers",LF,CR
+	dc.b	"DI = Disassemble",LF,CR
 	dc.b	"BA = start tiny basic",LF,CR
 	dc.b  "BR = set breakpoint",LF,CR
 	dc.b	"J = Jump to code",LF,CR
@@ -2581,9 +2813,9 @@ msgHello:
 ;------------------------------------------------------------------------------
 
 GetCmdLine:
-		bsr		DisplayChar		; display prompt
+		bsr		OutputChar		; display prompt
 		move.b	#' ',d0
-		bsr		DisplayChar
+		bsr		OutputChar
 		lea		CmdBuf,a0
 .0001:
 		bsr		GetKey
@@ -2598,20 +2830,20 @@ GetCmdLine:
 .0002:
 		move.b	d0,(a0)
 		lea			8(a0),a0
-		bsr		DisplayChar
+		bsr		OutputChar
 		cmp.b	#CR,d0
 		beq		.0007
 		cmp.l	#CmdBufEnd-1,a0
 		bcs.s	.0001
 .0003:
 		move.b	#CTRLH,d0
-		bsr		DisplayChar
+		bsr		OutputChar
 		move.b	#' ',d0
-		bsr		DisplayChar
+		bsr		OutputChar
 		cmp.l	#CmdBuf,a0
 		bls.s	.0001
 		move.b	#CTRLH,d0
-		bsr		DisplayChar
+		bsr		OutputChar
 		subq.l	#1,a0
 		bra.s	.0001
 .0004:
@@ -2621,18 +2853,18 @@ GetCmdLine:
 		subq	#1,d1
 .0005:
 		move.b	#CTRLH,d0
-		bsr		DisplayChar
+		bsr		OutputChar
 		move.b	#' ',d0
-		bsr		DisplayChar
+		bsr		OutputChar
 		move.b	#CTRLH,d0
-		bsr		DisplayChar
+		bsr		OutputChar
 		dbra	d1,.0005
 .0006:
 		lea		CmdBuf,a0
 		bra		.0001
 .0007:
 		move.b	#LF,d0
-		bsr		DisplayChar
+		bsr		OutputChar
 		rts
 
 ;------------------------------------------------------------------------------
@@ -2754,13 +2986,45 @@ cmdFillL:
 ;------------------------------------------------------------------------------
 
 ignBlanks:
-	move.l	d1,-(a7)
+	move.l d1,-(a7)
 .0001:
-	bsr			FromScreen
-	cmpi.b	#' ',d1
-	beq.s		.0001
-	lea			-8(a0),a0
-	move.l	(a7)+,d1
+	bsr	FromScreen
+	cmpi.b #' ',d1
+	beq.s .0001
+	if (SCREEN_FORMAT==1)
+		lea	-4(a0),a0
+	else
+		lea	-8(a0),a0
+	endif
+	move.l (a7)+,d1
+	rts
+
+;------------------------------------------------------------------------------
+; Get the size character
+; If the size is not recognized, assume a byte size
+;
+; Modifies:
+;		a0	- text pointer
+;		d1
+; Returns:
+;		d4 = size character 'B','W' or 'L'
+;------------------------------------------------------------------------------
+
+GetSzChar:
+	bsr	ignBlanks
+	moveq #'B',d4		; assume byte
+	move.l (a0),d1
+	bsr	rbo
+	cmpi.b #'B',d1
+	beq.s .0002
+	cmpi.b #'W',d1
+	beq.s .0002
+	cmpi.b #'L',d1
+	beq.s .0002
+	rts
+.0002:
+	bsr FromScreen
+	move.b d1,d4
 	rts
 
 ;------------------------------------------------------------------------------
@@ -2769,54 +3033,65 @@ ignBlanks:
 ; accessible.
 ;------------------------------------------------------------------------------
 
+EditMemHelper:
+	bsr ignBlanks
+	bsr GetHexNumber
+	cmpi.b #'L',d4
+	bne.s .0001
+	move.l d1,d2
+	rts
+.0001:
+	cmpi.b #'W',d4
+	bne.s .0002
+	swap d2
+	move.w d1,d2
+	rts
+.0002:
+	lsl.l #8,d2
+	move.b d1,d2
+	rts
+	
 cmdEditMemory:
-	bsr			ignBlanks
-	bsr			GetHexNumber
-	move.l	d1,a1
+	bsr GetSzChar
+	bsr ignBlanks
+	bsr	GetHexNumber
+	move.l d1,a1
 edtmem1:
-	clr.l		d2
-	bsr			ignBlanks
-	bsr			GetHexNumber
-	move.b	d1,d2
-;	move.b	d1,(a1)+
-	bsr			ignBlanks
-	bsr			GetHexNumber
-	lsl.l		#8,d2
-	move.b	d1,d2
-;	move.b	d1,(a1)+
-	bsr			ignBlanks
-	bsr			GetHexNumber
-	lsl.l		#8,d2
-	move.b	d1,d2
-;	move.b	d1,(a1)+
-	bsr			ignBlanks
-	bsr			GetHexNumber
-	lsl.l		#8,d2
-	move.b	d1,d2
-	move.l	d2,(a1)+
-;	move.b	d1,(a1)+
-	clr.l		d2
-	bsr			ignBlanks
-	bsr			GetHexNumber
-	move.b	d1,d2
-;	move.b	d1,(a1)+
-	bsr			ignBlanks
-	bsr			GetHexNumber
-	lsl.l		#8,d2
-	move.b	d1,d2
-;	move.b	d1,(a1)+
-	bsr			ignBlanks
-	bsr			GetHexNumber
-	lsl.l		#8,d2
-	move.b	d1,d2
-;	move.b	d1,(a1)+
-	bsr			ignBlanks
-	bsr			GetHexNumber
-	lsl.l		#8,d2
-	move.b	d1,d2
-;	move.b	d1,(a1)+
-	move.l	d2,(a1)+
-	bra			Monitor
+	cmpi.b #'L',d4
+	bne.s .0004
+	clr.l	d2
+	bsr EditMemHelper
+	move.l d2,(a1)+
+	clr.l	d2
+	bsr EditMemHelper
+	move.l d2,(a1)+
+	bra Monitor
+.0004:
+	cmpi.b #'W',d4
+	bne.s .0005
+	clr.l	d2
+	bsr EditMemHelper
+	bsr EditMemHelper
+	move.l d2,(a1)+
+	clr.l	d2
+	bsr EditMemHelper
+	bsr EditMemHelper
+	move.l d2,(a1)+
+	bra Monitor
+.0005:
+	clr.l	d2
+	bsr EditMemHelper
+	bsr EditMemHelper
+	bsr EditMemHelper
+	bsr EditMemHelper
+	move.l d2,(a1)+
+	clr.l	d2
+	bsr EditMemHelper
+	bsr EditMemHelper
+	bsr EditMemHelper
+	bsr EditMemHelper
+	move.l d2,(a1)+
+	bra Monitor
 
 ;------------------------------------------------------------------------------
 ; Execute code at the specified address.
@@ -2824,78 +3099,150 @@ edtmem1:
 
 cmdJump:
 ExecuteCode:
-	bsr			ignBlanks
-	bsr			GetHexNumber
-	move.l	d1,a0
-	jsr			(a0)
-	bra     Monitor
+	bsr	ignBlanks
+	bsr	GetHexNumber
+	move.l d1,a0
+	jsr	(a0)
+	bra Monitor
 
 ;------------------------------------------------------------------------------
+; Disassemble code
+; DI 1000
+;------------------------------------------------------------------------------
+;        CALLING SEQUENCE:
+;   D0,D1,D2 = CODE TO BE DISASSEMBLED
+;   A4 = VALUE OF PROGRAM COUNTER FOR THE CODE
+;   A5 = POINTER TO STORE DATA (BUFSIZE = 80 ASSUMED)
+;        JSR       DCODE68K
+;
+;        RETURN:
+;   A4 = VALUE OF PROGRAM COUNTER FOR NEXT INSTRUCTION
+;   A5 = POINTER TO LINE AS DISASSEMBLED
+;   A6 = POINTER TO END OF LINE
+
+
+cmdDisassemble:
+	bsr ignBlanks
+	bsr GetHexNumber
+	beq Monitor
+	move.w #20,d3			; number of lines to disassemble
+.0002:
+	move.l d3,-(a7)
+	move.l d1,a0
+	move.l d1,a4			; a4 = PC of code
+	move.w (a0)+,d0		; d0 to d2 = bytes of instruction to decode
+	swap d0
+	move.w (a0)+,d0
+	move.w (a0)+,d1		; d0 to d2 = bytes of instruction to decode
+	swap d1
+	move.w (a0)+,d1
+	move.w (a0)+,d2		; d0 to d2 = bytes of instruction to decode
+	swap d2
+	move.w (a0)+,d2
+	lea _dasmbuf,a5		; a5 = pointer to disassembly buffer
+	bsr DCODE68K	
+	move.w #62,d4
+.0001:
+	move.b (a5)+,d1
+	bsr OutputChar
+	dbra d4,.0001
+	bsr CRLF
+	move.l a4,d1
+	move.l (a7)+,d3
+	dbra d3,.0002
+	bra Monitor
+	
+;------------------------------------------------------------------------------
 ; Do a memory dump of the requested location.
-; D 0800 0850
+; DB 0800 0850
 ;------------------------------------------------------------------------------
 
 cmdDumpMemory:
-	bsr			ignBlanks
-	bsr			GetHexNumber
-	beq			Monitor			; was there a number ? no, other garbage, just ignore
-	move.l	d1,d3				; save off start of range
-	bsr			ignBlanks
-	bsr			GetHexNumber
-	bne.s		DumpMem1
-	move.l	d3,d1
-	addi.l	#64,d1			; no end specified, just dump 64 bytes
+	bsr GetSzChar
+	bsr ignBlanks
+	bsr	GetHexNumber
+	beq	Monitor					; was there a number ? no, other garbage, just ignore
+	move.l d1,d3				; save off start of range
+	bsr	ignBlanks
+	bsr	GetHexNumber
+	bne.s	DumpMem1
+	move.l d3,d1
+	addi.l #64,d1				;	no end specified, just dump 64 bytes
 DumpMem1:
-	move.l	d3,a0
-	move.l	d1,a1
-	bsr			CRLF
+	move.l d3,a0
+	move.l d1,a1
+	bsr	CRLF
 .0001:
-	cmpa.l	a0,a1
-	bls			Monitor
-	bsr			DisplayMem
-	bra.s		.0001
+	cmpa.l a0,a1
+	bls	Monitor
+	bsr	DisplayMem
+	bra.s	.0001
 
 ;------------------------------------------------------------------------------
 ; Display memory dump in a format suitable for edit.
 ;
-;	:12345678 00 11 22 33 44 55 66 77  "........"
+;	EB 12345678 00 11 22 33 44 55 66 77  "........"
 ;
 ; Modifies:
 ;		d1,d2,a0
 ;------------------------------------------------------------------------------
-
+	
 DisplayMem:
-	move.b	#':',d1
-	bsr			DisplayChar
-	move.l	a0,d1
-	bsr			DisplayTetra
-	moveq		#7,d2
+	move.b #'E',d1
+	bsr	OutputChar
+	move.b d4,d1
+	bsr OutputChar
+	bsr DisplaySpace
+	move.l a0,d1
+	bsr	DisplayTetra
+	moveq #7,d2						; assume bytes
+	cmpi.b #'L',d4
+	bne.s .0004
+	moveq	#1,d2
+	bra.s dspmem1
+.0004:
+	cmpi.b #'W',d4
+	bne.s dspmem1
+	moveq #3,d2
 dspmem1:
-	move.b	#' ',d1
-	bsr			DisplayChar
-	move.b	(a0)+,d1
-	bsr			DisplayByte
-	dbra		d2,dspmem1
-	bsr			DisplayTwoSpaces
-	move.b	#34,d1
-	bsr			DisplayChar
-	lea			-8(a0),a0
-	moveq		#7,d2
-.0002:	
-	move.b	(a0)+,d1
-	cmp.b		#' ',d1
-	blo.s		.0003
-	cmp.b		#127,d1
-	bls.s		.0001
+	move.b #' ',d1
+	bsr	OutputChar
+	cmpi.b #'L',d4
+	bne.s .0005
+	move.l (a0)+,d1
+	bsr	DisplayTetra
+	bra.s .0006
+.0005:
+	cmpi.b #'W',d4
+	bne.s .0007
+	move.w (a0)+,d1
+	bsr	DisplayWyde
+	bra.s .0006
+.0007:
+	move.b (a0)+,d1
+	bsr DisplayByte
+.0006:
+	dbra d2,dspmem1
+	bsr	DisplayTwoSpaces
+	move.b #34,d1
+	bsr	OutputChar
+	lea	-8(a0),a0
+	moveq	#7,d2
+.0002:
+	move.b (a0)+,d1
+	cmp.b	#' ',d1
+	blo.s	.0003
+	cmp.b	#127,d1
+	bls.s	.0001
 .0003:
-	move.b	#'.',d1
+	move.b #'.',d1
 .0001:
-	bsr			DisplayChar
-	dbra		d2,.0002
-	move.b	#34,d1
-	bsr			DisplayChar
-	bsr			CheckForCtrlC
-	bra			CRLF
+	bsr	OutputChar
+	dbra d2,.0002
+	move.b #34,d1
+	bsr	OutputChar
+	bsr	CheckForCtrlC
+	bra	CRLF
 
 ;------------------------------------------------------------------------------
 ; Dump Registers
@@ -2915,9 +3262,9 @@ cmdDumpRegs:
 .0001:
 	bsr			DisplayString
 	move.b	(a0)+,d1
-	bsr			DisplayChar
+	bsr			OutputChar
 	move.b	(a0)+,d1
-	bsr			DisplayChar
+	bsr			OutputChar
 	bsr			DisplaySpace
 	move.l	(a2)+,d1
 	bsr			DisplayTetra
@@ -2925,18 +3272,18 @@ cmdDumpRegs:
 	dbra		d0,.0001
 	bsr			DisplayString
 	move.b	(a0)+,d1
-	bsr			DisplayChar
+	bsr			OutputChar
 	move.b	(a0)+,d1
-	bsr			DisplayChar
+	bsr			OutputChar
 	bsr			DisplaySpace
 	move.l	Regsave+$44,d1
 	bsr			DisplayTetra
 	bsr			CRLF
 	bsr			DisplayString
 	move.b	(a0)+,d1
-	bsr			DisplayChar
+	bsr			OutputChar
 	move.b	(a0)+,d1
-	bsr			DisplayChar
+	bsr			OutputChar
 	bsr			DisplaySpace
 	move.w	Regsave+$40,d1
 	bsr			DisplayWyde
@@ -2962,7 +3309,7 @@ cmdTestSerialReceive:
 	bmi.s		.0001
 	cmpi.b	#CTRLZ,d1
 	beq			.0003
-	bsr			DisplayChar
+	bsr			OutputChar
 .0001:	
 	bsr			CheckForCtrlC
 	bra			.0002
@@ -2980,24 +3327,24 @@ cmdTestSerialReceive:
 ;------------------------------------------------------------------------------
 
 GetHexNumber:
-	move.l	d2,-(a7)
-	clr.l		d2
-	moveq		#0,d0
+	move.l d2,-(a7)
+	clr.l	d2
+	moveq	#0,d0
 .0002
-	bsr			FromScreen
-	bsr			AsciiToHexNybble
-	cmpi.b	#$ff,d1
-	beq.s		.0001
-	lsl.l		#4,d2
-	andi.l	#$0f,d1
-	or.l		d1,d2
-	addq		#1,d0
-	cmpi.b	#8,d0
-	blo.s		.0002
+	bsr	FromScreen
+	bsr	AsciiToHexNybble
+	cmpi.b #$ff,d1
+	beq.s	.0001
+	lsl.l	#4,d2
+	andi.l #$0f,d1
+	or.l d1,d2
+	addq #1,d0
+	cmpi.b #8,d0
+	blo.s	.0002
 .0001
-	move.l	d2,d1
-	move.l	(a7)+,d2
-	tst.b		d0
+	move.l d2,d1
+	move.l (a7)+,d2
+	tst.b	d0
 	rts	
 
 GetDecNumber:
@@ -3024,7 +3371,7 @@ GetDecNumber:
 	tst.b d0
 	rts
 	
-	include "FloatToString.asm"
+	include "FloatToString.x68"
 	include "GetFloat.asm"
 
 ;------------------------------------------------------------------------------
@@ -3063,9 +3410,9 @@ gthx3:
 DisplayTwoSpaces:
 	move.l	d1,-(a7)
 	move.b	#' ',d1
-	bsr			DisplayChar
+	bsr			OutputChar
 dspspc1:
-	bsr			DisplayChar
+	bsr			OutputChar
 	move.l	(a7)+,d1
 	rts
 
@@ -3113,8 +3460,39 @@ DisplayNybble:
 	bls.s		.0001
 	addi.b	#7,d1
 .0001:
-	bsr			DisplayChar
+	bsr			OutputChar
 	move.l	(a7)+,d1
+	rts
+
+;------------------------------------------------------------------------------
+; Buffer tetra in d0 to buffer pointed to by a6
+;------------------------------------------------------------------------------
+
+BufTetra:
+	swap d0
+	bsr BufWyde
+	swap d0
+
+BufWyde:
+	ror.w #8,d0
+	bsr BufByte
+	rol.w #8,d0
+	
+BufByte:
+	ror.b #4,d0
+	bsr BufNybble
+	rol.b #4,d0
+
+BufNybble:
+	move.l d0,-(a7)
+	andi.b #$F,d0
+	addi.b #'0',d0
+	cmpi.b #'9',d0
+	bls.s .0001
+	addi.b #7,d0
+.0001:
+	move.b d0,(a6)+
+	move.l (a7)+,d0
 	rts
 
 ;------------------------------------------------------------------------------
@@ -3168,14 +3546,108 @@ ClearScreen:
 ;------------------------------------------------------------------------------
 
 rbo:
-	rol.w		#8,d1
-	swap		d1
-	rol.w		#8,d1
+	rol.w	#8,d1
+	swap d1
+	rol.w	#8,d1
 	rts
 
 ;==============================================================================
 ; Serial I/O routines
 ;==============================================================================
+
+;------------------------------------------------------------------------------
+; Setup the console device
+; stdout = text screen controller
+;------------------------------------------------------------------------------
+
+serial_init:
+setup_serial:
+	moveq #31,d0
+	lea.l serial_dcb,a0
+.0001:
+	clr.l (a0)+
+	dbra d0,.0001
+	move.l #$20424344,serial_dcb+DCB_MAGIC				; 'DCB'
+	move.l #$204F4F43,serial_dcb+DCB_NAME				; 'COM'
+	move.l #serial_cmdproc,serial_dcb+DCB_CMDPROC
+	move.l #SerRcvBuf,serial_dcb+DCB_INBUFPTR
+	move.l #SerXmitBuf,serial_dcb+DCB_OUTBUFPTR
+	move.l #4096,serial_dcb+DCB_INBUFSIZE
+	bsr SerialInit
+	rts
+
+	align 2
+COM_CMDTBL:
+	dc.l serial_init
+	dc.l serial_stat
+	dc.l serial_putchar
+	dc.l serial_putbuf
+	dc.l serial_getchar
+	dc.l serial_getbuf
+	dc.l serial_set_inpos
+	dc.l serial_set_outpos
+	dc.l serial_getchar_direct
+	dc.l serial_peek_char
+	dc.l serial_peek_char_direct
+	dc.l serial_putchar_direct
+
+serial_cmdproc:
+	cmpi.b #12,d6
+	bhs.s .0001
+	tst.b d6
+	bmi.s .0001
+	movem.l d6/a0,-(a7)
+	asl.b #2,d6
+	ext.w d6
+	lea COM_CMDTBL,a0
+	move.l (a0,d6.w),a0
+	jsr (a0)
+	movem.l (a7)+,d6/a0
+	rts
+.0001:
+	moveq #E_Func,d0
+	rts
+
+serial_stat:
+	moveq #E_Ok,d0
+	rts
+
+serial_putchar:
+	bsr SerialPutChar
+	moveq #E_Ok,d0
+	rts
+
+serial_getchar:
+	bsr SerialGetChar
+	moveq #E_Ok,d0
+	rts
+
+serial_getchar_direct:
+	bsr SerialPeekCharDirect
+	moveq #E_Ok,d0
+	rts
+
+serial_peek_char:
+	bsr SerialPeekChar
+	moveq #E_Ok,d0
+	rts
+
+serial_peek_char_direct:
+	bsr SerialPeekCharDirect
+	moveq #E_Ok,d0
+	rts
+
+serial_putchar_direct:
+	bsr SerialPutCharDirect
+	moveq #E_Ok,d0
+	rts
+
+serial_putbuf:
+serial_getbuf:
+serial_set_inpos:
+serial_set_outpos:
+	moveq #E_NotSupported,d0
+	rts
 
 ;------------------------------------------------------------------------------
 ; Initialize the serial port an enhanced 6551 circuit.
@@ -3188,6 +3660,8 @@ rbo:
 SerialInit:
 	clr.w		SerHeadRcv					; clear receive buffer indexes
 	clr.w		SerTailRcv
+	clr.w		SerHeadXmit					; clear transmit buffer indexes
+	clr.w		SerTailXmit
 	clr.b		SerRcvXon						; and Xon,Xoff flags
 	clr.b		SerRcvXoff
 	move.l	#$09000000,d0				; dtr,rts active, rxint enabled, no parity
@@ -3274,34 +3748,36 @@ SerialGetChar:
 ; to send an XON here.
 ;
 ; Stack Space:
-;		0 words
+;		1 long word
 ; Parameters:
 ;		none
 ; Modifies:
-;		d0,d2,a0
+;		d0,a0
 ; Returns:
 ;		d1 = character or -1
 ;------------------------------------------------------------------------------
 
 SerialPeekChar:
-	movec		coreno,d0
-	swap		d0
-	moveq		#SERIAL_SEMA,d1
-	bsr			LockSemaphore
-	move.w	SerHeadRcv,d2		; check if anything is in buffer
-	cmp.w		SerTailRcv,d2
-	beq			.NoChars				; no?
-	lea			SerRcvBuf,a0
-	move.b	(a0,d2.w),d2		; get byte from buffer
-	bra			.Xit
+	move.l d2,-(a7)
+	movec	coreno,d0
+	swap d0
+	moveq	#SERIAL_SEMA,d1
+	bsr	LockSemaphore
+	move.w SerHeadRcv,d2		; check if anything is in buffer
+	cmp.w	SerTailRcv,d2
+	beq	.NoChars				; no?
+	lea	SerRcvBuf,a0
+	move.b (a0,d2.w),d2		; get byte from buffer
+	bra	.Xit
 .NoChars:
-	moveq		#-1,d2
+	moveq	#-1,d2
 .Xit:
-	movec		coreno,d0
-	swap		d0
-	moveq		#SERIAL_SEMA,d1
-	bsr			LockSemaphore
-	move		d2,d1
+	movec	coreno,d0
+	swap d0
+	moveq	#SERIAL_SEMA,d1
+	bsr	UnlockSemaphore
+	move.l	d2,d1
+	move.l (a7)+,d2
 	rts
 
 ;------------------------------------------------------------------------------
@@ -3332,11 +3808,14 @@ SerialPeekCharDirect:
 
 ;------------------------------------------------------------------------------
 ; SerialPutChar
-;    Put a character to the serial transmitter. This routine blocks until the
-; transmitter is empty. 
+;		If there is a transmit buffer, adds the character to the transmit buffer
+; if it can, otherwise will wait for a byte to be freed up in the transmit
+; buffer (blocks).
+;		If there is no transmit buffer, put a character to the directly to the
+; serial transmitter. This routine blocks until the transmitter is empty. 
 ;
 ; Stack Space
-;		0 words
+;		4 long words
 ; Parameters:
 ;		d1.b = character to put
 ; Modifies:
@@ -3344,12 +3823,46 @@ SerialPeekCharDirect:
 ;------------------------------------------------------------------------------
 
 SerialPutChar:
-	movem.l	d0/d1,-(a7)				; push d0,d1
+.0004:
+	tst.w serial_dcb+DCB_OUTBUFSIZE	; buffered output?
+	beq.s SerialPutCharDirect
+	movem.l d0/d1/d2/a0,-(a7)
+	movec	coreno,d0
+	swap d0
+	moveq	#SERIAL_SEMA,d1
+	bsr	LockSemaphore
+	move.w SerTailXmit,d0
+	move.w d0,d2
+	addi.w #1,d0
+	cmp.w serial_dcb+DCB_OUTBUFSIZE,d0
+	blo.s .0002
+	clr.w d0
+.0002:
+	cmp.w SerHeadXmit,d0			; Is Xmit buffer full?
+	bne.s .0003
+	movec	coreno,d0						; buffer full, unlock semaphore and wait
+	swap d0
+	moveq	#SERIAL_SEMA,d1
+	bsr	UnlockSemaphore
+	bra.s .0004
+.0003:
+	move.w d0,SerTailXmit			; update tail pointer
+	lea SerXmitBuf,a0
+	move.b d1,(a0,d2.w)				; store byte in Xmit buffer
+	movec	coreno,d0						; unlock semaphore
+	swap d0
+	moveq	#SERIAL_SEMA,d1
+	bsr	UnlockSemaphore
+	movem.l (a7)+,d0/d1/d2/a0
+	rts
+
+SerialPutCharDirect:
+	movem.l	d0/d1,-(a7)							; push d0,d1
 .0001:
-	move.b	ACIA+ACIA_STAT,d0	; wait until the uart indicates tx empty
-	btst		#4,d0							; bit #4 of the status reg
-	beq.s		.0001			    		; branch if transmitter is not empty
-	move.b	d1,ACIA+ACIA_TX		; send the byte
+	move.b ACIA+ACIA_STAT,d0	; wait until the uart indicates tx empty
+	btst #4,d0								; bit #4 of the status reg
+	beq.s	.0001			    			; branch if transmitter is not empty
+	move.b d1,ACIA+ACIA_TX		; send the byte
 	movem.l	(a7)+,d0/d1				; pop d0,d1
 	rts
 	
@@ -3398,42 +3911,63 @@ SerialRcvCount:
 SerialIRQ:
 	move.w	#$2300,sr						; disable lower level IRQs
 	movem.l	d0/d1/d2/a0,-(a7)
-	movec		coreno,d0
-	swap		d0
-	moveq		#SERIAL_SEMA,d1
-	bsr			LockSemaphore
+	movec	coreno,d0
+	swap d0
+	moveq	#SERIAL_SEMA,d1
+	bsr	LockSemaphore
 sirqNxtByte:
-	move.b	ACIA+ACIA_STAT,d1		; check the status
-	btst		#3,d1								; bit 3 = rx full
-	beq			notRxInt
-	move.b	ACIA+ACIA_RX,d1
+	move.b ACIA+ACIA_STAT,d1		; check the status
+	btst #3,d1									; bit 3 = rx full
+	beq	notRxInt
+	move.b ACIA+ACIA_RX,d1
 sirq0001:
-	move.w	SerTailRcv,d0				; check if recieve buffer full
-	addi.w	#1,d0
-	andi.w	#$FFF,d0
-	cmp.w		SerHeadRcv,d0
-	beq			sirqRxFull
-	move.w	d0,SerTailRcv				; update tail pointer
-	subi.w	#1,d0								; backup
-	andi.w	#$FFF,d0
-	lea			SerRcvBuf,a0				; a0 = buffer address
-	move.b	d1,(a0,d0.w)				; store recieved byte in buffer
-	tst.b		SerRcvXoff					; check if xoff already sent
-	bne			sirqNxtByte
-	bsr			SerialRcvCount			; if more than 4080 chars in buffer
-	cmpi.w	#4080,d0
-	blo			sirqNxtByte
-	move.b	#XOFF,d1						; send an XOFF
-	clr.b		SerRcvXon						; clear XON status
-	move.b	d1,SerRcvXoff				; set XOFF status
-	bsr			SerialPutChar				; send XOFF
-	bra			sirqNxtByte     		; check the status for another byte
+	move.w SerTailRcv,d0				; check if recieve buffer full
+	addi.w #1,d0
+	andi.w #$FFF,d0
+	cmp.w	SerHeadRcv,d0
+	beq	sirqRxFull
+	move.w d0,SerTailRcv				; update tail pointer
+	subi.w #1,d0								; backup
+	andi.w #$FFF,d0
+	lea	SerRcvBuf,a0						; a0 = buffer address
+	move.b d1,(a0,d0.w)					; store recieved byte in buffer
+	tst.b	SerRcvXoff						; check if xoff already sent
+	bne	sirqNxtByte
+	bsr	SerialRcvCount					; if more than 4080 chars in buffer
+	cmpi.w #4080,d0
+	blo	sirqNxtByte
+	move.b #XOFF,d1							; send an XOFF
+	clr.b	SerRcvXon							; clear XON status
+	move.b d1,SerRcvXoff				; set XOFF status
+	bsr	SerialPutChar						; send XOFF
+	bra	sirqNxtByte     				; check the status for another byte
 sirqRxFull:
 notRxInt:
-	movec		coreno,d0
-	swap		d0
-	moveq		#SERIAL_SEMA,d1
-	bsr			UnlockSemaphore
+	btst #4,d1									; TX empty?
+	beq.s notTxInt
+	tst.b SerXmitXoff						; and allowed to send?
+	bne.s sirqXmitOff
+	tst.l serial_dcb+DCB_OUTBUFSIZE	; Is there a buffer being transmitted?
+	beq.s notTxInt
+	move.w SerHeadXmit,d0
+	cmp.w SerTailXmit,d0
+	beq.s sirqTxEmpty
+	lea SerXmitBuf,a0
+	move.b (a0,d0.w),d1
+	move.b d1,ACIA+ACIA_TX			; transmit character
+	addi.w #1,SerHeadXmit				; advance head index
+	move.w serial_dcb+DCB_OUTBUFSIZE,d0
+	cmp.w SerHeadXmit,d0
+	bhi.s sirq0002
+	clr.w SerHeadXmit						; wrap around
+sirq0002:
+sirqXmitOff:
+sirqTxEmpty:
+notTxInt:
+	movec	coreno,d0
+	swap d0
+	moveq	#SERIAL_SEMA,d1
+	bsr	UnlockSemaphore
 	movem.l	(a7)+,d0/d1/d2/a0
 	rte
 
@@ -3884,7 +4418,6 @@ prtflt:
 
 T15FloatToString:
 	link a2,#-44
-	move.l _canary,40(sp)
 	movem.l d0/d1/d2/d3/d6/a0/a1,(sp)
 	fmove.x fp0,28(sp)
 	move.l a1,a0						; a0 = pointer to buffer to use
@@ -3894,22 +4427,53 @@ T15FloatToString:
 	bsr _FloatToString
 	fmove.x 28(sp),fp0
 	movem.l (sp),d0/d1/d2/d3/d6/a0/a1
-	cchk 40(sp)
 	unlk a2
 	rts
 
 ;==============================================================================
+; Parameters:
+;		d7 = device number
+;		d6 = function number
+;		d0 to d5 = arguments
+;==============================================================================
+
+io_trap:
+	cmpi.b #2,d7							; make sure legal device
+	bhi.s .0002
+	tst.b d7
+	bmi.s .0002
+	movem.l d7/a0,-(a7)
+	mulu #DCB_SIZE,d7					; index to DCB
+	move.l #null_dcb,a0
+	move.l DCB_CMDPROC(a0,d7.w),a0
+	jsr (a0)
+	movem.l (a7)+,d7/a0
+	rte
+.0002:
+	moveq #E_BadDevNum,d0
+	rte
+
+;==============================================================================
+; Output a character to the current output device.
 ;==============================================================================
 
 OutputChar:
+	movem.l d6/d7,-(a7)
+	clr.l d7
+	move.b OutputDevice,d7		; d7 = output device
+	move.w #DEV_PUTCHAR,d6		; d6 = function
+	trap #0
+	movem.l (a7)+,d6/d7
+	rts
+
 	cmpi.b #1,OutputDevice	; stdout
 	bne .0001
 	bra DisplayChar
-.0001
+.0001:
 	cmpi.b #2,OutputDevice
-	bne .0002
+	bne .0003
 	bra	SerialPutChar
-.0002
+.0003:
 	rts
 
 ;------------------------------------------------------------------------------
@@ -3929,94 +4493,83 @@ InitIRQ:
 ; Install an IRQ handler.
 ;
 ; Parameters:
-;		d0 = IRQ level
-;		a0 = pointer to IRQ routine
+;		a0 = pointer to bucket containing vector
+;		d0 = vector (64 to 255)
 ; Returns:
-;		d1 = -1 if successfully added, 0 otherwise
-;		nf = 1, zf = 0 if successfully added, otherwise nf = 0, zf = 1
+;		d0 = 0 if successfully added, otherwise E_NotAlloc
+;		nf = 0, zf = 1 if successfully added, otherwise nf = 1, zf = 0
 ;------------------------------------------------------------------------------
 
 InstallIRQ:
-	move.l	d0,-(a7)					; save working register
-	lea			InstalledIRQ,a1		; a1 points to installed IRQ list
-	lsl.w		#5,d0							; multiply by 8 long words per IRQ level
-.nextSpot:
-	cmpa.l	(a1,d0.w),a0			; Is the IRQ already installed?
-	beq.s		.found
-	tst.l		(a1,d0.w)					; test for an empty spot
-	beq.s		.foundSpot
-	addi.w	#4,d0							; increment to next slot
-	move.w	d0,d1
-	andi.w	#$1F,d1						; check to see if spots exhausted
-	beq.s		.noEmpties
-	bra.s		.nextSpot
-.foundSpot:
-	move.l	a0,(a1,d0.w)			; add IRQ routine to table
-.found:
-	move.l	(a7)+,d0
-	moveq		#-1,d1						; return success
+	movem.l a1/a2,-(a7)				; save working register
+	tst.l (a0)								; link field must be NULL
+	bne.s .0003
+	cmpi.w #64,d0							; is vector in range (64 to 255)?
+	blo.s .0003
+	cmpi.w #255,d0
+	bhi.s .0003
+	lea	irq_list_tbl,a2				; a2 points to installed IRQ list
+	lsl.w	#3,d0								; multiply by 2 long words
+	move.l (a2,d0.w),a1				; get first link
+	lea (a2,d0.w),a2					; 
+.0002:
+	cmpa.l a1,a0							; installed already?
+	beq.s .0003
+	cmpa.l #0,a1							; is link NULL?
+	beq.s .0001
+	move.l a1,a2							; save previous link
+	move.l (a1),a1						; get next link
+	bra .0002
+.0001:
+	move.l a0,(a2)						; set link
+	movem.l (a7)+,a1/a2
+	moveq #E_Ok,d0
 	rts
-.noEmpties:
-	move.l	(a7)+,d0
-	moveq		#0,d1							; return failed to add
+.0003:
+	movem.l (a7)+,a1/a2
+	moveq #E_NotAlloc,d0			; return failed to add
 	rts
-	
 
 ;------------------------------------------------------------------------------
 ; TickIRQ
 ; - this IRQ is processed by all cores.
-; - core 2 is responsible for resetting the edge circuit.
+; - reset the edge circuit.
 ; - an IRQ live indicator is updated on the text screen for the core
 ;------------------------------------------------------------------------------
 
 TickIRQ:
-	move.w	#$2600,sr					; disable lower level IRQs
+	move.w #$2600,sr					; disable lower level IRQs
 	movem.l	d1/d2/d3/a0,-(a7)
 	move.b #1,IRQFlag					; tick interrupt indicator in local memory
-	; ToDo: detect a tick interrupt
-;	move.l	PLIC+$00,d1
-;	rol.l		#8,d1
-;	cmpi.b	#29,d1
-;	bne.s		.notTick
 	movec	coreno,d1						; d1 = core number
 	move.l d1,d3
 	asl.l #3,d3								; 8 bytes per text cell
-;	cmpi.b #2,d1
-;	bne.s	.0001
 	move.l #$1D000000,PLIC+$14	; reset edge sense circuit
-.0001:	
-;	move.l TextScr,a0					; a0 = screen address
-	lea $FD000000,a0
-	adda.l #160,a0						; move over to display field
+	lea $FD0000C8,a0					; display field address
 	move.l 4(a0,d3.w),d2			; get char from screen
-	rol.l #8,d2								; extract char field
-	clr.b d2									; clear char field
-	addi.b #'0',d1						; binary to ascii core number
-	or.b	d1,d2								; insert core number
-	ror.l #8,d2								; reposition to proper place
-	addi.w #1,d2							; flashy colors
-	swap d2
-	addi.b #1,d2
-	swap d2
+;	rol.l #8,d2								; extract char field
+;	clr.b d2									; clear char field
+;	addi.b #'0',d1						; binary to ascii core number
+;	or.b	d1,d2								; insert core number
+;	ror.l #8,d2								; reposition to proper place
+;	addi.w #1,d2							; flashy colors
+	addi.l #$0001,d2
 	move.l d2,4(a0,d3.w)			; update onscreen IRQ flag
-; addi.l	#1,40(a0)					; nice effect
 	bsr	ReceiveMsg
 	movem.l	(a7)+,d1/d2/d3/a0
 	rte
-;.notTick:
-;	movem.l	(a7)+,d1/a0
-;	rte
+
 ;------------------------------------------------------------------------------
 ;------------------------------------------------------------------------------
 
 irq3_rout:
-	movem.l	d0/d1/a0/a1,-(a7)
-	lea			InstalledIRQ+8*4*3,a0
-	bra			irq_rout
+;	movem.l	d0/d1/a0/a1,-(a7)
+;	lea			InstalledIRQ+8*4*3,a0
+;	bra			irq_rout
 
 irq6_rout:
-	movem.l	d0/d1/a0/a1,-(a7)
-	lea			InstalledIRQ+8*4*6,a0
+;	movem.l	d0/d1/a0/a1,-(a7)
+;	lea			InstalledIRQ+8*4*6,a0
 irq_rout:
 	moveq		#7,d0
 .nextHandler:
@@ -4029,6 +4582,31 @@ irq_rout:
 	dbra		d0,.nextHandler
 .0002:
 	movem.l	(a7)+,d0/d1/a0/a1	; return
+
+; Load head of list into an address register, then branch to a generic routine.
+
+;	rept 192
+;	macIRQ_proc_label REPTN
+;	movem.l a0/a1,-(a7)
+;	move.l irq_list_tbl+REPTN*4,a1	; get the head of the list
+;	jmp irq_proc_generic
+;	endr
+
+irq_proc_generic:
+.0003:
+	move.l 4(a1),a0									; a0 = vector
+	cmpa.l #0,a0										; ugh. move to address does not set flags
+	beq.s .0001											; valid vector?
+	jsr (a0)												; call the interrupt routine
+	tst.l d1												; IRQ handled?
+	bmi.s .0002											
+.0001:
+	move.l (a1),a1
+	cmpa.l #0,a0										; end of list?
+	bne.s .0003
+.0002:
+	movem.l (a7)+,a0/a1
+	rte 
 
 SpuriousIRQ:
 	rte
@@ -4047,7 +4625,7 @@ SpuriousIRQ:
 nmi_rout:
 	movem.l	d0/d1/a0,-(a7)
 	move.b	#'N',d1
-	bsr			DisplayChar
+	bsr			OutputChar
 	movem.l	(a7)+,d0/d1/a0		; return
 	rte
 
@@ -4115,3 +4693,173 @@ msgChk
 	dc.b " check failed",0
 msgStackCanary
 	dc.b " stack canary overwritten",0
+
+	even
+
+;-------------------------------------------------------------------------
+; File HEX2DEC   HEX2DEC convert hex to decimal                   11/02/81
+;
+;    CONVERT BINARY TO DECIMAL  REG  D0 PUT IN ( A6) BUFFER AS ASCII
+
+; Shift buffer one character to left
+ShiftBuf:
+	movem.l d0/a2/a4,-(a7)
+	move.l a3,d0
+	addi.l #BUFSIZE,d0
+.0001:
+	move.b 1(a4),(a4)+
+	cmp.l a4,d0
+	blo.s .0001
+	movem.l (a7)+,d0/a2/a4
+	rts
+
+HEX2DEC2:
+	movem.l d0/d1/a3/a4/a5,-(a7)
+	move.l a6,a3
+	move.l a6,a4
+	move.l d0,d1
+	bpl.s .0001
+	neg.l d0										;
+	bmi.s .0002									; neg and still minus, must be -tve zero
+	move.b #'-',(a6)+
+	move.l a6,a4
+.0001:
+	divu #100,d1								; scale d1 - chop last 2 decimal digits
+	bin2bcd d1									; convert to BCD
+	bsr BufTetra								; capture in buffer (8 digits)
+	move.l d0,d1
+	bin2bcd d1									; convert to BCD
+	bsr BufByte									; capture last 2 digits in buffer
+.0004:
+	cmpi.b #'0',(a4)						; Is there a leading zero?
+	bne.s .0003									; No, we're done shifting
+	bsr ShiftBuf								; Shift the buffer over a character
+	subq.l #1,a6								; adjust buffer pos.
+	bra.s .0004									; go check next character
+.0003:
+	tst.b (a4)
+	beq.s .0002
+	cmpi.b #' ',(a4)						; is the buffer empty?
+	bne.s .0005
+.0002:
+	move.b #'0',(a4)+						; ensure at least a '0'
+	move.l a4,a6
+.0005:
+	movem.l (a7)+,d0/d1/a3/a4/a5
+	rts
+
+HEX2DEC: 
+	movem.l D1-D4/D6-D7,-(A7)   ; SAVE REGISTERS
+	move.l D0,D7          			; SAVE IT HERE
+	bpl.s HX2DC
+	neg.l D7              			; CHANGE TO POSITIVE
+	bmi.s HX2DC57          			; SPECIAL CASE (-0)
+	move.b #'-',(A6)+      			; PUT IN NEG SIGN
+HX2DC:  
+	clr.w D4              			; FOR ZERO SURPRESS
+	moveq #10,D6          			; COUNTER
+HX2DC0:
+  moveq #1,D2           			; VALUE TO SUB
+	move.l D6,D1          			; COUNTER
+	subq.l #1,D1           			; ADJUST - FORM POWER OF TEN
+	beq.s HX2DC2           			; IF POWER IS ZERO
+HX2DC1:
+  move.w D2,D3          			; D3=LOWER WORD
+	mulu #10,D3
+	swap D2              				; D2=UPPER WORD
+	mulu #10,D2
+	swap D3              				; ADD UPPER TO UPPER
+	add.w D3,D2
+	swap D2              				; PUT UPPER IN UPPER
+	swap D3              				; PUT LOWER IN LOWER
+	move.w D3,D2          			; D2=UPPER & LOWER
+	subq.l #1,D1
+	bne.s HX2DC1
+HX2DC2:
+  clr.l D0              			; HOLDS SUB AMT
+HX2DC22:
+	cmp.l D2,D7
+  blt.s HX2DC3           			; IF NO MORE SUB POSSIBLE
+	addq.l #1,D0           			; BUMP SUBS
+	sub.l D2,D7          				; COUNT DOWN BY POWERS OF TEN
+	bra.s HX2DC22          			; DO MORE
+HX2DC3:
+  tst.b D0              			; ANY VALUE?
+	bne.s HX2DC4
+	tst.w D4              			; ZERO SURPRESS
+	beq.s HX2DC5
+HX2DC4:
+  addi.b #$30,D0         		; BINARY TO ASCII
+	move.b D0,(A6)+       			; PUT IN BUFFER
+	move.b D0,D4          			; MARK AS NON ZERO SURPRESS
+HX2DC5:
+  subq.l #1,D6           			; NEXT POWER
+	bne.s HX2DC0
+	tst.w D4              			; SEE IF ANYTHING PRINTED
+	bne.s HX2DC6
+HX2DC57:
+ move.b #'0',(A6)+      			; PRINT AT LEST A ZERO
+HX2DC6:
+	movem.l (A7)+,D1-D4/D6-D7 ; RESTORE REGISTERS
+  rts                      	; END OF ROUTINE
+
+
+PNT4HX:
+PNT4HEX:
+	bra BufWyde
+PNT6HX:
+	swap d0
+	bsr BufByte
+	swap d0
+	bra BufWyde
+PNT8HX:
+	bra BufTetra
+	
+; FORMAT RELATIVE ADDRESS  AAAAAA+Rn
+;        ENTER     D0 = VALUE
+;                  A6 = STORE POINTER
+;
+FRELADDR:
+	movem.l D1/D5-D7/A0,-(A7)
+	lea OFFSET,A0
+	moveq #-1,D7        	; D7 = DIFF. BEST FIT
+	clr.l D6            	; D6 = OFFSET POSITION
+FREL10:
+  move.l D0,D1
+	tst.l (a0)
+	beq.s FREL15         	; ZERO OFFSET
+	sub.l (a0),d1      		; D1 = DIFF.
+	bmi.s FREL15         	; NO FIT
+	cmp.l D7,D1
+	bcc.s FREL15         	; OLD FIT BETTER
+	move.l D1,D7        	; D7 = NEW BEST FIT
+	move.l D6,D5        	; D5 = POSITION
+FREL15:
+  addq.l #4,A0
+	addq.l #1,D6
+	cmpi.w #8,D6
+	bne.s FREL10         	; MORE OFFSETS TO CHECK
+	tst.l D7
+	bmi.s FREL25         	; NO FIT
+	tst D6
+	bne.s FREL20
+	tst.l OFFSET
+	beq.s FREL25         	; R0 = 000000; NO FIT
+FREL20:
+  move.l D7,D0
+	bsr	PNT6HX         		; FORMAT OFFSET
+	move.b #'+',(A6)+    	; +
+	move.b #'R',(A6)+    	; R
+	addi.b #'0',D5       	; MAKE ASCII
+	bra.s FREL30
+FREL25:
+  bsr	PNT6HX         	; FORMAT ADDRESS AS IS
+	move.b #BLANK,D5
+	move.b D5,(A6)+     	; THREE SPACES FOR ALIGNMENT
+	move.b D5,(A6)+
+FREL30:
+  move.b D5,(A6)+
+	movem.l (A7)+,D1/D5-D7/A0
+	rts
+
+	include "dcode68k.x68"

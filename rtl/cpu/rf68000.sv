@@ -1540,7 +1540,7 @@ IFETCH:
 						 cf <= resB[8];
 						 vf <= resB[8]!=resB[7];
 						vf <= fnAddOverflow(resB[7],dd[7],s[7]);
-						 //zf <= resB[7:0]==8'd0;
+						 zf <= resB[7:0]==8'd0;
 						 nf <= resB[7];
 					end
 				2'b01:
@@ -1572,7 +1572,7 @@ IFETCH:
 						 cf <= resB[8];
 						 vf <= resB[8]!=resB[7];
 						vf <= fnSubOverflow(resB[7],dd[7],s[7]);
-						 //zf <= resB[7:0]==8'd0;
+						 zf <= resB[7:0]==8'd0;
 						 nf <= resB[7];
 					end
 				2'b01:
@@ -3161,12 +3161,15 @@ MULU3:
 //-----------------------------------------------------------------------------
 // DIVU / DIVS
 // - the target register is not updated if overflow occurs.
+// - the carry flag is always cleared
+// - N and Z flags are defined only for valid results
 //-----------------------------------------------------------------------------
 DIV1:
 	if (s[15:0]==16'd0) begin
 		isr <= srx;
 		tf <= 1'b0;
 		sf <= 1'b1;
+		cf <= 1'b0;
 		vecno <= `DBZ_VEC;
 		goto (TRAP3);
 	end
@@ -3174,15 +3177,16 @@ DIV1:
 		goto (DIV2);
 DIV2:
 	if (dvdone) begin
-		cf <= 1'b0;
-		if (dvovf)
+		cf <= 1'b0;		// always cleared
+		nf <= divq[15];
+		zf <= divq[15:0]==16'h0000;
+		Rt <= {1'b0,DDD};
+		resL <= {divr[15:0],divq[15:0]};
+		if (dvovf) begin
 			vf <= 1'b1;
+		end
 		else begin
-			nf <= divq[15];
-			zf <= divq[15:0]==16'h0000;
 			vf <= 1'b0;
-			Rt <= {1'b0,DDD};
-			resL <= {divr[15:0],divq[15:0]};
 			rfwrL <= 1'b1;
 		end
 		ret();
@@ -4276,7 +4280,10 @@ FETCH_BRDISP:
 			fc_o <= {sf,2'b10};
 			cyc_o <= 1'b1;
 			stb_o <= 1'b1;
-			sel_o <= 4'b1111;
+			case(pc[1])
+			1'b0:	sel_o <= 4'b0011;
+			1'b1:	sel_o <= 4'b1100;
+			endcase
 			adr_o <= pc;
 		end
 		else if (ack_i) begin
@@ -4321,7 +4328,10 @@ FETCH_IMM8:
 		fc_o <= {sf,2'b10};
 		cyc_o <= 1'b1;
 		stb_o <= 1'b1;
-		sel_o <= 4'b1111;
+		case(pc[1])
+		1'b0:	sel_o <= 4'b0011;
+		1'b1:	sel_o <= 4'b1100;
+		endcase
 		adr_o <= pc;
 	end
 	else if (ack_i) begin
@@ -4348,7 +4358,10 @@ FETCH_IMM16:
 		fc_o <= {sf,2'b10};
 		cyc_o <= 1'b1;
 		stb_o <= 1'b1;
-		sel_o <= 4'b1111;
+		case(pc[1])
+		1'b0:	sel_o <= 4'b0011;
+		1'b1:	sel_o <= 4'b1100;
+		endcase
 		adr_o <= pc;
 	end
 	else if (ack_i) begin
@@ -4375,7 +4388,10 @@ FETCH_IMM32:
 		fc_o <= {sf,2'b10};
 		cyc_o <= 1'b1;
 		stb_o <= 1'b1;
-		sel_o <= 4'b1111;
+		case(pc[1])
+		1'b0:	sel_o <= 4'b1111;
+		1'b1:	sel_o <= 4'b1100;
+		endcase
 		adr_o <= pc;
 	end
 	else if (ack_i) begin
@@ -4418,7 +4434,7 @@ FETCH_IMM32:
 FETCH_IMM32a:
 	if (!stb_o) begin
 		stb_o <= 1'b1;
-		sel_o <= 4'b1111;
+		sel_o <= 4'b0011;
 		adr_o <= pc + 4'd2;
 	end
 	else if (ack_i) begin
@@ -4485,7 +4501,10 @@ FETCH_D32:
 		fc_o <= {sf,2'b10};
 		cyc_o <= 1'b1;
 		stb_o <= 1'b1;
-		sel_o <= 4'b1111;
+		case(pc[1])
+		1'b0:	sel_o <= 4'b1111;
+		1'b1:	sel_o <= 4'b1100;
+		endcase
 		adr_o <= pc;
 	end
 	else if (ack_i) begin
@@ -4514,7 +4533,7 @@ FETCH_D32:
 FETCH_D32a:
 	if (!stb_o) begin
 		stb_o <= 1'b1;
-		sel_o <= 4'b1111;
+		sel_o <= 4'b0011;
 		adr_o <= pc + 4'd2;
 	end
 	else if (ack_i) begin
@@ -4542,7 +4561,10 @@ FETCH_D16:
 		fc_o <= {sf,2'b10};
 		cyc_o <= 1'b1;
 		stb_o <= 1'b1;
-		sel_o <= 4'b1111;
+		case(pc[1])
+		1'b0:	sel_o <= 4'b0011;
+		1'b1:	sel_o <= 4'b1100;
+		endcase
 		adr_o <= pc;
 	end
 	else if (ack_i) begin
@@ -4566,7 +4588,10 @@ FETCH_NDX:
 		fc_o <= {sf,2'b10};
 		cyc_o <= 1'b1;
 		stb_o <= 1'b1;
-		sel_o <= 4'b1111;
+		case(pc[1])
+		1'b0:	sel_o <= 4'b0011;
+		1'b1:	sel_o <= 4'b1100;
+		endcase
 		adr_o <= pc;
 	end
 	else if (ack_i) begin
@@ -4600,7 +4625,12 @@ FETCH_BYTE:
 		cyc_o <= `HIGH;
 		stb_o <= `HIGH;
 		adr_o <= ea;
-		sel_o <= 4'b1111;
+		case(ea[1:0])
+		2'b00:	sel_o <= 4'b0001;
+		2'b01:	sel_o <= 4'b0010;
+		2'b10:	sel_o <= 4'b0100;
+		2'b11:	sel_o <= 4'b1000;
+		endcase
 	end
 	else if (ack_i) begin
 		cyc_o <= `LOW;
@@ -4641,7 +4671,12 @@ LFETCH_BYTE:
 		cyc_o <= `HIGH;
 		stb_o <= `HIGH;
 		adr_o <= ea;
-		sel_o <= 4'b1111;
+		case(ea[1:0])
+		2'b00:	sel_o <= 4'b0001;
+		2'b01:	sel_o <= 4'b0010;
+		2'b10:	sel_o <= 4'b0100;
+		2'b11:	sel_o <= 4'b1000;
+		endcase
 	end
 	else if (ack_i) begin
 		stb_o <= 1'b0;
@@ -4678,7 +4713,10 @@ FETCH_WORD:
 		cyc_o <= `HIGH;
 		stb_o <= `HIGH;
 		adr_o <= ea;
-		sel_o <= 4'b1111;
+		case(ea[1])
+		1'b0:	sel_o <= 4'b0011;
+		1'b1:	sel_o <= 4'b1100;
+		endcase
 	end
 	else if (ack_i) begin
 		cyc_o <= 1'b0;
@@ -4709,7 +4747,10 @@ FETCH_LWORD:
 		cyc_o <= 1'b1;
 		stb_o <= 1'b1;
 		adr_o <= ea;
-		sel_o <= 4'b1111;
+		case(ea[1])
+		1'b0:	sel_o <= 4'b1111;
+		1'b1:	sel_o <= 4'b1100;
+		endcase
 	end
 	else if (ack_i) begin
 		stb_o <= 1'b0;
@@ -4749,7 +4790,7 @@ FETCH_LWORDa:
 		cyc_o <= 1'b1;
 		stb_o <= 1'b1;
 		adr_o <= adr_o + 32'd2;
-		sel_o <= 4'b1111;
+		sel_o <= 4'b0011;
 	end
 	else if (ack_i) begin
 		cyc_o <= 1'b0;

@@ -211,7 +211,7 @@ edge_det ed1 (.rst(rst_i), .clk(clk_i), .ce(1'b1), .i(cs), .pe(pe_cs), .ne(), .e
 always_ff @(posedge clk_i)
 if (cs_i)
 	case(adr_i[1:0])
-	2'd0:	dat_o <= scbuf;
+	2'd0:	dat_o <= q[8:1];
 	2'd1:
 		begin
 			dat_o <= {~q[0],tc,~kack,4'b0,~^q[9:1]};
@@ -222,7 +222,7 @@ if (cs_i)
 	2'd3:	dat_o <= statbuf;
 	endcase
 else
-	dat_o <= 'd0;
+	dat_o <= 8'd0;
 
 assign db = (cs & ~we_i) ? dat_o : {8{1'bz}};
 

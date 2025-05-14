@@ -67,7 +67,7 @@ output reg [31:0] ram_dati;
 parameter TRUE = 1'b1;
 parameter FALSE = 1'b0;
 
-reg w1;
+reg [1:0] w1;
 
 typedef enum logic [3:0] {
 	ST_IDLE = 4'd0,
@@ -87,6 +87,9 @@ if (rst_i) begin
 	cpu_dati <= 32'h0;
 	ram_en <= FALSE;
 	ram_we <= 4'h0;
+	ram_adr <= 32'd0;
+	ram_dati <= 32'd0;
+	w1 <= 2'b00;
 	state <= ST_IDLE;
 end
 else begin
@@ -100,25 +103,30 @@ else begin
 		nic_ack <= 1'b0;
 		nic_dati <= 32'h0;
 	end
+	case(w1)
+	2'b01:	if (!nic_cyc) w1 <= 2'b00;
+	2'b10:	if (!cpu_cyc) w1 <= 2'b00;
+	default:	w1 <= 2'b00;
+	endcase
 	case(state)
 	ST_IDLE:
-		if (nic_cyc) begin
-			w1 <= 1'b0;
+		if (nic_cyc && (w1==2'b00 || w1==2'b01)) begin
+			w1 <= 2'b01;
 			if (nic_adr[31:20]=={8'hFF,id[3:0]}) begin
 				ram_adr <= nic_adr;
 				ram_dati <= nic_dato;
-				ram_we <= {4{nic_we}} & nic_sel;
+				ram_we <= 4'b0;
 				ram_en <= TRUE;
-				state <= ST_RD1;
+				state <= nic_we ? ST_RD2 : ST_RD1;
 			end
 			else
 				nic_ack <= 1'b1;
 		end
-		else if (cpu_cyc) begin
-			w1 <= 1'b1;
+		else if (cpu_cyc && (w1==2'b00 || w1==2'b10)) begin
+			w1 <= 2'b10;
 			if (cpu_adr[31:18]==14'h0) begin
-				state <= cpu_we ? ST_RD3 : ST_RD1;
-				ram_we <= {4{cpu_we}} & cpu_sel;
+				state <= cpu_we ? ST_RD2 : ST_RD1;
+				ram_we <= 4'b0;
 				ram_en <= TRUE;
 				ram_adr <= cpu_adr;
 				ram_dati <= cpu_dato;
@@ -127,7 +135,7 @@ else begin
 	// Three cycle read latency.
 	ST_RD1:
 		begin
-			ram_en <= TRUE;
+/*			ram_en <= TRUE;
 			if (w1) begin
 				ram_adr <= cpu_adr;
 				ram_we <= {4{cpu_we}} & cpu_sel;
@@ -138,10 +146,25 @@ else begin
 				ram_we <= {4{nic_we}} & nic_sel;
 				ram_dati <= nic_dato;
 			end
+*/			
 			state <= ST_RD2;
 		end
 	ST_RD2:
 		begin
+			case(w1)
+			2'b01:
+				begin	
+					ram_we <= {4{nic_we}} & nic_sel;
+					ram_dati <= nic_dato;
+				end
+			2'b10:
+				begin
+					ram_we <= {4{cpu_we}} & cpu_sel;
+					ram_dati <= cpu_dato;
+				end
+			default:	ram_we <= 4'b0;
+			endcase
+/*			
 			ram_en <= TRUE;
 			if (w1) begin
 				ram_adr <= cpu_adr;
@@ -153,11 +176,14 @@ else begin
 				ram_we <= {4{nic_we}} & nic_sel;
 				ram_dati <= nic_dato;
 			end
+*/
 			state <= ST_RD3;
 		end
 	ST_RD3:
 		begin
 			state <= ST_ACK;
+			ram_we <= 4'b0;
+/*			
 			ram_en <= TRUE;
 			if (w1) begin
 				ram_adr <= cpu_adr;
@@ -169,6 +195,7 @@ else begin
 				ram_we <= {4{nic_we}} & nic_sel;
 				ram_dati <= nic_dato;
 			end
+*/
 			if (w1) begin
 				cpu_dati <= ram_dato;
 				cpu_ack <= 1'b1;
@@ -182,7 +209,6 @@ else begin
 	ST_ACK:
 		begin
 			ram_en <= FALSE;
-			ram_we <= 4'h0;
 			if ((nic_ack & nic_cyc & nic_stb) || (cpu_ack & cpu_cyc & cpu_stb))
 				;
 			else

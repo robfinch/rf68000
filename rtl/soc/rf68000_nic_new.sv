@@ -117,6 +117,7 @@ reg [11:0] mto;
 
 packet_t packet_rx, packet_tx;
 packet_t rpacket_rx, rpacket_tx;
+ipacket_t ipacket_tx;
 packet_t [7:0] gbl_packets;
 reg seen_gbl;
 reg s_ack1;
@@ -170,6 +171,7 @@ if (rst_i) begin
 	packet_o <= {$bits(packet_t){1'b0}};
 	rpacket_o <= {$bits(packet_t){1'b0}};
 	ipacket_o <= {$bits(ipacket_t){1'b0}};
+	ipacket_tx <= {$bits(ipacket_t){1'b0}};
 	packet_rx <= {$bits(packet_t){1'b0}};
 	packet_tx <= {$bits(packet_t){1'b0}};
 	rpacket_rx <= {$bits(packet_t){1'b0}};
@@ -293,6 +295,12 @@ else begin
 				end
 			endcase
 		end
+	end
+
+	// Transmit IPI packet
+	if (!(firq_i| |irq_i) && ipacket_i.did==6'd0 && ipacket_tx.did != 6'd0) begin
+		ipacket_o <= ipacket_tx;
+		ipacket_tx.did <= 6'd0;
 	end
 
 	// Transmit waiting transmit buffers.
@@ -495,19 +503,34 @@ input [31:0] dat;
 begin
 	if (cyc) begin
 		rw_done <= FALSE;
-		packet_tx.sid <= id;
-		packet_tx.age <= 6'd0;
-		packet_tx.ack <= 1'b0;
-		packet_tx.typ <= wr ? PT_WRITE : burst ? PT_AREAD : PT_READ;
-		packet_tx.pad2 <= 2'b0;
-		packet_tx.we <= wr;
-		packet_tx.sel <= s_sel_i;
-		packet_tx.asid <= s_asid_i;
-		packet_tx.mmus <= s_mmus_i;
-		packet_tx.ios <= s_ios_i;
-		packet_tx.iops <= s_iops_i;
-		packet_tx.adr <= adr;
-		packet_tx.dat <= dat;
+		casez(adr)
+		// IPI?
+		32'h001FFFFC:
+			begin
+				ipacket_tx.sid <= id;
+				ipacket_tx.age <= 6'd0;
+				ipacket_tx.did <= dat[21:16];
+				ipacket_tx.firq <= dat[15];
+				ipacket_tx.irq <= dat[14:12];
+				ipacket_tx.cause <= dat[7:0];
+			end
+		default:
+			begin
+				packet_tx.sid <= id;
+				packet_tx.age <= 6'd0;
+				packet_tx.ack <= 1'b0;
+				packet_tx.typ <= wr ? PT_WRITE : burst ? PT_AREAD : PT_READ;
+				packet_tx.pad2 <= 2'b0;
+				packet_tx.we <= wr;
+				packet_tx.sel <= s_sel_i;
+				packet_tx.asid <= s_asid_i;
+				packet_tx.mmus <= s_mmus_i;
+				packet_tx.ios <= s_ios_i;
+				packet_tx.iops <= s_iops_i;
+				packet_tx.adr <= adr;
+				packet_tx.dat <= dat;
+			end
+		endcase
 		casez(adr[31:24])
 		// Read global ROM? / INTA
 		8'hFF:	
@@ -537,7 +560,8 @@ begin
 		// C0xyyyyy
 		8'hC0:
 			begin
-				packet_tx.did <= {2'd0,adr[23:20]};
+				if (adr!=32'hC0FFFFFC)
+					packet_tx.did <= {2'd0,adr[23:20]};
 				s_ack1 <= (wr & ~SYNC_WRITE)|burst;
 			end
 		8'h8?,8'h9?,8'hA?,8'hB?:
@@ -552,7 +576,9 @@ begin
 				s_ack1 <= (wr & ~SYNC_WRITE)|burst;
 			end
 		8'h00:
-			if (adr[23:20]>=4'h1) begin
+			if (adr==32'h001FFFFC)
+				s_ack1 <= (wr & ~SYNC_WRITE)|burst;
+			else if (adr[23:20]>=4'h1) begin
 				packet_tx.did <= 6'd62;
 				s_ack1 <= (wr & ~SYNC_WRITE)|burst;
 			end

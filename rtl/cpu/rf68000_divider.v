@@ -44,6 +44,7 @@ parameter WID=32;
 parameter DIV=3'd3;
 parameter IDLE=3'd4;
 parameter DONE=3'd5;
+parameter DONE1=3'd6;
 input clk;
 input rst;
 input ld;
@@ -136,10 +137,12 @@ DIV:
 		$display("cnt:%d r1=%h q[31:0]=%h", cnt,r1,q);
 		q <= {q[WID-2:0],b0};
 		r <= {r1,q[WID-1]};
+		/*
 		if (q[31:16] >= bb[15:0] && cnt==WID+1) begin
 			ovf <= 1'b1;
 			state <= DONE;
 		end
+		*/
 	end
 	else begin
 		$display("cnt:%d r1=%h q[63:0]=%h", cnt,r1,q);
@@ -158,20 +161,24 @@ DIV:
 			qo <= q;
 			ro <= r[WID:1];
 		end
-		state <= DONE;
+		state <= DONE1;
 	end
-DONE:
+DONE1:
 	begin
-		/*
+		
 		if (so) begin
 			if (qo[WID-1:WID/2] != {WID/2{qo[WID/2-1]}})
 				ovf <= 1'b1;
 		end
 		else begin
-			if (qo[WID-1:WID/2] != 'd0)
+			if (qo[WID-1:WID/2] != {WID/2{1'd0}})
 				ovf <= 1'b1;
 		end
-		*/
+		state <= DONE;
+		
+	end
+DONE:
+	begin
 		if (!ld)
 			state <= IDLE;
 	end
@@ -207,9 +214,9 @@ rf68000_divider #(WID) u1
 	.clk(clk),
 	.ld(ld),
 	.abort(1'b0),
-	.sgn(1'b0),
+	.sgn(1'b1),
 	.sgnus(1'b0),
-	.a(32'h10000000),
+	.a(32'ha5a5a5a5),
 	.b(32'h5a5a),
 	.qo(qo),
 	.ro(ro),
