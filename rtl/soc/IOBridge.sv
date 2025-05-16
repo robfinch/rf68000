@@ -46,11 +46,12 @@
 // ============================================================================
 //
 
-module IOBridge(rst_i, clk_i, s1_core_i, s1_core_o,
+module IOBridge(rst_i, clk_i,
 	s1_cyc_i, s1_stb_i, s1_ack_o, s1_we_i, s1_sel_i, s1_adr_i, s1_dat_i, s1_dat_o,
 	s2_cyc_i, s2_stb_i, s2_ack_o, s2_we_i, s2_sel_i, s2_adr_i, s2_dat_i, s2_dat_o,
-	m_core_o, m_core_i,
-	m_cyc_o, m_stb_o, m_ack_i, m_we_o, m_sel_o, m_adr_o, m_dat_i, m_dat_o);
+	m_cyc_o, m_stb_o, m_ack_i, m_we_o, m_sel_o, m_adr_o, m_dat_i, m_dat_o,
+	m_fta_o);
+parameter WID=32;
 parameter IDLE = 3'd0;
 parameter WAIT_ACK = 3'd1;
 parameter WAIT_NACK = 3'd2;
@@ -59,7 +60,6 @@ parameter WR_ACK2 = 3'd4;
 
 input rst_i;
 input clk_i;
-input [5:0] s1_core_i;
 input s1_cyc_i;
 input s1_stb_i;
 output reg s1_ack_o;
@@ -68,7 +68,6 @@ input [3:0] s1_sel_i;
 input [31:0] s1_adr_i;
 input [31:0] s1_dat_i;
 output reg [31:0] s1_dat_o;
-output reg [5:0] s1_core_o;
 
 input s2_cyc_i;
 input s2_stb_i;
@@ -79,7 +78,6 @@ input [31:0] s2_adr_i;
 input [31:0] s2_dat_i;
 output reg [31:0] s2_dat_o;
 
-output reg [5:0] m_core_o;
 output reg m_cyc_o;
 output reg m_stb_o;
 input m_ack_i;
@@ -88,111 +86,115 @@ output reg [3:0] m_sel_o;
 output reg [31:0] m_adr_o;
 input [31:0] m_dat_i;
 output reg [31:0] m_dat_o;
-input [5:0] m_core_i;
 
-reg which;
+fta_bus_interface.master m_fta_o;
+assign m_fta_o.clk = clk_i;
+assign m_fta_o.rst = rst_i;
+
+reg [1:0] which;
 reg [2:0] state;
 reg s_ack;
-always @(posedge clk_i)
+reg s1_cycd;
+always_ff @(posedge clk_i)
+	s1_cycd <= s1_cyc_i;
+always_comb// @(posedge clk_i)
 if (rst_i)
 	s1_ack_o <= 1'b0;
 else
-	s1_ack_o <= s_ack & s1_stb_i & ~which;
-always @(posedge clk_i)
+	s1_ack_o <= s_ack && s1_stb_i && (which==2'b00 || which==2'b10);
+always_comb// @(posedge clk_i)
 if (rst_i)
 	s2_ack_o <= 1'b0;
 else
-	s2_ack_o <= s_ack & s2_stb_i &  which;
+	s2_ack_o <= s_ack && s2_stb_i && which==2'b01;
 
 always @(posedge clk_i)
 if (rst_i) begin
-	m_core_o <= 6'd0;
 	m_cyc_o <= 1'b0;
 	m_stb_o <= 1'b0;
 	m_we_o <= 1'b0;
 	m_sel_o <= 4'h0;
 	m_adr_o <= {32{1'b0}};
-	m_dat_o <= 'd0;
+	m_dat_o <= 32'd0;
 	s_ack <= 1'b0;
-	s1_dat_o <= 'd0;
-	s2_dat_o <= 'd0;
+	s1_dat_o <= 32'd0;
+	s2_dat_o <= 32'd0;
+	m_fta_o.req <= 500'd0;
 	state <= IDLE;
 end
 else begin
+	m_fta_o.req.cyc <= LOW;
+	m_fta_o.req.we <= LOW;
+	m_fta_o.req.sel <= {WID/8{1'b0}};
+	m_fta_o.req.adr <= 32'd0;
 case(state)
 IDLE:
-	begin
-	  if (~m_ack_i) begin
-	    // Filter requests to the I/O address range
-	    if (s1_cyc_i && s1_adr_i[31:20]==12'hFD0) begin
-	    	which <= 1'b0;
-	    	m_core_o <= s1_core_i;
-	      m_cyc_o <= 1'b1;
-	      m_stb_o <= 1'b1;
-	      m_sel_o <= s1_sel_i;
+  if (~m_ack_i) begin
+    // Filter requests to the I/O address range
+    if (s1_cyc_i && s1_adr_i[31:20]==12'hFD0) begin
+    	which <= 2'b00;
+      m_cyc_o <= 1'b1;
+      m_stb_o <= 1'b1;
+	    m_we_o <= s1_we_i;
+      m_sel_o <= s1_sel_i;
+	    m_adr_o <= s1_adr_i;
+	    m_dat_o <= s1_dat_i;
 `ifdef ACK_WR
-	      if (s1_we_i) begin
-	      	s_ack <= 1'b1;
-			    m_we_o <= 1'b1;
-			    state <= WR_ACK;
-	    	end
-	    	else
+      if (s1_we_i) begin
+      	s_ack <= 1'b1;
+		    state <= WR_ACK;
+    	end
+    	else
 `endif    	
-	    	begin
-	      	s_ack <= 1'b0;
-			    m_we_o <= s1_we_i;
-	      	state <= WAIT_ACK;
-	    	end
-		    m_adr_o <= {12'hFD0,s1_adr_i[19:0]};
-	    end
-	    else if (s2_cyc_i && s2_adr_i[31:20]==12'hFD0) begin
-	    	which <= 1'b1;
-	      m_cyc_o <= 1'b1;
-	      m_stb_o <= 1'b1;
-	      m_sel_o <= s2_sel_i;
+    	begin
+//	      	s_ack <= 1'b0;
+      	state <= WAIT_ACK;
+    	end
+    end
+    else if (s2_cyc_i && s2_adr_i[31:20]==12'hFD0) begin
+    	which <= 2'b01;
+      m_cyc_o <= 1'b1;
+      m_stb_o <= 1'b1;
+	    m_we_o <= s2_we_i;
+      m_sel_o <= s2_sel_i;
+	    m_adr_o <= s2_adr_i;
+			m_dat_o <= s2_dat_i;
 `ifdef ACK_WR
-	      if (s2_we_i) begin
-	      	s_ack <= 1'b1;
-			    m_we_o <= 1'b1;
-			    state <= WR_ACK;
-	    	end
-	    	else 
+      if (s2_we_i) begin
+      	s_ack <= 1'b1;
+		    state <= WR_ACK;
+    	end
+    	else 
 `endif    	
-	    	begin
-	      	s_ack <= 1'b0;
-			    m_we_o <= s2_we_i;
-	      	state <= WAIT_ACK;
-	    	end
-		    m_adr_o <= {12'hFD0,s2_adr_i[19:0]};	// fix the upper 12 bits of the address to help trim cores
-	    end
-	    else begin
-	    	m_core_o <= 6'd0;
-	    	m_cyc_o <= 1'b0;
-	    	m_stb_o <= 1'b0;
-	    	m_we_o <= 1'b0;
-	    	m_sel_o <= 4'h0;
-	    	m_adr_o <= 32'hFFFFFFFF;
-	  	end
-	    if (s1_cyc_i && s1_adr_i[31:20]==12'hFD0) begin
-				m_dat_o <= s1_dat_i;
-	  	end
-	    else if (s2_cyc_i && s2_adr_i[31:20]==12'hFD0) begin
-				m_dat_o <= s2_dat_i;
-	    end
-	  	else
-	  		m_dat_o <= 'd0;
-		end
+    	begin
+//	      	s_ack <= 1'b0;
+      	state <= WAIT_ACK;
+    	end
+    end
+	end
+	else begin
+		tClearBus();
+		s_ack <= 1'b1;
+		s1_dat_o <= m_dat_i;
+		s2_dat_o <= m_dat_i;
+		state <= WAIT_NACK;
 	end
 WR_ACK:
 	begin
-		if (!s2_stb_i && !s1_stb_i)
+		if (!s2_stb_i && !s1_stb_i) begin
 			s_ack <= 1'b0;
-		if ( which & !s2_stb_i)
+			s1_dat_o <= 32'h0;
+			s2_dat_o <= 32'h0;
+		end
+		if ( which==2'b01 & !s2_stb_i) begin
 			s_ack <= 1'b0;
-		if (!which & !s1_stb_i)
+			s2_dat_o <= 32'h0;
+		end
+		if ((which==2'b00||which==2'b10) & !s1_stb_i) begin
+			s1_dat_o <= 32'h0;
 			s_ack <= 1'b0;
+		end
 		if (m_ack_i) begin
-			m_core_o <= 6'd0;
 			m_cyc_o <= 1'b0;
 			m_stb_o <= 1'b0;
 			m_we_o <= 1'b0;
@@ -209,11 +211,11 @@ WR_ACK2:
 			s_ack <= 1'b0;
 			state <= IDLE;
 		end
-		if ( which & !s2_stb_i) begin
+		if ( which==2'b01 & !s2_stb_i) begin
 			s_ack <= 1'b0;
 			state <= IDLE;
 		end
-		if (!which & !s1_stb_i) begin
+		if ((which==2'b00||which==2'b10) & !s1_stb_i) begin
 			s_ack <= 1'b0;
 			state <= IDLE;
 		end
@@ -222,67 +224,84 @@ WR_ACK2:
 // Wait for rising edge on m_ack_i or cycle abort
 WAIT_ACK:
 	if (m_ack_i) begin
-//		m_sel_o <= 4'h0;
-//		m_adr_o <= 32'h0;
-//		m_dat_o <= 32'd0;
+		tClearBus();
 		s_ack <= 1'b1;
-		if (!which) begin
-			s1_dat_o <= m_dat_i;
-			s1_core_o <= m_core_i;
-		end
-		if ( which) begin
-			s2_dat_o <= m_dat_i;
-		end
+		s1_dat_o <= m_dat_i;
+		s2_dat_o <= m_dat_i;
 		state <= WAIT_NACK;
 	end
+	// Cycle terminated prematurely?
 	else if (!s2_cyc_i && !s1_cyc_i) begin
-		m_core_o <= 6'd0;
-		m_cyc_o <= 1'b0;
-		m_stb_o <= 1'b0;
-		m_we_o <= 1'b0;
+		tClearBus();
+		s1_dat_o <= 32'h0;
+		s2_dat_o <= 32'h0;
+		s_ack <= 1'b0;
 		state <= IDLE;
 	end
-	else if (which ? !s2_cyc_i : !s1_cyc_i) begin
-		m_core_o <= 6'd0;
-		m_cyc_o <= 1'b0;
-		m_stb_o <= 1'b0;
-		m_we_o <= 1'b0;
+	else if (which==2'b01 ? !s2_cyc_i : !s1_cyc_i) begin
+		tClearBus();
+		s_ack <= 1'b0;
 //			m_sel_o <= 8'h00;
 //		m_adr_o <= 32'h0;
 //		m_dat_o <= 32'd0;
+		if (!s1_cyc_i)
+			s1_dat_o <= 32'h0;
+		if (!s2_cyc_i)
+			s2_dat_o <= 32'h0;
 		state <= IDLE;
 	end
 
 // Wait for falling edge on strobe or strobe low.
 WAIT_NACK:
-	if (!s2_stb_i && !s1_stb_i) begin
-		m_core_o <= 6'd0;
-		m_cyc_o <= 1'b0;
-		m_stb_o <= 1'b0;
-		m_we_o <= 1'b0;
+	if (!s2_cyc_i && !s1_cyc_i) begin
+		tClearBus();
 		s_ack <= 1'b0;
-		s1_dat_o <= 'h0;
-		s2_dat_o <= 'h0;
-		s1_core_o <= 6'd0;
+		s1_dat_o <= 32'h0;
+		s2_dat_o <= 32'h0;
 		state <= IDLE;
 	end
-	else if (which ? !s2_stb_i : !s1_stb_i) begin
-		m_core_o <= 6'd0;
-		m_cyc_o <= 1'b0;
-		m_stb_o <= 1'b0;
-		m_we_o <= 1'b0;
+	else if (which==2'b01 ? !s2_cyc_i : !s1_cyc_i) begin
+		tClearBus();
 		s_ack <= 1'b0;
-		if (!s1_stb_i) begin
-			s1_core_o <= 6'd0;
-			s1_dat_o <= 'h0;
-		end
+		if (!s1_stb_i)
+			s1_dat_o <= 32'h0;
 		if (!s2_stb_i)
-			s2_dat_o <= 'h0;
+			s2_dat_o <= 32'h0;
 		state <= IDLE;
 	end
 default:	state <= IDLE;
 endcase
+	if (s1_cyc_i && !s1_cycd && s1_adr_i[31:20]==12'hFD0) begin
+		m_fta_o.req.cyc <= HIGH;
+		m_fta_o.req.sel <= s1_sel_i;
+		m_fta_o.req.we <= s1_we_i;
+		m_fta_o.req.adr <= s1_adr_i;
+		m_fta_o.req.data1 <= s1_dat_i;
+	end
+	if (m_fta_o.resp.ack) begin
+		which <= 2'b10;
+		s_ack <= HIGH;
+		s1_dat_o <= m_fta_o.resp.dat;
+	end
+	if (which==2'b10) begin
+		if (!s1_cyc_i) begin
+			s_ack <= LOW;
+			s1_dat_o <= 32'd0;
+			state <= IDLE;
+		end
+	end
 end
+
+task tClearBus;
+begin
+	m_cyc_o <= 1'b0;
+	m_stb_o <= 1'b0;
+	m_we_o <= 1'b0;
+	m_sel_o <= 4'h0;
+	m_adr_o <= 32'd0;
+	m_dat_o <= 32'd0;
+end
+endtask
 
 endmodule
 
