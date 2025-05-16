@@ -41,10 +41,10 @@ import nic_pkg::*;
 
 module rf68000_nic(id, rst_i, clk_i, s_cti_i, s_atag_o,
 	s_cyc_i, s_stb_i, s_ack_o, s_aack_o, s_rty_o, s_err_o, s_vpa_o, 
-	s_we_i, s_sel_i, s_asid_i, s_adr_i, s_dat_i, s_dat_o,
+	s_we_i, s_sel_i, s_asid_i, s_fc_i, s_adr_i, s_dat_i, s_dat_o,
 	s_mmus_i, s_ios_i, s_iops_i,
 	m_cyc_o, m_stb_o, m_ack_i, m_err_i, m_vpa_i,
-	m_we_o, m_sel_o, m_asid_o, m_adr_o, m_dat_o, m_dat_i,
+	m_we_o, m_sel_o, m_asid_o, m_fc_o, m_adr_o, m_dat_o, m_dat_i,
 	m_mmus_o, m_ios_o, m_iops_o,
 	packet_i, packet_o, ipacket_i, ipacket_o,
 	rpacket_i, rpacket_o,
@@ -65,6 +65,7 @@ output reg s_aack_o;
 input s_we_i;
 input [3:0] s_sel_i;
 input [7:0] s_asid_i;
+input [2:0] s_fc_i;
 input [31:0] s_adr_i;
 input [31:0] s_dat_i;
 output reg [31:0] s_dat_o;
@@ -79,6 +80,7 @@ input m_vpa_i;
 output reg m_we_o;
 output reg [3:0] m_sel_o;
 output reg [7:0] m_asid_o;
+output reg [2:0] m_fc_o;
 output reg [31:0] m_adr_o;
 output reg [31:0] m_dat_o;
 input [31:0] m_dat_i;
@@ -502,6 +504,7 @@ input [31:0] adr;
 input [31:0] dat;
 begin
 	if (cyc) begin
+		s_ack1 <= 1'b0;
 		rw_done <= FALSE;
 		casez(adr)
 		// IPI?
@@ -527,6 +530,7 @@ begin
 				packet_tx.mmus <= s_mmus_i;
 				packet_tx.ios <= s_ios_i;
 				packet_tx.iops <= s_iops_i;
+				packet_tx.fc <= s_fc_i;
 				packet_tx.adr <= adr;
 				packet_tx.dat <= dat;
 			end
@@ -576,8 +580,10 @@ begin
 				s_ack1 <= (wr & ~SYNC_WRITE)|burst;
 			end
 		8'h00:
-			if (adr==32'h001FFFFC)
+			if (adr==32'h001FFFFC) begin
+				packet_tx.did <= 6'd62;
 				s_ack1 <= (wr & ~SYNC_WRITE)|burst;
+			end
 			else if (adr[23:20]>=4'h1) begin
 				packet_tx.did <= 6'd62;
 				s_ack1 <= (wr & ~SYNC_WRITE)|burst;
@@ -605,6 +611,7 @@ begin
 	m_we_o <= wr;
 	m_sel_o <= packet_rx.sel;
 	m_asid_o <= packet_rx.asid;
+	m_fc_o <= packet_rx.fc;
 	m_adr_o <= packet_rx.adr;
 	m_dat_o <= packet_rx.dat;
 	m_mmus_o <= packet_rx.mmus;
@@ -619,6 +626,7 @@ begin
 	m_stb_o <= FALSE;
 	m_we_o <= FALSE;
 	m_sel_o <= 4'h0;
+	m_fc_o <= 3'b000;
 	m_mmus_o <= FALSE;
 	m_ios_o <= FALSE;
 	m_iops_o <= FALSE;
