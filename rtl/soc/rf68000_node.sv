@@ -53,6 +53,7 @@ output packet_t rpacket_o;
 input ipacket_t ipacket_i;
 output ipacket_t ipacket_o;
 
+wire [2:0] fc1, fc2;
 wire cyc1, stb1, ack1;
 wire cyc2, stb2, ack2;
 wire we1, we2;
@@ -66,6 +67,9 @@ wire [31:0] ram1_adr, ram2_adr;
 wire [31:0] ram1_dati, ram2_dati;
 wire [31:0] ram1_dato, ram2_dato;
 wire [31:0] ram1_dat, ram2_dat;
+wire ram1_ack, ram1_aack;
+wire ram2_ack, ram2_aack;
+wire [2:0] nic1_fc, nic2_fc;
 wire nic1_cyc, nic1_stb, nic1_ack, nic1_we;
 wire nic2_cyc, nic2_stb, nic2_ack, nic2_we;
 wire [31:0] nic1_dato, nic2_dato, nic1_dati, nic2_dati;
@@ -153,6 +157,7 @@ rf68000_nic unic1
 	.s_mmus_i(mmus1),
 	.s_ios_i(ios1),
 	.s_iops_i(iops1),
+	.s_fc_i(fc1),
 	.s_adr_i(adr1),
 	.s_dat_i(dato1),
 	.s_dat_o(nic1_sdato),
@@ -167,6 +172,7 @@ rf68000_nic unic1
 	.m_mmus_o(),
 	.m_ios_o(),
 	.m_iops_o(),
+	.m_fc_o(nic1_fc),
 	.m_adr_o(nic1_adr),
 	.m_dat_o(nic1_dato),
 	.m_dat_i(nic1_dati),
@@ -205,6 +211,7 @@ rf68000_nic unic2
 	.s_mmus_i(mmus2),
 	.s_ios_i(ios2),
 	.s_iops_i(iops2),
+	.s_fc_i(fc2),
 	.s_adr_i(adr2),
 	.s_dat_i(dato2),
 	.s_dat_o(nic2_sdato),
@@ -219,6 +226,7 @@ rf68000_nic unic2
 	.m_mmus_o(),
 	.m_ios_o(),
 	.m_iops_o(),
+	.m_fc_o(nic2_fc),
 	.m_adr_o(nic2_adr),
 	.m_dat_o(nic2_dato),
 	.m_dat_i(nic2_dati),
@@ -242,7 +250,7 @@ rf68000_node_arbiter undarb1
 	.id({id[2:0],1'b0}),
 	.rst_i(rst),
 	.clk_i(clk),
-	.cpu_cyc(cyc1),
+	.cpu_cyc(cyc1 && adr1[31:18]==14'h000),
 	.cpu_stb(stb1 && adr1[31:18]==14'h000),
 	.cpu_ack(ram1_ack),
 	.cpu_aack(ram1_aack),
@@ -271,7 +279,7 @@ rf68000_node_arbiter undarb2
 	.id({id[2:0],1'b1}),
 	.rst_i(rst),
 	.clk_i(clk),
-	.cpu_cyc(cyc2),
+	.cpu_cyc(cyc2 && adr2[31:18]==14'h000),
 	.cpu_stb(stb2 && adr2[31:18]==14'h000),
 	.cpu_ack(ram2_ack),
 	.cpu_aack(ram2_aack),
@@ -505,7 +513,7 @@ ack_gen uag1
 	.rst_i(rst1),
 	.clk_i(clk),
 	.ce_i(1'b1),
-	.i(cs_spram1),
+	.i(cs_spram1 & ~we1),
 	.rid_i({id,1'b0}),
 	.we_i(cs_spram1 & we1),
 	.wid_i({id,1'b0}),
@@ -519,7 +527,7 @@ ack_gen uag2
 	.rst_i(rst2),
 	.clk_i(clk),
 	.ce_i(1'b1),
-	.i(cs_spram2),
+	.i(cs_spram2 & ~we2),
 	.rid_i({id,1'b1}),
 	.we_i(cs_spram2 & we2),
 	.wid_i({id,1'b1}),
