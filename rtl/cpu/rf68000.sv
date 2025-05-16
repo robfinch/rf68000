@@ -740,7 +740,6 @@ endgenerate
 //wire [31:0] rfob = {mmm[0],rrr}==4'b1111 ? sp : regfile[{mmm[0],rrr}];
 //wire [31:0] rfoDnn = regfile[{1'b0,rrr}];
 //wire [31:0] rfoRnn = rrrr==4'b1111 ? sp : regfile[rrrr];
-wire clk_g;
 reg rfwrL,rfwrB,rfwrW;
 reg rfwrF;
 reg takb, ftakb;
@@ -798,7 +797,7 @@ wire [16:0] lfsr_o;
 lfsr17 ulfsr1
 (
 	.rst(rst_i),
-	.clk(clk_g),
+	.clk(clk_i),
 	.ce(1'b1),
 	.cyc(1'b0),
 	.o(lfsr_o)
@@ -858,13 +857,13 @@ wire [7:0] dbin, sbin;
 reg [9:0] bcdres;
 wire dd_done;
 wire [11:0] bcdreso;
-BCDToBin ub2b1 (clk_g, d, dbin);
-BCDToBin ub2b2 (clk_g, s, sbin);
+BCDToBin ub2b1 (clk_i, d, dbin);
+BCDToBin ub2b2 (clk_i, s, sbin);
 
 DDBinToBCD #(.WID(10)) udd1
 (
 	.rst(rst_i),
-	.clk(clk_g),
+	.clk(clk_i),
 	.ld(state==BCD3),
 	.bin(bcdres),
 	.bcd(bcdreso),
@@ -877,7 +876,7 @@ wire dd32done;
 DDBinToBCD #(.WID(32)) udd2
 (
 	.rst(rst_i),
-	.clk(clk_g),
+	.clk(clk_i),
 	.ld(state==BIN2BCD1),
 	.bin(dd32in),
 	.bcd(dd32out),
@@ -944,7 +943,7 @@ wire [31:0] divr;
 rf68000_divider udiv1
 (
 	.rst(rst_i),
-	.clk(clk_g),
+	.clk(clk_i),
 	.ld(state==DIV1),
 	.abort(1'b0),
 	.sgn(divs),
@@ -996,7 +995,7 @@ DFPUnpack uunpack1
 
 DFPAddsub96nr ufaddsub1
 (
-	.clk(clk_g),
+	.clk(clk_i),
 	.ce(1'b1),
 	.rm(3'b0),
 	.op(fsub),
@@ -1007,7 +1006,7 @@ DFPAddsub96nr ufaddsub1
 
 DFPMultiply96nr udfmul1
 (
-	.clk(clk_g),
+	.clk(clk_i),
 	.ce(1'b1),
 	.ld(state==FMUL1),
 	.a(fpd),
@@ -1024,7 +1023,7 @@ DFPMultiply96nr udfmul1
 DFPDivide96nr udfdiv1
 (
 	.rst(rst_i),
-	.clk(clk_g),
+	.clk(clk_i),
 	.ce(1'b1),
 	.ld(state==FDIV1),
 	.op(1'b0),
@@ -1049,7 +1048,7 @@ DFPCompare96 udfcmp1
 i2df96 ui2df1
 (
 	.rst(rst_i),
-	.clk(clk_g),
+	.clk(clk_i),
 	.ce(1'b1),
 	.ld(state==I2DF1),
 	.op(1'b0),	// 0=unsigned, 1= signed
@@ -1061,7 +1060,7 @@ i2df96 ui2df1
 
 df96Toi udf2i1 (
 	.rst(rst_i),
-	.clk(clk_g),
+	.clk(clk_i),
 	.ce(1'b1),
 	.ld(state==DF2I1),
 	.op(1'b0),
@@ -1073,7 +1072,7 @@ df96Toi udf2i1 (
 
 DFPScaleb96 udfscale1
 (
-	.clk(clk_g),
+	.clk(clk_i),
 	.ce(1'b1),
 	.a(fpd),
 	.b(s),
@@ -1082,7 +1081,7 @@ DFPScaleb96 udfscale1
 
 DFPTrunc96 udftrunc1
 (
-	.clk(clk_g),
+	.clk(clk_i),
 	.ce(1'b1),
 	.i(fps),
 	.o(dftrunco),
@@ -1179,8 +1178,6 @@ wire [15:0] iri = pc[1] ? {dat_i[23:16],dat_i[31:24]} : {dat_i[7:0],dat_i[15:8]}
 wire [15:0] iri = pc[1] ? dat_i[31:16] : dat_i[15:0];
 `endif
 
-assign clk_g = clk_i;
-
 `ifdef SUPPORT_NANO_CACHE
 integer n1;
 reg fetchbuf_found;
@@ -1197,7 +1194,7 @@ begin
 end
 `endif
 
-always_ff @(posedge clk_g)
+always_ff @(posedge clk_i)
 if (rst_i) begin
 	em <= 1'b0;
 	lock_o <= 1'b0;

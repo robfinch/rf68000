@@ -1,7 +1,7 @@
 `timescale 1ns / 1ps
 // ============================================================================
 //        __
-//   \\__/ o\    (C) 2013-2022  Robert Finch, Waterloo
+//   \\__/ o\    (C) 2013-2025  Robert Finch, Waterloo
 //    \  __ /    All rights reserved.
 //     \/_//     robfinch<remove>@finitron.ca
 //       ||
@@ -126,7 +126,7 @@ reg [31:0] intar;
 integer n,n1,n2;
 
 wire cs = cyc_i && stb_i && cs_i;
-wire cs_inta = cyc_i && stb_i && adr_i[31:4]=={28{1'b1}} && fc_i==3'b111;
+wire cs_inta = cyc_i && stb_i && adr_i[31:24]=={8{1'b1}} && fc_i==3'b111;
 assign vol_o = cs;
 
 assign clk = clk_i;
