@@ -196,13 +196,13 @@ else begin
 				ram_dati <= nic_dato;
 			end
 */
+			cpu_dati <= ram_dato;
+			nic_dati <= ram_dato;
 			if (w1) begin
-				cpu_dati <= ram_dato;
 				cpu_ack <= 1'b1;
 				cpu_aack <= 1'b1;
 			end
 			else begin
-				nic_dati <= ram_dato;
 				nic_ack <= 1'b1;
 			end
 		end
