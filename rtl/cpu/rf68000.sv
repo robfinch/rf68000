@@ -1258,7 +1258,7 @@ if (rst_i) begin
 	mmus <= 32'hFDC00000;
 	canary <= 'd0;
 `ifdef SUPPORT_NANO_CACHE
-	for (n = 0; n < 16; n = n + 1) begin
+	for (n = 0; n < 8; n = n + 1) begin
 		fetchbuf[n] <= 16'h4E71;	// NOP
 		fetchbuf_tag[n] <= 32'hFFFFFFFF;
 	end
@@ -1558,6 +1558,7 @@ IFETCH:
 						 zf <= resL[31:0]==32'd0;
 						 nf <= resL[31];
 					end
+				default:	;
 				endcase
 			end
 		FU_SUBQ:
@@ -1590,6 +1591,7 @@ IFETCH:
 						 zf <= resL[31:0]==32'd0;
 						 nf <= resL[31];
 					end
+				default:	;
 				endcase
 			end
 		FU_ADDI:
@@ -1603,11 +1605,13 @@ IFETCH:
 							2'b00:	zf <= resB[7:0]==8'h00;
 							2'b01:	zf <= resW[15:0]==16'h00;
 							2'b10:	zf <= resL[31:0]==32'd0;
+							default:	;
 							endcase
 							case(sz)
 							2'b00:	nf <= resB[7];
 							2'b01:	nf <= resW[15];
 							2'b10:	nf <= resL[31];
+							default:	;
 							endcase
 						end
 				4'h4:	// SUBI
@@ -1640,6 +1644,7 @@ IFETCH:
 								zf <= resL[31:0]==32'd0;
 								nf <= resL[31];
 							end
+						default:	;
 						endcase
 					end
 				4'h6:	// ADDI
@@ -1672,6 +1677,7 @@ IFETCH:
 								zf <= resL[31:0]==32'd0;
 								nf <= resL[31];
 							end
+						default:	;
 						endcase
 					end
 				4'hC:	// CMPI
@@ -1700,6 +1706,7 @@ IFETCH:
 								zf <= resL[31:0]==32'd0;
 								nf <= resL[31];
 							end
+						default:	;
 						endcase
 					end
 				endcase
@@ -2129,7 +2136,6 @@ DECODE:
 				end
 				else
 					tPrivilegeViolation();
-			default:	;
 			endcase
 /*			
 		9'b0111?????:
@@ -2195,6 +2201,7 @@ DECODE:
 		9'b101011111:
 			case(ir[3:0])
 			4'hC:	tIllegal();	// 4AFC	Illegal
+			default:	;
 			endcase	
 		9'b1010?????:	// TST / TAS
 			case(sz)
@@ -4639,7 +4646,6 @@ FETCH_BYTE:
 	    2'b01:  d <= {{24{dat_i[15]}},dat_i[15:8]};
 	    2'b10:  d <= {{24{dat_i[23]}},dat_i[23:16]};
 	    2'b11:  d <= {{24{dat_i[31]}},dat_i[31:24]};
-	    default:  ;
 	    endcase
 		end
 		else begin
@@ -4648,7 +4654,6 @@ FETCH_BYTE:
       2'b01:  s <= {{24{dat_i[15]}},dat_i[15:8]};
       2'b10:  s <= {{24{dat_i[23]}},dat_i[23:16]};
       2'b11:  s <= {{24{dat_i[31]}},dat_i[31:24]};
-      default:    ;
       endcase
 		end
 		ret();
@@ -4684,7 +4689,6 @@ LFETCH_BYTE:
       2'b01:  d <= {{24{dat_i[15]}},dat_i[15:8]};
       2'b10:  d <= {{24{dat_i[23]}},dat_i[23:16]};
       2'b11:  d <= {{24{dat_i[31]}},dat_i[31:24]};
-      default:    ;
       endcase
     end
     else begin
@@ -4693,7 +4697,6 @@ LFETCH_BYTE:
       2'b01:  s <= {{24{dat_i[15]}},dat_i[15:8]};
       2'b10:  s <= {{24{dat_i[23]}},dat_i[23:16]};
       2'b11:  s <= {{24{dat_i[31]}},dat_i[31:24]};
-      default:    ;
       endcase
     end
 		ret();
