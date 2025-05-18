@@ -50,7 +50,7 @@
 ;					 |    unused      |
 ; 00040000 +----------------+
 ;					 |   local ram    |
-; 00042000 +----------------+
+; 00048000 +----------------+
 ;					 |    unused      |
 ; 00100000 +----------------+
 ;					 |   global ram   |
@@ -183,6 +183,7 @@ RAND_MZ		EQU $FD0FFD08
 RAND_MW		EQU	$FD0FFD0C
 RST_REG		EQU	$FD0FFC00
 IO_BITMAP	EQU $FD100000
+FRAMEBUF	EQU	$FD200000
 	endif
 
 SERIAL_SEMA	EQU	2
@@ -394,6 +395,7 @@ start:
 		move.l #$FD000000,d0			; set virtual address for io block
 		movec d0,ios
 	endif
+;	move.l $4000000C,d0
 	movec coreno,d0							; set initial value of thread register
 	swap d0											; coreno in high eight bits
 	lsl.l #8,d0
@@ -434,6 +436,7 @@ start:
 	movec.l	coreno,d0					; get core number
 	cmpi.b #2,d0
 	bne	start_other
+	bsr init_framebuf
 	move.b d0,IOFocus					; Set the IO focus in global memory
 	if HAS_MMU
 		bsr InitMMU							; Can't access anything till this is done'
@@ -636,6 +639,16 @@ console_getbuf:
 console_set_inpos:
 console_set_outpos:
 	moveq #E_NotSupported,d0
+	rts
+
+;------------------------------------------------------------------------------
+;------------------------------------------------------------------------------
+
+init_framebuf:
+	rts
+	move.b #1,FRAMEBUF+0		; turn on frame buffer
+	move.b #1,FRAMEBUF+1		; color depth 16 BPP
+	move.b #$11,FRAMEBUF+2	; hres 1:1 vres 1:1
 	rts
 
 ;------------------------------------------------------------------------------
@@ -969,6 +982,35 @@ Delay3s2:
 	include "cputest.x68"
 	include "TinyBasicFlt.x68"
 
+; -----------------------------------------------------------------------------
+; -----------------------------------------------------------------------------
+
+set_text_mode:
+	moveq #64,d0
+	move.b d0,TEXTREG					; number of columns
+	moveq #32,d0
+	move.b d0,TEXTREG+1				; number of rows
+	moveq #0,d0
+	move.b d0,TEXTREG+3				; text mode
+	moveq #17,d0
+	move.b d0,TEXTREG+8				; max row scan
+	moveq #11,d0
+	move.b d0,TEXTREG+10			; max pix
+	rts
+	
+set_graphics_mode:
+	moveq #100,d0
+	move.b d0,TEXTREG					; number of columns
+	moveq #75,d0
+	move.b d0,TEXTREG+1				; number of rows
+	moveq #1,d0
+	move.b d0,TEXTREG+3				; graphics mode
+	moveq #7,d0
+	move.b d0,TEXTREG+8				; max row scan
+	moveq #7,d0
+	move.b d0,TEXTREG+10			; max pix
+	rts
+	
 ; -----------------------------------------------------------------------------
 ; Gets the screen color in d0 and d1.
 ; -----------------------------------------------------------------------------
@@ -2050,10 +2092,17 @@ GetKey:
 	moveq	#-1,d1							; return no key available
 	rts
 
+;------------------------------------------------------------------------------
+; Check for the cntrl-C keyboard sequence. Abort running routine and drop
+; back into the monitor.
+;------------------------------------------------------------------------------
+
 CheckForCtrlC:
+	move.l d1,-(a7)
 	bsr	KeybdGetCharNoWait
 	cmpi.b #CTRLC,d1
 	beq	Monitor
+	move.l (a7)+,d1
 	rts
 
 ;------------------------------------------------------------------------------
@@ -2299,6 +2348,7 @@ Wait300ms:
 KeybdIRQ:
 	move.w #$2600,sr					; disable lower interrupts
 	movem.l	d0/d1/a0,-(a7)
+	eori.l #-1,$FD000000
 	moveq	#0,d1								; check if keyboard IRQ
 	move.b KEYBD+1,d1					; get status reg
 	tst.b	d1
@@ -2308,7 +2358,7 @@ KeybdIRQ:
 	moveq	#KEYBD_SEMA,d1
 	bsr LockSemaphore
 	move.b KEYBD,d1						; get scan code
-	move.b #0,KEYBD+1					; clear status register (clears IRQ AND scancode)
+	clr.b KEYBD+1							; clear status register (clears IRQ AND scancode)
 	btst #1,_KeyState2				; Is Alt down?
 	beq.s	.0003
 	cmpi.b #SC_TAB,d1					; is Alt-Tab?
@@ -2316,7 +2366,7 @@ KeybdIRQ:
 	movec tick,d0
 	sub.l _Keybd_tick,d0
 	cmp.l #10,d0							; has it been 10 or more ticks?
-	blo.s .0002
+;	blo.s .0002
 	movec tick,d0							; update tick of last ALT-Tab
 	move.l d0,_Keybd_tick
 	bsr	rotate_iofocus
@@ -2487,6 +2537,7 @@ cmdString:
 	dc.b	"RESE",'T'+$80		; RESET <n>
 	dc.b	"CLOC",'K'+$80		; CLOCK <n>
 	dc.b	'R'+$80						; R receive serial
+	dc.b	'V'+$80
 
 	align	2
 cmdTable:
@@ -2514,6 +2565,7 @@ cmdTable:
 	dc.l	cmdReset
 	dc.l	cmdClock
 	dc.l	cmdReceiveSerial	
+	dc.l	cmdVideoMode
 	dc.l	cmdMonitor
 
 ; Get a word from screen memory and swap byte order
@@ -2590,7 +2642,7 @@ cmdDispatch:
 	addi.w #4,d4					; increment command counter
 	move.l a3,a0					; reset input pointer
 	tst.b	-1(a2)					; were we at the end of the command?
-	bmi.s	.checkNextCmd		; if were at end continue, otherwise scan for enf of cmd
+	bmi.s	.checkNextCmd		; if were at end continue, otherwise scan for end of cmd
 .scanToEndOfCmd
 	tst.b	(a2)+						; scan to end of command
 	beq.s	.endOfTable
@@ -2604,6 +2656,26 @@ cmdDispatch:
 	lea	cmdTable,a1				; a1 = pointer to command address table
 	move.l (a1,d4.w),a1		; fetch command routine address from table
 	jmp	(a1)							; go execute command
+
+cmdVideoMode:
+	bsr ignBlanks
+	bsr GetHexNumber
+	cmpi.b #0,d1
+	bne.s .0001
+	bsr set_text_mode
+	bsr clear_screen
+	bra Monitor
+.0001:
+	bsr set_graphics_mode
+	bsr get_screen_address
+	move.l #0,RAND+4		; select stream 0
+	move.w #7499,d2
+.0002:
+	move.l RAND,d1
+	move.l #0,RAND			; cause new number generation
+	move.l d1,(a0)+			; random display
+	dbra d2,.0002
+	bra Monitor
 
 cmdBreakpoint:
 	bsr	ignBlanks
@@ -2927,6 +2999,7 @@ cmdReceiveSerial:
 ; Fill memory
 ;
 ; FB = fill bytes		FB 00000010 100 FF	; fill starting at 10 for 256 bytes
+; FB = fill bytes		FB 00000010 100 R		; fill with random bytes
 ; FW = fill words
 ; FL = fill longs
 ; F = fill bytes
@@ -2941,12 +3014,29 @@ cmdFillB:
 	move.l	d1,d3					; d3 = count
 	beq			Monitor
 	bsr			ignBlanks
-	bsr			GetHexNumber	; fill value
+	bsr PeekScreenChar
+	cmpi.b #'R',d1
+	bne.s .0002
+	bsr FromScreen
+	move.b #'R',d5
+	bra.s .fmem
+.0002:
+	bsr	GetHexNumber		; fill value
+	move.b d1,d4
 .fmem:
-	move.b	d1,(a1)+
-	sub.l		#1,d3
-	bne.s		.fmem
-	bra			Monitor
+	move.w a1,d2
+	tst.w d2
+	bne.s .0001
+	bsr	CheckForCtrlC
+.0001:	
+	cmpi.b #'R',d5
+	bne.s .0003
+	bsr RandGetNum
+.0003:
+	move.b d4,(a1)+
+	sub.l	#1,d3
+	bne.s	.fmem
+	bra	Monitor
 	
 cmdFillW:
 	bsr			ignBlanks
@@ -2957,12 +3047,29 @@ cmdFillW:
 	move.l	d1,d3					; d3 = count
 	beq			Monitor
 	bsr			ignBlanks
-	bsr			GetHexNumber	; fill value
+	bsr PeekScreenChar
+	cmpi.b #'R',d1
+	bne.s .0002
+	bsr FromScreen
+	move.b #'R',d5
+	bra.s .fmem
+.0002:
+	bsr	GetHexNumber			; fill value
+	move.w d1,d4
 .fmem:
-	move.w	d1,(a1)+
-	sub.l		#1,d3
-	bne.s		.fmem
-	bra			Monitor
+	move.w a1,d2
+	tst.w d2
+	bne.s .0001
+	bsr	CheckForCtrlC
+.0001:	
+	cmpi.b #'R',d5
+	bne.s .0003
+	bsr RandGetNum
+.0003:
+	move.w d4,(a1)+
+	sub.l	#1,d3
+	bne.s	.fmem
+	bra	Monitor
 	
 cmdFillL:
 	bsr			ignBlanks
@@ -2973,12 +3080,29 @@ cmdFillL:
 	move.l	d1,d3					; d3 = count
 	beq			Monitor
 	bsr			ignBlanks
+	bsr PeekScreenChar
+	cmpi.b #'R',d1
+	bne.s .0002
+	bsr FromScreen
+	move.b #'R',d5
+	bra.s .fmem
+.0002:
 	bsr			GetHexNumber	; fill value
+	move.l d1,d4
 .fmem:
-	move.l	d1,(a1)+
-	sub.l		#1,d3
-	bne.s		.fmem
-	bra			Monitor
+	move.w a1,d2
+	tst.w d2
+	bne.s .0001
+	bsr	CheckForCtrlC
+.0001:	
+	cmpi.b #'R',d5
+	bne.s .0003
+	bsr RandGetNum
+.0003:
+	move.l d4,(a1)+
+	sub.l	#1,d3
+	bne.s	.fmem
+	bra	Monitor
 	
 ;------------------------------------------------------------------------------
 ; Modifies:
@@ -2998,6 +3122,14 @@ ignBlanks:
 	endif
 	move.l (a7)+,d1
 	rts
+
+
+;------------------------------------------------------------------------------
+;------------------------------------------------------------------------------
+
+PeekScreenChar:
+	move.l (a0),d1
+	bra rbo
 
 ;------------------------------------------------------------------------------
 ; Get the size character
@@ -3254,11 +3386,11 @@ dspmem1:
 ;------------------------------------------------------------------------------
 
 cmdDumpRegs:
-	bsr			CRLF
-	move.w	#15,d0					; number of registers-1
-	lea			msg_reglist,a0	;
-	lea			msg_regs,a1
-	lea			Regsave,a2			; a2 points to register save area
+	bsr	CRLF
+	move.w #15,d3						; number of registers-1
+	lea	msg_reglist,a0			;
+	lea	msg_regs,a1
+	lea	Regsave,a2					; a2 points to register save area
 .0001:
 	bsr			DisplayString
 	move.b	(a0)+,d1
@@ -3269,7 +3401,7 @@ cmdDumpRegs:
 	move.l	(a2)+,d1
 	bsr			DisplayTetra
 	bsr			CRLF
-	dbra		d0,.0001
+	dbra		d3,.0001
 	bsr			DisplayString
 	move.b	(a0)+,d1
 	bsr			OutputChar
@@ -4128,6 +4260,8 @@ rtc_write:
 msgRtcReadFail:
 	dc.b	"RTC read/write failed.",$0A,$0D,$00
 
+msgBusErr:
+	dc.b	$0A,$0D,"Bus error at: ",$00
 	even
 
 ;------------------------------------------------------------------------------
@@ -4135,9 +4269,13 @@ msgRtcReadFail:
 	even
 
 bus_err:
-.0001:
 	nop
-	bra			.0001
+	lea.l msgBusErr,a1
+	bsr DisplayString
+	move.l 2(a7),d1
+	bsr DisplayTetra
+	bsr CRLF
+	bra	Monitor
 
 trap3:
 	; First save all registers
@@ -4543,7 +4681,11 @@ TickIRQ:
 	move.b #1,IRQFlag					; tick interrupt indicator in local memory
 	movec	coreno,d1						; d1 = core number
 	move.l d1,d3
-	asl.l #3,d3								; 8 bytes per text cell
+	if (SCREEN_FORMAT==1)
+		asl.l #2,d3								; 4 bytes per text cell
+	else
+		asl.l #3,d3								; 8 bytes per text cell
+	endif
 	move.l #$1D000000,PLIC+$14	; reset edge sense circuit
 	lea $FD0000C8,a0					; display field address
 	move.l 4(a0,d3.w),d2			; get char from screen

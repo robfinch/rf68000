@@ -45,6 +45,7 @@
 // devices which are low-speed it doesn't matter much.              
 // ============================================================================
 //
+import const_pkg::*;
 
 module IOBridge(rst_i, clk_i,
 	s1_cyc_i, s1_stb_i, s1_ack_o, s1_we_i, s1_sel_i, s1_adr_i, s1_dat_i, s1_dat_o,
@@ -96,7 +97,7 @@ reg [2:0] state;
 reg s_ack;
 reg s1_cycd;
 always_ff @(posedge clk_i)
-	s1_cycd <= s1_cyc_i;
+	s1_cycd <= s1_cyc_i && s1_adr_i[31:20]==12'hFD2;
 always_comb// @(posedge clk_i)
 if (rst_i)
 	s1_ack_o <= 1'b0;
@@ -131,7 +132,7 @@ case(state)
 IDLE:
   if (~m_ack_i) begin
     // Filter requests to the I/O address range
-    if (s1_cyc_i && s1_adr_i[31:20]==12'hFD0) begin
+    if (s1_cyc_i && s1_adr_i[31:24]==8'hFD && s1_adr_i[23:20]!=4'h2) begin
     	which <= 2'b00;
       m_cyc_o <= 1'b1;
       m_stb_o <= 1'b1;
@@ -151,7 +152,7 @@ IDLE:
       	state <= WAIT_ACK;
     	end
     end
-    else if (s2_cyc_i && s2_adr_i[31:20]==12'hFD0) begin
+    else if (s2_cyc_i && s2_adr_i[31:24]==8'hFD && s2_adr_i[23:20]!=4'h2) begin
     	which <= 2'b01;
       m_cyc_o <= 1'b1;
       m_stb_o <= 1'b1;
@@ -271,16 +272,18 @@ WAIT_NACK:
 	end
 default:	state <= IDLE;
 endcase
-	if (s1_cyc_i && !s1_cycd && s1_adr_i[31:20]==12'hFD0) begin
+	if (s1_cyc_i && !s1_cycd && s1_adr_i[31:20]==12'hFD2) begin
 		m_fta_o.req.cyc <= HIGH;
 		m_fta_o.req.sel <= s1_sel_i;
 		m_fta_o.req.we <= s1_we_i;
 		m_fta_o.req.adr <= s1_adr_i;
 		m_fta_o.req.data1 <= s1_dat_i;
+		if (s1_we_i)
+			s_ack <= HIGH;
 	end
 	if (m_fta_o.resp.ack) begin
 		which <= 2'b10;
-		s_ack <= HIGH;
+		s_ack <= !s1_we_i;
 		s1_dat_o <= m_fta_o.resp.dat;
 	end
 	if (which==2'b10) begin

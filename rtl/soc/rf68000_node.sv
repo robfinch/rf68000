@@ -99,17 +99,17 @@ ipacket_t ipacket_x;
 assign ack1 = nic1_sack|ram1_ack|spram1_ack;
 assign ack2 = nic2_sack|ram2_ack|spram2_ack;
 always_comb
-	casez({fc1,adr1[31:18]})
-	17'b111??????????????:	dati1 <= icause1[adr1[3:1]];
-	17'b???00000000000000:	dati1 <= ram1_dat;
-	17'b???00000000000001:	dati1 <= spram1o;
+	casez({fc1,adr1[31:15]})
+//	20'b111?????????????????:	dati1 <= icause1[adr1[3:1]];
+	20'b???00000000000000???:	dati1 <= ram1_dat;
+	20'b???00000000000001000:	dati1 <= spram1o;
 	default:	dati1 <= nic1_sdato;
 	endcase
 always_comb
-	casez({fc2,adr2[31:18]})
-	17'b111??????????????:	dati2 <= icause2[adr2[3:1]];
-	17'b???00000000000000:	dati2 <= ram2_dat;
-	17'b???00000000000001:	dati2 <= spram2o;
+	casez({fc2,adr2[31:15]})
+//	20'b111?????????????????:	dati2 <= icause2[adr2[3:1]];
+	20'b???00000000000000???:	dati2 <= ram2_dat;
+	20'b???00000000000001000:	dati2 <= spram2o;
 	default:	dati2 <= nic2_sdato;
 	endcase
 
@@ -183,7 +183,7 @@ rf68000_nic unic1
 	.rpacket_i(rpacket_i),
 	.rpacket_o(rpacket_x),
 	.irq_i(3'b000),
-	.firq_i(2'b0),
+	.firq_i(1'b0),
 	.cause_i(8'h00),
 	.iserver_i(6'h00),
 	.irq_o(cpu1_irq),
@@ -237,7 +237,7 @@ rf68000_nic unic2
 	.rpacket_i(rpacket_x),
 	.rpacket_o(rpacket_o),
 	.irq_i(3'b000),
-	.firq_i(2'b0),
+	.firq_i(1'b0),
 	.cause_i(8'h00),
 	.iserver_i(6'h00),
 	.irq_o(cpu2_irq),
@@ -505,8 +505,8 @@ rf68000 #(.SUPPORT_DECFLT(SUPPORT_DECFLT)) ucpu2
 
    );
 
-wire cs_spram1 = adr1[31:18]==14'h1 && cyc1 && stb1;
-wire cs_spram2 = adr2[31:18]==14'h1 && cyc2 && stb2;
+wire cs_spram1 = adr1[31:15]==17'h8 && cyc1 && stb1;
+wire cs_spram2 = adr2[31:15]==17'h8 && cyc2 && stb2;
 
 ack_gen uag1
 (

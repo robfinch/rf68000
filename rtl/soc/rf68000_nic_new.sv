@@ -211,15 +211,6 @@ else begin
 	ipacket_o <= ipacket_i;
 	rpacket_o <= rpacket_i;
 
-	// Look for slave cycle termination. High to low transition on cyc.
-	if (~cyc & cycd) begin
-		rw_done <= TRUE;
-		s_ack1 <= FALSE;
-		s_rty_o <= FALSE;
-		s_err_o <= FALSE;
-		s_vpa_o <= FALSE;
-	end
-
 	if (firq_i| |irq_i) begin
 		ipacket_o.sid <= id;
 		ipacket_o.did <= iserver_i;
@@ -432,10 +423,15 @@ else begin
 			end
 		end
 	ST_ACK_ACK:
-		// Wait for the slave cycle to finish.
-		if (~cyc) begin
-			rpacket_rx.did <= 6'd0;
-			rsp_state <= ST_IDLE;
+		begin
+			s_dat_o <= rpacket_rx.dat;
+			s_ack1 <= TRUE;
+			// Wait for the slave cycle to finish.
+			if (~cyc) begin
+				s_ack1 <= FALSE;
+				rpacket_rx.did <= 6'd0;
+				rsp_state <= ST_IDLE;
+			end
 		end
 	ST_VPA:
 		begin
@@ -473,6 +469,16 @@ else begin
 	default:
 		rsp_state <= ST_IDLE;
 	endcase
+
+	// Look for slave cycle termination. High to low transition on cyc.
+	if (~cyc) begin // & cycd) begin
+		rw_done <= TRUE;
+		s_ack1 <= FALSE;
+		s_rty_o <= FALSE;
+		s_err_o <= FALSE;
+		s_vpa_o <= FALSE;
+	end
+
 end
 
 task tSetupResponsePacket;

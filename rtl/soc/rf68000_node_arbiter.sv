@@ -97,11 +97,9 @@ else begin
 	if (!(cpu_cyc & cpu_stb)) begin
 		cpu_ack <= 1'b0;
 		cpu_aack <= 1'b0;
-		cpu_dati <= 32'h0;
 	end
 	if (!(nic_cyc & nic_stb)) begin
 		nic_ack <= 1'b0;
-		nic_dati <= 32'h0;
 	end
 	case(w1)
 	2'b01:	if (!nic_cyc) w1 <= 2'b00;
@@ -177,6 +175,8 @@ else begin
 				ram_dati <= nic_dato;
 			end
 */
+			cpu_dati <= ram_dato;
+			nic_dati <= ram_dato;
 			state <= ST_RD3;
 		end
 	ST_RD3:
@@ -208,6 +208,8 @@ else begin
 		end
 	ST_ACK:
 		begin
+			cpu_dati <= ram_dato;
+			nic_dati <= ram_dato;
 			ram_en <= FALSE;
 			if ((nic_ack & nic_cyc & nic_stb) || (cpu_ack & cpu_cyc & cpu_stb))
 				;

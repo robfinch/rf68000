@@ -65,6 +65,7 @@ parameter HAS_TEXTCTRL = 1'b1;
 parameter HAS_PRNG = 1'b1;
 parameter HAS_UART = 1'b1;
 parameter HAS_PS2KBD = 1'b1;
+parameter SIM = 1'b0;
 input cpu_reset_n;
 input sysclk_p;
 input sysclk_n;
@@ -134,10 +135,12 @@ wire [2:0] cpu_fc;
 wire [31:0] cpu_adr;
 wire [31:0] cpu_dato;
 reg ack;
+reg [2:0] err;
 wire vpa;
 wire [3:0] sel;
 reg [31:0] dati;
 wire [31:0] dato;
+wire [2:0] dram_err;
 wire mmus, ios, iops;
 wire mmu_ack;
 wire [31:0] mmu_dato;
@@ -193,6 +196,8 @@ wire [7:0] asid;
 wire io_ack;
 wire [31:0] io_dato;
 wire io_gate, io_gate_en;
+wire dram_ack;
+wire [255:0] dram_dato;
 
 wire leds_ack;
 reg [7:0] rst_reg;
@@ -201,10 +206,10 @@ wire rst_ack;
 wire hSync, vSync;
 wire blank, border;
 wire [7:0] red, blue, green;
-wire [39:0] fb_rgb, tc_rgb;
-assign red = tc_rgb[35:28];
-assign green = tc_rgb[23:16];
-assign blue = tc_rgb[11:4];
+wire [31:0] fb_rgb, tc_rgb;
+assign red = tc_rgb[29:22];
+assign green = tc_rgb[19:12];
+assign blue = tc_rgb[9:2];
 
 // -----------------------------------------------------------------------------
 // Input debouncing
@@ -290,7 +295,7 @@ wire cs_sema = cpu_adr[31:16]==16'hFD05 && ch7req.stb && cs_io2;
 wire cs_acia = cpu_adr[31:12]==20'hFD060 && ch7req.stb && cs_io2;
 wire cs_br3_acia = br3_adr[31:12]==20'hFD060 && br3_stb && cs_io2;
 wire cs_br3_i2c2 = br3_adr[31:12]==20'hFD069 && br3_stb && cs_io2;
-wire cs_scr = cpu_adr[31:20]==12'h001 && ch7req.stb;
+wire cs_scr = cpu_adr[31:20]==12'h001 && cpu_stb;
 wire cs_plic = cpu_adr[31:12]==20'hFD090 && cs_io2;
 wire cs_br3_plic = br3_adr[31:12]==20'hFD090 && cs_io2;
 wire cs_dram = cpu_adr[31:30]==2'b01 && !cs_mmu && !cs_iobitmap && !cs_io;
@@ -333,7 +338,9 @@ wire [31:0] fb_irq;
 
 rfFrameBuffer_fta64 #(
 	.BUSWID(32),
-	.INTERNAL_SYNCGEN(1'b1)) 
+	.INTERNAL_SYNCGEN(1'b1),
+	.FBC_ADDR(32'hFD200001)
+) 
 uframebuf1
 (
 	.rst_i(rst),
@@ -406,7 +413,7 @@ rfTextController utc1
 	.vsync_i(vSync),
 	.blank_i(blank),
 	.border_i(border),
-	.zrgb_i({6'b0,fb_video_o.data[29:0]}),
+	.zrgb_i({2'b0,fb_video_o.data[29:0]}),
 	.zrgb_o(tc_rgb),
 	.xonoff_i(sw[1])
 );
@@ -442,8 +449,8 @@ IOBridge ubridge1
 	.m_fta_o(br1_fta)
 );
 
-//assign br1_fta.rst = rst;
-//assign br1_fta.clk = node_clk;
+assign br1_fta.rst = rst;
+assign br1_fta.clk = node_clk;
 
 always_ff @(posedge clk100)
 	br1_dati <= tc_dato;
@@ -580,6 +587,8 @@ IOBridge ubridge3
 	.m_fta_o(br3_fta)
 );
 
+assign br3_fta.rst = rst;
+assign br3_fta.clk = node_clk;
 assign br3_fta.resp.ack = 1'b0;
 assign br3_fta.resp.dat = 32'd0;
 
@@ -636,9 +645,9 @@ mig_7series_0 uddr3
 	// Inputs
 	.sys_clk_i(clk200),
 //    .clk_ref_i(clk200),
-	.sys_rst(rstn),//~btnc_db),
+	.sys_rst(rstn & ~btnc_db),
 	// user interface signals
-	.app_addr(mem_addr),
+	.app_addr({1'b0,mem_addr[29:2]}),
 	.app_cmd(mem_cmd),
 	.app_en(mem_en),
 	.app_wdf_data(mem_wdf_data),
@@ -652,7 +661,7 @@ mig_7series_0 uddr3
 	.app_wdf_rdy(mem_wdf_rdy),
 	.app_sr_req(1'b0),
 	.app_sr_active(),
-	.app_ref_req(app_ref_req),
+	.app_ref_req(1'b0),
 	.app_ref_ack(app_ref_ack),
 	.app_zq_req(1'b0),
 	.app_zq_ack(),
@@ -692,10 +701,10 @@ mpmc11_fta
 umpmc1
 (
 	.rst(rst),
-	.sys_clk_i(clk200),//sysclk_p),
+	.sys_clk_i(clk100),//sysclk_p),
 	.mem_ui_rst(mem_ui_rst),
 	.mem_ui_clk(mem_ui_clk),
-	.calib_complete(calib_complete),
+	.calib_complete(calib_complete || SIM),
 	.rstn(rstn),
 	.app_waddr(),
 	.app_rdy(mem_rdy),
@@ -728,9 +737,11 @@ wb_to_fta_bridge uwb2fta1
 (
 	.rst_i(rst),
 	.clk_i(node_clk),
-	.cyc_i(cpu_cyc & cs_dram),
-	.stb_i(cpu_stb & cs_dram),
+	.cs_i(cs_dram),
+	.cyc_i(cpu_cyc),
+	.stb_i(cpu_stb),
 	.ack_o(dram_ack),
+	.err_o(dram_err),
 	.we_i(cpu_we),
 	.sel_i({28'h0,sel} << {cpu_adr[4:2],2'b00}),
 	.adr_i(cpu_adr),
@@ -976,9 +987,6 @@ end
 assign ch7req.sel = ch7req.we ? {28'h0,sel} << {ch7req.padr[4:2],2'b0} : 32'hFFFFFFFF;
 assign ch7req.dat = {8{dato}};
 
-wire dram_ack;
-wire [255:0] dram_dato;
-
 rf68000_nic unic1
 (
 	.id(6'd62),			// system node id
@@ -999,14 +1007,14 @@ rf68000_nic unic1
 	.s_adr_i(32'h0),
 	.s_dat_i(32'h0),
 	.s_dat_o(),
-	.s_asid_i('d0),
+	.s_asid_i(8'd0),
 	.s_mmus_i(1'b0),
 	.s_ios_i(1'b0),
 	.s_iops_i(1'b0),
 	.m_cyc_o(cpu_cyc),
 	.m_stb_o(cpu_stb),
 	.m_ack_i(ack),
-	.m_err_i(bus_err),
+	.m_err_i(cs_dram?(dram_err!=fta_bus_pkg::OKAY):bus_err),
 	.m_vpa_i(vpa),
 	.m_we_o(cpu_we),
 	.m_sel_o(sel),
@@ -1053,15 +1061,15 @@ ila_0 uila1 (
 
 //	.probe0(umpmc1.req_fifoo.req.padr), // input wire [31:0]  probe0  
 	.probe0(fbm_if.req.adr),//umpu1.ucpu1.pc), // input wire [31:0]  probe0  
-	.probe1(cs_br3_kbd),//umpmc1.req_fifoo.req.cyc), // input wire [0:0]  probe1 
+	.probe1(fbm_if.req.cyc),//umpmc1.req_fifoo.req.cyc), // input wire [0:0]  probe1 
 	.probe2(fbm_if.resp.ack),//umpmc1.req_fifoo.req.we), // input wire [0:0]  probe2
-	.probe3(umpmc1.chob[0].ack),
-	.probe4(fbm_if.req.we),
-	.probe5(fbm_if.req.cyc),
-	.probe6(umpmc1.src_wr[0]),
-	.probe7({umpmc1.wr_fifo[0],umpmc1.rd_fifo[0],umpmc1.cd_fifo[0]}),
-	.probe8({32'd0,cpu_cyc,dram_ack}),
-	.probe9(mem_rd_data_end),
+	.probe3(fbm_if.req.we),
+	.probe4(1'b0),
+	.probe5(1'b0),
+	.probe6(1'b0),
+	.probe7(1'b0),
+	.probe8(fbm_if.resp.dat),
+	.probe9(mem_rd_data_valid),
 	.probe10(cs_dram),
 //	.probe11({unode1.ram1_we[3:0],cpu_if.req.cmd}),
 	.probe11(br3_cdato),
@@ -1071,8 +1079,8 @@ ila_0 uila1 (
 	.probe15(umpmc1.app_rdy),
 	.probe16(umpmc1.app_en),
 	.probe17(umpmc1.app_cmd),
-	.probe18(br3_dati[31:0]),
-	.probe19(umpmc1.app_rd_data_valid),
+	.probe18(32'd0),
+	.probe19(1'b0),
 	.probe20(uframebuf1.state)
 );
 */
@@ -1141,7 +1149,7 @@ assign node_clk4 = node_clk;
 rf68000_node #(.SUPPORT_DECFLT(1'b1)) unode1
 (
 	.id(5'd1),
-	.rst1(rst),
+	.rst1(rst|rsts[2]),
 	.rst2(rst|rsts[3]),
 	.nic_rst(rst),
 	.clk(node_clk1),
