@@ -319,6 +319,7 @@ TextRows		equ	$4008C
 TextCols		equ	$4008D
 _fpTextIncr	equ $40094
 _canary			equ $40098
+tickcnt			equ $4009C
 IRQFlag			equ $400A0
 InputDevice	equ $400A4
 OutputDevice	equ $400A8
@@ -340,6 +341,17 @@ _fpBuf equ $40520	; to $40560
 _fpWork equ $40600
 _dasmbuf	equ	$40800
 OFFSET equ $40880
+pen_color equ $40890
+gr_x equ $40894
+gr_y equ $40898
+gr_width equ $4089C
+gr_height equ $408A0
+gr_bitmap_screen equ $408A4
+gr_raster_op equ $408A8
+gr_double_buffer equ $408AC
+gr_bitmap_buffer equ $408B0
+sys_switches equ $408B8
+EightPixels equ $40100000	; to $40200020
 
 null_dcb equ $0040A00		; 0
 keybd_dcb equ $0040A40	; 1
@@ -437,6 +449,17 @@ start:
 	cmpi.b #2,d0
 	bne	start_other
 	bsr init_framebuf
+	clr.l sys_switches
+	move.w #$1f00,pen_color		; blue pen
+	clr.l gr_x
+	clr.l gr_y
+	move.b #1,gr_raster_op		; op = copy
+	move.w #800,gr_width
+	move.w #600,gr_height
+	move.l #$40000000,gr_bitmap_screen
+	move.l #$40100000,gr_bitmap_buffer
+	move.l #$00000040,FRAMEBUF+16	; base addr 1
+	move.l #$00001040,FRAMEBUF+24	; base addr 2
 	move.b d0,IOFocus					; Set the IO focus in global memory
 	if HAS_MMU
 		bsr InitMMU							; Can't access anything till this is done'
@@ -689,11 +712,11 @@ InitIOPBitmap:
 	move.l d1,(a1)+		; set or clear entire table
 	dbra d4,.0001
 	moveq #-1,d1
-	move.l d1,160(a0)	; all cores have access to semaphores
+	move.l d1,160(a0)	; all io address spaces have access to semaphores
 	move.l d1,164(a0)
 	move.l d1,168(a0)
 	move.l d1,172(a0)
-	move.l #2,508(a0)	; all cores access random # generator
+	move.l d1,508(a0)	; all io address spaces access random # generator
 	swap d0
 	move.w #31,d0			; 32 long words for the screen area per bitmap
 .0003
@@ -1548,7 +1571,7 @@ T15DispatchTable:
 	dc.l	GetKey
 	dc.l	OutputChar
 	dc.l	CheckForKey
-	dc.l	StubRout
+	dc.l	GetTick
 	dc.l	StubRout
 	; 10
 	dc.l	StubRout
@@ -1560,7 +1583,7 @@ T15DispatchTable:
 	dc.l	StubRout
 	dc.l	StubRout
 	dc.l	StubRout
-	dc.l	StubRout
+	dc.l	CheckForKey
 	; 20
 	dc.l	StubRout
 	dc.l	StubRout
@@ -1575,7 +1598,7 @@ T15DispatchTable:
 	; 30
 	dc.l	StubRout
 	dc.l	StubRout
-	dc.l	rotate_iofocus
+	dc.l	SimHardware	;rotate_iofocus
 	dc.l	SerialPeekCharDirect
 	dc.l	SerialPutChar
 	dc.l	SerialPeekChar
@@ -1588,7 +1611,512 @@ T15DispatchTable:
 	dc.l	T15GetFloat
 	dc.l	T15Abort
 	dc.l	T15FloatToString
+	dc.l	StubRout
+	dc.l	StubRout
+	dc.l	StubRout
+	dc.l	StubRout
+	dc.l	StubRout
+	dc.l	StubRout
+	; 50
+	dc.l	StubRout
+	dc.l	StubRout
+	dc.l	StubRout
+	dc.l	StubRout
+	dc.l	StubRout
+	dc.l	StubRout
+	dc.l	StubRout
+	dc.l	StubRout
+	dc.l	StubRout
+	dc.l	StubRout
+	; 60
+	dc.l	StubRout
+	dc.l	StubRout
+	dc.l	StubRout
+	dc.l	StubRout
+	dc.l	StubRout
+	dc.l	StubRout
+	dc.l	StubRout
+	dc.l	StubRout
+	dc.l	StubRout
+	dc.l	StubRout
+	; 70
+	dc.l	StubRout
+	dc.l	StubRout
+	dc.l	StubRout
+	dc.l	StubRout
+	dc.l	StubRout
+	dc.l	StubRout
+	dc.l	StubRout
+	dc.l	StubRout
+	dc.l	StubRout
+	dc.l	StubRout
+	; 80
+	dc.l	SetPenColor
+	dc.l	StubRout
+	dc.l	StubRout
+	dc.l	StubRout
+	dc.l	StubRout
+	dc.l	DrawToXY
+	dc.l	MoveToXY
+	dc.l	StubRout
+	dc.l	StubRout
+	dc.l	StubRout
+	; 90
+	dc.l	StubRout
+	dc.l	StubRout
+	dc.l	SetDrawMode
+	dc.l	StubRout
+	dc.l	GRBufferToScreen
+	dc.l	StubRout
+	dc.l	StubRout
+	dc.l	StubRout
+	dc.l	StubRout
+	dc.l	StubRout
 
+;------------------------------------------------------------------------------
+
+SimHardware:
+	cmpi.w #3,d1
+	bne.s .0001
+	move.l #sys_switches,d1
+	rts
+.0001:
+	rts
+
+;------------------------------------------------------------------------------
+;
+GetTick:
+	move.l tickcnt,d1
+	rts
+
+;------------------------------------------------------------------------------
+;
+SetDrawMode:
+	cmpi.w #10,d1
+	bne.s .0001
+	move.b #5,gr_raster_op			; 'OR' operation
+	rts
+.0001:
+	cmpi.w #17,d1
+	bne.s .0002
+	move.w #1,gr_double_buffer
+	rts
+.0002:
+	rts
+	
+SetPenColor:
+	move.l d1,pen_color
+	rts
+
+;------------------------------------------------------------------------------
+; Page flip between two buffers.
+;------------------------------------------------------------------------------
+
+GRBufferToScreen:
+	movem.l a0/a1,-(a7)
+	eor.b #1,FRAMEBUF+3					; page flip
+	move.l gr_bitmap_buffer,a1
+	move.l gr_bitmap_screen,a0
+	move.l a0,gr_bitmap_buffer
+	move.l a1,gr_bitmap_screen
+	movem.l (a7)+,a0/a1
+	rts
+
+; The following copies the buffer, why? Not needed if page flipping.
+;	movem.l d0/a0/a1,-(a7)
+;	move.l gr_bitmap_buffer,a1
+;	move.l gr_bitmap_screen,a0
+;	move.w gr_width,d0
+;	mulu gr_height,d0
+;	lsr.l #4,d0							; moving 16 pixels per iteration
+;	move.l #0,$BFFFFFF8			; set burst length zero
+;	bra.s .loop
+;.loop2:
+;	swap d0
+;.loop:
+;	move.l a1,$BFFFFFF0			; set source address
+;	tst.l $BFFFFFFC					; do a read op, no value needed
+;	move.l a0,$BFFFFFF4			; set destination address
+;	move.l d0,$BFFFFFFC			; do a write operation (any value)
+;	dbra d0,.loop
+;	swap d0									; might go over 32/64 kB
+;	dbra d0,.loop2
+;	movem.l (a7)+,d0/a0/a1
+;	rts
+
+; Write the first eight pixels with the pen color.
+; Load the pixel buffer with the eight pixels.
+
+clear_bitmap_screen4:
+	movem.l d0/d1/a0,-(a7)
+	move.l gr_bitmap_buffer,a0
+	move.w pen_color,d0
+	swap d0
+	move.w pen_color,d0
+	move.w #8,d1
+.loop3:
+	move.l d0,(a0)+
+	dbra d1,.loop3
+	move.l gr_bitmap_buffer,a0
+	move.l a0,$BFFFFFF0			; load data hold with eight pixels
+	move.l #0,$BFFFFFF8			; set burst length zero
+	tst.l $BFFFFFFC					; load up the values (read)
+	move.w gr_width,d0
+	mulu gr_height,d0
+	lsr.l #4,d0							; moving 16 pixels per iteration
+	bra.s .loop
+.loop2:
+	swap d0
+.loop:
+	move.l a0,$BFFFFFF4			; set destination address
+	move.l d0,$BFFFFFFC			; write any value
+	add.l #32,a0						; advance pointer
+	dbra d0,.loop
+	swap d0
+	dbra d0,.loop2
+	movem.l (a7)+,d0/d1/a0
+	rts
+
+; The following code using bursts of 1k pixels did not work (hardware).
+;
+;clear_bitmap_screen2:
+;	move.l gr_bitmap_screen,a0
+;clear_bitmap_screen3:
+;	movem.l d0/d2/a0,-(a7)
+;	move.l #$3F3F3F3F,$BFFFFFF4	; 32x64 byte burst
+;	move.w pen_color,d0
+;	swap d0
+;	move.w pen_color,d0
+;	move.w gr_width,d2		; calc. number of pixels on screen
+;	mulu gr_height,d2
+;	add.l #1023,d2				; rounding up
+;	lsr.l #8,d2						; divide by 1024 pixel update
+;	lsr.l #2,d2
+;.0001:
+;	move.l a0,$BFFFFFF8		; write update address
+;	add.l #2048,a0				; update pointer
+;	move.l d0,$BFFFFFFC		; trigger burst write of 2048 bytes
+;	dbra d2,.0001
+;	movem.l (a7)+,d0/d2/a0
+;	rts
+
+; More conventional but slow way of clearing the screen.
+;
+;clear_bitmap_screen:
+;	move.l gr_bitmap_screen,a0
+;clear_bitmap_screen1:
+;	movem.l d0/d2/a0,-(a7)
+;	move.w pen_color,d0
+;	swap d0
+;	move.w pen_color,d0
+;	move.w gr_width,d2		; calc. number of pixels on screen
+;	mulu gr_height,d2			; 800x600 = 480000
+;	bra.s .0001
+;.0002:
+;	swap d2
+;.0001:
+;	move.l d0,(a0)+
+;	dbra d2,.0001
+;	swap d2
+;	dbra d2,.0002
+;	movem.l (a7)+,d0/d2/a0
+;	rts
+
+TestBitmap:
+	bsr clear_bitmap_screen4
+	moveq #94,d0							; page flip (display blank screen)
+	trap #15
+	move.w #$007c,pen_color		; red pen
+	clr.l gr_x
+;	clr.l gr_y
+	move.l #1,gr_y
+	move.l #799,d3
+	move.l #1,d4
+	bsr DrawHorizTo
+	clr.l gr_x
+	clr.l gr_y
+	move.l #0,d3
+	move.l #599,d4
+	bsr DrawVertTo
+	move.w #$E001,pen_color		; green pen
+	move.l #2,gr_x
+	clr.l gr_y
+	move.l #2,d3
+	move.l #599,d4
+	bsr DrawVertTo
+	clr.l gr_x
+	clr.l gr_y
+	move.l #799,d3
+	move.l #599,d4
+	bsr DrawToXY
+	moveq #94,d0							; page flip again
+	trap #15
+	bra Monitor
+
+;------------------------------------------------------------------------------
+; Plot on bitmap screen using current pen color.
+;
+;	Parameters:
+;		d1 = x co-ordinate
+;		d2 = y co-ordinate
+;------------------------------------------------------------------------------
+	
+;parameter OPBLACK = 4'd0;
+;parameter OPCOPY = 4'd1;
+;parameter OPINV = 4'd2;
+;parameter OPAND = 4'd4;
+;parameter OPOR = 4'd5;
+;parameter OPXOR = 4'd6;
+;parameter OPANDN = 4'd7;
+;parameter OPNAND = 4'd8;
+;parameter OPNOR = 4'd9;
+;parameter OPXNOR = 4'd10;
+;parameter OPORN = 4'd11;
+;parameter OPWHITE = 4'd15;
+
+;---------------------------------------------------------------------
+; The following uses point plot hardware built into the frame buffer.
+;---------------------------------------------------------------------
+
+plot:
+	move.l a0,-(a7)
+	move.l #FRAMEBUF,a0
+.0001:
+	tst.b 40(a0)									; wait for any previous command to finish
+	bne.s .0001										; Then set:
+	move.w d1,32(a0)							; pixel x co-ord
+	move.w d2,34(a0)							; pixel y co-ord
+	move.w pen_color,44(a0)				; pixel color
+	move.b gr_raster_op,41(a0)		; set raster operation
+	move.b #2,40(a0)							; point plot command
+	move.l (a7)+,a0
+	rts
+
+;-------------------------------------------
+; In case of lacking hardware plot
+;-------------------------------------------
+	align 2
+plottbl:
+	dc.l plot_black
+	dc.l plot_copy
+	dc.l plot_copy
+	dc.l plot_and
+	dc.l plot_or
+	dc.l plot_xor
+	dc.l plot_copy
+	dc.l plot_copy
+	dc.l plot_copy
+	dc.l plot_copy
+	dc.l plot_copy
+	dc.l plot_copy
+	dc.l plot_copy
+	dc.l plot_copy
+	dc.l plot_white
+
+plot_sw:
+	movem.l d1/d2/d3/d4/a0/a1,-(a7)
+	mulu gr_width,d2							; multiply y by screen width
+;	move.l d1,d3
+;	andi.l #30,d3
+;	moveq #30,d4
+;	sub.l d4,d3
+;	andi.l #$FFFFFFE0,d1
+;	or.l d3,d1
+	ext.l d1											; clear high-order word of x
+	add.l d1,d2										; add in x co-ord
+	add.l d2,d2										; *2 for 16 BPP
+	move.l gr_bitmap_buffer,a0		; where the draw occurs
+	move.w gr_raster_op,d3
+	lsl.w #2,d3
+	move.l plottbl(pc,d3.w),a1
+	jmp (a1)
+plot_or:
+	move.w (a0,d2.l),d4	
+	or.w pen_color,d4
+	move.w d4,(a0,d2.l)
+	movem.l (a7)+,d1/d2/d3/d4/a0/a1
+	rts
+plot_xor:
+	move.w (a0,d2.l),d4
+	move.w pen_color,d3	
+	eor.w d3,d4
+	move.w d4,(a0,d2.l)
+	movem.l (a7)+,d1/d2/d3/d4/a0/a1
+	rts
+plot_and:
+	move.w (a0,d2.l),d4	
+	and.w pen_color,d4
+	move.w d4,(a0,d2.l)
+	movem.l (a7)+,d1/d2/d3/d4/a0/a1
+	rts
+plot_copy:
+	move.w pen_color,(a0,d2.l)
+	movem.l (a7)+,d1/d2/d3/d4/a0/a1
+	rts
+plot_black:
+	clr.w (a0,d2.l)
+	movem.l (a7)+,d1/d2/d3/d4/a0/a1
+	rts
+plot_white:
+	move.w #$FF7F,(a0,d2.l)
+	movem.l (a7)+,d1/d2/d3/d4/a0/a1
+	rts
+
+;------------------------------------------------------------------------------
+; Set graphics cursor position.
+;------------------------------------------------------------------------------
+
+MoveToXY:
+	move.l d3,gr_x
+	move.l d4,gr_y
+	rts
+
+;------------------------------------------------------------------------------
+; Draw a line from the current graphics position to x1,y1.
+;
+; Register Usage:
+;		d1 = x0
+;		d2 = y0
+;		d3 = x1
+;		d4 = y1
+;		d5 = dx
+;		d6 = dy
+;		d7 = sx
+;		d0 = sy
+;		a0 = err
+;		a1 = 2*err
+;------------------------------------------------------------------------------
+
+DrawToXY:
+	movem.l d0/d1/d2/d5/d6/d7/a0/a1,-(a7)
+	move.l gr_x,d1
+	move.l gr_y,d2
+	move.l d3,d5
+	move.l d4,d6
+	sub.l d1,d5			; d5 = x1-x0
+	bne.s .notVert
+	movem.l (a7)+,d0/d1/d2/d5/d6/d7/a0/a1
+	bra DrawVertTo
+.notVert:
+	bpl.s .0001
+	neg.l d5				
+.0001:						; d5 = dx = abs(x1-x0)
+	sub.l d2,d6			; d6 = y1-y0
+	bne.s .notHoriz
+	movem.l (a7)+,d0/d1/d2/d5/d6/d7/a0/a1
+	bra DrawHorizTo
+.notHoriz:
+	bmi.s .0002
+	neg.l d6
+.0002:						; d6 = dy = -abs(y1-y0)
+	move.l #1,d7		; d7 = sx (x0 < x1 ? 1 : -1)
+	cmp.l d1,d3
+	bhi.s .0004
+	neg.l d7
+.0004:
+	move.l #1,d0		; d0 = sy (y0 < y1) ? 1 : -1)
+	cmp.l d2,d4
+	bhi.s .0006
+	neg.l d0
+.0006:
+	move.l d5,a0		; a0 = error = dx + dy
+	adda.l d6,a0
+.loop:
+	bsr CheckForCtrlC
+	bsr plot				; plot(x0,y0)
+	move.l a0,a1
+	adda.l a1,a1		; a1 = error *2
+	cmp.l a1,d6			; e2 >= dy?
+	bgt.s .0008
+	cmp.l d1,d3			; x0==x1?
+	beq.s .brkloop
+	adda.l d6,a0		; err = err + dy
+	add.l d7,d1			; x0 = x0 + sx
+.0008:
+	cmp.l a1,d5			; err2 <= dx?
+	blt.s .0009
+	cmp.l d2,d4			; y0==y1?
+	beq.s .brkloop
+	adda.l d5,a0		; err = err + dx
+	add.l d0,d2			; y0 = y0 + sy
+.0009:
+	bra.s .loop
+.brkloop:
+	move.l d3,gr_x
+	move.l d4,gr_y
+	movem.l (a7)+,d0/d1/d2/d5/d6/d7/a0/a1
+	rts
+
+; Parameters:
+;		d3 = x1
+;		d4 = y1
+
+DrawHorizTo:
+	movem.l d1/d2/d5,-(a7)
+	move.l gr_x,d1
+	move.l gr_y,d2
+	move.l #1,d5			; assume increment
+	cmp.l d1,d3
+	bhi.s .0001
+	neg.l d5					; switch to decrement
+.0001:
+	bsr plot
+	cmp.l d1,d3
+	beq.s .0002
+	add.l d5,d1
+	bra.s .0001
+.0002:
+	move.l d1,gr_x
+	movem.l (a7)+,d1/d2/d5
+	rts
+	
+	
+; Parameters:
+;		d3 = x1
+;		d4 = y1
+
+DrawVertTo:
+	movem.l d1/d2/d5,-(a7)
+	move.l gr_x,d1
+	move.l gr_y,d2
+	move.l #1,d5			; assume increment
+	cmp.l d2,d4
+	bhi.s .0001
+	neg.l d5					; switch to decrement
+.0001:
+	bsr plot
+	cmp.l d2,d4
+	beq.s .0002
+	add.l d5,d2
+	bra.s .0001
+.0002:
+	move.l d2,gr_y
+	movem.l (a7)+,d1/d2/d5
+	rts
+	
+	
+;plotLine(x0, y0, x1, y1)
+;    dx = abs(x1 - x0)
+;    sx = x0 < x1 ? 1 : -1
+;    dy = -abs(y1 - y0)
+;    sy = y0 < y1 ? 1 : -1
+;    error = dx + dy
+;    
+;    while true
+;        plot(x0, y0)
+;        e2 = 2 * error
+;        if e2 >= dy
+;            if x0 == x1 break
+;            error = error + dy
+;            x0 = x0 + sx
+;        end if
+;        if e2 <= dx
+;            if y0 == y1 break
+;            error = error + dx
+;            y0 = y0 + sy
+;        end if
+;    end while
+    
 ;------------------------------------------------------------------------------
 ; Cursor positioning / Clear screen
 ; - out of range settings are ignored
@@ -2514,6 +3042,7 @@ _keybdExtendedCodes:
 
 cmdString:
 	dc.b	'?'+$80						; ? display help
+	dc.b	'A','S'+$80				; AS = asteroids
 	dc.b	'L'+$80						; L load S19 file
 	dc.b	'F','B'+$80				; FB fill with byte
 	dc.b	'F','W'+$80				; FW fill with wyde
@@ -2542,6 +3071,7 @@ cmdString:
 	align	2
 cmdTable:
 	dc.l	cmdHelp
+	dc.l	cmdAsteroids
 	dc.l	cmdLoadS19
 	dc.l	cmdFillB
 	dc.l	cmdFillW
@@ -2687,6 +3217,10 @@ cmdBreakpoint:
 	cmpi.b	#'L',d1
 	beq	ListBreakpoints
 	bra	Monitor
+
+cmdAsteroids:
+	pea Monitor
+	jmp asteroids_start
 
 cmdTinyBasic:
 	bra	CSTART
@@ -4678,6 +5212,7 @@ InstallIRQ:
 TickIRQ:
 	move.w #$2600,sr					; disable lower level IRQs
 	movem.l	d1/d2/d3/a0,-(a7)
+	addi.l #1,tickcnt
 	move.b #1,IRQFlag					; tick interrupt indicator in local memory
 	movec	coreno,d1						; d1 = core number
 	move.l d1,d3
@@ -5005,3 +5540,4 @@ FREL30:
 	rts
 
 	include "dcode68k.x68"
+ 	include "games/asteroids/asteroids 1_0.x68"
