@@ -364,12 +364,13 @@ sys_switches equ $408B8
 EightPixels equ $40100000	; to $40200020
 
 null_dcb equ $0040A00		; 0
-keybd_dcb equ $0040A40	; 1
-con_dcb equ $0040A80		; 2
-err_dcb equ $0040AC0		; 3
-serial_dcb equ $0040B40	; 5
+keybd_dcb equ null_dcb+DCB_SIZE	; 1
+textvid_dcb equ keybd_dcb+DCB_SIZE	; 2
+err_dcb equ textvid_dcb+DCB_SIZE		; 3
+serial_dcb equ err_dcb+DCB_SIZE*2		; 5
+framebuf_dcb equ serial_dcb+DCB_SIZE	; 6
 
-TimerStack	equ	$40BFC
+TimerStack	equ	$41BFC
 
 ; Keyboard buffer is in shared memory
 IOFocus			EQU	$00100000
@@ -430,46 +431,37 @@ start:
 	dbra d0,.0111
 	bsr setup_null
 	bsr setup_keybd
-	bsr setup_console
+	bsr setup_textvid
 	bsr setup_serial
+	move.b #1,InputDevice			; select keyboard input
 	move.b #2,OutputDevice		; select text screen output
-	if (SCREEN_FORMAT==1)
-		move.l #$0000ff,fgColor		; set foreground / background color (white)
-		move.l #$000002,bkColor		; medium blue
-	else
-		move.l #$1fffff,fgColor		; set foreground / background color (white)
-		move.l #$00003f,bkColor		; medium blue
-	endif
-	movec.l	coreno,d0					; get core number (2 to 9)
-	subi.b #2,d0							; adjust (0 to 7)
-	if (SCREEN_FORMAT==1)
-		mulu #8192,d0						; compute screen location
-	else
-		mulu #16384,d0						; compute screen location
-	endif
-	if HAS_MMU
-		addi.l #$01E00000,d0
-	else
-		addi.l #$FD000000,d0
-	endif
-	move.l d0,TextScr
-	move.b #64,TextCols				; set rows and columns
-	move.b #32,TextRows
+;	if (SCREEN_FORMAT==1)
+;		move.l #$0000ff,fgColor		; set foreground / background color (white)
+;		move.l #$000002,bkColor		; medium blue
+;	else
+;		move.l #$1fffff,fgColor		; set foreground / background color (white)
+;		move.l #$00003f,bkColor		; medium blue
+;	endif
+;	movec.l	coreno,d0					; get core number (2 to 9)
+;	subi.b #2,d0							; adjust (0 to 7)
+;	if (SCREEN_FORMAT==1)
+;		mulu #8192,d0						; compute screen location
+;	else
+;		mulu #16384,d0						; compute screen location
+;	endif
+;	if HAS_MMU
+;		addi.l #$01E00000,d0
+;	else
+;		addi.l #$FD000000,d0
+;	endif
+;	move.l d0,TextScr
+;	move.b #64,TextCols				; set rows and columns
+;	move.b #32,TextRows
 	movec.l	coreno,d0					; get core number
 	cmpi.b #2,d0
 	bne	start_other
-	bsr init_framebuf
+	bsr setup_framebuf
 	clr.l sys_switches
-	move.w #$1f00,pen_color		; blue pen
-	clr.l gr_x
-	clr.l gr_y
-	move.b #1,gr_raster_op		; op = copy
-	move.w #1920,gr_width
-	move.w #1080,gr_height
-	move.l #$40000000,gr_bitmap_screen
-	move.l #$40400000,gr_bitmap_buffer
-	move.l #$00000040,FRAMEBUF+16	; base addr 1
-	move.l #$00004040,FRAMEBUF+24	; base addr 2
 	move.b d0,IOFocus					; Set the IO focus in global memory
 	if HAS_MMU
 		bsr InitMMU							; Can't access anything till this is done'
@@ -482,7 +474,10 @@ start:
 	move.l d1,_canary
 	movec d1,canary
 	bsr	Delay3s						; give devices time to reset
-	bsr	clear_screen
+	move.l #2,d7					; device 2
+	move.l #DEV_CLEAR,d6	; clear
+	trap #0
+;	bsr	textvid_clear
 
 	bsr	_KeybdInit
 ;	bsr	InitIRQ
@@ -522,7 +517,9 @@ start_other:
 	bsr			Delay3s2						; need time for system setup (io_bitmap etc.)
 	bsr			Delay3s2						; need time for system setup (io_bitmap etc.)
 	bsr			Delay3s2						; need time for system setup (io_bitmap etc.)
-	bsr			clear_screen
+	move.l #2,d7
+	move.l #DEV_CLEAR,d6
+	trap #0
 	movec		coreno,d1
 	bsr			DisplayByte
 	lea			msg_core_start,a1
@@ -573,12 +570,14 @@ InitMMU:
 	endif
 
 ;------------------------------------------------------------------------------
+;------------------------------------------------------------------------------
 ; Setup the NULL device
+;------------------------------------------------------------------------------
 ;------------------------------------------------------------------------------
 
 null_init:
 setup_null:
-	moveq #31,d0
+	moveq #32,d0
 	lea.l null_dcb,a0
 .0001:
 	clr.l (a0)+
@@ -593,58 +592,97 @@ null_cmdproc:
 	rts
 
 ;------------------------------------------------------------------------------
-; Setup the console device
+;------------------------------------------------------------------------------
+; Setup the text video device
 ; stdout = text screen controller
 ;------------------------------------------------------------------------------
+;------------------------------------------------------------------------------
 
-console_init:
-setup_console:
-	moveq #31,d0
-	lea.l con_dcb,a0
+setup_textvid:
+	moveq #32,d0
+	lea.l textvid_dcb,a0
 .0001:
 	clr.l (a0)+
 	dbra d0,.0001
-	move.l #$20424344,con_dcb+DCB_MAGIC				; 'DCB'
-	move.l #$204E4F43,con_dcb+DCB_NAME				; 'CON'
-	move.l #console_cmdproc,con_dcb+DCB_CMDPROC
+	move.l #$20424344,textvid_dcb+DCB_MAGIC				; 'DCB'
+	move.l #$54584554,textvid_dcb+DCB_NAME				; 'TEXTVID'
+	move.l #$00444956,textvid_dcb+DCB_NAME+4			;
+	move.l #textvid_cmdproc,textvid_dcb+DCB_CMDPROC
+
+textvid_init:
+	if (SCREEN_FORMAT==1)
+		move.l #$0000ff,fgColor		; set foreground / background color (white)
+		move.l #$000002,bkColor		; medium blue
+		move.l #$0000ff,textvid_dcb+DCB_FGCOLOR
+		move.l #$000002,textvid_dcb+DCB_BKCOLOR		; medium blue
+	else
+		move.l #$1fffff,fgColor		; set foreground / background color (white)
+		move.l #$00003f,bkColor		; medium blue
+		move.l #$1fffff,textvid_dcb+DCB_FGCOLOR		; set foreground / background color (white)
+		move.l #$00003f,textvid_dcb+DCB_BKCOLOR		; medium blue
+	endif
 	movec.l	coreno,d0					; get core number (2 to 9)
 	subi.b #2,d0							; adjust (0 to 7)
-	mulu #16384,d0						; compute screen location
+	if (SCREEN_FORMAT==1)
+		mulu #8192,d0						; compute screen location
+	else
+		mulu #16384,d0						; compute screen location
+	endif
 	if HAS_MMU
 		addi.l #$01E00000,d0
 	else
 		addi.l #$FD000000,d0
 	endif
-	move.l d0,con_dcb+DCB_INBUFPTR
-	move.l d0,con_dcb+DCB_OUTBUFPTR
-	move.l #16384,con_dcb+DCB_INBUFSIZE
-	move.l #16384,con_dcb+DCB_OUTBUFSIZE
-	move.b #TEXTCOL,con_dcb+DCB_OUTCOLS	; set rows and columns
-	move.b #TEXTROW,con_dcb+DCB_OUTROWS
-	move.b #TEXTCOL,con_dcb+DCB_INCOLS		; set rows and columns
-	move.b #TEXTROW,con_dcb+DCB_INROWS
+	move.l d0,textvid_dcb+DCB_INBUFPTR
+	move.l d0,textvid_dcb+DCB_OUTBUFPTR
+	move.l d0,TextScr
+	if (SCREEN_FORMAT==1)
+		move.l #8192,textvid_dcb+DCB_INBUFSIZE
+		move.l #8192,textvid_dcb+DCB_OUTBUFSIZE
+	else
+		move.l #16384,textvid_dcb+DCB_INBUFSIZE
+		move.l #16384,textvid_dcb+DCB_OUTBUFSIZE
+	endif
+	move.b #TEXTCOL,textvid_dcb+DCB_OUTDIMX	; set rows and columns
+	move.b #TEXTROW,textvid_dcb+DCB_OUTDIMY
+	move.b #TEXTCOL,textvid_dcb+DCB_INDIMX		; set rows and columns
+	move.b #TEXTROW,textvid_dcb+DCB_INDIMY
+	move.b #TEXTCOL,TextCols				; set rows and columns
+	move.b #TEXTROW,TextRows
 	rts
 
 	align 2
-CON_CMDTBL:
-	dc.l console_init
-	dc.l console_stat
-	dc.l console_putchar
-	dc.l console_putbuf
-	dc.l console_getchar
-	dc.l console_getbuf
-	dc.l console_set_inpos
-	dc.l console_set_outpos
-
-console_cmdproc:
-	cmpi.b #8,d6
+TEXTVID_CMDTBL:
+	dc.l textvid_init					; 0
+	dc.l textvid_stat
+	dc.l textvid_putchar
+	dc.l textvid_putbuf
+	dc.l textvid_getchar
+	dc.l textvid_getbuf
+	dc.l textvid_set_inpos
+	dc.l textvid_set_outpos
+	dc.l textvid_stub
+	dc.l textvid_stub
+	dc.l textvid_stub				; 10
+	dc.l textvid_clear
+	dc.l textvid_stub
+	dc.l textvid_stub
+	dc.l textvid_stub
+	dc.l textvid_stub
+	dc.l textvid_getbuf1
+	dc.l textvid_stub
+	dc.l textvid_stub
+	dc.l textvid_set_unit
+	dc.l textvid_get_dimen	; 20
+	dc.l textvid_get_color
+	
+textvid_cmdproc:
+	cmpi.b #22,d6
 	bhs.s .0001
-	tst.b d6
-	bmi.s .0001
 	movem.l d6/a0,-(a7)
 	asl.b #2,d6
 	ext.w d6
-	lea CON_CMDTBL,a0
+	lea TEXTVID_CMDTBL,a0
 	move.l (a0,d6.w),a0
 	jsr (a0)
 	movem.l (a7)+,d6/a0
@@ -653,37 +691,130 @@ console_cmdproc:
 	moveq #E_Func,d0
 	rts
 
-console_stat:
+textvid_stat:
 	moveq #E_Ok,d0
 	rts
 
-console_putchar:
+textvid_putchar:
 	bsr DisplayChar
 	moveq #E_Ok,d0
 	rts
 
-console_getchar:
+textvid_getchar:
 	bsr FromScreen
 	moveq #E_Ok,d0
 	rts
 
-console_putbuf:
-console_getbuf:
-console_set_inpos:
-console_set_outpos:
+textvid_putbuf:
+textvid_getbuf:
+textvid_set_inpos:
+textvid_set_outpos:
+textvid_stub:
 	moveq #E_NotSupported,d0
 	rts
 
-;------------------------------------------------------------------------------
-;------------------------------------------------------------------------------
-
-init_framebuf:
-	rts
-	move.b #1,FRAMEBUF+0		; turn on frame buffer
-	move.b #1,FRAMEBUF+1		; color depth 16 BPP
-	move.b #$11,FRAMEBUF+2	; hres 1:1 vres 1:1
+textvid_get_color:
+	move.l textvid_dcb+DCB_FGCOLOR,d1
+	move.l textvid_dcb+DCB_BKCOLOR,d2
+	move.l #E_Ok,d0
 	rts
 
+textvid_getbuf1:
+	move.l textvid_dcb+DCB_OUTBUFPTR,d1
+	move.l textvid_dcb+DCB_UNIT,d0
+	mulu #8192,d0
+	add.l d0,d1
+	move.l #E_Ok,d0
+	rts
+
+textvid_set_unit:
+	move.l d1,textvid_dcb+DCB_UNIT
+	move.l #E_Ok,d0
+	rts
+
+textvid_get_dimen:
+	cmpi.b #0,d0
+	bne.s .0001
+	move.l textvid_dcb+DCB_OUTDIMX,d1
+	move.l textvid_dcb+DCB_OUTDIMY,d2
+	move.l textvid_dcb+DCB_OUTDIMZ,d3
+	move.l #E_Ok,d0
+	rts
+.0001:
+	move.l textvid_dcb+DCB_INDIMX,d1
+	move.l textvid_dcb+DCB_INDIMY,d2
+	move.l textvid_dcb+DCB_INDIMZ,d3
+	move.l #E_Ok,d0
+	rts
+
+; -----------------------------------------------------------------------------
+; -----------------------------------------------------------------------------
+
+textvid_clear:
+	movem.l	d1/d2/d3/d4/a0,-(a7)
+	movec	coreno,d0
+	swap d0	
+;	moveq		#SCREEN_SEMA,d1
+;	bsr			LockSemaphore
+	move.l #2,d7								; device 2
+	move.l #DEV_GETBUF1,d6
+	trap #0
+	move.l d1,a0								; a0 = pointer to screen area
+	move.l #DEV_GET_DIMEN,d6
+	moveq #0,d0									; get output dimensions
+	trap #0
+	ext.w d1										; d1 = columns
+	ext.w d2										; d2 = rows
+	mulu d1,d2									; d2 = number of character cells to clear
+	move.l d2,d4
+	move.l #DEV_GET_COLOR,d6
+	trap #0
+;	bsr	get_screen_color				; get the color bits
+	if (SCREEN_FORMAT==1)
+		ext.l d1
+		swap d1
+		lsl.l #8,d1
+		ext.l d2									; clear high order bits
+		or.l d1,d2								; forground color in bits 24 to 31
+		swap d2										; color in bits 16 to 23
+		ori.w #32,d2							; insert character to display (space)
+		rol.w #8,d2								; reverse byte order
+		swap d2
+		rol.w #8,d2
+loop3:
+		move.l d2,(a0)+						; copy to cell
+	else
+		lsl.l #5,d1								; high order background color bits go in bits 0 to 4
+		move.l d2,d3
+		swap d3
+		andi.l #$1f,d3
+		or.l d3,d1
+		; we want bkcolor in bits 16 to 32
+		; char in bits 0 to 15
+		swap d2										; color in bits 16 to 32
+		move.w #32,d2							; load space character
+		rol.w	#8,d2								; swap endian, text controller expects little endian
+		swap d2
+		rol.w	#8,d2
+		rol.w	#8,d0								; swap endian
+		swap d0
+		rol.w	#8,d0
+loop3:
+		move.l d2,(a0)+						; copy char plus bkcolor to cell
+		move.l d1,(a0)+						; copy fgcolor to cell
+	endif
+	dbra d4,loop3
+	movec coreno,d0
+	swap d0	
+;	moveq #SCREEN_SEMA,d1
+;	bsr UnlockSemaphore
+	movem.l (a7)+,d1/d2/d3/d4/a0
+	move.l #E_Ok,d0
+	rts
+
+	include "framebuf.x68"
+
+;------------------------------------------------------------------------------
 ;------------------------------------------------------------------------------
 ;------------------------------------------------------------------------------
 
@@ -1076,48 +1207,6 @@ get_screen_address:
 	move.l	TextScr,a0
 	rts
 	
-; -----------------------------------------------------------------------------
-; -----------------------------------------------------------------------------
-
-clear_screen:
-	movem.l	d0/d1/d2/a0,-(a7)
-	movec		coreno,d0
-	swap		d0	
-;	moveq		#SCREEN_SEMA,d1
-;	bsr			LockSemaphore
-	bsr	get_screen_address			; a0 = pointer to screen area
-	move.b	TextRows,d0					; d0 = rows
-	move.b	TextCols,d2					; d2 = cols
-	ext.w		d0									; convert to word
-	ext.w		d2									; convert to word
-	mulu d0,d2									; d2 = number of character cells to clear
-	bsr	get_screen_color				; get the color bits
-	if (SCREEN_FORMAT==1)
-		ori.w #32,d0
-		rol.w #8,d0
-		swap d0
-		rol.w #8,d0
-loop3:
-		move.l d0,(a0)+						; copy to cell
-	else
-		ori.w	#32,d1							; load space character
-		rol.w	#8,d1								; swap endian, text controller expects little endian
-		swap d1
-		rol.w	#8,d1
-		rol.w	#8,d0								; swap endian
-		swap d0
-		rol.w	#8,d0
-loop3:
-		move.l d1,(a0)+						; copy char plus bkcolor to cell
-		move.l d0,(a0)+						; copy fgcolor to cell
-	endif
-	dbra d2,loop3
-	movec coreno,d0
-	swap d0	
-;	moveq #SCREEN_SEMA,d1
-;	bsr UnlockSemaphore
-	movem.l (a7)+,d0/d1/d2/a0
-	rts
 
 CRLF:
 	movem.l d0/d1,-(a7)
@@ -1706,7 +1795,7 @@ GetTick:
 SetDrawMode:
 	cmpi.w #10,d1
 	bne.s .0001
-	move.b #5,gr_raster_op			; 'OR' operation
+	move.b #5,framebuf_dcb+DCB_OPCODE			; 'OR' operation
 	rts
 .0001:
 	cmpi.w #17,d1
@@ -1717,7 +1806,7 @@ SetDrawMode:
 	rts
 	
 SetPenColor:
-	move.l d1,pen_color
+	move.w d1,framebuf_dcb+DCB_FGCOLOR
 	rts
 
 ;------------------------------------------------------------------------------
@@ -1725,13 +1814,20 @@ SetPenColor:
 ;------------------------------------------------------------------------------
 
 GRBufferToScreen:
-	movem.l a0/a1,-(a7)
-	eor.b #1,FRAMEBUF+3					; page flip
+	move.l #6,d7						; framebuffer device
+	move.l #DEV_SWAPBUF,d6	; swap buffers
+	trap #0
+	rts
+
+	movem.l d1/a0/a1,-(a7)
+	move.b FRAMEBUF+3,d1
+	eor.b #1,d1
+	move.b d1,FRAMEBUF+3					; page flip
 	move.l gr_bitmap_buffer,a1
 	move.l gr_bitmap_screen,a0
 	move.l a0,gr_bitmap_buffer
 	move.l a1,gr_bitmap_screen
-	movem.l (a7)+,a0/a1
+	movem.l (a7)+,d1/a0/a1
 	rts
 
 ; The following copies the buffer, why? Not needed if page flipping.
@@ -1756,86 +1852,14 @@ GRBufferToScreen:
 ;	movem.l (a7)+,d0/a0/a1
 ;	rts
 
-; Write the first eight pixels with the pen color.
-; Load the pixel buffer with the eight pixels.
-
-clear_bitmap_screen4:
-	movem.l d0/d1/a0,-(a7)
-	move.l gr_bitmap_buffer,a0
-	move.w pen_color,d0
-	swap d0
-	move.w pen_color,d0
-	move.w #8,d1
-.loop3:
-	move.l d0,(a0)+
-	dbra d1,.loop3
-	move.l gr_bitmap_buffer,a0
-	move.l a0,$BFFFFFF0			; load data hold with eight pixels
-	move.l #16,$BFFFFFF8		; set burst length sixteen
-	tst.l $BFFFFFFC					; load up the values (read)
-	move.w gr_width,d0
-	mulu gr_height,d0
-	lsr.l #8,d0							; moving 16x16 pixels per iteration
-	bra.s .loop
-.loop2:
-	swap d0
-.loop:
-	move.l a0,$BFFFFFF4			; set destination address
-	move.l d0,$BFFFFFFC			; write any value
-	add.l #32,a0						; advance pointer
-	dbra d0,.loop
-	swap d0
-	dbra d0,.loop2
-	movem.l (a7)+,d0/d1/a0
-	rts
-
-; The following code using bursts of 1k pixels did not work (hardware).
-;
-;clear_bitmap_screen2:
-;	move.l gr_bitmap_screen,a0
-;clear_bitmap_screen3:
-;	movem.l d0/d2/a0,-(a7)
-;	move.l #$3F3F3F3F,$BFFFFFF4	; 32x64 byte burst
-;	move.w pen_color,d0
-;	swap d0
-;	move.w pen_color,d0
-;	move.w gr_width,d2		; calc. number of pixels on screen
-;	mulu gr_height,d2
-;	add.l #1023,d2				; rounding up
-;	lsr.l #8,d2						; divide by 1024 pixel update
-;	lsr.l #2,d2
-;.0001:
-;	move.l a0,$BFFFFFF8		; write update address
-;	add.l #2048,a0				; update pointer
-;	move.l d0,$BFFFFFFC		; trigger burst write of 2048 bytes
-;	dbra d2,.0001
-;	movem.l (a7)+,d0/d2/a0
-;	rts
-
-; More conventional but slow way of clearing the screen.
-;
-;clear_bitmap_screen:
-;	move.l gr_bitmap_screen,a0
-;clear_bitmap_screen1:
-;	movem.l d0/d2/a0,-(a7)
-;	move.w pen_color,d0
-;	swap d0
-;	move.w pen_color,d0
-;	move.w gr_width,d2		; calc. number of pixels on screen
-;	mulu gr_height,d2			; 800x600 = 480000
-;	bra.s .0001
-;.0002:
-;	swap d2
-;.0001:
-;	move.l d0,(a0)+
-;	dbra d2,.0001
-;	swap d2
-;	dbra d2,.0002
-;	movem.l (a7)+,d0/d2/a0
-;	rts
 
 TestBitmap:
-	bsr clear_bitmap_screen4
+;	move.w #$0700,pen_color		; dark blue
+	move.w #$0700,framebuf_dcb+DCB_BKCOLOR
+	move.l #6,d7
+	move.l #DEV_CLEAR,d6
+	trap #0
+;	bsr clear_bitmap_screen4
 	moveq #94,d0							; page flip (display blank screen)
 	trap #15
 	move.w #$007c,pen_color		; red pen
@@ -1932,94 +1956,6 @@ Vertical2:
 ;parameter OPXNOR = 4'd10;
 ;parameter OPORN = 4'd11;
 ;parameter OPWHITE = 4'd15;
-
-;---------------------------------------------------------------------
-; The following uses point plot hardware built into the frame buffer.
-;---------------------------------------------------------------------
-
-plot:
-	move.l a0,-(a7)
-	move.l #FRAMEBUF,a0
-.0001:
-	tst.b 40(a0)									; wait for any previous command to finish
-	bne.s .0001										; Then set:
-	move.w d1,32(a0)							; pixel x co-ord
-	move.w d2,34(a0)							; pixel y co-ord
-	move.w pen_color,44(a0)				; pixel color
-	move.b gr_raster_op,41(a0)		; set raster operation
-	move.b #2,40(a0)							; point plot command
-	move.l (a7)+,a0
-	rts
-
-;-------------------------------------------
-; In case of lacking hardware plot
-;-------------------------------------------
-	align 2
-plottbl:
-	dc.l plot_black
-	dc.l plot_copy
-	dc.l plot_copy
-	dc.l plot_and
-	dc.l plot_or
-	dc.l plot_xor
-	dc.l plot_copy
-	dc.l plot_copy
-	dc.l plot_copy
-	dc.l plot_copy
-	dc.l plot_copy
-	dc.l plot_copy
-	dc.l plot_copy
-	dc.l plot_copy
-	dc.l plot_white
-
-plot_sw:
-	movem.l d1/d2/d3/d4/a0/a1,-(a7)
-	mulu gr_width,d2							; multiply y by screen width
-;	move.l d1,d3
-;	andi.l #30,d3
-;	moveq #30,d4
-;	sub.l d4,d3
-;	andi.l #$FFFFFFE0,d1
-;	or.l d3,d1
-	ext.l d1											; clear high-order word of x
-	add.l d1,d2										; add in x co-ord
-	add.l d2,d2										; *2 for 16 BPP
-	move.l gr_bitmap_buffer,a0		; where the draw occurs
-	move.w gr_raster_op,d3
-	lsl.w #2,d3
-	move.l plottbl(pc,d3.w),a1
-	jmp (a1)
-plot_or:
-	move.w (a0,d2.l),d4	
-	or.w pen_color,d4
-	move.w d4,(a0,d2.l)
-	movem.l (a7)+,d1/d2/d3/d4/a0/a1
-	rts
-plot_xor:
-	move.w (a0,d2.l),d4
-	move.w pen_color,d3	
-	eor.w d3,d4
-	move.w d4,(a0,d2.l)
-	movem.l (a7)+,d1/d2/d3/d4/a0/a1
-	rts
-plot_and:
-	move.w (a0,d2.l),d4	
-	and.w pen_color,d4
-	move.w d4,(a0,d2.l)
-	movem.l (a7)+,d1/d2/d3/d4/a0/a1
-	rts
-plot_copy:
-	move.w pen_color,(a0,d2.l)
-	movem.l (a7)+,d1/d2/d3/d4/a0/a1
-	rts
-plot_black:
-	clr.w (a0,d2.l)
-	movem.l (a7)+,d1/d2/d3/d4/a0/a1
-	rts
-plot_white:
-	move.w #$FF7F,(a0,d2.l)
-	movem.l (a7)+,d1/d2/d3/d4/a0/a1
-	rts
 
 ;------------------------------------------------------------------------------
 ; Set graphics cursor position.
@@ -2187,10 +2123,12 @@ DrawVertTo:
 ;------------------------------------------------------------------------------
 
 Cursor1:
-	move.l d1,-(a7)
+	movem.l d0/d1/d6/d7,-(a7)
 	cmpi.w #$FF00,d1
 	bne.s .0002
-	bsr	clear_screen
+	move.l #2,d7
+	move.l #DEV_CLEAR,d6	; clear screen
+	trap #0
 	move.l (a7)+,d1
 	bra	HomeCursor
 .0002:
@@ -2204,7 +2142,7 @@ Cursor1:
 	move.b d1,CursorCol
 .0001:
 	bsr SyncCursor			; update hardware cursor
-	move.l (a7)+,d1
+	movem.l (a7)+,d0/d1/d6/d7
 	rts
 
 ;------------------------------------------------------------------------------
@@ -2316,15 +2254,15 @@ keybd_init:
 	dbra d0,.0001
 	move.l #$20424344,keybd_dcb+DCB_MAGIC				; 'DCB'
 	move.l #$2044424B,keybd_dcb+DCB_NAME				; 'KBD'
-	move.l #keybd_cmdproc,con_dcb+DCB_CMDPROC
+	move.l #keybd_cmdproc,textvid_dcb+DCB_CMDPROC
 	move.l #_KeybdBuf,keybd_dcb+DCB_INBUFPTR
 	move.l #_KeybdOBuf,keybd_dcb+DCB_OUTBUFPTR
 	move.l #32,keybd_dcb+DCB_INBUFSIZE
 	move.l #32,keybd_dcb+DCB_OUTBUFSIZE
-	clr.b keybd_dcb+DCB_OUTCOLS	; set rows and columns
-	clr.b keybd_dcb+DCB_OUTROWS
-	clr.b keybd_dcb+DCB_INCOLS		; set rows and columns
-	clr.b keybd_dcb+DCB_INROWS
+	clr.b keybd_dcb+DCB_OUTDIMX	; set rows and columns
+	clr.b keybd_dcb+DCB_OUTDIMY
+	clr.b keybd_dcb+DCB_INDIMX		; set rows and columns
+	clr.b keybd_dcb+DCB_INDIMY
 ;	bsr KeybdInit
 	rts
 
@@ -2342,8 +2280,6 @@ KBD_CMDTBL:
 keybd_cmdproc:
 	cmpi.b #8,d6
 	bhs.s .0001
-	tst.b d6
-	bmi.s .0001
 	movem.l d6/a0,-(a7)
 	asl.b #2,d6
 	ext.w d6
@@ -3253,7 +3189,9 @@ cmdVideoMode:
 	cmpi.b #0,d1
 	bne.s .0001
 	bsr set_text_mode
-	bsr clear_screen
+	move.l #2,d7
+	move.l #DEV_CLEAR,d6
+	trap #0
 	bra Monitor
 .0001:
 	bsr set_graphics_mode
@@ -3798,10 +3736,12 @@ edtmem1:
 	clr.l	d2
 	bsr EditMemHelper
 	bsr EditMemHelper
+	swap d2
 	move.l d2,(a1)+
 	clr.l	d2
 	bsr EditMemHelper
 	bsr EditMemHelper
+	swap d2
 	move.l d2,(a1)+
 	bra Monitor
 .0005:
@@ -3810,13 +3750,21 @@ edtmem1:
 	bsr EditMemHelper
 	bsr EditMemHelper
 	bsr EditMemHelper
-	move.l d2,(a1)+
+	exg d1,d2
+	bsr rbo
+	move.l d1,(a1)+
+	bsr rbo
+	exg d1,d2
 	clr.l	d2
 	bsr EditMemHelper
 	bsr EditMemHelper
 	bsr EditMemHelper
 	bsr EditMemHelper
-	move.l d2,(a1)+
+	exg d1,d2
+	bsr rbo
+	move.l d1,(a1)+
+	bsr rbo
+	exg d1,d2
 	bra Monitor
 
 ;------------------------------------------------------------------------------
@@ -4264,7 +4212,9 @@ BouncingBalls:
 GraphicsDemo:
 	rts
 ClearScreen:
-	bra		clear_screen
+	move.l #2,d7
+	move.l #DEV_CLEAR,d6
+	trap #0
 	rts
 
 ;------------------------------------------------------------------------------
@@ -5170,10 +5120,8 @@ T15FloatToString:
 ;==============================================================================
 
 io_trap:
-	cmpi.b #2,d7							; make sure legal device
+	cmpi.b #7,d7							; make sure legal device
 	bhi.s .0002
-	tst.b d7
-	bmi.s .0002
 	movem.l d7/a0,-(a7)
 	mulu #DCB_SIZE,d7					; index to DCB
 	move.l #null_dcb,a0
