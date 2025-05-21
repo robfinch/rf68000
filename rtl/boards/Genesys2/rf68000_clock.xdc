@@ -16,7 +16,18 @@ set_property CLOCK_DEDICATED_ROUTE BACKBONE [get_nets ucg1/inst/clk_in1_WXGA800x
 # CLKOUT2 = clk33
 # CLKOUT4 = clk20
 
-set_clock_groups -asynchronous -group {clk_pll_i clk429_WXGA1366x768_clkgen} -group clk86_WXGA1366x768_clkgen -group clk86_WXGA1366x768_clkgen -group clk21_WXGA1366x768_clkgen -group clk17_WXGA1366x768_clkgen -group clk200_WXGA800x600_clkgen -group clk100_WXGA800x600_clkgen -group clk50_WXGA800x600_clkgen -group clk40_WXGA800x600_clkgen -group clk20_WXGA800x600_clkgen -group clk17_WXGA800x600_clkgen -group clk_pll_i_1 -group clk100_cpuClkgen_1 -group clk84_cpuClkgen_1 -group clk43_cpuClkgen_1 -group clk21_cpuClkgen_1 -group clk17_cpuClkgen_1 -group clk100_cpuClkgen -group clk50_cpuClkgen -group clk40_cpuClkgen -group clk20_cpuClkgen -group clk17_cpuClkgen
+set_clock_groups -asynchronous -group {clk_pll_i_1 \
+clk742_WXGA1920x1080_clkgen_1 \
+clk148_WXGA1920x1080_clkgen_1} \
+-group { clk200_WXGA800x600_clkgen \
+clk100_WXGA800x600_clkgen \
+clk50_WXGA800x600_clkgen \
+clk20_WXGA800x600_clkgen}
+
+set_false_path -from [get_clocks ucg1/clk20] -to [get_clocks ucg2/clk148]
+set_false_path -from [get_clocks ucg1/clk100] -to [get_clocks ucg2/clk148]
+set_false_path -from [get_clocks ucg2/clk148] -to [get_clocks ucg1/clk20]
+set_false_path -from [get_clocks ucg2/clk148] -to [get_clocks ucg1/clk100]
 
 #set_clock_groups -asynchronous #-group { #uddr3/u_mig_7series_0_mig/u_ddr3_infrastructure/gen_mmcm.mmcm_i/CLKIN1 #ucg1/inst/mmcm_adv_inst/CLKOUT0 #ucg1/inst/mmcm_adv_inst/CLKOUT1 #} #-group { #ucg1/inst/mmcm_adv_inst/CLKOUT3 #} #-group { #ucg1/inst/mmcm_adv_inst/CLKOUT2 #ucg1/inst/mmcm_adv_inst/CLKOUT6 #}
 
@@ -36,8 +47,8 @@ set_clock_groups -asynchronous -group {clk_pll_i clk429_WXGA1366x768_clkgen} -gr
 #et_false_path -from [get_clocks clk_pll_i] -to [get_clocks ucg1/clk40]
 #et_false_path -from [get_clocks ucg1/clk40] -to [get_clocks clk_pll_i]
 
-set_false_path -from [get_clocks clk40_NexysVideoClkgen] -to [get_clocks clk25_cpuClkgen]
-set_false_path -from [get_clocks clk25_cpuClkgen] -to [get_clocks clk40_NexysVideoClkgen]
+#set_false_path -from [get_clocks clk40_NexysVideoClkgen] -to [get_clocks clk25_cpuClkgen]
+#set_false_path -from [get_clocks clk25_cpuClkgen] -to [get_clocks clk40_NexysVideoClkgen]
 
 #set_false_path -from [get_clocks ucg1/clk40] -to [get_clocks clk20_NexysVideoClkgen]
 

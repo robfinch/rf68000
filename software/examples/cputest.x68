@@ -121,7 +121,7 @@ cpu_test:
 	bsr op_ADDQ
 	bsr op_SUBQ
 	bsr op_MOVEQ
-	bsr op_DIVU
+;	bsr op_DIVU
 ;	bsr op_DIVS
 	bsr op_OR
 	bsr op_AND

@@ -70,6 +70,14 @@
 ;          |                |
 ; 80000000 +----------------+
 ;          |                |
+;          |                |
+;          |                |
+;          :  dram memory   : 1GB MB
+;          |     mirror     |
+;          |                |
+;          |                |
+; C0000000 +----------------+
+;          |                |
 ;          :     unused     :
 ;          |                |
 ; FD000000 +----------------+
@@ -86,6 +94,8 @@
 ;
 HAS_MMU equ 0
 NCORES equ 4
+TEXTCOL equ 64
+TEXTROW	equ	32
 
 CTRLC	EQU		$03
 CTRLH	EQU		$08
@@ -454,12 +464,12 @@ start:
 	clr.l gr_x
 	clr.l gr_y
 	move.b #1,gr_raster_op		; op = copy
-	move.w #800,gr_width
-	move.w #600,gr_height
+	move.w #1920,gr_width
+	move.w #1080,gr_height
 	move.l #$40000000,gr_bitmap_screen
-	move.l #$40100000,gr_bitmap_buffer
+	move.l #$40400000,gr_bitmap_buffer
 	move.l #$00000040,FRAMEBUF+16	; base addr 1
-	move.l #$00001040,FRAMEBUF+24	; base addr 2
+	move.l #$00004040,FRAMEBUF+24	; base addr 2
 	move.b d0,IOFocus					; Set the IO focus in global memory
 	if HAS_MMU
 		bsr InitMMU							; Can't access anything till this is done'
@@ -609,10 +619,10 @@ setup_console:
 	move.l d0,con_dcb+DCB_OUTBUFPTR
 	move.l #16384,con_dcb+DCB_INBUFSIZE
 	move.l #16384,con_dcb+DCB_OUTBUFSIZE
-	move.b #64,con_dcb+DCB_OUTCOLS	; set rows and columns
-	move.b #32,con_dcb+DCB_OUTROWS
-	move.b #64,con_dcb+DCB_INCOLS		; set rows and columns
-	move.b #32,con_dcb+DCB_INROWS
+	move.b #TEXTCOL,con_dcb+DCB_OUTCOLS	; set rows and columns
+	move.b #TEXTROW,con_dcb+DCB_OUTROWS
+	move.b #TEXTCOL,con_dcb+DCB_INCOLS		; set rows and columns
+	move.b #TEXTROW,con_dcb+DCB_INROWS
 	rts
 
 	align 2
@@ -1009,9 +1019,9 @@ Delay3s2:
 ; -----------------------------------------------------------------------------
 
 set_text_mode:
-	moveq #64,d0
+	moveq #TEXTCOL,d0
 	move.b d0,TEXTREG					; number of columns
-	moveq #32,d0
+	moveq #TEXTROW,d0
 	move.b d0,TEXTREG+1				; number of rows
 	moveq #0,d0
 	move.b d0,TEXTREG+3				; text mode
@@ -1022,9 +1032,9 @@ set_text_mode:
 	rts
 	
 set_graphics_mode:
-	moveq #100,d0
+	moveq #TEXTCOL*2,d0
 	move.b d0,TEXTREG					; number of columns
-	moveq #75,d0
+	moveq #TEXTROW*2,d0
 	move.b d0,TEXTREG+1				; number of rows
 	moveq #1,d0
 	move.b d0,TEXTREG+3				; graphics mode
@@ -1033,7 +1043,7 @@ set_graphics_mode:
 	moveq #7,d0
 	move.b d0,TEXTREG+10			; max pix
 	rts
-	
+
 ; -----------------------------------------------------------------------------
 ; Gets the screen color in d0 and d1.
 ; -----------------------------------------------------------------------------
@@ -1534,7 +1544,9 @@ SyncCursor:
 	cmp.b	IOFocus,d2
 	bne.s .0001
 	subi.w #2,d2				; factor in location of screen in controller
-	mulu #2048,d2				; 2048 cells per screen
+	move.w #TEXTROW,d0
+	mulu #TEXTCOL,d0
+	mulu d0,d2					; 2048/4000 cells per screen
 	add.l	d2,d1
 	rol.w	#8,d1					; swap byte order
 	swap d1
@@ -1759,11 +1771,11 @@ clear_bitmap_screen4:
 	dbra d1,.loop3
 	move.l gr_bitmap_buffer,a0
 	move.l a0,$BFFFFFF0			; load data hold with eight pixels
-	move.l #0,$BFFFFFF8			; set burst length zero
+	move.l #16,$BFFFFFF8		; set burst length sixteen
 	tst.l $BFFFFFFC					; load up the values (read)
 	move.w gr_width,d0
 	mulu gr_height,d0
-	lsr.l #4,d0							; moving 16 pixels per iteration
+	lsr.l #8,d0							; moving 16x16 pixels per iteration
 	bra.s .loop
 .loop2:
 	swap d0
@@ -1830,28 +1842,75 @@ TestBitmap:
 	clr.l gr_x
 ;	clr.l gr_y
 	move.l #1,gr_y
-	move.l #799,d3
+	move.l gr_width,d3
+	subq.l #1,d3
 	move.l #1,d4
 	bsr DrawHorizTo
 	clr.l gr_x
 	clr.l gr_y
 	move.l #0,d3
-	move.l #599,d4
+	move.l gr_height,d4
+	subq.l #1,d4
 	bsr DrawVertTo
 	move.w #$E001,pen_color		; green pen
 	move.l #2,gr_x
 	clr.l gr_y
 	move.l #2,d3
-	move.l #599,d4
+	move.l gr_height,d4
+	subq.l #1,d4
 	bsr DrawVertTo
 	clr.l gr_x
 	clr.l gr_y
-	move.l #799,d3
-	move.l #599,d4
+	move.l gr_width,d3
+	subq.l #1,d3
+	move.l d3,gr_x
+	move.l gr_height,d4
+	subq.l #1,d4
 	bsr DrawToXY
 	moveq #94,d0							; page flip again
 	trap #15
 	bra Monitor
+
+Diagonal1:
+	clr.l gr_x
+	clr.l gr_y
+	move.l gr_width,d3
+	subq.l #1,d3
+	move.l gr_height,d4
+	subq.l #1,d4
+	bsr DrawToXY
+	rts
+
+Diagonal2:
+	move.l gr_width,d3
+	subq.l #1,d3
+	move.l d3,gr_x
+	clr.l gr_y
+	move.l gr_height,d3
+	subq.l #1,d3
+	moveq #0,d4
+	move.w #$E001,pen_color
+	bsr DrawToXY
+	rts
+
+Vertical1:
+	clr.l gr_x
+	clr.l gr_y
+	move.l #0,d3
+	move.l gr_height,d4
+	subq.l #1,d4
+	bsr DrawVertTo
+	rts
+
+Vertical2:
+	move.w #$E001,pen_color		; green pen
+	move.l #2,gr_x
+	clr.l gr_y
+	move.l #2,d3
+	move.l gr_height,d4
+	subq.l #1,d4
+	bsr DrawVertTo
+	rts
 
 ;------------------------------------------------------------------------------
 ; Plot on bitmap screen using current pen color.
@@ -3117,6 +3176,7 @@ cmdMonitor:
 Monitor:
 	; Reset the stack pointer on each entry into the monitor
 	move.l #$40FFC,sp		; reset core's stack
+	pea Monitor					; Cause any RTS to go here
 	move.w #$2200,sr		; enable level 2 and higher interrupts
 	movec	coreno,d0
 	swap d0

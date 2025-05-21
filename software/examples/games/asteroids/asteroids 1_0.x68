@@ -84,7 +84,7 @@
 ; a7 = stack pointer
 
 
-;	ORG	$10000
+	ORG	$10000
 	code
 	even
 
@@ -471,7 +471,7 @@ col_table_l
 ; d6 = X = player/saucer/shot index
 ; d7 = Y = object index
 
-handle_collision
+handle_collision:
 	CMPI.w	#s_flag_off-p_flag_off,d6
 							; compare the player/saucer/shot index with the
 							; saucer
@@ -1129,8 +1129,8 @@ hyperspace
 ;##	TST.b		hide_p_cnt(a5)		; test the hide the player count
 ;##	BNE		exit_hyperspace		; if the player is hidden just exit
 
-	TST.b		p_flag_off(a5)		; test the player flag
-	BLE		exit_hyperspace		; if no player or player exploding just exit
+	tst.b p_flag_off(a5)		; test the player flag
+	ble exit_hyperspace			; if no player or player exploding just exit
 
 ;	MOVEQ		#' ',d1			; [SPACE] key, read the hyperspace button
 ;	MOVEQ		#19,d0			; check for keypress
@@ -1206,7 +1206,7 @@ exit_hyperspace
 ;
 ; clear the items and set the ship start count
 
-reset_game
+reset_game:
 	MOVEQ		#3,d0				; default to a 3 ship game
 	MOVEA.l	switch_addr(a3),a0	; point to the switch
 	BTST		#2,(a0)			; test the ship start switch
@@ -1234,7 +1234,7 @@ clear_items_loop
 ;
 ; write a high score initial to the vector list
 
-write_initial
+write_initial:
 	MOVEQ		#0,d1				; clear the longword
 	MOVE.b	(a0)+,d1			; get a high score initial
 	BNE.s		add_character		; if not [SPACE] just go add it
@@ -1256,7 +1256,7 @@ write_initial
 ;
 ; add character (d1) to the vector list
 
-add_character
+add_character:
 	MOVE.l	a0,-(sp)			; save a0
 	ADD.w		d1,d1				; ; 2 bytes per character (d1) JSRL
 	LEA		char_set(pc),a0		; point to the character JSRL table
@@ -1270,7 +1270,7 @@ add_character
 ; add d7 ships to the vector list. this is limited to a maximum of eighteen ships for
 ; speed and clarity
 
-add_ships
+add_ships:
 	BEQ.s		exit_add_ships		; if no ships left just exit
 
 	MOVEQ		#18,d0			; set the maximum ship count
@@ -1304,7 +1304,7 @@ exit_add_ships
 ; d6 = object index
 ; d7 = position index
 
-move_items
+move_items:
 	MOVEQ		#x_pos_end-x_pos_off-2,d7
 							; set the index to the last object position
 	MOVEQ		#flag_end-flags_off-1,d6
@@ -1381,7 +1381,7 @@ no_reset_scale
 
 ; the item is not exploding so move the item
 
-move_item
+move_item:
 	MOVE.b	x_vel_off(a5,d6.w),d0	; get the x velocity byte
 	EXT.w		d0				; extend it to a word value
 	ADD.w		x_pos_off(a5,d7.w),d0	; add the x position
@@ -1455,21 +1455,21 @@ move_next_object
 ;
 ; clear the saucer and restart the saucer timer
 
-clear_saucer
-	MOVE.b	i_sauc_tim(a5),sauc_cntdn(a5)	
+clear_saucer:
+	move.b i_sauc_tim(a5),sauc_cntdn(a5)	
 							; copy the small saucer boundary/initial saucer
 							; timer to the saucer countdown timer
-	CLR.b		s_flag_off(a5)		; clear the saucer flag
-	CLR.b		s_xvel_off(a5)		; clear the saucer x velocity byte
-	CLR.b		s_yvel_off(a5)		; clear the saucer y velocity byte
-	RTS
+	clr.b s_flag_off(a5)		; clear the saucer flag
+	clr.b s_xvel_off(a5)		; clear the saucer x velocity byte
+	clr.b s_yvel_off(a5)		; clear the saucer y velocity byte
+	rts
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;
 ; handle ship rotation and thrust
 
-ship_move
+ship_move:
 ;##	TST.b		num_players(a3)		; test the number of players in the game
 ;##	BEQ.s		exit_ship_move		; if no players just exit
 
@@ -1509,7 +1509,7 @@ reveal_player
 
 ; handle an unsuccessful hyperspace jump
 
-kill_the_player
+kill_the_player:
 	MOVE.b	#$A0,p_flag_off(a5)	; flag that the player's ship is exploding
 	SUBQ.b	#1,ships_off(a5)		; decrement the player's ship count
 	MOVE.b	#$81,hide_p_cnt(a5)	; set the hide the player count
@@ -1524,10 +1524,10 @@ exit_ship_move
 ; handle the ship rotate and thrust
 
 rot_and_thrust
-	MOVEQ		#0,d2				; assume no rotate
-	MOVE.l	#'L WQ',d1			; [L WQ] keys
-	MOVEQ		#19,d0			; check for keypress
-	TRAP		#15
+;	MOVEQ		#0,d2				; assume no rotate
+;	MOVE.l	#'L WQ',d1			; [L WQ] keys
+;	MOVEQ		#19,d0			; check for keypress
+;	TRAP		#15
 	moveq #5,d0
 	trap #15
 	cmpi.b #'Q',d1
@@ -1549,11 +1549,11 @@ not_rot_right1:
 
 ;	SUBQ.b	#3,d2				; if pressed set the rotation angle to - 3
 ;not_rot_right
-	ADD.b		d2,p_orient(a3)		; add the roataion to the player orientation
+	add.b d2,p_orient(a3)		; add the roataion to the player orientation
 
-	MOVEQ		#1,d0				; set game counter mask
-	AND.w		game_count(a3),d0		; mask the game counter
-	BNE.s		exit_ship_move		; just exit half the time
+	moveq #1,d0				; set game counter mask
+	and.w game_count(a3),d0		; mask the game counter
+	bne.s exit_ship_move		; just exit half the time
 
 	cmpi.b #'L',d1
 	bne.s not_thrust
@@ -1625,14 +1625,14 @@ not_thrust
 ;
 ; limit check the velocity in XA
 
-check_velocity
+check_velocity:
 	BMI.s		check_neg_velocity	; if negative go check negative limit
 
 	CMPI.w	#$4000,d1			; compare velocity with positive limit
 	BCS.s		exit_check_velocity	; if less just exit
 
 	MOVE.w	#$3FFF,d1			; else set the velocity
-	RTS
+	rts
 
 ; velocity is negative so check against the negative limit
 
@@ -1642,20 +1642,20 @@ check_neg_velocity
 
 	MOVE.w	#$C001,d1			; else set the velocity
 exit_check_velocity
-	RTS
+	rts
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;
 ; check items within $0400 range of the player
 
-check_clear
-	MOVEQ		#s_flag_off-flags_off,d6
+check_clear:
+	moveq #s_flag_off-flags_off,d6
 							; set the count/index to the saucer
-	MOVEQ		#s_xpos_off-x_pos_off,d7
+	moveq #s_xpos_off-x_pos_off,d7
 							; set the index to the saucer position
 check_clear_loop
-	TST.b		flags_off(a5,d6.w)	; test the item flag
+	tst.b flags_off(a5,d6.w)	; test the item flag
 	BLE.s		not_closer			; if no item or exploding go do the next item
 
 	MOVE.w	x_pos_off(a5,d7.w),d0	; get the item x position
@@ -1682,19 +1682,19 @@ not_closer
 	DBF		d6,check_clear_loop	; decrement the count and loop if more to do
 
 	MOVEQ		#0,d0				; return Zb = 1
-	RTS
+	rts
 
 is_closer
 	ADDQ.b	#1,hide_p_cnt(a5)		; increment the hide the player count
 							; return Zb = 0
-	RTS
+	rts
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;
 ; generate new rocks
 
-make_rocks
+make_rocks:
 	TST.b		s_flag_off(a5)		; test the saucer flag
 	BNE		exit_make_rocks		; if existing saucer just exit
 
@@ -1786,47 +1786,47 @@ clear_rocks_loop
 	DBF		d5,clear_rocks_loop	; decrement the count and loop if more to do
 
 exit_make_rocks
-	RTS
+	rts
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;
 ; initialise the player variables
 
-player_init
-	MOVE.b	ss_count(a3),ships_off(a5)
+player_init:
+	move.b ss_count(a3),ships_off(a5)
 							; set the player's starting ship count
-	MOVE.b	#$92,i_sauc_tim(a5)	; set the small saucer boundary/initial saucer
+	move.b #$92,i_sauc_tim(a5)	; set the small saucer boundary/initial saucer
 							; timer
-	MOVE.b	#$92,sauc_cntdn(a5)	; set the saucer countdown timer
-	MOVE.b	#$7F,new_rocks(a5)	; set the generate new rocks flag
+	move.b #$92,sauc_cntdn(a5)	; set the saucer countdown timer
+	move.b #$7F,new_rocks(a5)	; set the generate new rocks flag
 
-	MOVE.b	#$05,min_rocks(a5)	; set the minimum rock count before the saucer
+	move.b #$05,min_rocks(a5)	; set the minimum rock count before the saucer
 							; initial timer starts to decrement
-	MOVE.b	#$34,thmp_sndi(a5)	; reset the thump sound change timer initial
+	move.b #$34,thmp_sndi(a5)	; reset the thump sound change timer initial
 							; value
-	MOVE.b	#beat1_snd,thump_snd(a3)	; reset the thump sound value
-	MOVE.b	#$FF,high_off(a5)		; clear the player highscore flag
-	MOVE.b	#$01,hide_p_cnt(a5)	; set the hide the player count
+	move.b #beat1_snd,thump_snd(a3)	; reset the thump sound value
+	move.b #$FF,high_off(a5)		; clear the player highscore flag
+	move.b #$01,hide_p_cnt(a5)	; set the hide the player count
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;
 ; reset the player velocity and position
 
-player_reset
-	MOVE.w	#$1000,p_xpos_off(a5)	; set the player x position
-	MOVE.w	#$0C00,p_ypos_off(a5)	; set the player y position
-	CLR.b		p_xvel_off(a5)		; clear the player x velocity
-	CLR.b		p_yvel_off(a5)		; clear the player y velocity
-	RTS
+player_reset:
+	move.w #$1000,p_xpos_off(a5)	; set the player x position
+	move.w #$0C00,p_ypos_off(a5)	; set the player y position
+	clr.b p_xvel_off(a5)					; clear the player x velocity
+	clr.b p_yvel_off(a5)					; clear the player y velocity
+	rts
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;
 ; copy the item parameters from the old rock, (d7), to the new rock, (d5)
 
-copy_rock
+copy_rock:
 	MOVE.w	d7,d4				; copy the old rock index
 	ADD.w		d4,d4				; ; 2 for the old rock position index
 
@@ -1855,7 +1855,7 @@ copy_rock_2
 ; copy the old rock, (d7), velocity plus random delta x,y velocity to the new rock,
 ; (d5), velocity
 
-copy_velocity
+copy_velocity:
 	BSR		gen_prng			; generate the next pseudo random number
 	MOVEQ		#$8F,d0			; mask +/- $00 to $0F
 	AND.b		PRNlword(a3),d0		; mask a pseudo random byte
@@ -1886,7 +1886,7 @@ y_off_pos
 ;
 ; ensure velocity is within limits
 
-limit_velocity
+limit_velocity:
 	BPL.s		limit_p_vel			; if positive go test positive limit
 
 	CMPI.b	#$E1,d0			; compare velocity with upper limit
@@ -1920,7 +1920,7 @@ exit_limit_velocity
 ;
 ; add (c), scores and players ships to the vector list
 
-static_messages
+static_messages:
 	LEA		copy_msg(pc),a1		; set the pointer to the copyright message
 	BSR		add_address			; convert the a1 address and add it to the
 							; vector list as a vector subroutine call
@@ -2046,7 +2046,7 @@ exit_static
 ; d7 = position offset
 
 							; first add the DRAW to the item's origin
-add_to_list
+add_to_list:
 	MOVE.w	y_pos_off(a5,d7.w),d0	; get the y position
 	ADD.w		#$0400,d0			; add offset so y is centred around 512
 	LSR.w		#3,d0				; / 8
@@ -2076,7 +2076,7 @@ add_to_list
 
 ; add item d6 to the vector list
 
-add_item
+add_item:
 	CMPI.b	#p_flag_off-flags_off,d6
 							; compare the index with the player index
 	BEQ		add_player			; if = go add the player to the vector list
@@ -2097,13 +2097,13 @@ add_explode
 
 ; add the saucer to the vector list
 
-add_saucer
+add_saucer:
 	MOVE.w	sauc_jsr(pc),(a4)+	; add the saucer JSRL to the vector list
 	RTS
 
 ; add fire to the vector list
 
-add_fire
+add_fire:
 	MOVE.w	shot_jsr(pc),(a4)+	; add the shot JSRL to the vector list
 
 	MOVEQ		#3,d0				; set the game counter mask
@@ -2119,7 +2119,7 @@ no_shot_dec
 ;
 ; add d1.b to the current player's score
 
-add_score
+add_score:
 	MOVE.w	#4,CCR			; set Zb, clear everything else
 	MOVE.b	score_off+1(a5),d2	; get the player's score, tens
 	ABCD.b	d1,d2				; add the value to the score
@@ -2149,7 +2149,7 @@ exit_add_score
 ;
 ; display the high score table if the game is over
 
-high_scores
+high_scores:
 	TST.b		num_players(a3)		; test the number of players in the game
 	BNE		exit_no_scores		; if playing skip the high scores
 
@@ -2234,7 +2234,7 @@ exit_no_scores
 ;
 ; find a free rock item, the index is returned in d5
 
-find_rock
+find_rock:
 	MOVEQ		#p_flag_off-flags_off-1,d5
 							; set the count/index to the last rock flag
 
@@ -2275,7 +2275,7 @@ ship_wrk_y
 ;
 ; add the player explosion to the vector list
 
-add_play_explode
+add_play_explode:
 	MOVEM.l	d6-d7,-(sp)			; save the registers
 	MOVEQ		#0,d1				; clear the longword
 	MOVE.b	p_flag_off(a5),d1		; get the player flag
@@ -2385,7 +2385,7 @@ ship_parts
 ;
 ; add the player ship to the vector list
 
-add_player
+add_player:
 	MOVEQ		#0,d3				; clear the x_sign
 	MOVEQ		#0,d2				; clear the y_sign
 	MOVEQ		#0,d4				; yx_sign
@@ -2440,7 +2440,7 @@ no_thrust
 ;
 ; copy the vectors from (a1) to the vector list
 
-copy_short
+copy_short:
 	EOR.w		d4,d0				; possibly toggle the x and y signs
 	MOVE.w	d0,(a4)+			; copy the word to the vector list
 
@@ -2471,7 +2471,7 @@ exit_copy_vectors
 ;
 ; do the game sounds
 
-fx_sounds
+fx_sounds:
 	MOVEQ		#0,d1				; clear the longword
 	MOVE.b	s_flag_off(a5),d1		; get the saucer flag
 	BLE.s		no_saucer_sound		; if no saucer or the saucer is exploding skip
@@ -2514,7 +2514,7 @@ no_thump_sound
 ; d6 = player/saucer/shot object index
 ; d7 = object index
 
-hit_a_rock
+hit_a_rock:
 	MOVE.b	#$50,r_hit_tim(a5)	; set the rock hit timer
 	MOVE.b	flags_off(a5,d7.w),d0	; get the rock flag
 	MOVEQ		#$78,d1			; set the mask for the rock type
@@ -2597,7 +2597,7 @@ rock_score
 ;
 ; do the high score checks
 
-check_hiscores
+check_hiscores:
 	MOVE.b	num_players(a3),d0	; get the number of players in the game
 	BPL.s		exit_check_hiscores	; if still players just exit
 
@@ -2652,7 +2652,7 @@ exit_check_hiscores
 
 ; insert a new high score into the high score table. the index is in d2.w
 
-insert_hiscore
+insert_hiscore:
 	MOVEQ		#18,d3			; index to the last high score
 	MOVEQ		#27,d4			; index to the last high score initials
 insert_loop
@@ -2695,7 +2695,7 @@ exit_insert_loop
 ; d1.w = delta x = target x - source x
 ; d2.w = delta y = target y - source y
 
-get_atn
+get_atn:
 	TST.w		d2				; test the delta y
 	BPL.s		atn_semi			; if +ve skip the delta y negate
 
@@ -2706,7 +2706,7 @@ get_atn
 
 ; get arctan(y/x) for the semicircle
 
-atn_semi
+atn_semi:
 	TST.w		d1				; test the delta x
 	BPL.s		atn_quad			; if +ve skip the delta x negate
 
@@ -2721,7 +2721,7 @@ atn_semi
 ;
 ; get arctan(y/x) or arctan(x/y) for one quadrant.
 
-atn_quad
+atn_quad:
 	CMP.w		d1,d2				; compare y with x
 	BCS.s		atn_eight			; if x > y get arctan(y/x) from the table
 							; and return
@@ -2739,7 +2739,7 @@ atn_quad
 ; table to get the result for this octant. (is that the right word for one eighth
 ; of a circle?)
 
-atn_eight
+atn_eight:
 	MOVEQ		#0,d0				; clear the result
 	MOVEQ		#6-1,d7			; set the bit count
 loop_atn
@@ -2779,7 +2779,7 @@ atn_tab
 ; a1 = number address
 ; d7 = number byte count
 
-output_number
+output_number:
 	SUBQ.w	#1,d7				; adjust for the loop type
 output_number_loop
 	MOVE.b	(a1),d1			; get a byte
@@ -2854,7 +2854,7 @@ sin_cos
 ;
 ; add message d1 to the display list
 
-add_message
+add_message:
 	MOVE.w	#$1000,glob_scale(a3)	; set the global scale
 
 	ADD.w		d1,d1				; make into a word index
@@ -2921,7 +2921,7 @@ timer_interrupt
 ;
 ; add "PLAYER x" to the vector list
 
-player_x
+player_x:
 	MOVEQ		#1,d1				; message 1 - "PLAYER "
 	BSR		add_message			; add message d1 to the display list
 player_n
@@ -2968,7 +2968,7 @@ add_sup_zero
 ;
 ; convert the a1 address and add it to the vector list as a vector subroutine call
 
-add_address
+add_address:
 	LEA		vector(pc),a0		; point to the vector memory
 	SUBA.l	a0,a1				; convert the pointer to an offset
 	MOVE.l	a1,d1				; copy the result
@@ -2983,7 +2983,7 @@ add_address
 ;
 ; add 4 ; the co-ordinate pair in d1,d2 to the list as a draw command
 
-add_coords
+add_coords:
 	MOVEQ		#2,d0				; set shift count
 	ASL.w		d0,d1				; x co-ordinate ; 4
 	ASL.w		d0,d2				; y co-ordinate ; 4
@@ -3101,7 +3101,8 @@ clear_loop
 
 	eori.l	#$DEADBEEF,d1		; EOR with the initial PRNG seed, this must
 													; result in any value but zero
-	move.l	d1,PRNlword(a3)		; save the initial PRNG seed
+	jsr InitRand
+;	move.l	d1,PRNlword(a3)		; save the initial PRNG seed
 
 	moveq #3,d1					; get the switches address
 	moveq #32,d0				; simulator hardware
@@ -3166,23 +3167,24 @@ close_all_2
 ; generator as can be seen from analysing the output.
 
 gen_prng:
-	rts
-	MOVEM.l	d0-d2,-(sp)			; save d0, d1 and d2
-	MOVE.l	PRNlword(a3),d0		; get current seed longword
-	MOVEQ		#$AF-$100,d1		; set the EOR value
-	MOVEQ		#18,d2			; do this 19 times
+	jmp RandGetNum
+
+;	MOVEM.l	d0-d2,-(sp)			; save d0, d1 and d2
+;	MOVE.l	PRNlword(a3),d0		; get current seed longword
+;	MOVEQ		#$AF-$100,d1		; set the EOR value
+;	MOVEQ		#18,d2			; do this 19 times
 Ninc0
-	ADD.l		d0,d0				; shift left 1 bit
-	BCC.s		Ninc1				; if bit not set skip feedback
+;	ADD.l		d0,d0				; shift left 1 bit
+;	BCC.s		Ninc1				; if bit not set skip feedback
 
-	EOR.b		d1,d0				; do Galois LFSR feedback
+;	EOR.b		d1,d0				; do Galois LFSR feedback
 Ninc1
-	DBF		d2,Ninc0			; loop
+;	DBF		d2,Ninc0			; loop
 
-	MOVE.l	d0,PRNlword(a3)		; save back to seed longword
-	MOVEM.l	(sp)+,d0-d2			; restore d0, d1 and d2
+;	MOVE.l	d0,PRNlword(a3)		; save back to seed longword
+;	MOVEM.l	(sp)+,d0-d2			; restore d0, d1 and d2
 
-	RTS
+;	RTS
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -3193,14 +3195,14 @@ Ninc1
 ; vector subroutine return code. if a vector subroutine is called the address for this
 ; code is pushed on the stack
 
-op_rtsvec
+op_rtsvec:
 	MOVE.l	(sp)+,a4			; restore the vector pointer
 
 ; evaluate the next vector command. the command is pointed to by (a4) and execution
 ; will continue until an RTSL or HALT command is encountered. this is a subset of the
 ; battlezone DVG command set
 
-do_vector
+do_vector:
 	MOVE.w	(a4)+,d4			; get the vector opcode
 	MOVE.w	d4,d0				; copy it
 	ROL.w		#6,d0				; shift opcode bits to b5-b2
@@ -4243,7 +4245,7 @@ p_2_end
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 
-	END	start
+;	END	asteroids_start
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

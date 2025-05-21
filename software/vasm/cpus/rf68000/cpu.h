@@ -1,10 +1,11 @@
 /*
 ** cpu.h Motorola M68k, CPU32 and ColdFire cpu-description header-file
-** (c) in 2002,2006-2022 by Frank Wille
+** (c) in 2002,2006-2024 by Frank Wille
 */
 
 #define BIGENDIAN 1
 #define LITTLEENDIAN 0
+#define BITSPERBYTE 8
 #define VASM_CPU_M68K 1
 #define MNEMOHTABSIZE 0x8000
 
@@ -13,8 +14,6 @@
 
 /* maximum number of mnemonic-qualifiers per mnemonic */
 #define MAX_QUALIFIERS 1
-
-/* maximum number of additional command-line-flags for this cpu */
 
 /* data type to represent a target-address */
 typedef int32_t taddr;
@@ -31,7 +30,6 @@ typedef struct {
       unsigned char flags;
       signed char last_size;
       signed char orig_ext;
-      char unused;
     } real;
     struct {
       struct instruction *next;
@@ -40,6 +38,8 @@ typedef struct {
 } instruction_ext;
 #define IFL_RETAINLASTSIZE    1   /* retain current last_size value */
 #define IFL_UNSIZED           2   /* instruction had no size extension */
+#define IFL_NOTYPECHK         4   /* do not check limits of oper. value */
+#define IFL_ANYSIGN           8   /* allow M_val0 signed and unsigned */
 
 /* we use OPTS atoms for cpu-specific options */
 #define HAVE_CPU_OPTS 1
@@ -80,6 +80,7 @@ enum {
   OCMD_OPTIMMADDR,
   OCMD_OPTSPEED,
   OCMD_OPTSIZE,
+  OCMD_OPTPC080,
   OCMD_SMALLCODE,
   OCMD_SMALLDATA,
   OCMD_OPTWARN,
@@ -326,6 +327,7 @@ typedef struct {
 #define S_FP S_EXT+4        /* 2nd word, bits 12-10 (l=0,s,x,p,w,d,b) */
 #define S_MAC S_FP+4        /* w/l flag in 2nd word bit 11 */
 #define S_AMMX S_MAC+4      /* q/w flag in 1st word bit 8 */
+#define S_TEX S_AMMX+4      /* tex instr.: b/w/l in bits 1-0 or 3rd word */
 #define S_OPCODE_SIZE(n) (n&3)
 #define S_SIZEMODE(n) (n&0x7c)
 

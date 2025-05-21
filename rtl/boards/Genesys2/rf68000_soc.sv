@@ -59,6 +59,7 @@ module rf68000_soc(cpu_reset_n, sysclk_p, sysclk_n, led, sw, btnl, btnr, btnc, b
 //    dp_tx_lane0_p, dp_tx_lane0_n, dp_tx_lane1_p, dp_tx_lane1_n
 );
 parameter WXGA800x600 = 1'b1;
+parameter WXGA1920x1080 = 1'b1;
 parameter HAS_CPU = 1'b1;
 parameter HAS_FRAME_BUFFER = 1'b1;
 parameter HAS_TEXTCTRL = 1'b1;
@@ -113,8 +114,8 @@ output [0:0] ddr3_cs_n;
 
 wire rst, rstn;
 wire xrst = ~cpu_reset_n;
-wire locked;
-wire clk20, clk40, clk50, clk100, clk200;
+wire locked,locked2;
+wire clk20, clk40, clk50, clk100, clk70, clk140, clk200, clk700;
 wire clk17, clk33;
 wire mem_ui_clk;
 wire mem_ui_rst;
@@ -124,7 +125,7 @@ wire node_clk1;
 wire node_clk2;
 wire node_clk3;
 wire node_clk4;
-wire dot_clk = clk40;
+wire dot_clk = clk140;
 wb_cmd_request256_t ch7req;
 wb_cmd_request256_t ch7dreq;	// DRAM request
 wb_cmd_response256_t ch7resp;
@@ -229,11 +230,11 @@ BtnDebounce udbc (clk20, btnc, btnc_db);
 WXGA800x600_clkgen ucg1
 (
   // Clock out ports
-  .clk200(clk200),	// 200 MHz	dvi/ddr3 interface clock
+  .clk200(clk200),	// 200 MHz	ddr3 interface clock
   .clk100(clk100),
   .clk50(clk50),
-  .clk40(clk40),		// 40.000 MHz video / cpu clock
-  .clk20(clk20),		// cpu
+  .clk40(),					// 40.000 MHz video / cpu clock
+  .clk20(clk20),					// cpu
   .clk17(clk17),
   .clk33(clk33),
 //  .clk10(clk10),
@@ -246,19 +247,33 @@ WXGA800x600_clkgen ucg1
   .clk_in1_n(sysclk_n)
 );
 
-assign rst = !locked;
+WXGA1920x1080_clkgen ucg2
+(
+  // Clock out ports
+  .clk742(clk700),	// 742.5 MHz	dvi clock
+  .clk148(clk140),	// 148.5 MHz	dot clock
+  .clk50(),
+  .clk20(),		// cpu
+  // Status and control signals
+  .reset(xrst), 
+  .locked(locked2),       // output locked
+ // Clock in ports
+  .clk_in1(clk200)
+);
+
+assign rst = !(locked|locked2);
 
 rgb2dvi ur2d1
 (
 	.rst(rst),
-	.PixelClk(dot_clk),
-	.SerialClk(clk200),
+	.PixelClk(clk140),
+	.SerialClk(clk700),
 	.red(red[7:0]),
 	.green(green[7:0]),
 	.blue(blue[7:0]),
 	.de(~blank),
-	.hSync(hSync),	// ~ for 640x480 100 Hz
-	.vSync(vSync),
+	.hSync(~hSync),	// ~ for 640x480 100 Hz
+	.vSync(~vSync),
 	.TMDS_Clk_p(hdmi_tx_clk_p),
 	.TMDS_Clk_n(hdmi_tx_clk_n),
 	.TMDS_Data_p(hdmi_tx_p),
@@ -298,7 +313,7 @@ wire cs_br3_i2c2 = br3_adr[31:12]==20'hFD069 && br3_stb && cs_io2;
 wire cs_scr = cpu_adr[31:20]==12'h001 && cpu_stb;
 wire cs_plic = cpu_adr[31:12]==20'hFD090 && cs_io2;
 wire cs_br3_plic = br3_adr[31:12]==20'hFD090 && cs_io2;
-wire cs_dram = cpu_adr[31:30]==2'b01 && !cs_mmu && !cs_iobitmap && !cs_io;
+wire cs_dram = (cpu_adr[31:30]==2'b01 || cpu_adr[31:30]==2'b10) && !cs_mmu && !cs_iobitmap && !cs_io;
 
 fta_bus_interface #(.DATA_WIDTH(256)) fbm_if();
 fta_bus_interface #(.DATA_WIDTH(256)) cpu_if();
@@ -408,7 +423,7 @@ rfTextController utc1
 	.adr_i(br1_adr[31:0]),
 	.dat_i(br1_dato),
 	.dat_o(tc_dato),
-	.dot_clk_i(clk40),
+	.dot_clk_i(dot_clk),
 	.hsync_i(hSync),
 	.vsync_i(vSync),
 	.blank_i(blank),
@@ -422,10 +437,12 @@ IOBridge ubridge1
 (
 	.rst_i(rst),
 	.clk_i(node_clk),
-	.s1_cyc_i(cpu_cyc & io_gate_en),
-	.s1_stb_i(cpu_stb & io_gate_en),
+	.fta_en_i(1'b1),
+	.io_gate_en_i(io_gate_en),
+	.s1_cyc_i(cpu_cyc),
+	.s1_stb_i(cpu_stb),
 	.s1_ack_o(br1_cack),
-	.s1_we_i(cpu_we & io_gate_en),
+	.s1_we_i(cpu_we),
 	.s1_sel_i(sel),
 	.s1_adr_i(cpu_adr),
 	.s1_dat_i(dato),
@@ -459,7 +476,7 @@ always_ff @(posedge clk100)
 	br1_ack <= tc_ack;
 
 wire kclk_en, kdat_en;
-PS2kbd #(.pClkFreq(33333333)) ukbd1
+PS2kbd #(.pClkFreq(20000000)) ukbd1
 (
 	// WISHBONE/SoC bus interface 
 	.rst_i(rst),
@@ -560,12 +577,14 @@ IOBridge ubridge3
 (
 	.rst_i(rst),
 	.clk_i(node_clk),
-	.s1_cyc_i(ch7req.cyc & io_gate_en),
-	.s1_stb_i(ch7req.stb & io_gate_en),
+	.fta_en_i(1'b0),
+	.io_gate_en_i(io_gate_en),
+	.s1_cyc_i(cpu_cyc),
+	.s1_stb_i(cpu_stb),
 	.s1_ack_o(br3_cack),
-	.s1_we_i(ch7req.we & io_gate_en),
+	.s1_we_i(cpu_we),
 	.s1_sel_i(sel),
-	.s1_adr_i(ch7req.padr),
+	.s1_adr_i(cpu_adr),
 	.s1_dat_i(dato),
 	.s1_dat_o(br3_cdato),
 	.s2_cyc_i(1'b0),
@@ -678,8 +697,8 @@ assign ch2_if.rst = 1'b1;
 assign ch3_if.rst = 1'b1;
 assign ch4_if.rst = 1'b1;
 assign ch5_if.rst = 1'b1;
-assign ch6_if.rst = 1'b1;
-assign ch1_if.clk = 1'b0;
+assign ch6_if.rst = rst;
+assign ch1_if.clk = node_clk;
 assign ch2_if.clk = 1'b0;
 assign ch3_if.clk = 1'b0;
 assign ch4_if.clk = 1'b0;
@@ -833,12 +852,12 @@ io_bitmap uiob1
 (
 	.clk_i(node_clk),
 	.cs_i(cs_iobitmap),
-	.cyc_i(ch7req.cyc),
-	.stb_i(ch7req.stb),
+	.cyc_i(cpu_cyc),
+	.stb_i(cpu_stb),
 	.ack_o(io_ack),
-	.we_i(ch7req.we),
-	.asid_i(asid),
-	.adr_i(ch7req.padr[19:0]),
+	.we_i(cpu_we),
+	.ioas_i(asid),
+	.adr_i(cpu_adr[19:0]),
 	.dat_i(dato),
 	.dat_o(io_dato),
 	.iocs_i(cs_io),

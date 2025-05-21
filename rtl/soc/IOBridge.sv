@@ -47,7 +47,7 @@
 //
 import const_pkg::*;
 
-module IOBridge(rst_i, clk_i,
+module IOBridge(rst_i, clk_i, fta_en_i, io_gate_en_i,
 	s1_cyc_i, s1_stb_i, s1_ack_o, s1_we_i, s1_sel_i, s1_adr_i, s1_dat_i, s1_dat_o,
 	s2_cyc_i, s2_stb_i, s2_ack_o, s2_we_i, s2_sel_i, s2_adr_i, s2_dat_i, s2_dat_o,
 	m_cyc_o, m_stb_o, m_ack_i, m_we_o, m_sel_o, m_adr_o, m_dat_i, m_dat_o,
@@ -61,6 +61,8 @@ parameter WR_ACK2 = 3'd4;
 
 input rst_i;
 input clk_i;
+input fta_en_i;
+input io_gate_en_i;
 input s1_cyc_i;
 input s1_stb_i;
 output reg s1_ack_o;
@@ -89,15 +91,15 @@ input [31:0] m_dat_i;
 output reg [31:0] m_dat_o;
 
 fta_bus_interface.master m_fta_o;
-assign m_fta_o.clk = clk_i;
-assign m_fta_o.rst = rst_i;
+//assign m_fta_o.clk = clk_i;
+//assign m_fta_o.rst = rst_i;
 
 reg [1:0] which;
 reg [2:0] state;
 reg s_ack;
 reg s1_cycd;
 always_ff @(posedge clk_i)
-	s1_cycd <= s1_cyc_i && s1_adr_i[31:20]==12'hFD2;
+	s1_cycd <= s1_stb_i && s1_adr_i[31:20]==12'hFD2;
 always_comb// @(posedge clk_i)
 if (rst_i)
 	s1_ack_o <= 1'b0;
@@ -121,16 +123,19 @@ if (rst_i) begin
 	s1_dat_o <= 32'd0;
 	s2_dat_o <= 32'd0;
 	m_fta_o.req <= 500'd0;
+	which <= 2'b00;
 	state <= IDLE;
 end
 else begin
+	m_fta_o.req.bte <= fta_bus_pkg::LINEAR;
+	m_fta_o.req.cti <= fta_bus_pkg::CLASSIC;
 	m_fta_o.req.cyc <= LOW;
 	m_fta_o.req.we <= LOW;
 	m_fta_o.req.sel <= {WID/8{1'b0}};
 	m_fta_o.req.adr <= 32'd0;
 case(state)
 IDLE:
-  if (~m_ack_i) begin
+  if (~m_ack_i & io_gate_en_i) begin
     // Filter requests to the I/O address range
     if (s1_cyc_i && s1_adr_i[31:24]==8'hFD && s1_adr_i[23:20]!=4'h2) begin
     	which <= 2'b00;
@@ -173,6 +178,7 @@ IDLE:
     	end
     end
 	end
+	/*
 	else begin
 		tClearBus();
 		s_ack <= 1'b1;
@@ -180,6 +186,7 @@ IDLE:
 		s2_dat_o <= m_dat_i;
 		state <= WAIT_NACK;
 	end
+	*/
 WR_ACK:
 	begin
 		if (!s2_stb_i && !s1_stb_i) begin
@@ -272,7 +279,9 @@ WAIT_NACK:
 	end
 default:	state <= IDLE;
 endcase
-	if (s1_cyc_i && !s1_cycd && s1_adr_i[31:20]==12'hFD2) begin
+	if (s1_stb_i && !s1_cycd && s1_adr_i[31:20]==12'hFD2 && fta_en_i) begin
+		which <= 2'b10;
+		m_fta_o.req.cmd <= s1_we_i ? fta_bus_pkg::CMD_STORE : fta_bus_pkg::CMD_LOAD;
 		m_fta_o.req.cyc <= HIGH;
 		m_fta_o.req.sel <= s1_sel_i;
 		m_fta_o.req.we <= s1_we_i;
@@ -287,7 +296,7 @@ endcase
 		s1_dat_o <= m_fta_o.resp.dat;
 	end
 	if (which==2'b10) begin
-		if (!s1_cyc_i) begin
+		if (!s1_stb_i) begin
 			s_ack <= LOW;
 			s1_dat_o <= 32'd0;
 			state <= IDLE;
@@ -307,4 +316,3 @@ end
 endtask
 
 endmodule
-
