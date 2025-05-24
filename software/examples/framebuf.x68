@@ -1,3 +1,39 @@
+; ============================================================================
+;        __
+;   \\__/ o\    (C) 2025  Robert Finch, Waterloo
+;    \  __ /    All rights reserved.
+;     \/_//     robfinch<remove>@opencores.org
+;       ||
+;  
+;
+; BSD 3-Clause License
+; Redistribution and use in source and binary forms, with or without
+; modification, are permitted provided that the following conditions are met:
+;
+; 1. Redistributions of source code must retain the above copyright notice, this
+;    list of conditions and the following disclaimer.
+;
+; 2. Redistributions in binary form must reproduce the above copyright notice,
+;    this list of conditions and the following disclaimer in the documentation
+;    and/or other materials provided with the distribution.
+;
+; 3. Neither the name of the copyright holder nor the names of its
+;    contributors may be used to endorse or promote products derived from
+;    this software without specific prior written permission.
+;
+; THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+; IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+; DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+; FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+; DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+; SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+; CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+; OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+; OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+;                                                                          
+; ============================================================================
+
 ;------------------------------------------------------------------------------
 ;------------------------------------------------------------------------------
 ; Video frame buffer
@@ -6,6 +42,7 @@
 	code
 	even
 setup_framebuf:
+	movem.l d0/a0,-(a7)
 	moveq #32,d0
 	lea.l framebuf_dcb,a0
 .0001:
@@ -20,12 +57,14 @@ setup_framebuf:
 	move.l d0,framebuf_dcb+DCB_OUTBUFPTR
 	move.l #$00400000,framebuf_dcb+DCB_INBUFSIZE
 	move.l #$00400000,framebuf_dcb+DCB_OUTBUFSIZE
+	movem.l (a7)+,d0/a0
 	; fall through
 
 framebuf_init:
 	move.b #1,FRAMEBUF+0		; turn on frame buffer
 	move.b #1,FRAMEBUF+1		; color depth 16 BPP
 	move.b #$11,FRAMEBUF+2	; hres 1:1 vres 1:1
+	move.b #59,FRAMEBUF+4		; burst length
 	move.l #$ff3f,framebuf_dcb+DCB_FGCOLOR	; white
 	move.l #$000f,framebuf_dcb+DCB_BKCOLOR	; medium blue
 	clr.l framebuf_dcb+DCB_OUTPOSX
@@ -41,8 +80,8 @@ framebuf_init:
 	move.l #$40400000,framebuf_dcb+DCB_INBUFPTR2
 	move.l #$40000000,framebuf_dcb+DCB_OUTBUFPTR
 	move.l #$40400000,framebuf_dcb+DCB_OUTBUFPTR2
-	move.l #$00000040,FRAMEBUF+16	; base addr 1
-	move.l #$00004040,FRAMEBUF+24	; base addr 2
+	move.l #$00000000,FRAMEBUF+16	; base addr 1
+	move.l #$00004000,FRAMEBUF+24	; base addr 2
 	rts
 
 	align 2
@@ -74,8 +113,8 @@ framebuf_cmdproc:
 	cmpi.b #22,d6
 	bhs.s .0001
 	movem.l d6/a0,-(a7)
-	asl.b #2,d6
 	ext.w d6
+	asl.w #2,d6
 	lea FRAMEBUF_CMDTBL,a0
 	move.l (a0,d6.w),a0
 	jsr (a0)
@@ -123,6 +162,8 @@ framebuf_swapbuf:
 	move.l framebuf_dcb+DCB_OUTBUFPTR2,d0
 	move.l d2,framebuf_dcb+DCB_OUTBUFPTR2
 	move.l d0,framebuf_dcb+DCB_OUTBUFPTR
+	sub.l #$40000000,d0
+	move.l d0,GFXACCEL+16
 	move.l framebuf_dcb+DCB_INBUFPTR,d2
 	move.l framebuf_dcb+DCB_INBUFPTR2,d0
 	move.l d2,framebuf_dcb+DCB_INBUFPTR2
@@ -262,23 +303,18 @@ plot_white:
 
 
 framebuf_clear:
-	movem.l d1/d2/d3/d4/d6/d7/a0,-(a7)
-	move.l #6,d7
-	move.l #DEV_GET_COLOR,d6
-	trap #0
-	move.l d2,d1						; d1 = background color
+	movem.l d1/d2/d4/a0,-(a7)
+	move.l framebuf_dcb+DCB_BKCOLOR,d2
+	move.l d2,d1
 	rol.w #8,d2							; d2 = background color
 	swap d2									; high bits = background color
 	move.w d1,d2						; low bits = background color
 	rol.w #8,d2
 	move.l d2,d4						; save for later
-	move.l #DEV_GETBUF2,d6
-	trap #0
-	move.l d1,a0						; a0 = buffer
-	bsr rbo
-	move.l #0,$BFFFFFF8			; set burst length zero
-	move.l #DEV_GET_DIMEN,d6
-	trap #0
+	move.l framebuf_dcb+DCB_OUTBUFPTR2,a0		; where the draw occurs
+	move.l #0,$7FFFFFF8			; set burst length zero
+	move.l framebuf_dcb+DCB_OUTDIMX,d1
+	move.l framebuf_dcb+DCB_OUTDIMY,d2
 	mulu d2,d1							; X dimen * Y dimen
 	lsr.l #4,d0							; moving 16 pixels per iteration
 	bra.s .loop
@@ -287,13 +323,13 @@ framebuf_clear:
 .loop:
 	move.l a0,d1
 	bsr rbo
-	move.l d1,$BFFFFFF4			; set destination address
-	move.l d4,$BFFFFFFC			; write value (color) to use and trigger write op
+	move.l d1,$7FFFFFF4			; set destination address
+	move.l d4,$7FFFFFFC			; write value (color) to use and trigger write op
 	add.l #32,a0						; advance pointer
 	dbra d0,.loop
 	swap d0
 	dbra d0,.loop2
-	movem.l (a7)+,d1/d2/d3/d4/d6/d7/a0
+	movem.l (a7)+,d1/d2/d4/a0
 	move.l #E_Ok,d0
 	rts
 

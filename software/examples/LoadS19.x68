@@ -11,7 +11,7 @@ NextRec:
 	cmpi.b	#LF,d1				; look for a line-feed
 	bne			NextRec
 	move.b	#'.',d1				; progress display
-	bsr			DisplayChar
+	bsr			OutputChar
 ProcessRec:
 	bsr			CheckForCtrlC	; check for CTRL-C once per record
 	bsr			sGetChar
@@ -60,7 +60,7 @@ pcssxa:
 	move.l	a1,d1
 	bsr			DisplayTetra
 	move.b	#CR,d1
-	bsr			DisplayChar
+	bsr			OutputChar
 	andi.w	#$ff,d3
 	subi.w	#1,d3			; one less for dbra
 .0001:
@@ -90,7 +90,7 @@ pcssxa:
 	cmp.b		S19Checksum,d2
 	beq			NextRec
 	move.b	#'E',d1
-	bsr			DisplayChar
+	bsr			OutputChar
 	bra			NextRec
 
 ProcessS1:

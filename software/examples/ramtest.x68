@@ -15,7 +15,7 @@ DisplayAddr:
 	bsr	DisplayWyde
 	bsr DisplaySpace
 	move.b #CR,d1
-	bra DisplayChar
+	bsr OutputChar
 	btst #$83,d0
 	
 cmdTestRAM:
@@ -95,7 +95,7 @@ rmtst2
 rmtst3
 	bsr CRLF
 	moveq	#'E',d1
-	bsr DisplayChar
+	bsr OutputChar
 	bsr DisplaySpace
 	move.l a0,d1
 	bsr DisplayTetra
