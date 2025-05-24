@@ -199,6 +199,7 @@ wire [31:0] io_dato;
 wire io_gate, io_gate_en;
 wire dram_ack;
 wire [255:0] dram_dato;
+wire [7:0] mpmc_fifo_rst;
 
 wire leds_ack;
 reg [7:0] rst_reg;
@@ -302,7 +303,7 @@ wire cs_br1_fb = br1_adr[31:16]==16'hFE40 && br1_stb && cs_io2;
 wire cs_leds = cpu_adr[31:8]==24'hFD0FFF && ch7req.stb && cs_io2;
 wire cs_br3_leds = br3_adr[31:8]==24'hFD0FFF && br3_stb && cs_io2;
 wire cs_br3_rst  = br3_adr[31:8]==24'hFD0FFC && br3_stb && cs_io2;
-wire cs_kbd  = cpu_adr[31:8]==24'hFD0FFE && ch7req.stb && cs_io2;
+wire cs_kbd  = cpu_adr[31:8]==24'hFD0FFE && cpu_stb && cs_io2;
 wire cs_br3_kbd  = br3_adr[31:8]==24'hFD0FFE && br3_stb && cs_io2;
 wire cs_rand  = cpu_adr[31:8]==24'hFD0FFD && ch7req.stb && cs_io2;
 wire cs_br3_rand  = br3_adr[31:8]==24'hFD0FFD && br3_stb && cs_io2;
@@ -313,8 +314,10 @@ wire cs_br3_i2c2 = br3_adr[31:12]==20'hFD069 && br3_stb && cs_io2;
 wire cs_scr = cpu_adr[31:20]==12'h001 && cpu_stb;
 wire cs_plic = cpu_adr[31:12]==20'hFD090 && cs_io2;
 wire cs_br3_plic = br3_adr[31:12]==20'hFD090 && cs_io2;
-wire cs_dram = (cpu_adr[31:30]==2'b01 || cpu_adr[31:30]==2'b10) && !cs_mmu && !cs_iobitmap && !cs_io;
+wire cs_dram = (cpu_adr[31:30]==2'b01 || cpu_adr[31:30]==2'b10) && cpu_cyc && !cs_mmu && !cs_iobitmap && !cs_io;
+wire cs_gfx = br1_adr[31:16]==16'hFD30 && br1_stb;
 
+fta_bus_interface #(.DATA_WIDTH(256)) gfx_if();
 fta_bus_interface #(.DATA_WIDTH(256)) fbm_if();
 fta_bus_interface #(.DATA_WIDTH(256)) cpu_if();
 fta_bus_interface #(.DATA_WIDTH(256)) ch1_if();
@@ -349,6 +352,8 @@ assign hSync = fb_video_o.hsync;
 assign blank = fb_video_o.blank;
 assign border = fb_video_o.border;
 
+assign mpmc_fifo_rst[7:1] = 7'h00;
+
 wire [31:0] fb_irq;
 
 rfFrameBuffer_fta64 #(
@@ -366,11 +371,64 @@ uframebuf1
 	.m_bus_o(fbm_if),
 	.m_fst_o(), 
 	.m_rst_busy_i(mpmc_rst_busy),
+	.fifo_rst_o(mpmc_fifo_rst[0]),
 	.xal_o(),
 	.video_i(fb_video_i),
 	.video_o(fb_video_o),
 	.vblank_o()
 );
+
+wb_cmd_request32_t gfxs_req;
+wb_cmd_response32_t gfxs_resp;
+wb_cmd_request256_t gfxm_req;
+wb_cmd_response256_t gfxm_resp;
+
+always_comb
+begin
+	gfxs_req = {$bits(wb_cmd_request32_t){1'b0}};
+	gfxs_req.cyc = br1_cyc;
+	gfxs_req.stb = br1_stb;
+	gfxs_req.sel = br1_sel;
+	gfxs_req.we = br1_we;
+	gfxs_req.padr = br1_adr;
+	gfxs_req.dat = br1_dato;
+end
+
+gfx256_top ugfx1
+(
+	.wb_clk_i(clk100),
+	.wb_rst_i(rst),
+	.wb_inta_o(),
+  // Wishbone master signals (interfaces with video memory, write)
+  .wbm_req(gfxm_req),
+  .wbm_resp(gfxm_resp),
+  // Wishbone slave signals (interfaces with main bus/CPU)
+  .wbs_clk_i(node_clk),
+	.wbs_cs_i(cs_gfx),
+  .wbs_req(gfxs_req),
+  .wbs_resp(gfxs_resp)
+);
+
+assign gfx_if.clk = clk100;
+assign gfx_if.rst = rst;
+
+wb_to_fta_bridge uwb2fta2
+(
+	.rst_i(rst),
+	.clk_i(clk100),
+	.cs_i(1'b1),
+	.cyc_i(gfxm_req.cyc),
+	.stb_i(gfxm_req.stb),
+	.ack_o(gfxm_resp.ack),
+	.err_o(),
+	.we_i(gfxm_req.we),
+	.sel_i(gfxm_req.sel),
+	.adr_i(gfxm_req.padr),
+	.dat_i(gfxm_req.dat),
+	.dat_o(gfxm_resp.dat),
+	.fta_o(gfx_if)
+);
+
 
 /*
 rfFrameBuffer uframebuf1
@@ -470,10 +528,10 @@ assign br1_fta.rst = rst;
 assign br1_fta.clk = node_clk;
 
 always_ff @(posedge clk100)
-	br1_dati <= tc_dato;
+	br1_dati <= tc_dato|gfxs_resp.dat;
 
 always_ff @(posedge clk100)
-	br1_ack <= tc_ack;
+	br1_ack <= tc_ack|gfxs_resp.ack;
 
 wire kclk_en, kdat_en;
 PS2kbd #(.pClkFreq(20000000)) ukbd1
@@ -714,7 +772,7 @@ assign ch6_if.req = {$bits(fta_cmd_request256_t){1'b0}};
 
 mpmc11_fta
 #(
-	.PORT_PRESENT(8'h81),
+	.PORT_PRESENT(8'h91),
 	.STREAM(8'h21)
 )
 umpmc1
@@ -744,10 +802,11 @@ umpmc1
 	.ch1(ch1_if),
 	.ch2(ch2_if),
 	.ch3(ch3_if),
-	.ch4(ch4_if),
+	.ch4(gfx_if),
 	.ch5(ch5_if),
 	.ch6(ch6_if),
 	.ch7(cpu_if),
+	.fifo_rst(mpmc11_fifo_rst),
 	.state(dram_state),
 	.rst_busy(mpmc_rst_busy)
 );
@@ -1074,20 +1133,20 @@ nic_ager uager1
 // -----------------------------------------------------------------------------
 // Debug
 // -----------------------------------------------------------------------------
-/*
+
 ila_0 uila1 (
 	.clk(mem_ui_clk), // input wire clk
 
 //	.probe0(umpmc1.req_fifoo.req.padr), // input wire [31:0]  probe0  
-	.probe0(fbm_if.req.adr),//umpu1.ucpu1.pc), // input wire [31:0]  probe0  
-	.probe1(fbm_if.req.cyc),//umpmc1.req_fifoo.req.cyc), // input wire [0:0]  probe1 
-	.probe2(fbm_if.resp.ack),//umpmc1.req_fifoo.req.we), // input wire [0:0]  probe2
-	.probe3(fbm_if.req.we),
-	.probe4(1'b0),
-	.probe5(1'b0),
-	.probe6(1'b0),
-	.probe7(1'b0),
-	.probe8(fbm_if.resp.dat),
+	.probe0(gfxm_req.padr),//umpu1.ucpu1.pc), // input wire [31:0]  probe0  
+	.probe1(gfxm_req.cyc),//umpmc1.req_fifoo.req.cyc), // input wire [0:0]  probe1 
+	.probe2(gfxm_resp.ack),//umpmc1.req_fifoo.req.we), // input wire [0:0]  probe2
+	.probe3(gfxm_req.we),
+	.probe4(cs_gfx),
+	.probe5(cs_br3_kbd),
+	.probe6(kbd_ack),
+	.probe7(kbd_irq),
+	.probe8(gfxm_resp.dat),
 	.probe9(mem_rd_data_valid),
 	.probe10(cs_dram),
 //	.probe11({unode1.ram1_we[3:0],cpu_if.req.cmd}),
@@ -1098,11 +1157,10 @@ ila_0 uila1 (
 	.probe15(umpmc1.app_rdy),
 	.probe16(umpmc1.app_en),
 	.probe17(umpmc1.app_cmd),
-	.probe18(32'd0),
-	.probe19(1'b0),
-	.probe20(uframebuf1.state)
+	.probe18(dati[31:0]),
+	.probe19(cpu_if.resp.rty),
+	.probe20(plic_irq)//uframebuf1.state)
 );
-*/
 
 /*
 ila_0 your_instance_name (

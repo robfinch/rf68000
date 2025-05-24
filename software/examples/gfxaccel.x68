@@ -81,10 +81,10 @@ gfxaccel_init:
 	move.l #$00000000,d1
 	bsr rbo
 	move.l d1,GFXACCEL+$10	; base draw address
-	move.l #32640,d1
+	move.l #1920,d1
 	bsr rbo
 	move.l d1,GFXACCEL+$14				; render target x dimension
-	move.l #16384,d1
+	move.l #1080,d1
 	bsr rbo
 	move.l d1,GFXACCEL+$18				; render target y dimension
 	rts
@@ -132,7 +132,6 @@ gfxaccel_get_inpos:
 gfxaccel_get_outpos:
 gfxaccel_get_outptr:
 gfxaccel_plot_point:
-gfxaccel_draw_line:
 	move.l #E_NotSupported,d0
 	rts
 
@@ -162,6 +161,34 @@ gfxaccel_set_color123:
 	move.l d2,GFXACCEL+$88
 	move.l d3,GFXACCEL+$8C
 	movem.l (a7)+,d1/d4
+	moveq #E_Ok,d0
+	rts
+
+gfxaccel_draw_line:
+	movem.l d1/d2,-(a7)
+	moveq #7,d1
+	bsr gfxaccel_wait
+	movem.l (a7)+,d1/d2
+	bsr rbo
+	move.l d1,GFXACCEL+$38					; p0 x
+	move.l d2,d1
+	bsr rbo
+	move.l d1,GFXACCEL+$3C					; p0 y
+	move.l #$00040001,d1						; set active point 0
+	bsr rbo
+	move.l d1,GFXACCEL
+	move.l d3,d1
+	bsr rbo
+	move.l d1,GFXACCEL+$38
+	move.l d4,d1
+	bsr rbo
+	move.l d1,GFXACCEL+$3C
+	move.l #$00050001,d1						; set active point 1
+	bsr rbo
+	move.l d1,GFXACCEL
+	move.l #$00000201,d1
+	bsr rbo
+	move.l d1,GFXACCEL
 	moveq #E_Ok,d0
 	rts
 

@@ -2380,17 +2380,34 @@ cmdGrDemo:
 	bsr gfxaccel_set_color
 	bsr RandGetNum
 	move.l d1,d4
-	andi.l #$3fff,d4
+	andi.l #$3ff,d4
 	bsr RandGetNum
 	move.l d1,d3
-	andi.l #$7fff,d3
+	andi.l #$7ff,d3
 	bsr RandGetNum
 	move.l d1,d2
-	andi.l #$3fff,d2
+	andi.l #$3ff,d2
 	bsr RandGetNum
-	andi.l #$7fff,d1
-	bsr gfxaccel_draw_rectangle
+	andi.l #$7ff,d1
+	bsr gfxaccel_draw_line
 	dbra d5,.0001
+	move.l #10000,d5
+.0003:
+	bsr RandGetNum
+	bsr gfxaccel_set_color
+	bsr RandGetNum
+	move.l d1,d4
+	andi.l #$3ff,d4
+	bsr RandGetNum
+	move.l d1,d3
+	andi.l #$7ff,d3
+	bsr RandGetNum
+	move.l d1,d2
+	andi.l #$3ff,d2
+	bsr RandGetNum
+	andi.l #$7ff,d1
+	bsr gfxaccel_draw_rectangle
+	dbra d5,.0003
 	bra Monitor
 
 ;------------------------------------------------------------------------------

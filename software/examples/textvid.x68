@@ -84,7 +84,7 @@ textvid_cmdproc:
 	movem.l d6/a0,-(a7)
 	ext.w d6
 	ext.l d6
-	lsl.w #1,d6
+	lsl.w #2,d6
 	lea TEXTVID_CMDTBL,a0
 	move.l (a0,d6.w),a0
 	jsr (a0)
