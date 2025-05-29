@@ -42,14 +42,19 @@
 
 setup_null:
 null_init:
+	movem.l d0/a0/a1,-(a7)
 	moveq #32,d0
 	lea.l null_dcb,a0
 .0001:
 	clr.l (a0)+
 	dbra d0,.0001
-	move.l #$20424344,null_dcb+DCB_MAGIC				; 'DCB'
-	move.l #$4C4C554E,null_dcb+DCB_NAME					; 'NULL'
+	move.l #$44434220,null_dcb+DCB_MAGIC				; 'DCB'
+	move.l #$4E554C4C,null_dcb+DCB_NAME					; 'NULL'
 	move.l #null_cmdproc,null_dcb+DCB_CMDPROC
+	lea.l null_dcb+DCB_MAGIC,a1
+	jsr DisplayString
+	jsr CRLF
+	movem.l (a7)+,d0/a0/a1
 null_ret:
 	rts
 

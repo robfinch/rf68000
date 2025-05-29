@@ -62,20 +62,23 @@ COM_CMDTBL:
 
 serial_init:
 setup_serial:
-	movem.l d0/a0,-(a7)
+	movem.l d0/a0/a1,-(a7)
 	moveq #31,d0
 	lea.l serial_dcb,a0
 .0001:
 	clr.l (a0)+
 	dbra d0,.0001
-	move.l #$20424344,serial_dcb+DCB_MAGIC				; 'DCB'
-	move.l #$204F4F43,serial_dcb+DCB_NAME				; 'COM'
+	move.l #$44434220,serial_dcb+DCB_MAGIC			; 'DCB'
+	move.l #$434F4D00,serial_dcb+DCB_NAME				; 'COM'
 	move.l #serial_cmdproc,serial_dcb+DCB_CMDPROC
 	move.l #SerRcvBuf,serial_dcb+DCB_INBUFPTR
 	move.l #SerXmitBuf,serial_dcb+DCB_OUTBUFPTR
 	move.l #4096,serial_dcb+DCB_INBUFSIZE
 	bsr SerialInit
-	movem.l (a7)+,d0/a0
+	lea.l serial_dcb,a1
+	jsr DisplayString
+	jsr CRLF
+	movem.l (a7)+,d0/a0/a1
 	rts
 
 serial_cmdproc:

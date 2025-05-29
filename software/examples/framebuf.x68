@@ -34,6 +34,10 @@
 ;                                                                          
 ; ============================================================================
 
+FRAMEBUF_CTRL equ 0
+FRAMEBUF_WINDOW_DIMEN	equ	15*8
+FRAMEBUF_COLOR_COMP	equ 19*8
+
 ;------------------------------------------------------------------------------
 ;------------------------------------------------------------------------------
 ; Video frame buffer
@@ -41,49 +45,6 @@
 ;------------------------------------------------------------------------------
 	code
 	even
-setup_framebuf:
-	movem.l d0/a0,-(a7)
-	moveq #32,d0
-	lea.l framebuf_dcb,a0
-.0001:
-	clr.l (a0)+
-	dbra d0,.0001
-	move.l #$20424344,framebuf_dcb+DCB_MAGIC			; 'DCB'
-	move.l #$4D415246,framebuf_dcb+DCB_NAME				; 'FRAMEBUF'
-	move.l #$00465542,framebuf_dcb+DCB_NAME+4
-	move.l #framebuf_cmdproc,framebuf_dcb+DCB_CMDPROC
-	move.l #$40000000,d0
-	move.l d0,framebuf_dcb+DCB_INBUFPTR
-	move.l d0,framebuf_dcb+DCB_OUTBUFPTR
-	move.l #$00400000,framebuf_dcb+DCB_INBUFSIZE
-	move.l #$00400000,framebuf_dcb+DCB_OUTBUFSIZE
-	movem.l (a7)+,d0/a0
-	; fall through
-
-framebuf_init:
-	move.b #1,FRAMEBUF+0		; turn on frame buffer
-	move.b #1,FRAMEBUF+1		; color depth 16 BPP
-	move.b #$11,FRAMEBUF+2	; hres 1:1 vres 1:1
-	move.b #59,FRAMEBUF+4		; burst length
-	move.l #$ff3f,framebuf_dcb+DCB_FGCOLOR	; white
-	move.l #$000f,framebuf_dcb+DCB_BKCOLOR	; medium blue
-	clr.l framebuf_dcb+DCB_OUTPOSX
-	clr.l framebuf_dcb+DCB_OUTPOSY
-	clr.l framebuf_dcb+DCB_INPOSX
-	clr.l framebuf_dcb+DCB_INPOSY
-	move.b #1,framebuf_dcb+DCB_OPCODE	; raster op = copy
-	move.w #1920,framebuf_dcb+DCB_OUTDIMX		; set rows and columns
-	move.w #1080,framebuf_dcb+DCB_OUTDIMY
-	move.w #1920,framebuf_dcb+DCB_INDIMX			; set rows and columns
-	move.w #1080,framebuf_dcb+DCB_INDIMY
-	move.l #$40000000,framebuf_dcb+DCB_INBUFPTR
-	move.l #$40400000,framebuf_dcb+DCB_INBUFPTR2
-	move.l #$40000000,framebuf_dcb+DCB_OUTBUFPTR
-	move.l #$40400000,framebuf_dcb+DCB_OUTBUFPTR2
-	move.l #$00000000,FRAMEBUF+16	; base addr 1
-	move.l #$00004000,FRAMEBUF+24	; base addr 2
-	rts
-
 	align 2
 FRAMEBUF_CMDTBL:
 	dc.l framebuf_init				; 0
@@ -108,9 +69,23 @@ FRAMEBUF_CMDTBL:
 	dc.l framebuf_set_unit
 	dc.l framebuf_get_dimen	; 20
 	dc.l framebuf_get_color
+	dc.l framebuf_stub
+	dc.l framebuf_stub
+	dc.l framebuf_stub
+	dc.l framebuf_stub
+	dc.l framebuf_stub
+	dc.l framebuf_stub
+	dc.l framebuf_stub
+	dc.l framebuf_stub
+	dc.l framebuf_stub			; 30
+	dc.l framebuf_stub
+	dc.l framebuf_set_dimen
+	dc.l framebuf_set_color_depth
 
+	code
+	even
 framebuf_cmdproc:
-	cmpi.b #22,d6
+	cmpi.b #34,d6
 	bhs.s .0001
 	movem.l d6/a0,-(a7)
 	ext.w d6
@@ -122,6 +97,52 @@ framebuf_cmdproc:
 	rts
 .0001:
 	moveq #E_Func,d0
+	rts
+
+setup_framebuf:
+	movem.l d0/a0/a1,-(a7)
+	moveq #32,d0
+	lea.l framebuf_dcb,a0
+.0001:
+	clr.l (a0)+
+	dbra d0,.0001
+	move.l #$44434220,framebuf_dcb+DCB_MAGIC			; 'DCB '
+	move.l #$4652414D,framebuf_dcb+DCB_NAME				; 'FRAMEBUF'
+	move.l #$42554600,framebuf_dcb+DCB_NAME+4
+	move.l #framebuf_cmdproc,framebuf_dcb+DCB_CMDPROC
+	move.l #$40000000,d0
+	move.l d0,framebuf_dcb+DCB_INBUFPTR
+	move.l d0,framebuf_dcb+DCB_OUTBUFPTR
+	move.l #$00400000,framebuf_dcb+DCB_INBUFSIZE
+	move.l #$00400000,framebuf_dcb+DCB_OUTBUFSIZE
+	lea.l framebuf_dcb+DCB_MAGIC,a1
+	jsr DisplayString
+	jsr CRLF
+	movem.l (a7)+,d0/a0/a1
+	; fall through
+
+framebuf_init:
+	move.b #1,FRAMEBUF+0		; turn on frame buffer
+	move.b #1,FRAMEBUF+1		; color depth 16 BPP
+	move.b #$11,FRAMEBUF+2	; hres 1:1 vres 1:1
+	move.b #119,FRAMEBUF+4		; burst length
+	move.l #$ff3f,framebuf_dcb+DCB_FGCOLOR	; white
+	move.l #$000f,framebuf_dcb+DCB_BKCOLOR	; medium blue
+	clr.l framebuf_dcb+DCB_OUTPOSX
+	clr.l framebuf_dcb+DCB_OUTPOSY
+	clr.l framebuf_dcb+DCB_INPOSX
+	clr.l framebuf_dcb+DCB_INPOSY
+	move.b #1,framebuf_dcb+DCB_OPCODE	; raster op = copy
+	move.w #1920,framebuf_dcb+DCB_OUTDIMX		; set rows and columns
+	move.w #1080,framebuf_dcb+DCB_OUTDIMY
+	move.w #1920,framebuf_dcb+DCB_INDIMX			; set rows and columns
+	move.w #1080,framebuf_dcb+DCB_INDIMY
+	move.l #$40000000,framebuf_dcb+DCB_INBUFPTR
+	move.l #$40400000,framebuf_dcb+DCB_INBUFPTR2
+	move.l #$40000000,framebuf_dcb+DCB_OUTBUFPTR
+	move.l #$40400000,framebuf_dcb+DCB_OUTBUFPTR2
+	move.l #$00000000,FRAMEBUF+16	; base addr 1
+	move.l #$00004000,FRAMEBUF+24	; base addr 2
 	rts
 
 framebuf_stat:
@@ -163,7 +184,9 @@ framebuf_swapbuf:
 	move.l d2,framebuf_dcb+DCB_OUTBUFPTR2
 	move.l d0,framebuf_dcb+DCB_OUTBUFPTR
 	sub.l #$40000000,d0
-	move.l d0,GFXACCEL+16
+	move.l d0,d1
+	bsr rbo
+	move.l d1,GFXACCEL+16
 	move.l framebuf_dcb+DCB_INBUFPTR,d2
 	move.l framebuf_dcb+DCB_INBUFPTR2,d0
 	move.l d2,framebuf_dcb+DCB_INBUFPTR2
@@ -183,6 +206,14 @@ framebuf_stub:
 	moveq #E_NotSupported,d0
 	rts
 
+framebuf_set_color_depth:
+	move.l d1,d0
+	bsr rbo
+	move.l d1,FRAMEBUF+FRAMEBUF_COLOR_COMP
+	move.l d0,d1
+	move.l #E_Ok,d0
+	rts
+	
 framebuf_get_color:
 	move.l framebuf_dcb+DCB_FGCOLOR,d1
 	move.l framebuf_dcb+DCB_BKCOLOR,d2
@@ -201,6 +232,29 @@ framebuf_get_dimen:
 	move.l framebuf_dcb+DCB_INDIMX,d1
 	move.l framebuf_dcb+DCB_INDIMY,d2
 	move.l framebuf_dcb+DCB_INDIMZ,d3
+	move.l #E_Ok,d0
+	rts
+
+framebuf_set_dimen:
+	cmpi.b #0,d0
+	bne.s .0001
+	movem.l d1/d2,-(a7)
+	move.l d1,framebuf_dcb+DCB_OUTDIMX
+	move.l d2,framebuf_dcb+DCB_OUTDIMY
+	move.l d3,framebuf_dcb+DCB_OUTDIMZ
+	ext.l d2
+	swap d2
+	ext.l d1
+	or.l d2,d1
+	bsr rbo
+	move.l d1,FRAMEBUF+FRAMEBUF_WINDOW_DIMEN
+	movem.l (a7)+,d1/d2
+	move.l #E_Ok,d0
+	rts
+.0001:
+	move.l d1,framebuf_dcb+DCB_INDIMX
+	move.l d2,framebuf_dcb+DCB_INDIMY
+	move.l d3,framebuf_dcb+DCB_INDIMZ
 	move.l #E_Ok,d0
 	rts
 

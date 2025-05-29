@@ -362,6 +362,11 @@ gr_raster_op equ $408A8
 gr_double_buffer equ $408AC
 gr_bitmap_buffer equ $408B0
 sys_switches equ $408B8
+gfxaccel_ctrl equ $408C0
+m_z equ $408D0
+m_w equ $408D4
+next_m_z equ $408D8
+next_m_w equ $408DC
 EightPixels equ $40100000	; to $40200020
 
 null_dcb equ $0040A00		; 0
@@ -403,6 +408,7 @@ RTCBuf			equ $00100200	; to $0010023F
 	align		2
 start:
 ;	fadd (a0)+,fp2
+	move.b #1,leds
 	move.w #$2700,sr					; enable level 6 and higher interrupts
 	moveq #0,d0								; set address space zero
 	movec d0,asid
@@ -421,6 +427,7 @@ start:
 		movec d0,ios
 	endif
 ;	move.l $4000000C,d0
+	move.b #2,leds
 	movec coreno,d0							; set initial value of thread register
 	swap d0											; coreno in high eight bits
 	lsl.l #8,d0
@@ -431,16 +438,24 @@ start:
 .0111:
 	clr.l	(a0)+								; clear the memory area
 	dbra d0,.0111
-	bsr setup_null
-	bsr setup_keybd
-	bsr setup_textvid
-	bsr setup_serial
+	move.b #5,leds
 	move.b #1,InputDevice			; select keyboard input
 	move.b #2,OutputDevice		; select text screen output
+	bsr setup_textvid
+	move.b #3,leds
+	bsr setup_null
+	move.b #4,leds
+	bsr setup_keybd
+	move.b #6,leds
+	bsr setup_serial
+	move.b #7,leds
 	movec.l	coreno,d0					; get core number
 	cmpi.b #2,d0
 	bne	start_other
 	bsr setup_framebuf
+	move.b #8,leds
+	bsr setup_gfxaccel
+	move.b #9,leds
 	clr.l sys_switches
 	movec.l	coreno,d0					; get core number
 	move.b d0,IOFocus					; Set the IO focus in global memory
@@ -454,10 +469,10 @@ start:
 	andi.l #$FFFFFF00,d1
 	move.l d1,_canary
 	movec d1,canary
-	bsr	Delay3s						; give devices time to reset
-	moveq #2,d7					; device 2
-	moveq #DEV_CLEAR,d6	; clear
-	trap #0
+;	bsr	Delay3s						; give devices time to reset
+;	moveq #2,d7					; device 2
+;	moveq #DEV_CLEAR,d6	; clear
+;	trap #0
 ;	bsr	textvid_clear
 
 	bsr	_KeybdInit
@@ -631,11 +646,16 @@ InitIOPBitmap:
 
 InitRand:
 RandInit:
+	move.l #$12345678,m_z		; initialize to some value
+	move.l #$98765432,m_w
+	move.l #$82835438,next_m_z
+	move.l #$08723746,next_m_w
 	movem.l	d0/d1,-(a7)
 	moveq #37,d0								; lock semaphore
 	moveq	#RAND_SEMA,d1
 	trap #15
 	movec coreno,d0							; d0 = core number
+	sub.l #2,d0									; make 0 to 9
 	lsl.l	#6,d0									; allow 64 streams per core
 	move.l d0,RAND_STRM					; select the stream
 	move.l #$12345678,RAND_MZ		; initialize to some value
@@ -657,15 +677,43 @@ RandGetNum:
 	moveq #RAND_SEMA,d1
 	bsr T15LockSemaphore
 	movec	coreno,d0
+	sub.l #2,d0									; make 0 to 9
 	lsl.l	#6,d0
 	move.l d0,RAND_STRM					; select the stream
 	move.l RAND_NUM,d2					; d2 = random number
-	clr.l	RAND_NUM							; generate next number
+	move.l d2,RAND_NUM		 		  ; generate next number
 	bsr T15UnlockSemaphore
 	move.l d2,d1
 	movem.l	(a7)+,d0/d2
 	rts
 
+prng:
+	move.l d2,-(a7)
+	move.l m_z,d1
+	move.l d1,d2
+	mulu #6969,d1
+	swap d2
+	ext.l d2
+	add.l d1,d2
+	move.l d2,next_m_z
+
+	move.l m_w,d1
+	move.l d1,d2
+	mulu #18000,d1
+	swap d2
+	ext.l d2
+	add.l d1,d2
+	move.l d2,next_m_w
+	
+	move.l m_z,d1
+	swap d1
+	clr.w d1
+	add.l m_w,d1
+	move.l next_m_z,m_z
+	move.l next_m_w,m_w
+	move.l (a7)+,d2
+	rts
+	
 ;------------------------------------------------------------------------------
 ; Modifies:
 ;		none
@@ -1158,6 +1206,7 @@ SetDrawMode:
 	rts
 	
 SetPenColor:
+	bsr gfxaccel_set_color
 	move.w d1,framebuf_dcb+DCB_FGCOLOR
 	rts
 
@@ -2357,57 +2406,268 @@ ExecuteCode:
 	bra Monitor
 
 cmdGrDemo:
-	bsr setup_gfxaccel
-	move.l #1080,d3
+	move.l #$00001555,d1		; 16 bpp
+	moveq #6,d7							; framebuf device
+	moveq #DEV_SET_COLOR_DEPTH,d6
+	trap #0
+	move.b #$44,FRAMEBUF+FRAMEBUF_CTRL+2	; 4 clocks/scanlines per pixel
+	moveq #6,d7							; framebuf device
+	moveq #DEV_SET_DIMEN,d6
+	moveq #0,d0
+	move.l #480,d1
+	move.l #270,d2
+	move.l #0,d3
+	trap #0
+	moveq #7,d7							; graphics accelerator device
+	trap #0
+	bsr clear_graphics_screen
+;	moveq #94,d0							; page flip
+;	trap #15
+
+;	moveq #0,d1
+;	moveq #0,d2
+;	move.l #1920,d3
+;	move.l #1080,d4
+;	bsr gfxaccel_clip_rect
+	; Draw two diagonal white lines
+	move.l #270,d3
 	move.l #$40000000,a4
 .0002:
 	move.l #$FF7FFF7F,d2	; white
 	move.w d2,(a4)
-	add.l #3842,a4
+	add.l #962,a4
 	dbra d3,.0002
+	move.l #270,d3
+	move.l #$40000000+960,a4
+.0007:
+	move.w d2,(a4)
+	add.l #958,a4
+	dbra d3,.0007
+	bra Monitor
+
 ;	bra Monitor
+plot_rand_points:
 	move.l #$7F127F12,d1
 	bsr rbo
 	bsr gfxaccel_set_color
-;	move.l #800,d1
-;	move.l #600,d2
-;	move.l #1800,d3
-;	move.l #900,d4
-;	bsr gfxaccel_rectangle
+	move.l #10000,d5
+.0005:
+	move.l #$40000000,a4
+	bsr RandGetNum
+	move.l d1,d4
+	bsr RandGetNum
+	move.l d1,d2
+	andi.l #$ff,d2
+	bsr RandGetNum
+	andi.l #$1ff,d1
+	mulu #960,d2
+	add.l d1,d2
+	add.l d1,d2
+	add.l d2,a4
+	move.w d4,(a4)				; plot point
+	dbra d5,.0005
+	bra Monitor
+
+clear_graphics_screen:
+;	move.l #0,d1
+;	bsr gfxaccel_set_color
+;	move.l #0,d1
+;	move.l #0,d2
+;	move.l #1920<<16,d3
+;	move.l #1080<<16,d4
+;	bsr gfxaccel_draw_rectangle
+	move.l #480*270,d5		; compute number of strips to write
+	lsr.l #4,d5
+	move.l framebuf_dcb+DCB_OUTBUFPTR,a4
+	move.l #0,$7FFFFFF8		; burst length of zero
+	bra.s .0001
+.0002:
+	swap d5
+.0001:
+	move.l a4,d1
+	bsr rbo
+	move.l d1,$7FFFFFF4		; target address
+	move.l #0,$7FFFFFFC		; value to write
+	lea.l 32(a4),a4
+	dbra d5,.0001
+;	swap d5
+;	dbra d5,.0002
+	rts
+
+clear_graphics_screen2:
+;	move.l #0,d1
+;	bsr gfxaccel_set_color
+;	move.l #0,d1
+;	move.l #0,d2
+;	move.l #1920<<16,d3
+;	move.l #1080<<16,d4
+;	bsr gfxaccel_draw_rectangle
+	move.l #480*270,d5		; compute number of strips to write
+	lsr.l #4,d5						; 16 pixels per strip
+	lsr.l #4,d5						; and burst writing 16 strips at once
+	move.l framebuf_dcb+DCB_OUTBUFPTR,a4
+	move.l #0,$7FFFFFF8		; burst length of zero
+	bra.s .0001
+.0002:
+	swap d5
+.0001:
+	move.l a4,d1
+	bsr rbo
+	move.l d1,$7FFFFFF4		; target address
+	move.l #15,$7FFFFFF8	; burst length = 16
+	move.l #0,$7FFFFFFC		; value to write
+	lea.l 32(a4),a4
+	dbra d5,.0001
+;	swap d5
+;	dbra d5,.0002
+	bra Monitor
+
+white_rect:
+	move.l #$FFFFFFFF,d1
+	bsr gfxaccel_set_color
+	move.l #100<<16,d1
+	move.l #200<<16,d2
+	move.l #250<<16,d3
+	move.l #250<<16,d4
+	bsr gfxaccel_draw_rectangle
+	bra Monitor
+
+rand_points:
+	move.l #10000,d5
+.0004:
+	bsr RandGetNum
+	bsr gfxaccel_set_color
+	bsr RandGetNum
+	move.l d1,d3
+	swap d3
+	andi.l #$7fffff,d3		; Z
+	bsr RandGetNum
+	move.l d1,d2
+	swap d2
+	andi.l #$ffffff,d2		; Y
+	bsr RandGetNum
+	swap d1
+	andi.l #$1ffffff,d1		; X
+	bsr gfxaccel_plot_point
+	dbra d5,.0004
+	bra Monitor
+
+rand_lines:
 	move.l #10000,d5
 .0001:
+.0006:
+	bsr CheckForCtrlC
 	bsr RandGetNum
 	bsr gfxaccel_set_color
 	bsr RandGetNum
 	move.l d1,d4
-	andi.l #$3ff,d4
+	swap d4
+	andi.l #$ffffff,d4
 	bsr RandGetNum
 	move.l d1,d3
-	andi.l #$7ff,d3
+	swap d3
+	andi.l #$1ffffff,d3
 	bsr RandGetNum
 	move.l d1,d2
-	andi.l #$3ff,d2
+	swap d2
+	andi.l #$ffffff,d2
 	bsr RandGetNum
-	andi.l #$7ff,d1
+	swap d1
+	andi.l #$1ffffff,d1
 	bsr gfxaccel_draw_line
 	dbra d5,.0001
+	bra Monitor
+
+rand_rect:
 	move.l #10000,d5
 .0003:
+.0006:
+	bsr CheckForCtrlC
 	bsr RandGetNum
 	bsr gfxaccel_set_color
 	bsr RandGetNum
 	move.l d1,d4
-	andi.l #$3ff,d4
+	swap d4
+	andi.l #$ffffff,d4
 	bsr RandGetNum
 	move.l d1,d3
-	andi.l #$7ff,d3
+	swap d3
+	andi.l #$1ffffff,d3
 	bsr RandGetNum
 	move.l d1,d2
-	andi.l #$3ff,d2
+	swap d2
+	andi.l #$ffffff,d2
 	bsr RandGetNum
-	andi.l #$7ff,d1
+	swap d1
+	andi.l #$1ffffff,d1
 	bsr gfxaccel_draw_rectangle
 	dbra d5,.0003
+	bra Monitor
+
+rand_triangle:
+	move.l #10000,d7
+.0006:
+	bsr CheckForCtrlC
+	bsr RandGetNum
+	bsr gfxaccel_set_color
+	bsr RandGetNum
+	move.l d1,d6
+	swap d6
+	andi.l #$ffffff,d6
+	bsr RandGetNum
+	move.l d1,d5
+	swap d5
+	andi.l #$1ffffff,d5
+	bsr RandGetNum
+	move.l d1,d4
+	swap d4
+	andi.l #$ffffff,d4
+	bsr RandGetNum
+	move.l d1,d3
+	swap d3
+	andi.l #$1ffffff,d3
+	bsr RandGetNum
+	move.l d1,d2
+	swap d2
+	andi.l #$ffffff,d2
+	bsr RandGetNum
+	swap d1
+	andi.l #$1ffffff,d1
+	bsr gfxaccel_draw_triangle
+	dbra d7,.0006
+	bra Monitor
+
+rand_curve:
+	move.l #10000,d7
+.0006:
+	bsr CheckForCtrlC
+	bsr RandGetNum
+	bsr gfxaccel_set_color
+	bsr RandGetNum
+	move.l d1,d6
+	swap d6
+	andi.l #$ffffff,d6
+	bsr RandGetNum
+	move.l d1,d5
+	swap d5
+	andi.l #$1ffffff,d5
+	bsr RandGetNum
+	move.l d1,d4
+	swap d4
+	andi.l #$ffffff,d4
+	bsr RandGetNum
+	move.l d1,d3
+	swap d3
+	andi.l #$1ffffff,d3
+	bsr RandGetNum
+	move.l d1,d2
+	swap d2
+	andi.l #$ffffff,d2
+	bsr RandGetNum
+	swap d1
+	andi.l #$1ffffff,d1
+	bsr gfxaccel_draw_curve
+	dbra d7,.0006
 	bra Monitor
 
 ;------------------------------------------------------------------------------

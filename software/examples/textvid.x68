@@ -95,17 +95,24 @@ textvid_cmdproc:
 	rts
 
 setup_textvid:
-	movem.l d0/a0,-(a7)
+	movem.l d0/a0/a1,-(a7)
 	moveq #32,d0
 	lea.l textvid_dcb,a0
 .0001:
 	clr.l (a0)+
 	dbra d0,.0001
-	move.l #$20424344,textvid_dcb+DCB_MAGIC				; 'DCB'
-	move.l #$54584554,textvid_dcb+DCB_NAME				; 'TEXTVID'
-	move.l #$00444956,textvid_dcb+DCB_NAME+4			;
+	move.l #$44434220,textvid_dcb+DCB_MAGIC				; 'DCB '
+	move.l #$54455854,textvid_dcb+DCB_NAME				; 'TEXTVID'
+	move.l #$56494400,textvid_dcb+DCB_NAME+4			;
 	move.l #textvid_cmdproc,textvid_dcb+DCB_CMDPROC
-	movem.l (a7)+,d0/a0
+	bsr textvid_init
+	jsr Delay3s
+	bsr textvid_clear
+	lea.l textvid_dcb+DCB_MAGIC,a1
+	jsr DisplayString
+	jsr CRLF
+	movem.l (a7)+,d0/a0/a1
+	rts
 
 textvid_init:
 	move.l d0,-(a7)
@@ -250,7 +257,7 @@ textvid_get_dimen:
 
 textvid_clear:
 	move.l #$FFFFFFFF,leds
-	movem.l	d1/d2/d3/d4/a0,-(a7)
+	movem.l	d1/d2/d3/d4/d6/d7/a0,-(a7)
 	movec	coreno,d0
 	swap d0	
 ;	moveq		#SCREEN_SEMA,d1
@@ -308,7 +315,7 @@ loop3:
 ;	moveq #SCREEN_SEMA,d1
 ;	bsr UnlockSemaphore
 	move.l #$FCFCFCFC,leds
-	movem.l (a7)+,d1/d2/d3/d4/a0
+	movem.l (a7)+,d1/d2/d3/d4/d6/d7/a0
 	move.l #E_Ok,d0
 	rts
 

@@ -20,14 +20,15 @@
 ;------------------------------------------------------------------------------
 setup_keybd:
 keybd_init:
+	movem.l d0/a0/a1,-(a7)
 	moveq #32,d0
 	lea.l keybd_dcb,a0
 .0001:
 	clr.l (a0)+
 	dbra d0,.0001
-	move.l #$20424344,keybd_dcb+DCB_MAGIC				; 'DCB'
-	move.l #$2044424B,keybd_dcb+DCB_NAME				; 'KBD'
-	move.l #keybd_cmdproc,textvid_dcb+DCB_CMDPROC
+	move.l #$44434220,keybd_dcb+DCB_MAGIC				; 'DCB '
+	move.l #$4B424400,keybd_dcb+DCB_NAME				; 'KBD'
+	move.l #keybd_cmdproc,keybd_dcb+DCB_CMDPROC
 	move.l #_KeybdBuf,keybd_dcb+DCB_INBUFPTR
 	move.l #_KeybdOBuf,keybd_dcb+DCB_OUTBUFPTR
 	move.l #32,keybd_dcb+DCB_INBUFSIZE
@@ -37,6 +38,10 @@ keybd_init:
 	clr.b keybd_dcb+DCB_INDIMX		; set rows and columns
 	clr.b keybd_dcb+DCB_INDIMY
 ;	bsr KeybdInit
+	lea.l keybd_dcb+DCB_MAGIC,a1
+	jsr DisplayString
+	jsr CRLF
+	movem.l (a7)+,d0/a0/a1
 	rts
 
 	align 2

@@ -34,6 +34,26 @@
 ;                                                                          
 ; ============================================================================
 
+GFX_CTRL		equ	$00
+GFX_STATUS	equ $04
+GFX_TARGET_BASE		equ $10
+GFX_TARGET_SIZE_X	equ $14
+GFX_TARGET_SIZE_Y equ $18
+GFX_DEST_PIXEL_X  equ $38
+GFX_DEST_PIXEL_Y  equ $3c
+GFX_DEST_PIXEL_Z  equ $40
+GFX_CLIP_PIXEL0_X	equ $74
+GFX_CLIP_PIXEL0_Y	equ $78
+GFX_CLIP_PIXEL1_X	equ $7C
+GFX_CLIP_PIXEL1_Y	equ $80
+GFX_COLOR0	equ $84
+GFX_COLOR1	equ $88
+GFX_COLOR2	equ $8C
+GFX_TARGET_X0	equ $B0
+GFX_TARGET_Y0 equ $B4
+GFX_TARGET_X1	equ $B8
+GFX_TARGET_Y1	equ $BC
+
 ;------------------------------------------------------------------------------
 ;------------------------------------------------------------------------------
 ; Graphics accelerator
@@ -71,26 +91,16 @@ GFXACCEL_CMDTBL:
 	dc.l gfxaccel_plot_point
 	dc.l gfxaccel_draw_line
 	dc.l gfxaccel_draw_triangle
-	dc.l gfxaccel_draw_rectangle
+	dc.l gfxaccel_draw_rectangle	;30
+	dc.l gfxaccel_draw_curve
+	dc.l gfxaccel_set_dimen
+	dc.l gfxaccel_set_color_depth
 
 	code
 	even
-setup_gfxaccel:
-gfxaccel_init:
-	move.l #1,GFXACCEL							; select 16bpp color
-	move.l #$00000000,d1
-	bsr rbo
-	move.l d1,GFXACCEL+$10	; base draw address
-	move.l #1920,d1
-	bsr rbo
-	move.l d1,GFXACCEL+$14				; render target x dimension
-	move.l #1080,d1
-	bsr rbo
-	move.l d1,GFXACCEL+$18				; render target y dimension
-	rts
 
 gfxaccel_cmdproc:
-	cmpi.b #27,d6
+	cmpi.b #34,d6
 	bhs.s .0001
 	movem.l d6/a0,-(a7)
 	ext.w d6
@@ -104,8 +114,55 @@ gfxaccel_cmdproc:
 	moveq #E_Func,d0
 	rts
 
+setup_gfxaccel:
+	movem.l d0/a0/a1,-(a7)
+	moveq #32,d0
+	lea.l gfxaccel_dcb,a0
+.0001:
+	clr.l (a0)+
+	dbra d0,.0001
+	move.l #$44434220,gfxaccel_dcb+DCB_MAGIC			; 'DCB'
+	move.l #$47465841,gfxaccel_dcb+DCB_NAME				; 'GFXACCEL'
+	move.l #$4343454C,gfxaccel_dcb+DCB_NAME+4
+	move.l #gfxaccel_cmdproc,gfxaccel_dcb+DCB_CMDPROC
+	move.l #$40000000,d0
+	move.l d0,gfxaccel_dcb+DCB_INBUFPTR
+	move.l d0,gfxaccel_dcb+DCB_OUTBUFPTR
+	move.l #$00400000,gfxaccel_dcb+DCB_INBUFSIZE
+	move.l #$00400000,gfxaccel_dcb+DCB_OUTBUFSIZE
+	lea.l gfxaccel_dcb+DCB_MAGIC,a1
+	jsr DisplayString
+	jsr CRLF
+	movem.l (a7)+,d0/a0/a1
+
+gfxaccel_init:
+	move.l d1,-(a7)
+	moveq #10,d1
+	bsr gfxaccel_wait
+	clr.l gfxaccel_ctrl
+	move.l #1,d1
+	move.l d1,gfxaccel_ctrl
+	bsr rbo
+	move.l d1,GFXACCEL+GFX_CTRL	; select 16bpp color
+	move.l #$00000000,d1
+	bsr rbo
+	move.l d1,GFXACCEL+GFX_TARGET_BASE	; base draw address
+	move.l #1920,d1
+	bsr rbo
+	move.l d1,GFXACCEL+GFX_TARGET_SIZE_X	; render target x dimension
+	move.l d1,GFXACCEL+GFX_TARGET_X1
+	move.l #1080,d1
+	bsr rbo
+	move.l d1,GFXACCEL+GFX_TARGET_SIZE_Y	; render target y dimension
+	move.l d1,GFXACCEL+GFX_TARGET_Y1
+	move.l #0,GFXACCEL+GFX_TARGET_X0
+	move.l #0,GFXACCEL+GFX_TARGET_Y0
+	move.l (a7)+,d1
+	rts
+
 gfxaccel_stat:
-	move.l GFXACCEL+4,d1
+	move.l GFXACCEL+GFX_STATUS,d1
+	bsr rbo
 	moveq #E_Ok,d0
 	rts
 	
@@ -131,64 +188,162 @@ gfxaccel_get_dimen:
 gfxaccel_get_inpos:
 gfxaccel_get_outpos:
 gfxaccel_get_outptr:
-gfxaccel_plot_point:
 	move.l #E_NotSupported,d0
 	rts
 
+gfxaccel_set_dimen:
+	move.l d1,-(a7)
+	move.l d1,d0
+	moveq #6,d1
+	bsr gfxaccel_wait					; wait for an open slot
+	move.l d0,d1
+	bsr rbo
+	move.l d1,GFXACCEL+GFX_TARGET_SIZE_X	; render target x dimension
+	move.l d1,GFXACCEL+GFX_TARGET_X1
+	move.l d2,d1
+	bsr rbo
+	move.l d1,GFXACCEL+GFX_TARGET_SIZE_Y	; render target y dimension
+	move.l d1,GFXACCEL+GFX_TARGET_Y1
+	move.l (a7)+,d1
+	moveq #E_Ok,d0
+	rts
+
+gfxaccel_set_color_depth:
+	move.l d1,d0
+	andi.b #3,d1
+	or.l gfxaccel_ctrl,d1
+	move.l d1,gfxaccel_ctrl
+	bsr rbo
+	move.l d1,GFXACCEL+GFX_CTRL
+	move.l d0,d1
+	moveq #E_Ok,d0
+	rts
+	
 gfxaccel_get_color:
-	move.l GFXACCEL+$84,d1
+	move.l GFXACCEL+GFX_COLOR0,d1
 	moveq #E_Ok,d0
 	rts
 
 gfxaccel_set_color:
 	movem.l d1/d3,-(a7)
-	bsr rbo
 	move.l d1,d3
-	move.l #1,d1
-	bsr gfxaccel_wait
-	move.l d3,GFXACCEL+$84
+	moveq #3,d1
+	bsr gfxaccel_wait					; wait for an open slot
+	move.l d3,d1
+	bsr rbo
+	move.l d1,GFXACCEL+GFX_COLOR0
 	movem.l (a7)+,d1/d3
 	moveq #E_Ok,d0
 	rts
 
 gfxaccel_set_color123:
 	movem.l d1/d4,-(a7)
-	bsr rbo
 	move.l d1,d4
-	move.l #3,d1
-	bsr gfxaccel_wait
-	move.l d4,GFXACCEL+$84
-	move.l d2,GFXACCEL+$88
-	move.l d3,GFXACCEL+$8C
+	moveq #5,d1
+	bsr gfxaccel_wait					; wait for an open slot
+	move.l d4,d1
+	bsr rbo
+	move.l d1,GFXACCEL+GFX_COLOR0
+	move.l d2,d1
+	bsr rbo
+	move.l d1,GFXACCEL+GFX_COLOR1
+	move.l d3,d1
+	bsr rbo
+	move.l d1,GFXACCEL+GFX_COLOR2
 	movem.l (a7)+,d1/d4
 	moveq #E_Ok,d0
 	rts
 
-gfxaccel_draw_line:
-	movem.l d1/d2,-(a7)
-	moveq #7,d1
-	bsr gfxaccel_wait
-	movem.l (a7)+,d1/d2
+gfxaccel_clip_rect:
+	movem.l d1/d5,-(a7)
+	move.l d1,d5
+	moveq #6,d1
+	bsr gfxaccel_wait					; wait for an open slot
+	move.l d5,d1
 	bsr rbo
-	move.l d1,GFXACCEL+$38					; p0 x
+	move.l d1,GFXACCEL+GFX_CLIP_PIXEL0_X
 	move.l d2,d1
 	bsr rbo
-	move.l d1,GFXACCEL+$3C					; p0 y
-	move.l #$00040001,d1						; set active point 0
-	bsr rbo
-	move.l d1,GFXACCEL
+	move.l d1,GFXACCEL+GFX_CLIP_PIXEL0_Y
 	move.l d3,d1
 	bsr rbo
-	move.l d1,GFXACCEL+$38
+	move.l d1,GFXACCEL+GFX_CLIP_PIXEL1_X
 	move.l d4,d1
 	bsr rbo
-	move.l d1,GFXACCEL+$3C
-	move.l #$00050001,d1						; set active point 1
+	move.l d1,GFXACCEL+GFX_CLIP_PIXEL1_Y
+	movem.l (a7)+,d1/d5
+	moveq #E_Ok,d0
+	rts
+
+; Parameters:
+;		d2.b = active point to set
+;
+gfxaccel_set_active_point:
+	ext.w d2
+	ext.l d2
+	swap d2													; point number in bits 16,17
+	move.l gfxaccel_ctrl,d1
+	andi.l #$FFF8FFFF,d1						; clear point number bits
+	or.l d2,d1											; set the point number bits
+	ori.l #$00040000,d1							; set active point
+	move.l d1,gfxaccel_ctrl
 	bsr rbo
-	move.l d1,GFXACCEL
-	move.l #$00000201,d1
+	move.l d1,GFXACCEL+GFX_CTRL
+	rts
+
+; Graphics accelerator expects that co-ordinates are in 16.16 format.
+; 
+gfxaccel_plot_point:
+	bsr gfxaccel_init
+	movem.l d1/d5,-(a7)
+	move.l d1,d5
+	moveq #6,d1
+	bsr gfxaccel_wait								; wait for an open slot
+	move.l d5,d1
 	bsr rbo
-	move.l d1,GFXACCEL
+	move.l d1,GFXACCEL+GFX_DEST_PIXEL_X
+	move.l d2,d1
+	bsr rbo
+	move.l d1,GFXACCEL+GFX_DEST_PIXEL_Y
+	move.l d3,d1
+	bsr rbo
+	move.l d1,GFXACCEL+GFX_DEST_PIXEL_Z
+	move.w #0,d2										; point 0
+	bsr gfxaccel_set_active_point
+	move.l gfxaccel_ctrl,d1
+	ori.l #$00000080,d1							; point write, bit will clear automatically
+	bsr rbo
+	move.l d1,GFXACCEL+GFX_CTRL
+	movem.l (a7)+,d1/d5
+	moveq #E_Ok,d0
+	rts
+
+gfxaccel_draw_line:
+	movem.l d1/d2/d5,-(a7)
+	move.l d1,d5
+	moveq #9,d1
+	bsr gfxaccel_wait								; wait for an open slot
+	move.l d5,d1
+	bsr rbo
+	move.l d1,GFXACCEL+GFX_DEST_PIXEL_X
+	move.l d2,d1
+	bsr rbo
+	move.l d1,GFXACCEL+GFX_DEST_PIXEL_Y
+	move.w #0,d2										; point 0
+	bsr gfxaccel_set_active_point
+	move.l d3,d1
+	bsr rbo
+	move.l d1,GFXACCEL+GFX_DEST_PIXEL_X
+	move.l d4,d1
+	bsr rbo
+	move.l d1,GFXACCEL+GFX_DEST_PIXEL_Y
+	move.w #1,d2										; point 1
+	bsr gfxaccel_set_active_point
+	move.l gfxaccel_ctrl,d1					; get the control reg
+	ori.l #$00000200,d1							; trigger draw line
+	bsr rbo
+	move.l d1,GFXACCEL+GFX_CTRL
+	movem.l (a7)+,d1/d2/d5
 	moveq #E_Ok,d0
 	rts
 
@@ -201,30 +356,31 @@ gfxaccel_draw_line:
 ;		d4	- y1 pos
 
 gfxaccel_draw_rectangle:
-	movem.l d1/d2,-(a7)
-	moveq #7,d1
-	bsr gfxaccel_wait
-	movem.l (a7)+,d1/d2
+	movem.l d1/d2/d5,-(a7)
+	move.l d1,d5
+	moveq #9,d1
+	bsr gfxaccel_wait								; wait for an open slot
+	move.l d5,d1
 	bsr rbo
-	move.l d1,GFXACCEL+$38					; p0 x
+	move.l d1,GFXACCEL+GFX_DEST_PIXEL_X
 	move.l d2,d1
 	bsr rbo
-	move.l d1,GFXACCEL+$3C					; p0 y
-	move.l #$00040001,d1						; set active point 0
-	bsr rbo
-	move.l d1,GFXACCEL
+	move.l d1,GFXACCEL+GFX_DEST_PIXEL_Y
+	move.w #0,d2										; point 0
+	bsr gfxaccel_set_active_point
 	move.l d3,d1
 	bsr rbo
-	move.l d1,GFXACCEL+$38
+	move.l d1,GFXACCEL+GFX_DEST_PIXEL_X
 	move.l d4,d1
 	bsr rbo
-	move.l d1,GFXACCEL+$3C
-	move.l #$00050001,d1						; set active point 1
+	move.l d1,GFXACCEL+GFX_DEST_PIXEL_Y
+	move.w #1,d2										; point 1
+	bsr gfxaccel_set_active_point
+	move.l gfxaccel_ctrl,d1					; get the control reg
+	ori.l #$00000100,d1							; trigger draw rectangle
 	bsr rbo
-	move.l d1,GFXACCEL
-	move.l #$00000101,d1
-	bsr rbo
-	move.l d1,GFXACCEL
+	move.l d1,GFXACCEL+GFX_CTRL
+	movem.l (a7)+,d1/d2/d5
 	moveq #E_Ok,d0
 	rts
 
@@ -239,41 +395,76 @@ gfxaccel_draw_rectangle:
 ;		d6	- y2 pos
 
 gfxaccel_draw_triangle:
-	movem.l d1/d2,-(a7)
-	moveq #13,d1
-	bsr gfxaccel_wait
-	movem.l (a7)+,d1/d2
+	movem.l d1/d2/d7,-(a7)
+	move.l d1,d7
+	moveq #12,d1
+	bsr gfxaccel_wait								; wait for an open slot
+	move.l d7,d1
 	bsr rbo
-	move.l d1,GFXACCEL+$38					; p0 x
+	move.l d1,GFXACCEL+GFX_DEST_PIXEL_X
 	move.l d2,d1
 	bsr rbo
-	move.l d1,GFXACCEL+$3C					; p0 y
-	move.l #$00040001,d1						; set active point 0
-	bsr rbo
-	move.l d1,GFXACCEL
+	move.l d1,GFXACCEL+GFX_DEST_PIXEL_Y
+	move.w #0,d2										; point 0
+	bsr gfxaccel_set_active_point
 	move.l d3,d1
 	bsr rbo
-	move.l d1,GFXACCEL+$38
+	move.l d1,GFXACCEL+GFX_DEST_PIXEL_X
 	move.l d4,d1
 	bsr rbo
-	move.l d1,GFXACCEL+$3C
-	move.l #$00050001,d1						; set active point 1
-	bsr rbo
-	move.l d1,GFXACCEL
-	move.l #$00000101,d1
-	move.l d1,GFXACCEL
+	move.l d1,GFXACCEL+GFX_DEST_PIXEL_Y
+	move.w #1,d2										; point 1
+	bsr gfxaccel_set_active_point
 	move.l d5,d1
 	bsr rbo
-	move.l d5,GFXACCEL+$38
+	move.l d1,GFXACCEL+GFX_DEST_PIXEL_X
 	move.l d6,d1
 	bsr rbo
-	move.l d6,GFXACCEL+$3C
-	move.l #$00060001,d1						; set active point 2
+	move.l d1,GFXACCEL+GFX_DEST_PIXEL_Y
+	move.w #2,d2										; point 2
+	bsr gfxaccel_set_active_point
+	move.l gfxaccel_ctrl,d1					; get the control reg
+	ori.l #$00000400,d1							; trigger draw triangle
 	bsr rbo
-	move.l d1,GFXACCEL
-	move.l #$00000401,d1						; write triangle
+	move.l d1,GFXACCEL+GFX_CTRL
+	movem.l (a7)+,d1/d2/d7
+	moveq #E_Ok,d0
+	rts
+
+gfxaccel_draw_curve:
+	movem.l d1/d2/d7,-(a7)
+	move.l d1,d7
+	moveq #12,d1
+	bsr gfxaccel_wait								; wait for an open slot
+	move.l d7,d1
 	bsr rbo
-	move.l d1,GFXACCEL
+	move.l d1,GFXACCEL+GFX_DEST_PIXEL_X
+	move.l d2,d1
+	bsr rbo
+	move.l d1,GFXACCEL+GFX_DEST_PIXEL_Y
+	move.w #0,d2										; point 0
+	bsr gfxaccel_set_active_point
+	move.l d3,d1
+	bsr rbo
+	move.l d1,GFXACCEL+GFX_DEST_PIXEL_X
+	move.l d4,d1
+	bsr rbo
+	move.l d1,GFXACCEL+GFX_DEST_PIXEL_Y
+	move.w #1,d2										; point 1
+	bsr gfxaccel_set_active_point
+	move.l d5,d1
+	bsr rbo
+	move.l d1,GFXACCEL+GFX_DEST_PIXEL_X
+	move.l d6,d1
+	bsr rbo
+	move.l d1,GFXACCEL+GFX_DEST_PIXEL_Y
+	move.w #2,d2										; point 2
+	bsr gfxaccel_set_active_point
+	move.l gfxaccel_ctrl,d1					; get the control reg
+	ori.l #$00001C00,d1							; trigger draw curve+triangle+interp
+	bsr rbo
+	move.l d1,GFXACCEL+GFX_CTRL
+	movem.l (a7)+,d1/d2/d7
 	moveq #E_Ok,d0
 	rts
 
@@ -287,7 +478,7 @@ gfxaccel_wait:
 	move.l d1,d2
 	move.l d1,d3
 .0001:
-	move.l GFXACCEL+$04,d1
+	move.l GFXACCEL+GFX_STATUS,d1
 	bsr rbo
 	btst.l #0,d1			; first check busy bit
 	bne.s .0001
@@ -295,7 +486,7 @@ gfxaccel_wait:
 	ext.l d1
 	move.l d3,d2
 	add.l d1,d2
-	cmpi.l #1020,d2
+	cmpi.l #2040,d2
 	bhi.s .0001
 	movem.l (a7)+,d1/d2/d3
 	rts
