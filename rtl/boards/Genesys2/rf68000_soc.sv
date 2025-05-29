@@ -120,7 +120,8 @@ wire clk17, clk33;
 wire mem_ui_clk;
 wire mem_ui_rst;
 wire xclk_bufg;
-wire node_clk = clk20;
+wire node_clk = clk100;
+wire dfclk = clk20;
 wire node_clk1;
 wire node_clk2;
 wire node_clk3;
@@ -396,7 +397,7 @@ end
 
 gfx256_top ugfx1
 (
-	.wb_clk_i(clk100),
+	.wb_clk_i(clk50),
 	.wb_rst_i(rst),
 	.wb_inta_o(),
   // Wishbone master signals (interfaces with video memory, write)
@@ -409,13 +410,13 @@ gfx256_top ugfx1
   .wbs_resp(gfxs_resp)
 );
 
-assign gfx_if.clk = clk100;
+assign gfx_if.clk = clk50;
 assign gfx_if.rst = rst;
 
 wb_to_fta_bridge uwb2fta2
 (
 	.rst_i(rst),
-	.clk_i(clk100),
+	.clk_i(clk50),
 	.cs_i(1'b1),
 	.cyc_i(gfxm_req.cyc),
 	.stb_i(gfxm_req.stb),
@@ -527,10 +528,10 @@ IOBridge ubridge1
 assign br1_fta.rst = rst;
 assign br1_fta.clk = node_clk;
 
-always_ff @(posedge clk100)
+always_ff @(posedge node_clk)
 	br1_dati <= tc_dato|gfxs_resp.dat;
 
-always_ff @(posedge clk100)
+always_ff @(posedge node_clk)
 	br1_ack <= tc_ack|gfxs_resp.ack;
 
 wire kclk_en, kdat_en;
@@ -916,7 +917,7 @@ io_bitmap uiob1
 	.ack_o(io_ack),
 	.we_i(cpu_we),
 	.ioas_i(asid),
-	.adr_i(cpu_adr[19:0]),
+	.adr_i(cpu_adr[23:0]),
 	.dat_i(dato),
 	.dat_o(io_dato),
 	.iocs_i(cs_io),
@@ -1009,10 +1010,10 @@ BusError ube1
 (
 	.rst_i(rst),
 	.clk_i(node_clk),
-	.cyc_i(ch7req.cyc),
+	.cyc_i(cpu_cyc && !cs_dram),
 	.ack_i(ack),
-	.stb_i(ch7req.stb),
-	.adr_i(ch7req.padr),
+	.stb_i(cpu_stb),
+	.adr_i(cpu_adr),
 	.err_o(bus_err)
 );
 
@@ -1138,28 +1139,43 @@ ila_0 uila1 (
 	.clk(mem_ui_clk), // input wire clk
 
 //	.probe0(umpmc1.req_fifoo.req.padr), // input wire [31:0]  probe0  
-	.probe0(gfxm_req.padr),//umpu1.ucpu1.pc), // input wire [31:0]  probe0  
-	.probe1(gfxm_req.cyc),//umpmc1.req_fifoo.req.cyc), // input wire [0:0]  probe1 
-	.probe2(gfxm_resp.ack),//umpmc1.req_fifoo.req.we), // input wire [0:0]  probe2
-	.probe3(gfxm_req.we),
+	.probe0(unode1.adr1),//umpu1.ucpu1.pc), // input wire [31:0]  probe0  
+	.probe1(unode1.cyc1),//umpmc1.req_fifoo.req.cyc), // input wire [0:0]  probe1 
+	.probe2(unode1.ack1),//umpmc1.req_fifoo.req.we), // input wire [0:0]  probe2
+	.probe3(unode1.we1),
 	.probe4(cs_gfx),
 	.probe5(cs_br3_kbd),
 	.probe6(kbd_ack),
 	.probe7(kbd_irq),
-	.probe8(gfxm_resp.dat),
+	.probe8(unode1.dati1),
 	.probe9(mem_rd_data_valid),
 	.probe10(cs_dram),
 //	.probe11({unode1.ram1_we[3:0],cpu_if.req.cmd}),
-	.probe11(br3_cdato),
+	.probe11({
+		unode1.sel1,
+		ugfx1.wbs_raster_point_write,
+		ugfx1.raster_clip_write,
+		ugfx1.clip_fragment_write_enable,
+		ugfx1.fragment_blender_write_enable,
+		ugfx1.blender_render_write_enable,
+		ugfx1.render_wbmwriter_memory_pixel_write,
+		ugfx1.clip_ack,
+		ugfx1.fragment_clip_ack,
+		ugfx1.wbmwriter_render_ack,
+		ugfx1.blender_fragment_ack,
+		ugfx1.render_blender_ack,
+		ugfx1.raster_wbs_ack
+	}),
 	.probe12(umpmc1.app_wdf_rdy),
-	.probe13(cpu_we),
+	.probe13(unode1.we1),
 	.probe14(umpmc1.app_wdf_wren),
 	.probe15(umpmc1.app_rdy),
 	.probe16(umpmc1.app_en),
-	.probe17(umpmc1.app_cmd),
-	.probe18(dati[31:0]),
-	.probe19(cpu_if.resp.rty),
-	.probe20(plic_irq)//uframebuf1.state)
+	.probe17({ugfx1.rasterizer0.clip_ack_i,ugfx1.rasterizer0.clip_write_o,ugfx1.rasterizer0.state}),
+	.probe18(unode1.dato1),
+	.probe19(1'b0),
+	.probe20(ugfx1.clip.state),//uframebuf1.state)
+	.probe21(ugfx1.fp0.state)
 );
 
 /*
@@ -1230,6 +1246,7 @@ rf68000_node #(.SUPPORT_DECFLT(1'b1)) unode1
 	.rst2(rst|rsts[3]),
 	.nic_rst(rst),
 	.clk(node_clk1),
+	.dfclk(dfclk),
 	.packet_i(packet[5]),
 	.packet_o(packet[0]),
 	.rpacket_i(rpacket[5]),
@@ -1246,6 +1263,7 @@ rf68000_node #(.SUPPORT_DECFLT(1'b1)) unode2
 	.rst2(rst|rsts[5]),
 	.nic_rst(rst),
 	.clk(node_clk2),
+	.dfclk(dfclk),
 	.packet_i(packet[0]),
 	.packet_o(packet[3]),
 	.rpacket_i(rpacket[0]),
@@ -1262,6 +1280,7 @@ rf68000_node #(.SUPPORT_DECFLT(1'b0)) unode3
 	.rst2(rst|rsts[7]),
 	.nic_rst(rst),
 	.clk(node_clk3),
+	.dfclk(dfclk),
 	.packet_i(packet[1]),//clken_reg[2] ? packet[1] : packet[0]),
 	.packet_o(packet[2]),
 	.rpacket_i(rpacket[1]),//clken_reg[2] ? rpacket[1] : rpacket[0]),
@@ -1277,6 +1296,7 @@ rf68000_node #(.SUPPORT_DECFLT(1'b0)) unode4
 	.rst2(rst|rsts[9]),
 	.nic_rst(rst),
 	.clk(node_clk4),
+	.dfclk(dfclk),
 	.packet_i(packet[2]),
 	.packet_o(packet[3]),
 	.rpacket_i(rpacket[2]),

@@ -140,7 +140,7 @@
 // 2 MULTS
 // 8 BRAMs
 
-module rf68000(coreno_i, clken_i, rst_i, rst_o, clk_i, nmi_i, ipl_i, vpa_i,
+module rf68000(coreno_i, clken_i, rst_i, rst_o, clk_i, dfclk_i, nmi_i, ipl_i, vpa_i,
 	lock_o, cyc_o, stb_o, ack_i, err_i, rty_i, we_o, sel_o, fc_o, 
 	asid_o, mmus_o, ios_o, iops_o, adr_o, dat_i, dat_o);
 parameter SUPPORT_DECFLT = 1'b1;
@@ -466,6 +466,7 @@ input clken_i;
 input rst_i;
 output reg rst_o;
 input clk_i;
+input dfclk_i;
 input nmi_i;
 input vpa_i;
 input [2:0] ipl_i;
@@ -790,7 +791,7 @@ reg [31:0] mmus, ios, iops;
 reg [31:0] canary;
 assign mmus_o = adr_o[31:20] == mmus[31:20];
 assign iops_o = adr_o[31:16] == iops[31:16];
-assign ios_o  = adr_o[31:20] == ios [31:20];
+assign ios_o  = adr_o[31:24] == ios [31:24];
 integer n;
 
 wire [16:0] lfsr_o;
@@ -969,6 +970,8 @@ wire df2iover;
 //DFP96U fpsu, fpdu;
 //DFP96 fpdp;
 
+reg [3:0] dfscnt;
+
 generate begin : gDECFLT
 if (SUPPORT_DECFLT) begin
 /*
@@ -995,7 +998,7 @@ DFPUnpack uunpack1
 
 DFPAddsub96nr ufaddsub1
 (
-	.clk(clk_i),
+	.clk(dfclk_i),
 	.ce(1'b1),
 	.rm(3'b0),
 	.op(fsub),
@@ -1006,7 +1009,7 @@ DFPAddsub96nr ufaddsub1
 
 DFPMultiply96nr udfmul1
 (
-	.clk(clk_i),
+	.clk(dfclk_i),
 	.ce(1'b1),
 	.ld(state==FMUL1),
 	.a(fpd),
@@ -1023,7 +1026,7 @@ DFPMultiply96nr udfmul1
 DFPDivide96nr udfdiv1
 (
 	.rst(rst_i),
-	.clk(clk_i),
+	.clk(dfclk_i),
 	.ce(1'b1),
 	.ld(state==FDIV1),
 	.op(1'b0),
@@ -1048,7 +1051,7 @@ DFPCompare96 udfcmp1
 i2df96 ui2df1
 (
 	.rst(rst_i),
-	.clk(clk_i),
+	.clk(dfclk_i),
 	.ce(1'b1),
 	.ld(state==I2DF1),
 	.op(1'b0),	// 0=unsigned, 1= signed
@@ -1062,7 +1065,7 @@ df96Toi udf2i1 (
 	.rst(rst_i),
 	.clk(clk_i),
 	.ce(1'b1),
-	.ld(state==DF2I1),
+	.ld(dfstate==DF2I1),
 	.op(1'b0),
 	.i(fps),
 	.o(df2io),
@@ -1072,7 +1075,7 @@ df96Toi udf2i1 (
 
 DFPScaleb96 udfscale1
 (
-	.clk(clk_i),
+	.clk(dfclk_i),
 	.ce(1'b1),
 	.a(fpd),
 	.b(s),
@@ -1081,7 +1084,7 @@ DFPScaleb96 udfscale1
 
 DFPTrunc96 udftrunc1
 (
-	.clk(clk_i),
+	.clk(dfclk_i),
 	.ce(1'b1),
 	.i(fps),
 	.o(dftrunco),
@@ -1185,6 +1188,7 @@ reg [15:0] fetchbuf_ir;
 always_comb
 begin
 	fetchbuf_found = 1'b0;
+	fetchbuf_ir = 16'h4E71;
 	for (n1 = 0; n1 < 8; n1 = n1 + 1) begin
 		if (fetchbuf_tag[n1]==pc) begin
 			fetchbuf_ir = fetchbuf[n1];
@@ -6341,7 +6345,7 @@ CCHK:
 FADD:
 	begin
 		fpcnt <= fpcnt + 2'd1;
-		if (fpcnt==8'd50) begin
+		if (fpcnt==8'd150) begin
 			if (SUPPORT_DECFLT) begin
 				fzf <= dfaddsubo[94:0]==95'd0;
 				fnf <= dfaddsubo[95];
@@ -6356,19 +6360,22 @@ FADD:
 	end
 FINTRZ:	// Also FINT
 	begin
-		if (SUPPORT_DECFLT) begin
-			resF <= dftrunco;
-			fzf <= dftrunco[94:0]==95'd0;
-			fnf <= dftrunco[95];
-			Rt <= {1'b0,FLTDST};
-			rfwrF <= 1'b1;
+		fpcnt <= fpcnt + 2'd1;
+		if (fpcnt==8'd5) begin
+			if (SUPPORT_DECFLT) begin
+				resF <= dftrunco;
+				fzf <= dftrunco[94:0]==95'd0;
+				fnf <= dftrunco[95];
+				Rt <= {1'b0,FLTDST};
+				rfwrF <= 1'b1;
+			end
 		end
 		ret();
 	end
 FSCALE:
 	begin
 		fpcnt <= fpcnt + 2'd1;
-		if (fpcnt==8'd3) begin
+		if (fpcnt==8'd15) begin
 			if (SUPPORT_DECFLT) begin
 				fzf <= dfscaleo[94:0]==95'd0;
 				fnf <= dfscaleo[95];
@@ -6393,7 +6400,11 @@ FNEG:	// Also FABS
 		ret();
 	end
 FMUL1:
-	goto (FMUL2);
+	begin
+		fpcnt <= fpcnt + 2'd1;
+		if (fpcnt==8'd5)
+			goto (FMUL2);
+	end
 FMUL2:
 	if (SUPPORT_DECFLT) begin
 		if (dfmuldone) begin
@@ -6486,7 +6497,11 @@ FMOVE:
 			ret();
 	end
 I2DF1:
-	goto (I2DF2);
+	begin
+		fpcnt <= fpcnt + 2'd1;
+		if (fpcnt==8'd5)
+			goto (I2DF2);
+	end
 I2DF2:
 	begin
 		if (SUPPORT_DECFLT) begin
@@ -6503,7 +6518,11 @@ I2DF2:
 			ret();
 	end
 DF2I1:
-	goto (DF2I2);
+	begin
+		fpcnt <= fpcnt + 2'd1;
+		if (fpcnt==8'd5)
+			goto (DF2I2);
+	end
 DF2I2:
 	begin
 		if (SUPPORT_DECFLT) begin
