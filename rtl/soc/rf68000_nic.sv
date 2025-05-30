@@ -145,12 +145,12 @@ always_comb
 
 // Bus timeout for bus mastering.
 reg [11:0] mto;
-wire timeout = mto[8];
+wire timeout = mto[9];
 always_ff @(posedge clk_i)
 if (rst_i)
 	mto <= 12'd0;
 else begin
-	if (m_ack_i|m_err_i|m_vpa_i)
+	if ((m_ack_i|m_err_i|m_vpa_i) | ~m_cyc_o)
 		mto <= 12'd0;
 	else if (m_cyc_o)
 		mto <= mto + 1'b1;

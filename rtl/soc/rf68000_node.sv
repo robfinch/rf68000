@@ -36,7 +36,7 @@
 
 import nic_pkg::*;
 
-module rf68000_node(id, rst1, rst2, nic_rst, clk, clken1, clken2, packet_i, packet_o, 
+module rf68000_node(id, rst1, rst2, nic_rst, clk, dfclk, clken1, clken2, packet_i, packet_o, 
 	rpacket_i, rpacket_o, ipacket_i, ipacket_o);
 parameter SUPPORT_DECFLT = 1'b1;
 input [4:0] id;
@@ -44,6 +44,7 @@ input rst1;
 input rst2;
 input nic_rst;
 input clk;
+input dfclk;
 input clken1;
 input clken2;
 input packet_t packet_i;
@@ -310,6 +311,7 @@ rf68000 #(.SUPPORT_DECFLT(SUPPORT_DECFLT)) ucpu1
 	.rst_i(rst1),
 	.rst_o(),
 	.clk_i(clk),
+	.dfclk_i(dfclk),
 	.nmi_i(1'b0),
 	.ipl_i(cpu1_irq),
 	.vpa_i(vpa1),
@@ -338,6 +340,7 @@ rf68000 #(.SUPPORT_DECFLT(SUPPORT_DECFLT)) ucpu2
 	.rst_i(rst2),
 	.rst_o(),
 	.clk_i(clk),
+	.dfclk_i(dfclk),
 	.nmi_i(1'b0),
 	.ipl_i(cpu2_irq),
 	.vpa_i(vpa2),

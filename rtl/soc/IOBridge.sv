@@ -237,6 +237,7 @@ WR_ACK2:
 WAIT_ACK:
 	begin
 		// Repeat signal assertion in case of bus skew.
+		/*
     m_cyc_o <= 1'b1;
     m_stb_o <= 1'b1;
     if (s1_cyc) begin
@@ -245,16 +246,20 @@ WAIT_ACK:
 	    m_adr_o <= s1_adr_i;
 	    m_dat_o <= s1_dat_i;
   	end
+  	*/
 		if (m_ack_i) begin
 			tClearBus();
 			s_ack <= 1'b1;
 			// Easier for debug, on a write respond with data written.
+			/*
 			if (m_we_o) begin
 				s1_dat_o <= m_dat_o;
 				s2_dat_o <= m_dat_o;
 				state <= WAIT_NACK;
 			end
-			else begin
+			else
+			*/
+			begin
 				s1_dat_o <= m_dat_i;
 				s2_dat_o <= m_dat_i;
 				state <= WAIT_NACK;
@@ -286,33 +291,37 @@ WAIT_ACK:
 
 // Wait for falling edge on strobe or strobe low.
 WAIT_NACK:
-	if (!s2_cyc_i && !s1_stb_i) begin
-		if (which != 2'b10) begin
-			tClearBus();
-			s_ack <= 1'b0;
-			s1_dat_o <= 32'h0;
-			s2_dat_o <= 32'h0;
-		end
-		// Read-modify-write cycle?
-		if (which!=2'b01 && s1_cyc_i)
-			state <= WAIT_ACK;
-		else
-			state <= IDLE;
-	end
-	else if (which==2'b01 ? !s2_cyc_i : !s1_stb_i) begin
-		if (which != 2'b10) begin
-			tClearBus();
-			s_ack <= 1'b0;
-			if (!s1_stb_i)
+	begin
+		s1_dat_o <= m_dat_i;
+		s2_dat_o <= m_dat_i;
+		if (!s2_cyc_i && !s1_stb_i) begin
+			if (which != 2'b10) begin
+				tClearBus();
+				s_ack <= 1'b0;
 				s1_dat_o <= 32'h0;
-			if (!s2_stb_i)
 				s2_dat_o <= 32'h0;
+			end
+			// Read-modify-write cycle?
+			if (which!=2'b01 && s1_cyc_i)
+				state <= WAIT_ACK;
+			else
+				state <= IDLE;
 		end
-		// Read-modify-write cycle?
-		if (which!=2'b01 && s1_cyc_i)
-			state <= WAIT_ACK;
-		else
-			state <= IDLE;
+		else if (which==2'b01 ? !s2_cyc_i : !s1_stb_i) begin
+			if (which != 2'b10) begin
+				tClearBus();
+				s_ack <= 1'b0;
+				if (!s1_stb_i)
+					s1_dat_o <= 32'h0;
+				if (!s2_stb_i)
+					s2_dat_o <= 32'h0;
+			end
+			// Read-modify-write cycle?
+			if (which!=2'b01 && s1_cyc_i)
+				state <= WAIT_ACK;
+			else
+				state <= IDLE;
+		end
 	end
 default:	state <= IDLE;
 endcase
