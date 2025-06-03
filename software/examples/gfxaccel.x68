@@ -53,6 +53,8 @@ GFX_TARGET_X0	equ $B0
 GFX_TARGET_Y0 equ $B4
 GFX_TARGET_X1	equ $B8
 GFX_TARGET_Y1	equ $BC
+GFX_COLOR_COMP equ $D0
+GFX_PPS equ $D4
 
 ;------------------------------------------------------------------------------
 ;------------------------------------------------------------------------------
@@ -95,17 +97,20 @@ GFXACCEL_CMDTBL:
 	dc.l gfxaccel_draw_curve
 	dc.l gfxaccel_set_dimen
 	dc.l gfxaccel_set_color_depth
+	dc.l gfxaccel_set_destbuf
+	dc.l gfxaccel_set_dispbuf
 
 	code
 	even
 
 gfxaccel_cmdproc:
-	cmpi.b #34,d6
+	cmpi.b #36,d6
 	bhs.s .0001
 	movem.l d6/a0,-(a7)
 	ext.w d6
+	ext.l d6
 	lsl.w #2,d6
-	lea GFXACCEL_CMDTBL,a0
+	lea.l GFXACCEL_CMDTBL,a0
 	move.l (a0,d6.w),a0
 	jsr (a0)
 	movem.l (a7)+,d6/a0
@@ -125,9 +130,12 @@ setup_gfxaccel:
 	move.l #$47465841,gfxaccel_dcb+DCB_NAME				; 'GFXACCEL'
 	move.l #$4343454C,gfxaccel_dcb+DCB_NAME+4
 	move.l #gfxaccel_cmdproc,gfxaccel_dcb+DCB_CMDPROC
-	move.l #$40000000,d0
+	move.l #$00000000,d0
 	move.l d0,gfxaccel_dcb+DCB_INBUFPTR
 	move.l d0,gfxaccel_dcb+DCB_OUTBUFPTR
+	add.l #$400000,d0
+	move.l d0,gfxaccel_dcb+DCB_INBUFPTR2
+	move.l d0,gfxaccel_dcb+DCB_OUTBUFPTR2
 	move.l #$00400000,gfxaccel_dcb+DCB_INBUFSIZE
 	move.l #$00400000,gfxaccel_dcb+DCB_OUTBUFSIZE
 	lea.l gfxaccel_dcb+DCB_MAGIC,a1
@@ -139,19 +147,18 @@ gfxaccel_init:
 	move.l d1,-(a7)
 	moveq #10,d1
 	bsr gfxaccel_wait
-	clr.l gfxaccel_ctrl
-	move.l #1,d1
+	move.l #0,d1
 	move.l d1,gfxaccel_ctrl
 	bsr rbo
-	move.l d1,GFXACCEL+GFX_CTRL	; select 16bpp color
+	move.l d1,GFXACCEL+GFX_CTRL
 	move.l #$00000000,d1
 	bsr rbo
 	move.l d1,GFXACCEL+GFX_TARGET_BASE	; base draw address
-	move.l #1920,d1
+	move.l #800,d1
 	bsr rbo
 	move.l d1,GFXACCEL+GFX_TARGET_SIZE_X	; render target x dimension
 	move.l d1,GFXACCEL+GFX_TARGET_X1
-	move.l #1080,d1
+	move.l #600,d1
 	bsr rbo
 	move.l d1,GFXACCEL+GFX_TARGET_SIZE_Y	; render target y dimension
 	move.l d1,GFXACCEL+GFX_TARGET_Y1
@@ -163,10 +170,6 @@ gfxaccel_init:
 gfxaccel_stat:
 	move.l GFXACCEL+GFX_STATUS,d1
 	bsr rbo
-	moveq #E_Ok,d0
-	rts
-	
-gfxaccel_clear:
 	moveq #E_Ok,d0
 	rts
 
@@ -188,6 +191,7 @@ gfxaccel_get_dimen:
 gfxaccel_get_inpos:
 gfxaccel_get_outpos:
 gfxaccel_get_outptr:
+gfxaccel_set_dispbuf:
 	move.l #E_NotSupported,d0
 	rts
 
@@ -208,19 +212,80 @@ gfxaccel_set_dimen:
 	moveq #E_Ok,d0
 	rts
 
-gfxaccel_set_color_depth:
+gfxaccel_set_destbuf:
 	move.l d1,d0
-	andi.b #3,d1
-	or.l gfxaccel_ctrl,d1
-	move.l d1,gfxaccel_ctrl
+	moveq #3,d1
+	bsr gfxaccel_wait					; wait for an open slot
+	cmpi.b #1,d0
+	bne.s .0001
+	move.l gfxaccel_dcb+DCB_OUTBUFPTR2,d1
+	bra.s .0002
+.0001:
+	move.l gfxaccel_dcb+DCB_OUTBUFPTR,d1
+.0002:
 	bsr rbo
-	move.l d1,GFXACCEL+GFX_CTRL
+	move.l d1,GFXACCEL+GFX_TARGET_BASE
+	move.l d0,d1
+	move.l #E_Ok,d0
+	rts
+
+; Clears destination buffer
+
+gfxaccel_clear:
+	fmove.x fp0,-(a7)
+	fmove.x fp1,-(a7)
+	movem.l d1/d2/d4/a0,-(a7)
+	move.l GFXACCEL+GFX_TARGET_SIZE_X,d1
+	bsr rbo
+	move.l d1,d2
+	move.l GFXACCEL+GFX_TARGET_SIZE_Y,d1
+	bsr rbo
+	mulu d1,d2							; d2 = X dimen * Y dimen = number of pixels
+	move.l GFXACCEL+GFX_PPS,d1	; d1 = pixels per strip reg
+	bsr rbo
+	andi.w #$3ff,d1					; extract pixels per strip
+	ext.l d1
+	move.l d1,d4						; d4.w = pixels per strip
+	add.l d4,d2							; round number of pixels on screen up a strip
+	fmove.l d2,fp0					; number might be too big for divu
+	fmove.l d4,fp1					; so use float divider
+	fdiv fp1,fp0						; fp0 = screen size / pixels per strip
+	fmove.l fp0,d0					; d0 = number of strips to set
+	move.l GFXACCEL+GFX_COLOR0,d4
+	move.l GFXACCEL+GFX_TARGET_BASE,d1
+	bsr rbo
+	move.l d1,a0
+	move.l #0,$7FFFFFF8			; set burst length zero
+	bra.s .loop
+.loop2:
+	swap d0
+.loop:
+	move.l a0,d1
+	bsr rbo
+	move.l d1,$7FFFFFF4			; set destination address
+	move.l d4,$7FFFFFFC			; write value (color) to use and trigger write op
+	lea 32(a0),a0						; advance pointer
+	dbra d0,.loop
+	swap d0
+	dbra d0,.loop2
+	movem.l (a7)+,d1/d2/d4/a0
+	fmove.x (a7)+,fp1
+	fmove.x (a7)+,fp0
+	move.l #E_Ok,d0
+	rts
+
+
+gfxaccel_set_color_depth:
+	move.l d0,d1
+	bsr rbo
+	move.l d1,GFXACCEL+GFX_COLOR_COMP
 	move.l d0,d1
 	moveq #E_Ok,d0
 	rts
 	
 gfxaccel_get_color:
 	move.l GFXACCEL+GFX_COLOR0,d1
+	bsr rbo
 	moveq #E_Ok,d0
 	rts
 
@@ -294,7 +359,6 @@ gfxaccel_set_active_point:
 ; Graphics accelerator expects that co-ordinates are in 16.16 format.
 ; 
 gfxaccel_plot_point:
-	bsr gfxaccel_init
 	movem.l d1/d5,-(a7)
 	move.l d1,d5
 	moveq #6,d1
@@ -392,7 +456,7 @@ gfxaccel_draw_rectangle:
 ;		d3	- x1 pos
 ;		d4	- y1 pos
 ;	  d5	- x2 pos
-;		d6	- y2 pos
+;		d0	- y2 pos
 
 gfxaccel_draw_triangle:
 	movem.l d1/d2/d7,-(a7)
@@ -418,7 +482,7 @@ gfxaccel_draw_triangle:
 	move.l d5,d1
 	bsr rbo
 	move.l d1,GFXACCEL+GFX_DEST_PIXEL_X
-	move.l d6,d1
+	move.l d0,d1
 	bsr rbo
 	move.l d1,GFXACCEL+GFX_DEST_PIXEL_Y
 	move.w #2,d2										; point 2

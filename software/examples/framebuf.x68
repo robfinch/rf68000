@@ -35,8 +35,15 @@
 ; ============================================================================
 
 FRAMEBUF_CTRL equ 0
+FRAMEBUF_PAGE1_ADDR equ 2*8
+FRAMEBUF_PAGE2_ADDR equ 3*8
+FRAMEBUF_BMPSIZE_X equ 13*8
+FRAMEBUF_BMPSIZE_Y equ 13*8+4
 FRAMEBUF_WINDOW_DIMEN	equ	15*8
 FRAMEBUF_COLOR_COMP	equ 19*8
+FRAMEBUF_PRGB equ 20*8
+FRAMEBUF_COLOR equ 21*8
+FRAMEBUF_PPS equ 22*8
 
 ;------------------------------------------------------------------------------
 ;------------------------------------------------------------------------------
@@ -81,16 +88,19 @@ FRAMEBUF_CMDTBL:
 	dc.l framebuf_stub
 	dc.l framebuf_set_dimen
 	dc.l framebuf_set_color_depth
+	dc.l framebuf_set_destbuf
+	dc.l framebuf_set_dispbuf
 
 	code
 	even
 framebuf_cmdproc:
-	cmpi.b #34,d6
+	cmpi.b #36,d6
 	bhs.s .0001
 	movem.l d6/a0,-(a7)
 	ext.w d6
-	asl.w #2,d6
-	lea FRAMEBUF_CMDTBL,a0
+	ext.l d6
+	lsl.w #2,d6
+	lea.l FRAMEBUF_CMDTBL,a0
 	move.l (a0,d6.w),a0
 	jsr (a0)
 	movem.l (a7)+,d6/a0
@@ -110,7 +120,7 @@ setup_framebuf:
 	move.l #$4652414D,framebuf_dcb+DCB_NAME				; 'FRAMEBUF'
 	move.l #$42554600,framebuf_dcb+DCB_NAME+4
 	move.l #framebuf_cmdproc,framebuf_dcb+DCB_CMDPROC
-	move.l #$40000000,d0
+	move.l #$00000000,d0
 	move.l d0,framebuf_dcb+DCB_INBUFPTR
 	move.l d0,framebuf_dcb+DCB_OUTBUFPTR
 	move.l #$00400000,framebuf_dcb+DCB_INBUFSIZE
@@ -123,31 +133,32 @@ setup_framebuf:
 
 framebuf_init:
 	move.b #1,FRAMEBUF+0		; turn on frame buffer
-	move.b #1,FRAMEBUF+1		; color depth 16 BPP
+	move.l #$88880000,FRAMEBUF+FRAMEBUF_COLOR_COMP	; 8-8-8-8 color
 	move.b #$11,FRAMEBUF+2	; hres 1:1 vres 1:1
-	move.b #119,FRAMEBUF+4		; burst length
-	move.l #$ff3f,framebuf_dcb+DCB_FGCOLOR	; white
-	move.l #$000f,framebuf_dcb+DCB_BKCOLOR	; medium blue
+	move.l #$3100000F,FRAMEBUF+4		; burst length, burst interval
+	move.l #$ffffff00,framebuf_dcb+DCB_FGCOLOR	; white
+	move.l #$0f000000,framebuf_dcb+DCB_BKCOLOR	; medium blue
 	clr.l framebuf_dcb+DCB_OUTPOSX
 	clr.l framebuf_dcb+DCB_OUTPOSY
 	clr.l framebuf_dcb+DCB_INPOSX
 	clr.l framebuf_dcb+DCB_INPOSY
 	move.b #1,framebuf_dcb+DCB_OPCODE	; raster op = copy
-	move.w #1920,framebuf_dcb+DCB_OUTDIMX		; set rows and columns
-	move.w #1080,framebuf_dcb+DCB_OUTDIMY
-	move.w #1920,framebuf_dcb+DCB_INDIMX			; set rows and columns
-	move.w #1080,framebuf_dcb+DCB_INDIMY
-	move.l #$40000000,framebuf_dcb+DCB_INBUFPTR
-	move.l #$40400000,framebuf_dcb+DCB_INBUFPTR2
-	move.l #$40000000,framebuf_dcb+DCB_OUTBUFPTR
-	move.l #$40400000,framebuf_dcb+DCB_OUTBUFPTR2
-	move.l #$00000000,FRAMEBUF+16	; base addr 1
-	move.l #$00004000,FRAMEBUF+24	; base addr 2
+	move.w #800,framebuf_dcb+DCB_OUTDIMX		; set rows and columns
+	move.w #600,framebuf_dcb+DCB_OUTDIMY
+	move.w #800,framebuf_dcb+DCB_INDIMX			; set rows and columns
+	move.w #600,framebuf_dcb+DCB_INDIMY
+	move.l #$00000000,framebuf_dcb+DCB_INBUFPTR
+	move.l #$00400000,framebuf_dcb+DCB_INBUFPTR2
+	move.l #$00000000,framebuf_dcb+DCB_OUTBUFPTR
+	move.l #$00400000,framebuf_dcb+DCB_OUTBUFPTR2
+	move.l #$00000000,FRAMEBUF+FRAMEBUF_PAGE1_ADDR	; base addr 1
+	move.l #$00004000,FRAMEBUF+FRAMEBUF_PAGE2_ADDR	; base addr 2
 	rts
 
 framebuf_stat:
 framebuf_putchar:
 framebuf_getchar:
+framebuf_set_destbuf:
 	rts
 
 framebuf_set_inpos:
@@ -192,6 +203,11 @@ framebuf_swapbuf:
 	move.l d2,framebuf_dcb+DCB_INBUFPTR2
 	move.l d0,framebuf_dcb+DCB_INBUFPTR
 	movem.l (a7)+,d1/d2
+	move.l #E_Ok,d0
+	rts
+
+framebuf_set_dispbuf:
+	move.b d1,FRAMEBUF+3					; set display page
 	move.l #E_Ok,d0
 	rts
 
@@ -242,6 +258,28 @@ framebuf_set_dimen:
 	move.l d1,framebuf_dcb+DCB_OUTDIMX
 	move.l d2,framebuf_dcb+DCB_OUTDIMY
 	move.l d3,framebuf_dcb+DCB_OUTDIMZ
+	move.l d1,d0
+	bsr rbo
+	move.l d1,FRAMEBUF+FRAMEBUF_BMPSIZE_X
+	move.l d2,d1
+	bsr rbo
+	move.l d1,FRAMEBUF+FRAMEBUF_BMPSIZE_Y
+	move.l d0,d1
+	movem.l (a7)+,d1/d2
+	move.l #E_Ok,d0
+	rts
+.0001:
+	cmpi.b #1,d0
+	bne.s .0002
+	move.l d1,framebuf_dcb+DCB_INDIMX
+	move.l d2,framebuf_dcb+DCB_INDIMY
+	move.l d3,framebuf_dcb+DCB_INDIMZ
+	move.l #E_Ok,d0
+	rts
+.0002:
+	cmpi.b #2,d0		; set window dimensions
+	bne.s .0003
+	movem.l d1/d2,-(a7)
 	ext.l d2
 	swap d2
 	ext.l d1
@@ -249,14 +287,10 @@ framebuf_set_dimen:
 	bsr rbo
 	move.l d1,FRAMEBUF+FRAMEBUF_WINDOW_DIMEN
 	movem.l (a7)+,d1/d2
+.0003:
 	move.l #E_Ok,d0
 	rts
-.0001:
-	move.l d1,framebuf_dcb+DCB_INDIMX
-	move.l d2,framebuf_dcb+DCB_INDIMY
-	move.l d3,framebuf_dcb+DCB_INDIMZ
-	move.l #E_Ok,d0
-	rts
+
 
 ;---------------------------------------------------------------------
 ; The following uses point plot hardware built into the frame buffer.
@@ -356,21 +390,65 @@ plot_white:
 	rts
 
 
+clear_graphics_screen:
+;	move.l #0,d1
+;	bsr gfxaccel_set_color
+;	move.l #0,d1
+;	move.l #0,d2
+;	move.l #1920<<16,d3
+;	move.l #1080<<16,d4
+;	bsr gfxaccel_draw_rectangle
+	move.l #VIDEO_X*VIDEO_Y,d5		; compute number of strips to write
+	lsr.l #3,d5						; 8 pixels per strip
+;	move.l framebuf_dcb+DCB_OUTBUFPTR,a4
+	move.l #$40000000,a4
+	move.l #0,$7FFFFFF8		; burst length of zero
+	bra.s .0001
+.0002:
+	swap d5
+.0001:
+	move.l a4,d1
+	bsr rbo
+	move.l d1,$7FFFFFF4		; target address
+	move.l #0,$7FFFFFFC		; value to write
+	lea.l 32(a4),a4
+	dbra d5,.0001
+;	swap d5
+;	dbra d5,.0002
+	rts
+
+
+; Clears the page opposite to the display page
+
 framebuf_clear:
+	fmove.x fp0,-(a7)
+	fmove.x fp1,-(a7)
 	movem.l d1/d2/d4/a0,-(a7)
-	move.l framebuf_dcb+DCB_BKCOLOR,d2
-	move.l d2,d1
-	rol.w #8,d2							; d2 = background color
-	swap d2									; high bits = background color
-	move.w d1,d2						; low bits = background color
-	rol.w #8,d2
-	move.l d2,d4						; save for later
+	move.b FRAMEBUF+3,d1		; get displayed page
+	cmpi.b #1,d1
+	bne.s .0001
+	move.l framebuf_dcb+DCB_OUTBUFPTR,a0		; where the draw occurs
+	bra.s .0002
+.0001
 	move.l framebuf_dcb+DCB_OUTBUFPTR2,a0		; where the draw occurs
-	move.l #0,$7FFFFFF8			; set burst length zero
+.0002
 	move.l framebuf_dcb+DCB_OUTDIMX,d1
 	move.l framebuf_dcb+DCB_OUTDIMY,d2
-	mulu d2,d1							; X dimen * Y dimen
-	lsr.l #4,d0							; moving 16 pixels per iteration
+	mulu d1,d2							; d2 = X dimen * Y dimen = number of pixels
+	move.l FRAMEBUF+FRAMEBUF_PPS,d1
+	bsr rbo
+	andi.w #$3ff,d1					; extract pixels per strip
+	ext.l d1
+	move.l d1,d4						; d4.w = pixels per strip
+	add.l d4,d2							; round number of pixels on screen up a strip
+	fmove.l d2,fp0					; number might be too big for divu
+	fmove.l d4,fp1					; so use float divider
+	fdiv fp1,fp0						; fp0 = screen size / pixels per strip
+	fmove.l fp0,d0					; d0 = number of strips to set
+	move.l framebuf_dcb+DCB_FGCOLOR,d1
+	bsr rbo
+	move.l d1,d4
+	move.l #0,$7FFFFFF8			; set burst length zero
 	bra.s .loop
 .loop2:
 	swap d0
@@ -379,11 +457,13 @@ framebuf_clear:
 	bsr rbo
 	move.l d1,$7FFFFFF4			; set destination address
 	move.l d4,$7FFFFFFC			; write value (color) to use and trigger write op
-	add.l #32,a0						; advance pointer
+	lea 32(a0),a0						; advance pointer
 	dbra d0,.loop
 	swap d0
 	dbra d0,.loop2
 	movem.l (a7)+,d1/d2/d4/a0
+	fmove.x (a7)+,fp1
+	fmove.x (a7)+,fp0
 	move.l #E_Ok,d0
 	rts
 

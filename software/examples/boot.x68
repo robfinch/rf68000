@@ -94,8 +94,10 @@
 ;
 HAS_MMU equ 0
 NCORES equ 4
-TEXTCOL equ 64
+TEXTCOL equ 48
 TEXTROW	equ	32
+VIDEO_X equ 800
+VIDEO_Y equ 600
 
 CTRLC	EQU		$03
 CTRLH	EQU		$08
@@ -1056,7 +1058,8 @@ DisplayStringLimitedCRLF:
 TRAP15:
 	movem.l	d0/a0,-(a7)
 	lea T15DispatchTable,a0
-	asl.l #2,d0
+	ext.w d0
+	lsl.w #2,d0
 	move.l (a0,d0.w),a0
 	jsr (a0)
 	movem.l (a7)+,d0/a0
@@ -1089,7 +1092,7 @@ T15DispatchTable:
 	dc.l	StubRout
 	dc.l	StubRout
 	dc.l	StubRout
-	dc.l	StubRout
+	dc.l	T15Wait100ths
 	dc.l	StubRout
 	dc.l	StubRout
 	dc.l	StubRout
@@ -1100,7 +1103,7 @@ T15DispatchTable:
 	dc.l	StubRout
 	dc.l	StubRout
 	dc.l	SimHardware	;rotate_iofocus
-	dc.l	SerialPeekCharDirect
+	dc.l	T15GetWindowSize	;SerialPeekCharDirect
 	dc.l	SerialPutChar
 	dc.l	SerialPeekChar
 	dc.l	SerialGetChar
@@ -1163,7 +1166,7 @@ T15DispatchTable:
 	dc.l	StubRout
 	dc.l	StubRout
 	; 90
-	dc.l	StubRout
+	dc.l	T15Rectangle
 	dc.l	StubRout
 	dc.l	SetDrawMode
 	dc.l	StubRout
@@ -1190,15 +1193,27 @@ GetTick:
 	move.l tickcnt,d1
 	rts
 
+T15Wait100ths:
+	move.l d1,-(a7)
+	cmp.l #2,d1
+	bls.s .0002
+	add.l tickcnt,d1
+.0001:
+	cmp.l tickcnt,d1
+	bne.s .0001
+.0002:
+	move.l (a7)+,d1
+	rts
+
 ;------------------------------------------------------------------------------
 ;
 SetDrawMode:
-	cmpi.w #10,d1
+	cmpi.b #10,d1
 	bne.s .0001
 	move.b #5,framebuf_dcb+DCB_OPCODE			; 'OR' operation
 	rts
 .0001:
-	cmpi.w #17,d1
+	cmpi.b #17,d1
 	bne.s .0002
 	move.w #1,gr_double_buffer
 	rts
@@ -1207,7 +1222,46 @@ SetDrawMode:
 	
 SetPenColor:
 	bsr gfxaccel_set_color
-	move.w d1,framebuf_dcb+DCB_FGCOLOR
+	move.l d1,framebuf_dcb+DCB_FGCOLOR
+	rts
+
+; parameters:
+;		d0 = color
+;		d1 = width
+;		d2 = height
+;		d3 = x co-ord
+;		d4 = y co-ord
+
+T15Rectangle:
+	movem.l d1/d2,-(a7)
+	add.l d3,d1
+	add.l d4,d2
+	bsr gfxaccel_draw_rectangle
+	movem.l (a7)+,d1/d2
+	rts
+
+T15GetPixel:
+	movem.l d1/d2/a0,-(a7)
+	ext.l d1								; clear upper bits
+	ext.l d2
+	move.l framebuf_dcb+DCB_OUTBUFPTR,a0
+	mulu #800,d2						; y * pixels per line
+	add.l d1,d2							; + x
+	lsl.l #2,d2							; * 4 bytes per pixel
+	move.l (a0,d2.l),d0			; get color
+	movem.l (a7)+,d1/d2/a0
+	rts
+
+T15GetWindowSize:
+	cmpi.b #0,d1
+	bne.s .0001
+	move.w #600,d1
+	swap d1
+	move.w #800,d1
+	rts
+.0001:
+	move.l #0,d1
+	move.l #0,d1
 	rts
 
 ;------------------------------------------------------------------------------
@@ -1218,17 +1272,6 @@ GRBufferToScreen:
 	move.l #6,d7						; framebuffer device
 	move.l #DEV_SWAPBUF,d6	; swap buffers
 	trap #0
-	rts
-
-	movem.l d1/a0/a1,-(a7)
-	move.b FRAMEBUF+3,d1
-	eor.b #1,d1
-	move.b d1,FRAMEBUF+3					; page flip
-	move.l gr_bitmap_buffer,a1
-	move.l gr_bitmap_screen,a0
-	move.l a0,gr_bitmap_buffer
-	move.l a1,gr_bitmap_screen
-	movem.l (a7)+,d1/a0/a1
 	rts
 
 ; The following copies the buffer, why? Not needed if page flipping.
@@ -1677,6 +1720,16 @@ cmdString:
 	dc.b	'R'+$80						; R receive serial
 	dc.b	'V'+$80
 	dc.b	'G','R'+$80				; graphics demo
+	dc.b	'p','l','a','n','t','s'+$80	; plants
+	dc.b	0,0
+grCmdString:
+	dc.b	'C','D'+$80				; set color depth
+	dc.b	'LIN','E'+$80			; draw line
+	dc.b	'REC','T'+$80			; draw rectangle
+	dc.b	'TR','I'+$80			; draw triangle
+	dc.b	'CURV','E'+$80		; draw curve
+	dc.b	'POIN','T'+$80		; plot point
+	dc.b	'COLO','R'+$80		; set color
 	dc.b	0,0
 
 	align	2
@@ -1708,6 +1761,7 @@ cmdTable:
 	dc.l	cmdReceiveSerial	
 	dc.l	cmdVideoMode
 	dc.l	cmdGrDemo
+	dc.l	cmdPlants
 	dc.l	cmdMonitor
 
 ; Get a word from screen memory and swap byte order
@@ -1845,6 +1899,10 @@ cmdBreakpoint:
 cmdAsteroids:
 	pea Monitor
 	jmp asteroids_start
+
+cmdPlants:
+	pea Monitor
+	jmp start_plants
 
 cmdTinyBasic:
 	bra	CSTART
@@ -2018,6 +2076,7 @@ HelpMsg:
 	dc.b	"EB = Edit memory bytes, EW, EL",LF,CR
 	dc.b	"FB = Fill memory bytes, FW, FL",LF,CR
 	dc.b	"FMTK = run Femtiki OS",LF,CR
+	dc.b	"GR = Graphics command",LF,CR
 	dc.b	"L = Load S19 file",LF,CR
 	dc.b	"D = Dump memory, DR = dump registers",LF,CR
 	dc.b	"DI = Disassemble",LF,CR
@@ -2406,23 +2465,43 @@ ExecuteCode:
 	bra Monitor
 
 cmdGrDemo:
-	move.l #$00001555,d1		; 16 bpp
+	move.l #$00008888,d1		; 32 bpp
 	moveq #6,d7							; framebuf device
 	moveq #DEV_SET_COLOR_DEPTH,d6
 	trap #0
-	move.b #$44,FRAMEBUF+FRAMEBUF_CTRL+2	; 4 clocks/scanlines per pixel
+	moveq #7,d7							; same for graphics accelerator device
+	trap #0
+	move.l #$00110001,d1		; enable, scale 1 clocks/scanlines per pixel, page zero
+	bsr rbo
+;	move.l d1,FRAMEBUF+FRAMEBUF_CTRL
+	move.l #$0F00063,d1		; burst length of 100, interval of F00h
+	bsr rbo
+	move.l d1,FRAMEBUF+FRAMEBUF_CTRL+4		
 	moveq #6,d7							; framebuf device
 	moveq #DEV_SET_DIMEN,d6
 	moveq #0,d0
-	move.l #480,d1
-	move.l #270,d2
+	move.l #VIDEO_X,d1
+	move.l #VIDEO_Y,d2
 	move.l #0,d3
 	trap #0
-	moveq #7,d7							; graphics accelerator device
+	moveq #7,d7							; same for graphics accelerator device
 	trap #0
-	bsr clear_graphics_screen
-;	moveq #94,d0							; page flip
-;	trap #15
+	moveq #6,d7
+	moveq #2,d0							; set window dimensions
+	trap #0
+	; Set destination buffer #0
+	moveq #7,d7
+	moveq #DEV_SET_DESTBUF,d6	; write to buffer 0
+	moveq #0,d1
+	trap #0
+	; Clear the screen
+	moveq #DEV_CLEAR,d6
+	trap #0
+	; Now display the clear screen
+	moveq #6,d7
+	moveq #DEV_SET_DISPBUF,d6
+	moveq #0,d1							; display buffer 0
+	trap #0
 
 ;	moveq #0,d1
 ;	moveq #0,d2
@@ -2430,18 +2509,18 @@ cmdGrDemo:
 ;	move.l #1080,d4
 ;	bsr gfxaccel_clip_rect
 	; Draw two diagonal white lines
-	move.l #270,d3
+	move.l #VIDEO_Y,d3
 	move.l #$40000000,a4
 .0002:
 	move.l #$FF7FFF7F,d2	; white
 	move.w d2,(a4)
-	add.l #962,a4
+	add.l #VIDEO_X*4+4,a4
 	dbra d3,.0002
-	move.l #270,d3
-	move.l #$40000000+960,a4
+	move.l #VIDEO_Y,d3
+	move.l #$40000000+VIDEO_X*2,a4
 .0007:
 	move.w d2,(a4)
-	add.l #958,a4
+	add.l #VIDEO_X*4-4,a4
 	dbra d3,.0007
 	bra Monitor
 
@@ -2468,7 +2547,20 @@ plot_rand_points:
 	dbra d5,.0005
 	bra Monitor
 
-clear_graphics_screen:
+;clear_graphics_screen:
+;	move.l #0,d1
+;	moveq #6,d7
+;	moveq #DEV_SET_COLOR,d6		; set color in frame buffer
+;	trap #0
+;	moveq #7,d7								; and in graphics accelerator
+;	trap #0
+;	moveq #6,d7								; clear frame buffer
+;	moveq #DEV_CLEAR,d6
+;	trap #0
+;	moveq #DEV_SWAPBUF,d6			; and display it
+;	trap #0
+;	rts
+
 ;	move.l #0,d1
 ;	bsr gfxaccel_set_color
 ;	move.l #0,d1
@@ -2476,9 +2568,10 @@ clear_graphics_screen:
 ;	move.l #1920<<16,d3
 ;	move.l #1080<<16,d4
 ;	bsr gfxaccel_draw_rectangle
-	move.l #480*270,d5		; compute number of strips to write
-	lsr.l #4,d5
-	move.l framebuf_dcb+DCB_OUTBUFPTR,a4
+	move.l #VIDEO_X*VIDEO_Y,d5		; compute number of strips to write
+	lsr.l #3,d5						; 8 pixels per strip
+;	move.l framebuf_dcb+DCB_OUTBUFPTR,a4
+	move.l #$40000000,a4
 	move.l #0,$7FFFFFF8		; burst length of zero
 	bra.s .0001
 .0002:
@@ -2502,11 +2595,11 @@ clear_graphics_screen2:
 ;	move.l #1920<<16,d3
 ;	move.l #1080<<16,d4
 ;	bsr gfxaccel_draw_rectangle
-	move.l #480*270,d5		; compute number of strips to write
-	lsr.l #4,d5						; 16 pixels per strip
+	move.l #VIDEO_X*VIDEO_Y,d5		; compute number of strips to write
+	lsr.l #3,d5						; 8 pixels per strip
 	lsr.l #4,d5						; and burst writing 16 strips at once
 	move.l framebuf_dcb+DCB_OUTBUFPTR,a4
-	move.l #0,$7FFFFFF8		; burst length of zero
+	move.l #15,$7FFFFFF8		; burst length = 16
 	bra.s .0001
 .0002:
 	swap d5
@@ -2514,9 +2607,11 @@ clear_graphics_screen2:
 	move.l a4,d1
 	bsr rbo
 	move.l d1,$7FFFFFF4		; target address
-	move.l #15,$7FFFFFF8	; burst length = 16
+	moveq #15,d1
+	bsr rbo
+	move.l d1,$7FFFFFF8	; burst length = 16
 	move.l #0,$7FFFFFFC		; value to write
-	lea.l 32(a4),a4
+	lea.l 32*16(a4),a4
 	dbra d5,.0001
 ;	swap d5
 ;	dbra d5,.0002
@@ -2526,34 +2621,33 @@ white_rect:
 	move.l #$FFFFFFFF,d1
 	bsr gfxaccel_set_color
 	move.l #100<<16,d1
-	move.l #200<<16,d2
+	move.l #300<<16,d2
 	move.l #250<<16,d3
-	move.l #250<<16,d4
+	move.l #550<<16,d4
 	bsr gfxaccel_draw_rectangle
 	bra Monitor
 
 rand_points:
-	move.l #10000,d5
+	move.l #30000,d5
 .0004:
 	bsr RandGetNum
 	bsr gfxaccel_set_color
-	bsr RandGetNum
-	move.l d1,d3
-	swap d3
-	andi.l #$7fffff,d3		; Z
+	move.l #0,d3					; Z
 	bsr RandGetNum
 	move.l d1,d2
+;	divu #VIDEO_Y,d2			; Y
+	andi.l #511,d2
 	swap d2
-	andi.l #$ffffff,d2		; Y
 	bsr RandGetNum
+;	divu #VIDEO_X,d1
+	andi.l #511,d1
 	swap d1
-	andi.l #$1ffffff,d1		; X
 	bsr gfxaccel_plot_point
 	dbra d5,.0004
 	bra Monitor
 
 rand_lines:
-	move.l #10000,d5
+	move.l #30000,d5
 .0001:
 .0006:
 	bsr CheckForCtrlC
@@ -2561,24 +2655,58 @@ rand_lines:
 	bsr gfxaccel_set_color
 	bsr RandGetNum
 	move.l d1,d4
+;	divu #VIDEO_Y,d4
+	andi.l #511,d4
 	swap d4
-	andi.l #$ffffff,d4
 	bsr RandGetNum
 	move.l d1,d3
+;	divu #VIDEO_X,d3
+	andi.l #511,d3
 	swap d3
-	andi.l #$1ffffff,d3
 	bsr RandGetNum
 	move.l d1,d2
+;	divu #VIDEO_Y,d2
+	andi.l #511,d2
 	swap d2
-	andi.l #$ffffff,d2
 	bsr RandGetNum
+;	divu #VIDEO_X,d1
+	andi.l #511,d1
 	swap d1
-	andi.l #$1ffffff,d1
 	bsr gfxaccel_draw_line
 	dbra d5,.0001
 	bra Monitor
 
 rand_rect:
+	move.l #30000,d5
+.0003:
+.0006:
+	bsr CheckForCtrlC
+	bsr RandGetNum
+	bsr gfxaccel_set_color
+	bsr RandGetNum
+	move.l d1,d4
+;	divu #VIDEO_Y,d4
+	andi.l #511,d4
+	swap d4
+	bsr RandGetNum
+	move.l d1,d3
+;	divu #VIDEO_X,d3
+	andi.l #511,d3
+	swap d3
+	bsr RandGetNum
+	move.l d1,d2
+;	divu #VIDEO_Y,d2
+	andi.l #511,d2
+	swap d2
+	bsr RandGetNum
+;	divu #VIDEO_X,d1
+	andi.l #511,d1
+	swap d1
+	bsr gfxaccel_draw_rectangle
+	dbra d5,.0003
+	bra Monitor
+
+rand_rect2:
 	move.l #10000,d5
 .0003:
 .0006:
@@ -2587,52 +2715,54 @@ rand_rect:
 	bsr gfxaccel_set_color
 	bsr RandGetNum
 	move.l d1,d4
-	swap d4
-	andi.l #$ffffff,d4
+	divu #VIDEO_Y,d4
 	bsr RandGetNum
 	move.l d1,d3
-	swap d3
-	andi.l #$1ffffff,d3
+	divu #VIDEO_X,d3
 	bsr RandGetNum
 	move.l d1,d2
-	swap d2
-	andi.l #$ffffff,d2
+	divu #VIDEO_Y,d2
 	bsr RandGetNum
-	swap d1
-	andi.l #$1ffffff,d1
+	divu #VIDEO_X,d1
 	bsr gfxaccel_draw_rectangle
 	dbra d5,.0003
 	bra Monitor
 
 rand_triangle:
-	move.l #10000,d7
+	move.l #30000,d7
 .0006:
 	bsr CheckForCtrlC
 	bsr RandGetNum
 	bsr gfxaccel_set_color
 	bsr RandGetNum
-	move.l d1,d6
-	swap d6
-	andi.l #$ffffff,d6
+	move.l d1,d0
+;	divu #VIDEO_Y,d6
+	andi.l #511,d0
+	swap d0
 	bsr RandGetNum
 	move.l d1,d5
+;	divu #VIDEO_X,d5
+	andi.l #511,d5
 	swap d5
-	andi.l #$1ffffff,d5
 	bsr RandGetNum
 	move.l d1,d4
+;	divu #VIDEO_Y,d4
+	andi.l #511,d4
 	swap d4
-	andi.l #$ffffff,d4
 	bsr RandGetNum
 	move.l d1,d3
+;	divu #VIDEO_X,d3
+	andi.l #511,d3
 	swap d3
-	andi.l #$1ffffff,d3
 	bsr RandGetNum
 	move.l d1,d2
+;	divu #VIDEO_Y,d2
+	andi.l #511,d2
 	swap d2
-	andi.l #$ffffff,d2
 	bsr RandGetNum
+;	divu #VIDEO_X,d1
+	andi.l #511,d1
 	swap d1
-	andi.l #$1ffffff,d1
 	bsr gfxaccel_draw_triangle
 	dbra d7,.0006
 	bra Monitor
@@ -2645,27 +2775,33 @@ rand_curve:
 	bsr gfxaccel_set_color
 	bsr RandGetNum
 	move.l d1,d6
+;	divu #VIDEO_Y,d6
+	andi.l #511,d6
 	swap d6
-	andi.l #$ffffff,d6
 	bsr RandGetNum
 	move.l d1,d5
+;	divu #VIDEO_X,d5
+	andi.l #511,d5
 	swap d5
-	andi.l #$1ffffff,d5
 	bsr RandGetNum
 	move.l d1,d4
+;	divu #VIDEO_Y,d4
+	andi.l #511,d4
 	swap d4
-	andi.l #$ffffff,d4
 	bsr RandGetNum
 	move.l d1,d3
+;	divu #VIDEO_X,d3
+	andi.l #511,d3
 	swap d3
-	andi.l #$1ffffff,d3
 	bsr RandGetNum
 	move.l d1,d2
+;	divu #VIDEO_Y,d2
+	andi.l #511,d2
 	swap d2
-	andi.l #$ffffff,d2
 	bsr RandGetNum
+;	divu #VIDEO_X,d1
+	andi.l #511,d1
 	swap d1
-	andi.l #$1ffffff,d1
 	bsr gfxaccel_draw_curve
 	dbra d7,.0006
 	bra Monitor
@@ -3695,7 +3831,7 @@ TickIRQ:
 		asl.l #3,d3								; 8 bytes per text cell
 	endif
 	move.l #$1D000000,PLIC+$14	; reset edge sense circuit
-	lea $FD0000C8,a0					; display field address
+	lea $FD000000+(TEXTCOL-10)*4,a0			; display field address
 	move.l 4(a0,d3.w),d2			; get char from screen
 ;	rol.l #8,d2								; extract char field
 ;	clr.b d2									; clear char field
@@ -4014,3 +4150,4 @@ FREL30:
 
 	include "dcode68k.x68"
  	include "games/asteroids/asteroids 1_0.x68"
+	include "games/plants/plants.x68"
