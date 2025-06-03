@@ -1,26 +1,27 @@
-******************************************************************
-*								 *
-*		Tiny Float BASIC for the Motorola MC68000		 *
-*								 *
-* Derived from Palo Alto Tiny BASIC as published in the May 1976 *
-* issue of Dr. Dobb's Journal.  Adapted to the 68000 by:         *
-*	Gordon Brandly						 *
-*								 *
-******************************************************************
-*    Copyright (C) 1984 by Gordon Brandly. This program may be	 *
-*    freely distributed for personal use only. All commercial	 *
-*		       rights are reserved.			 *
-******************************************************************
-* Modified (c) 2022 for the rf68000. Robert Finch
-* Numerics changed to floating-point
-* added string handling
-******************************************************************
+;*****************************************************************
+;								 *
+;		Tiny Float BASIC for the Motorola MC68000		 *
+;								 *
+; Derived from Palo Alto Tiny BASIC as published in the May 1976 *
+; issue of Dr. Dobb's Journal.  Adapted to the 68000 by:         *
+;	Gordon Brandly						 *
+;								 *
+;*****************************************************************
+;    Copyright (C) 1984 by Gordon Brandly. This program may be	 *
+;    freely distributed for personal use only. All commercial	 *
+;		       rights are reserved.			 *
+;*****************************************************************
+; Modified (c) 2022 for the rf68000. Robert Finch
+; Numerics changed to floating-point
+; added string handling
+; added graphics commands
+;*****************************************************************
 
-* Vers. 1.0  1984/7/17	- Original version by Gordon Brandly
-*	1.1  1984/12/9	- Addition of '$' print term by Marvin Lipford
-*	1.2  1985/4/9	- Bug fix in multiply routine by Rick Murray
-
-*	OPT	FRS,BRS 	forward ref.'s & branches default to short
+; Vers. 1.0  1984/7/17	- Original version by Gordon Brandly
+;	1.1  1984/12/9	- Addition of '$' print term by Marvin Lipford
+;	1.2  1985/4/9	- Bug fix in multiply routine by Rick Murray
+; 
+;	OPT	FRS,BRS 	forward ref.'s & branches default to short
 
 ;CR	EQU	$0D		ASCII equates
 ;LF	EQU	$0A
@@ -61,8 +62,8 @@ ENDMEM	DC.L	$47FF0		end of available memory
 CSTART
 	MOVE.L ENDMEM,SP	initialize stack pointer
 	move.l #INC1,INPPTR
-	move.b #0,InputDevice
-	move.b #1,OutputDevice
+	move.b #1,InputDevice			; keyboard
+	move.b #2,OutputDevice		; text video
 	move.l #1,_fpTextIncr
 	LEA	INITMSG,A6	tell who we are
 	BSR	PRMESG
@@ -154,36 +155,37 @@ ClearStringStack:
 
 	even
 
-*******************************************************************
-*
-* *** Tables *** DIRECT *** EXEC ***
-*
-* This section of the code tests a string against a table. When
-* a match is found, control is transferred to the section of
-* code according to the table.
-*
-* At 'EXEC', A0 should point to the string, A1 should point to
-* the character table, and A2 should point to the execution
-* table. At 'DIRECT', A0 should point to the string, A1 and
-* A2 will be set up to point to TAB1 and TAB1_1, which are
-* the tables of all direct and statement commands.
-*
-* A '.' in the string will terminate the test and the partial
-* match will be considered as a match, e.g. 'P.', 'PR.','PRI.',
-* 'PRIN.', or 'PRINT' will all match 'PRINT'.
-*
-* There are two tables: the character table and the execution
-* table. The character table consists of any number of text items.
-* Each item is a string of characters with the last character's
-* high bit set to one. The execution table holds a 16-bit
-* execution addresses that correspond to each entry in the
-* character table.
-*
-* The end of the character table is a 0 byte which corresponds
-* to the default routine in the execution table, which is
-* executed if none of the other table items are matched.
-*
-* Character-matching tables:
+;******************************************************************
+;
+; *** Tables *** DIRECT *** EXEC ***
+;
+; This section of the code tests a string against a table. When
+; a match is found, control is transferred to the section of
+; code according to the table.
+;
+; At 'EXEC', A0 should point to the string, A1 should point to
+; the character table, and A2 should point to the execution
+; table. At 'DIRECT', A0 should point to the string, A1 and
+; A2 will be set up to point to TAB1 and TAB1_1, which are
+; the tables of all direct and statement commands.
+;
+; A '.' in the string will terminate the test and the partial
+; match will be considered as a match, e.g. 'P.', 'PR.','PRI.',
+; 'PRIN.', or 'PRINT' will all match 'PRINT'.
+;
+; There are two tables: the character table and the execution
+; table. The character table consists of any number of text items.
+; Each item is a string of characters with the last character's
+; high bit set to one. The execution table holds a 16-bit
+; execution addresses that correspond to each entry in the
+; character table.
+;
+; The end of the character table is a 0 byte which corresponds
+; to the default routine in the execution table, which is
+; executed if none of the other table items are matched.
+;
+; Character-matching tables:
+
 TAB1
 	DC.B	'<CO',('M'+$80)
 	DC.B	'<CO',('N'+$80)
@@ -213,6 +215,16 @@ TAB2
 	DC.B	'BY',('E'+$80)
 	DC.B	'CAL',('L'+$80)
 	DC.B	'ONIR',('Q'+$80)
+; graphics commands	
+	DC.B	'POIN',('T'+$80)
+	DC.B	'LIN',('E'+$80)
+	DC.B	'REC',('T'+$80)
+	DC.B	'TR',('I'+$80)
+	DC.B	'CURV',('E'+$80)
+	DC.B	'COLO',('R'+$80)
+	DC.B	'DRAWBU',('F'+$80)
+	DC.B	'DISPBU',('F'+$80)
+	DC.B	'TEX',('T'+$80)
 	DC.B	0
 TAB4
 	DC.B	'PEE',('K'+$80)         Functions
@@ -253,6 +265,10 @@ TAB11
 	DC.B	'MO',('D'+$80)
 	DC.B	0
 	DC.B	0
+TAB12
+	DC.B	'DEPT',('H'+$80)
+	DC.B	0
+	DC.B	0
 
 ; Execution address tables:
 	align 2
@@ -285,6 +301,15 @@ TAB2_1
 	DC.L	GOBYE
 	DC.L	CALL
 	DC.L	ONIRQ
+	DC.L	POINT
+	DC.L	LINE
+	DC.L	RECT
+	DC.L	TRIANGLE
+	DC.L	CURVE
+	DC.L	COLOR
+	DC.L	DRAWBUF
+	DC.L	DISPBUF
+	DC.L	TEXT
 	DC.L	DEFLT
 TAB4_1
 	DC.L	PEEK			; Functions
@@ -324,6 +349,9 @@ TAB11_1
 	DC.L	XP_MOD
 	DC.L	XP31
 	even
+TAB12_1
+	DC.L	COLOR1
+	DC.L	COLOR2
 	
 DIRECT
 	move.w #1,DIRFLG
@@ -424,23 +452,23 @@ OUTCON
 * 'GOTO expr<CR>' evaluates the expression, finds the target
 * line, and jumps to 'RUNTSL' to do it.
 *
-NEW
+NEW:
 	bsr	ENDCHK
 	MOVE.L TXTBGN,TXTUNF	set the end pointer
 	bsr ClearStringArea
 	bsr ClearStringStack
 
-STOP
+STOP:
 	bsr	ENDCHK
 	BRA	WSTART
 
-RUN
+RUN:
 	clr.w DIRFLG
 	bsr	ENDCHK
 	MOVE.L	TXTBGN,A0	set pointer to beginning
 	MOVE.L	A0,CURRNT
 
-RUNNXL
+RUNNXL:
 	TST.L	CURRNT		; executing a program?
 	beq	WSTART			; if not, we've finished a direct stat.
 	tst.l	IRQROUT		; are we handling IRQ's ?
@@ -479,7 +507,7 @@ RUNSML
 	LEA	TAB2_1,A2
 	BRA	EXEC		and execute it
 
-GOTO	
+GOTO:	
 	bsr	INT_EXPR	; evaluate the following expression
 	bsr	ENDCHK		; must find end of line
 	move.l d0,d1
@@ -540,7 +568,7 @@ WAITIRQ:
 * however, no <CR LF> is generated.
 *
 
-LIST	
+LIST:	
 	bsr	TSTNUM		see if there's a line no.
 	bsr	ENDCHK		if not, we get a zero
 	bsr	FNDLN		find this or next line
@@ -558,7 +586,7 @@ LS3
 	bsr	FNDLNP		find the next line
 	BRA	LS1
 
-PRINT	
+PRINT:	
 	MOVE.L #11,D4		D4 = number of print spaces
 	bsr	TSTC		if null list and ":"
 	DC.B	':',PR2-*
@@ -607,7 +635,7 @@ PR9
 	bsr PRTSTR2
 	bra PR3
 
-FINISH
+FINISH:
 	bsr	FIN			; Check end of command
 	BRA	QWHAT		; print "What?" if wrong
 
@@ -660,36 +688,36 @@ RETURN:
 	add.l #128,sp				; remove local variable storage
 	BRA	FINISH					; and we are back home
 
-*******************************************************************
-*
-* *** FOR *** & NEXT ***
-*
-* 'FOR' has two forms:
-* 'FOR var=exp1 TO exp2 STEP exp1' and 'FOR var=exp1 TO exp2'
-* The second form means the same thing as the first form with a
-* STEP of positive 1.  The interpreter will find the variable 'var'
-* and set its value to the current value of 'exp1'.  It also
-* evaluates 'exp2' and 'exp1' and saves all these together with
-* the text pointer, etc. in the 'FOR' save area, which consisits of
-* 'LOPVAR', 'LOPINC', 'LOPLMT', 'LOPLN', and 'LOPPT'.  If there is
-* already something in the save area (indicated by a non-zero
-* 'LOPVAR'), then the old save area is saved on the stack before
-* the new values are stored.  The interpreter will then dig in the
-* stack and find out if this same variable was used in another
-* currently active 'FOR' loop.  If that is the case, then the old
-* 'FOR' loop is deactivated. (i.e. purged from the stack)
-*
-* 'NEXT var' serves as the logical (not necessarily physical) end
-* of the 'FOR' loop.  The control variable 'var' is checked with
-* the 'LOPVAR'.  If they are not the same, the interpreter digs in
-* the stack to find the right one and purges all those that didn't
-* match.  Either way, it then adds the 'STEP' to that variable and
-* checks the result with against the limit value.  If it is within
-* the limit, control loops back to the command following the
-* 'FOR'.  If it's outside the limit, the save area is purged and
-* execution continues.
+;******************************************************************
+;
+; *** FOR *** & NEXT ***
+;
+; 'FOR' has two forms:
+; 'FOR var=exp1 TO exp2 STEP exp1' and 'FOR var=exp1 TO exp2'
+; The second form means the same thing as the first form with a
+; STEP of positive 1.  The interpreter will find the variable 'var'
+; and set its value to the current value of 'exp1'.  It also
+; evaluates 'exp2' and 'exp1' and saves all these together with
+; the text pointer, etc. in the 'FOR' save area, which consisits of
+; 'LOPVAR', 'LOPINC', 'LOPLMT', 'LOPLN', and 'LOPPT'.  If there is
+; already something in the save area (indicated by a non-zero
+; 'LOPVAR'), then the old save area is saved on the stack before
+; the new values are stored.  The interpreter will then dig in the
+; stack and find out if this same variable was used in another
+; currently active 'FOR' loop.  If that is the case, then the old
+; 'FOR' loop is deactivated. (i.e. purged from the stack)
+;
+; 'NEXT var' serves as the logical (not necessarily physical) end
+; of the 'FOR' loop.  The control variable 'var' is checked with
+; the 'LOPVAR'.  If they are not the same, the interpreter digs in
+; the stack to find the right one and purges all those that didn't
+; match.  Either way, it then adds the 'STEP' to that variable and
+; checks the result with against the limit value.  If it is within
+; the limit, control loops back to the command following the
+; 'FOR'.  If it's outside the limit, the save area is purged and
+; execution continues.
 
-FOR
+FOR:
 	bsr	PUSHA			; save the old 'FOR' save area
 	bsr	SETVAL		; set the control variable
 	move.l a6,LOPVAR		; save its address
@@ -1053,6 +1081,288 @@ CALL
 	MOVE.L (SP)+,A0	; restore the text pointer
 	BRA	FINISH
 
+;******************************************************************
+; Graphics commands:
+;		DRAWBUF - which buffer to draw to (0 or 1)
+;		DISPBUF - which buffer to display (0 or 1)
+;		POINT - plot point
+;		LINE	- draw line
+;		RECT	- draw rectangle
+;		TRI		- draw triangle
+;		CURVE	- draw curve
+;
+; points are seperated with a ':' as in:
+;		LINE x1,y1:x2,y2
+;		TRI x1,y1:x2,y2:x3,y3
+; RECT specifies a point then width and height
+;		RECT x1,y1:width,height
+; Color is specified with four components (padding,red,green,blue)
+;		COLOR 0,255,0,0		; is the color RED
+; Color depth may be specified in the same manner
+;		COLOR DEPTH	0,8,8,8	; specifies 24-bits for color
+;******************************************************************
+
+TEXT:
+	bsr INT_EXPR
+	bsr	TSTC					; it must be followed by a comma
+	DC.B	',',TEXTERR-*
+	move.l d0,-(sp)
+	bsr INT_EXPR
+	move.l d0,d2
+	move.l (sp)+,d1
+	move.b d2,TextRows
+	move.b d1,TextCols
+	move.b d1,TEXTREG+0	; set columns
+	move.b d2,TEXTREG+1	; set rows
+	bra CLS
+TEXTERR
+	bra QWHAT
+
+DRAWBUF:
+	bsr INT_EXPR
+	moveq #7,d7
+	moveq #DEV_SET_DESTBUF,d6
+	move.l d0,d1
+	trap #0
+	bra FINISH
+	
+DISPBUF:
+	bsr INT_EXPR
+	moveq #7,d7
+	moveq #DEV_SET_DISPBUF,d6
+	move.l d0,d1
+	trap #0
+	bra FINISH
+
+COLOR:
+	lea	TAB12,A1 			; use 'EXEC' to look for the
+	lea	TAB12_1,A2		; word 'DEPTH'
+	bra	EXEC
+COLOR2
+	move.l #DEV_SET_COLOR,-(sp)
+	bra COLOR3
+COLOR1
+	move.l #DEV_SET_COLOR_DEPTH,-(sp)
+COLOR3
+	bsr INT_EXPR
+	bsr	TSTC								; it must be followed by a comma
+	DC.B	',',COLORERR-*
+	move.l d0,-(sp)
+	bsr INT_EXPR
+	bsr	TSTC								; it must be followed by a comma
+	DC.B	',',COLORERR1-*
+	move.l d0,-(sp)
+	bsr INT_EXPR
+	bsr	TSTC								; it must be followed by a comma
+	DC.B	',',COLORERR2-*
+	move.l d0,-(sp)
+	bsr INT_EXPR
+	ext.w d0
+	ext.l d0
+	move.l (sp)+,d1
+	ext.w d1
+	ext.l d1
+	rol.l #8,d1
+	or.l d1,d0
+	move.l (sp)+,d1
+	ext.w d1
+	ext.l d1
+	swap d1
+	or.l d1,d0
+	move.l (sp)+,d1
+	ext.w d1
+	ext.l d1
+	swap d1
+	rol.l #8,d1
+	or.l d0,d1
+	moveq #7,d7						; graphics accelerator
+	move.l (sp)+,d6
+	trap #0
+	moveq #6,d7						; frame buffer
+	trap #0
+	bra FINISH
+COLORERR
+	add.l #4,sp
+	bra QWHAT
+COLORERR1
+	add.l #8,sp
+	bra QWHAT
+COLORERR2
+	add.l #12,sp
+	bra QWHAT
+
+POINT:
+	bsr INT_EXPR
+	bsr	TSTC		it must be followed by a comma
+	DC.B	',',POINTERR-*
+	move.l d0,-(sp)
+	bsr INT_EXPR
+	move.l d0,d2
+	move.l (sp)+,d1
+	swap d1
+	swap d2
+	moveq #7,d7
+	moveq #DEV_PLOT_POINT,d6
+	trap #0
+	bra FINISH
+POINTERR
+	bra QWHAT
+
+LINE:
+	bsr INT_EXPR
+	bsr	TSTC							; it must be followed by a comma
+	DC.B	',',LINEERR-*
+	move.l d0,-(sp)
+	bsr INT_EXPR
+	bsr	TSTC							; it must be followed by a comma
+	DC.B	':',LINEERR1-*
+	move.l d0,-(sp)	
+	bsr INT_EXPR
+	bsr	TSTC							; it must be followed by a comma
+	DC.B	',',LINEERR2-*
+	move.l d0,-(sp)
+	bsr INT_EXPR
+	move.l d0,d4
+	swap d4
+	move.l (sp)+,d3
+	swap d3
+	move.l (sp)+,d2
+	swap d2
+	move.l (sp)+,d1	
+	swap d1
+	moveq #7,d7
+	moveq #DEV_DRAW_LINE,d6
+	trap #0
+	bra FINISH
+LINEERR
+	bra QWHAT
+LINEERR1
+	add.l #4,sp
+	bra QWHAT
+LINEERR2
+	add.l #8,sp
+	bra QWHAT
+
+RECT:
+	bsr INT_EXPR
+	bsr	TSTC							; it must be followed by a comma
+	DC.B	',',LINEERR-*
+	move.l d0,-(sp)
+	bsr INT_EXPR
+	bsr	TSTC							; it must be followed by a comma
+	DC.B	':',LINEERR1-*
+	move.l d0,-(sp)	
+	bsr INT_EXPR
+	bsr	TSTC							; it must be followed by a comma
+	DC.B	',',LINEERR2-*
+	move.l d0,-(sp)
+	bsr INT_EXPR
+	move.l d0,d4
+	move.l (sp)+,d3
+	move.l (sp)+,d2
+	move.l (sp)+,d1
+	add.l d1,d3
+	add.l d2,d4	
+	swap d1
+	swap d2
+	swap d3
+	swap d4
+	moveq #7,d7
+	moveq #DEV_DRAW_RECTANGLE,d6
+	trap #0
+	bra FINISH
+
+TRIANGLE:
+	bsr INT_EXPR
+	bsr	TSTC							; it must be followed by a comma
+	DC.B	',',TRIERR-*
+	move.l d0,-(sp)
+	bsr INT_EXPR
+	bsr	TSTC							; it must be followed by a comma
+	DC.B	':',TRIERR1-*
+	move.l d0,-(sp)	
+	bsr INT_EXPR
+	bsr	TSTC							; it must be followed by a comma
+	DC.B	',',TRIERR2-*
+	move.l d0,-(sp)
+	bsr INT_EXPR
+	bsr	TSTC							; it must be followed by a comma
+	DC.B	':',TRIERR3-*
+	move.l d0,-(sp)
+	bsr INT_EXPR
+	bsr	TSTC							; it must be followed by a comma
+	DC.B	',',TRIERR4-*
+	move.l d0,-(sp)
+	bsr INT_EXPR
+	move.l (sp)+,d5
+	move.l (sp)+,d4
+	move.l (sp)+,d3
+	move.l (sp)+,d2
+	move.l (sp)+,d1
+	swap d1
+	swap d2
+	swap d3
+	swap d4
+	swap d5
+	swap d0
+	moveq #7,d7
+	moveq #DEV_DRAW_TRIANGLE,d6
+	trap #0
+	bra FINISH
+TRIERR
+	bra QWHAT
+TRIERR1
+	add.l #4,sp
+	bra QWHAT
+TRIERR2
+	add.l #8,sp
+	bra QWHAT
+TRIERR3
+	add.l #12,sp
+	bra QWHAT
+TRIERR4
+	add.l #16,sp
+	bra QWHAT
+
+CURVE:
+	bsr INT_EXPR
+	bsr	TSTC							; it must be followed by a comma
+	DC.B	',',TRIERR-*
+	move.l d0,-(sp)
+	bsr INT_EXPR
+	bsr	TSTC							; it must be followed by a comma
+	DC.B	':',TRIERR1-*
+	move.l d0,-(sp)	
+	bsr INT_EXPR
+	bsr	TSTC							; it must be followed by a comma
+	DC.B	',',TRIERR2-*
+	move.l d0,-(sp)
+	bsr INT_EXPR
+	bsr	TSTC							; it must be followed by a comma
+	DC.B	':',TRIERR3-*
+	move.l d0,-(sp)
+	bsr INT_EXPR
+	bsr	TSTC							; it must be followed by a comma
+	DC.B	',',TRIERR4-*
+	move.l d0,-(sp)
+	bsr INT_EXPR
+	move.l (sp)+,d5
+	move.l (sp)+,d4
+	move.l (sp)+,d3
+	move.l (sp)+,d2
+	move.l (sp)+,d1
+	swap d1
+	swap d2
+	swap d3
+	swap d4
+	swap d5
+	swap d0
+	moveq #7,d7
+	moveq #DEV_DRAW_CURVE,d6
+	trap #0
+	bra FINISH
+
+	
 ;******************************************************************
 ;
 ; *** EXPR ***
@@ -2156,7 +2466,7 @@ CHR:
 ; Returns:
 ;		a6 pointer to variable
 
-SETVAL	
+SETVAL:	
 	bsr	TSTV					; variable name?
 	bcs	QWHAT					; if not, say "What?"
 	move.l d0,-(sp)		; save the variable's address
@@ -2569,7 +2879,7 @@ TC1
 ; A0 is advanced past the number. Note A0 is always updated
 ; past leading spaces.
 
-TSTNUM
+TSTNUM:
 	link a2,#-32
 	move.l _canary,28(sp)
 	movem.l d1/a1,(sp)
@@ -2671,7 +2981,7 @@ CHKRET
 
 ; ===== Display a zero-ended string pointed to by register A6
 
-PRMESG
+PRMESG:
 	MOVE.B (A6)+,D0		; get the char.
 	BEQ	PRMRET				; if it's zero, we're done
 	BSR	GOOUT					; else display it
@@ -2679,10 +2989,10 @@ PRMESG
 PRMRET
 	RTS
 
-******************************************************
-* The following routines are the only ones that need *
-* to be changed for a different I/O environment.     *
-******************************************************
+;*****************************************************
+; The following routines are the only ones that need *
+; to be changed for a different I/O environment.     *
+;*****************************************************
 
 ; ===== Clear screen and home cursor
 
@@ -2703,9 +3013,9 @@ OUTC:
 	movem.l (sp)+,d0/d1
 	rts
 
-* ===== Input a character from the console into register D0 (or
-*	return Zero status if there's no character available).
-*
+; ===== Input a character from the console into register D0 (or
+;	return Zero status if there's no character available).
+;
 INC
 	move.l	a6,-(a7)
 	move.l	INPPTR,a6
