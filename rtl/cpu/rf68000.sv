@@ -413,6 +413,7 @@ typedef enum logic [7:0] {
 	FMUL2,
 	FDIV1,
 	FDIV2,
+	FDIV3,
 	FNEG,
 	FMOVE,
 	I2DF1,
@@ -959,14 +960,21 @@ rf68000_divider udiv1
 	.idle()
 );
 
-wire [95:0] dfaddsubo, dfmulo, dfdivo, i2dfo, df2io;
-wire [95:0] dfscaleo, dftrunco;
-wire dfmulinf;
-wire dfmuldone, dfmulover, dfmulunder;
-wire dfdivdone, dfdivover, dfdivunder;
+reg [95:0] dfaddsubo, dfmulo, dfdivo, i2dfo, df2io;
+reg [95:0] dfscaleo, dftrunco;
+wire [95:0] dfaddsubo1, dfmulo1, dfdivo1, i2dfo1, df2io1;
+wire [95:0] dfscaleo1, dftrunco1;
+reg dfmulinf;
+reg dfmuldone, dfmulover, dfmulunder;
+reg dfdivdone, dfdivover, dfdivunder;
+wire dfmulinf1;
+wire dfmuldone1, dfmulover1, dfmulunder1;
+wire dfdivdone1, dfdivover1, dfdivunder1;
 wire [11:0] dfcmpo;
-wire i2dfdone, df2idone;
-wire df2iover;
+reg i2dfdone, df2idone;
+wire i2dfdone1, df2idone1;
+reg df2iover;
+wire df2iover1;
 //DFP96U fpsu, fpdu;
 //DFP96 fpdp;
 
@@ -1004,8 +1012,12 @@ DFPAddsub96nr ufaddsub1
 	.op(fsub),
 	.a(fpd),
 	.b(fps),
-	.o(dfaddsubo)
+	.o(dfaddsubo1)
 );
+
+// Cross clock domain sync.
+always_ff @(posedge clk_i)
+	dfaddsubo <= dfaddsubo1;
 
 DFPMultiply96nr udfmul1
 (
@@ -1014,15 +1026,27 @@ DFPMultiply96nr udfmul1
 	.ld(state==FMUL1),
 	.a(fpd),
 	.b(fps),
-	.o(dfmulo),
+	.o(dfmulo1),
 	.rm(3'b000),
 	.sign_exe(),
-	.inf(dfmulinf),
-	.overflow(dfmulover),
-	.underflow(dfmulunder),
-	.done(dfmuldone)
+	.inf(dfmulinf1),
+	.overflow(dfmulover1),
+	.underflow(dfmulunder1),
+	.done(dfmuldone1)
 );
 
+// Cross clock domain sync.
+always_ff @(posedge clk_i)
+	dfmulo <= dfmulo1;
+always_ff @(posedge clk_i)
+	dfmulinf <= dfmulinf1;
+always_ff @(posedge clk_i)
+	dfmulover <= dfmulover1;
+always_ff @(posedge clk_i)
+	dfmulunder <= dfmulunder1;
+always_ff @(posedge clk_i)
+	dfmuldone <= dfmuldone1;
+	
 DFPDivide96nr udfdiv1
 (
 	.rst(rst_i),
@@ -1032,15 +1056,25 @@ DFPDivide96nr udfdiv1
 	.op(1'b0),
 	.a(fpd),
 	.b(fps),
-	.o(dfdivo),
+	.o(dfdivo1),
 	.rm(3'b000),
-	.done(dfdivdone),
+	.done(dfdivdone1),
 	.sign_exe(),
 	.inf(),
-	.overflow(dfdivover),
-	.underflow(dfdivunder)
+	.overflow(dfdivover1),
+	.underflow(dfdivunder1)
 );
 
+// Cross clock domain sync.
+always_ff @(posedge clk_i)
+	dfdivo <= dfdivo1;
+always_ff @(posedge clk_i)
+	dfdivdone <= dfdivdone1;
+always_ff @(posedge clk_i)
+	dfdivover <= dfdivover1;
+always_ff @(posedge clk_i)
+	dfdivunder <= dfdivunder1;
+	
 DFPCompare96 udfcmp1
 (
 	.a(fpd),
@@ -1057,39 +1091,59 @@ i2df96 ui2df1
 	.op(1'b0),	// 0=unsigned, 1= signed
 	.rm(3'b000),
 	.i(fps),
-	.o(i2dfo),
-	.done(i2dfdone)
+	.o(i2dfo1),
+	.done(i2dfdone1)
 );
+// Cross clock domain sync.
+always_ff @(posedge clk_i)
+	i2dfo <= i2dfo1;
+always_ff @(posedge clk_i)
+	i2dfdone <= i2dfdone1;
 
 df96Toi udf2i1 (
 	.rst(rst_i),
 	.clk(clk_i),
 	.ce(1'b1),
-	.ld(dfstate==DF2I1),
+	.ld(state==DF2I1),
 	.op(1'b0),
 	.i(fps),
-	.o(df2io),
-	.overflow(df2iover),
-	.done(df2idone)
+	.o(df2io1),
+	.overflow(df2iover1),
+	.done(df2idone1)
 );
 
+// Cross clock domain sync.
+always_ff @(posedge clk_i)
+	df2io <= df2io1;
+always_ff @(posedge clk_i)
+	df2iover <= df2iover1;
+always_ff @(posedge clk_i)
+	df2idone <= df2idone1;
+	
 DFPScaleb96 udfscale1
 (
 	.clk(dfclk_i),
 	.ce(1'b1),
 	.a(fpd),
 	.b(s),
-	.o(dfscaleo)
+	.o(dfscaleo1)
 );
+// Cross clock domain sync.
+always_ff @(posedge clk_i)
+	dfscaleo <= dfscaleo1;
 
 DFPTrunc96 udftrunc1
 (
 	.clk(dfclk_i),
 	.ce(1'b1),
 	.i(fps),
-	.o(dftrunco),
+	.o(dftrunco1),
 	.overflow()
 );
+// Cross clock domain sync.
+always_ff @(posedge clk_i)
+	dftrunco <= dftrunco1;
+
 end
 end
 endgenerate
@@ -1873,7 +1927,7 @@ IFETCH:
 		is_illegal <= 1'b0;
 		use_sfc <= 1'b0;
 		use_dfc <= 1'b0;
-		fpcnt <= 'd0;
+		fpcnt <= 8'd0;
 		fpiar <= pc;
 		ext_ir <= 1'b0;
 		if (!cyc_o) begin
@@ -6345,7 +6399,7 @@ CCHK:
 FADD:
 	begin
 		fpcnt <= fpcnt + 2'd1;
-		if (fpcnt==8'd150) begin
+		if (fpcnt==8'd250) begin
 			if (SUPPORT_DECFLT) begin
 				fzf <= dfaddsubo[94:0]==95'd0;
 				fnf <= dfaddsubo[95];
@@ -6361,7 +6415,7 @@ FADD:
 FINTRZ:	// Also FINT
 	begin
 		fpcnt <= fpcnt + 2'd1;
-		if (fpcnt==8'd5) begin
+		if (fpcnt==8'd6) begin
 			if (SUPPORT_DECFLT) begin
 				resF <= dftrunco;
 				fzf <= dftrunco[94:0]==95'd0;
@@ -6375,7 +6429,7 @@ FINTRZ:	// Also FINT
 FSCALE:
 	begin
 		fpcnt <= fpcnt + 2'd1;
-		if (fpcnt==8'd15) begin
+		if (fpcnt==8'd20) begin
 			if (SUPPORT_DECFLT) begin
 				fzf <= dfscaleo[94:0]==95'd0;
 				fnf <= dfscaleo[95];
@@ -6402,7 +6456,7 @@ FNEG:	// Also FABS
 FMUL1:
 	begin
 		fpcnt <= fpcnt + 2'd1;
-		if (fpcnt==8'd5)
+		if (fpcnt==8'd6)
 			goto (FMUL2);
 	end
 FMUL2:
@@ -6426,10 +6480,18 @@ FMUL2:
 FDIV1:
 	begin
 		fpcnt <= fpcnt + 2'd1;
-		if (fpcnt == 8'd50)
+		if (fpcnt == 8'd6) begin
+			fpcnt <= 8'd0;
 			goto (FDIV2);
+		end
 	end
 FDIV2:
+	begin
+		fpcnt <= fpcnt + 2'd1;
+		if (fpcnt == 8'd45)
+			goto (FDIV3);
+	end
+FDIV3:
 	if (dfdivdone) begin
 		if (SUPPORT_DECFLT) begin
 			fzf <= dfdivo[94:0]==95'd0;
@@ -6499,7 +6561,7 @@ FMOVE:
 I2DF1:
 	begin
 		fpcnt <= fpcnt + 2'd1;
-		if (fpcnt==8'd5)
+		if (fpcnt==8'd6)
 			goto (I2DF2);
 	end
 I2DF2:
@@ -6520,7 +6582,7 @@ I2DF2:
 DF2I1:
 	begin
 		fpcnt <= fpcnt + 2'd1;
-		if (fpcnt==8'd5)
+		if (fpcnt==8'd6)
 			goto (DF2I2);
 	end
 DF2I2:
