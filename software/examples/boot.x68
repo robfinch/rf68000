@@ -379,6 +379,8 @@ serial_dcb equ err_dcb+DCB_SIZE*2		; 5
 framebuf_dcb equ serial_dcb+DCB_SIZE	; 6
 gfxaccel_dcb equ framebuf_dcb+DCB_SIZE	; 7
 
+spi_buff equ $0042000
+
 TimerStack	equ	$41BFC
 
 ; Keyboard buffer is in shared memory
@@ -887,12 +889,22 @@ T15UnlockSemaphore:
 	movec tr,d0
 	bra UnlockSemaphore
 
+; Parameters:
+; 	a1 = pointer to input text
+; 	d1 = input stride (how many bytes to advance per character)
+; Returns:
+;		a1 = updated text pointer
+;		d1 = number of digits in number
+;		fp0 = float number
+
 T15GetFloat:
+	movem.l d0/a0,-(a7)
 	move.l a1,a0
 	move.l d1,d0
 	bsr _GetFloat
 	move.l a0,a1
 	move.l d0,d1
+	movem.l (a7)+,d0/a0
 	rts
 
 T15Abort:
@@ -1255,9 +1267,9 @@ T15GetPixel:
 T15GetWindowSize:
 	cmpi.b #0,d1
 	bne.s .0001
-	move.w #600,d1
-	swap d1
 	move.w #800,d1
+	swap d1
+	move.w #600,d1
 	rts
 .0001:
 	move.l #0,d1
@@ -1713,6 +1725,7 @@ cmdString:
 	dc.b  "TG",'F'+$80			; TGF test get float
 	dc.b  "TRA",'M'+$80			; TRAM test RAM
 	dc.b	'T','R'+$80				; TR test serial receive
+	dc.b	'TSC','D'+$80			; Test SD card
 	dc.b	'T'+$80						; T test CPU
 	dc.b	'S'+$80						; S send serial
 	dc.b	"RESE",'T'+$80		; RESET <n>
@@ -1721,15 +1734,6 @@ cmdString:
 	dc.b	'V'+$80
 	dc.b	'G','R'+$80				; graphics demo
 	dc.b	'p','l','a','n','t','s'+$80	; plants
-	dc.b	0,0
-grCmdString:
-	dc.b	'C','D'+$80				; set color depth
-	dc.b	'LIN','E'+$80			; draw line
-	dc.b	'REC','T'+$80			; draw rectangle
-	dc.b	'TR','I'+$80			; draw triangle
-	dc.b	'CURV','E'+$80		; draw curve
-	dc.b	'POIN','T'+$80		; plot point
-	dc.b	'COLO','R'+$80		; set color
 	dc.b	0,0
 
 	align	2
@@ -1754,6 +1758,7 @@ cmdTable:
 	dc.l	cmdTestGF
 	dc.l  cmdTestRAM
 	dc.l	cmdTestSerialReceive
+	dc.l	cmdTestSD
 	dc.l	cmdTestCPU
 	dc.l	cmdSendSerial
 	dc.l	cmdReset
@@ -1935,7 +1940,7 @@ cmdFMTK:
 
 cmdTestFP:
 	moveq #41,d0						; function #41, get float
-	moveq #8,d1							; d1 = input stride
+	moveq #4,d1							; d1 = input stride
 	move.l a0,a1						; a1 = pointer to input buffer
 	trap #15
 	move.l a1,a0
@@ -2067,6 +2072,36 @@ DisplayHelp:
 	lea			HelpMsg,a1
 	bsr			DisplayString
 	bra			Monitor
+
+cmdTestSD:
+	bsr spi_setup
+	tst.b d0
+	bne.s .0001
+	lea HelpMsg,a0
+	moveq #1,d1				; write block #1
+	bsr spi_write_block
+	tst.b d0
+	bne.s .0003
+	moveq #1,d1
+	move.l #spi_buff,a0
+	bsr spi_read_block
+	tst.b d0
+	bne.s .0004
+	bra Monitor
+.0001
+	move.b #'S',d1
+.0002
+	bsr OutputChar
+	move.l d0,d1
+	bsr DisplayTetra
+	bsr CRLF
+	bra Monitor
+.0003
+	move.b #'W',d0
+	bra .0002
+.0004
+	move.b #'R',d0
+	bra .0002	
 
 HelpMsg:
 	dc.b	"? = Display help",LF,CR
@@ -3073,7 +3108,7 @@ GetDecNumber:
 	rts
 	
 	include "FloatToString.x68"
-	include "GetFloat.asm"
+	include "GetFloat.x68"
 
 ;------------------------------------------------------------------------------
 ; Convert ASCII character in the range '0' to '9', 'a' tr 'f' or 'A' to 'F'
@@ -3252,6 +3287,151 @@ rbo:
 	rol.w	#8,d1
 	swap d1
 	rol.w	#8,d1
+	rts
+
+;===============================================================================
+;===============================================================================
+
+SPI_MASTER equ $FD06A000
+SPI_MASTER_VERSION_REG equ SPI_MASTER+0
+SPI_MASTER_CTRL_REG	equ SPI_MASTER+1
+SPI_TRANS_TYPE_REG equ SPI_MASTER+2
+SPI_TRANS_CTRL_REG equ SPI_MASTER+3
+SPI_TRANS_STS_REG equ SPI_MASTER+4
+SPI_TRANS_ERR_REG equ SPI_MASTER+5
+SPI_DIRECT_ACCESS_DATA_REG equ SPI_MASTER+6
+SPI_ADDR_70 equ SPI_MASTER+7
+SPI_ADDR_158 equ SPI_MASTER+8
+SPI_ADDR_2316 equ SPI_MASTER+9
+SPI_ADDR_3124 equ SPI_MASTER+10
+SPI_CLK_DEL_REG equ SPI_MASTER+11
+SPI_RX_FIFO_DATA_REG equ SPI_MASTER+16
+SPI_RX_FIFO_DATA_COUNT_MSB equ SPI_MASTER+18
+SPI_RX_FIFO_DATA_COUNT_LSB equ SPI_MASTER+19
+SPI_RX_FIFO_CTRL_REG equ SPI_MASTER+20
+SPI_TX_FIFO_DATA_REG equ SPI_MASTER+32
+SPI_TX_FIFO_CTRL_REG equ SPI_MASTER+36
+
+SPI_DIRECT_ACCESS equ	0
+SPI_INIT_SD equ 1
+SPI_RW_READ_SD_BLOCK	equ 2
+SPI_RW_WRITE_SD_BLOCK	equ 3
+
+spi_setup:
+	; Turn on the power (negate reset) to the card and reset the logic
+	move.b #$01,SPI_MASTER_CTRL_REG
+	movec tick,d0
+	; wait about 10 milli-seconds
+	; Cannot just compare directly, must mask off lower bits as the tick count
+	; is running very fast. It may take several ticks counts per instruction.
+	add.l #$100000,d0
+	andi.l #$FFFFF800,d0
+.0003
+	movec tick,d1
+	andi.l #$FFFFF800,d1
+	cmp.l d1,d0
+	bne.s .0003
+init_spi:
+spi_init:
+	btst #2,SPI_MASTER_CTRL_REG
+	beq.s .0005
+	move.w #65535,d0
+.0002
+	move.b #SPI_INIT_SD,SPI_TRANS_TYPE_REG
+	move.b #1,SPI_TRANS_CTRL_REG
+.0001
+	btst #1,SPI_TRANS_STS_REG	
+	beq.s .0004
+	subq.w #1,d0
+	bne.s .0001
+	bra.s .err
+.0004
+	move.b SPI_TRANS_ERR_REG,d0
+	andi.b #3,d0
+	bne.s .0002					; if error try again
+	moveq #E_Ok,d0
+	rts
+.err
+	moveq #E_Timeout,d0
+	rts
+.0005
+	moveq #E_NoDev,d0
+	rts
+;
+spi_set_block_address:
+	; set the block read address
+	btst #1,SPI_MASTER_CTRL_REG		; check for high-density card
+	bne.s .0001
+	lsl.l #8,d1										; for a low density card the address is 
+	lsl.l #1,d1										; specified directly, is not a block address
+.0001:
+	move.b d1,SPI_ADDR_70
+	ror.l #8,d1
+	move.b d1,SPI_ADDR_158
+	ror.l #8,d1
+	move.b d1,SPI_ADDR_2316
+	ror.l #8,d1
+	move.b d1,SPI_ADDR_3124
+	ror.l #8,d1
+	rts
+
+; Parameters:
+;		d1 = block number to read
+;		a0 = buffer to put read data in
+;
+; Returns:
+;		d0 = E_ReadError if there was a read error
+;		     E_Ok if successful
+;
+spi_read_block:
+	; set the block read address
+	bsr spi_set_block_address
+	move.b #SPI_RW_READ_SD_BLOCK,SPI_TRANS_TYPE_REG	; set read transaction
+	move.b #1,SPI_TRANS_CTRL_REG	; start transaction
+.0002
+	btst.b #0,SPI_TRANS_STS_REG		; wait for transaction not busy
+	bne.s .0002
+	move.b SPI_TRANS_ERR_REG,d0
+	andi.b #$0c,d0
+	bne.s .readerr
+	; now read the data from the fifo
+	move.w #512,d0	
+.0003
+	move.b SPI_RX_FIFO_DATA_REG,(a0)+
+	dbra d0,.0003
+	moveq #E_Ok,d0
+	rts
+.readerr:
+	moveq #E_ReadError,d0
+	rts
+
+; Parameters:
+;		d1 = block number to write
+;		a0 = buffer to output write data from
+;
+; Returns:
+;		d0 = E_WriteError if there was a write error
+;		     E_Ok if successful
+;
+spi_write_block:
+	; First load up the write fifo with data
+	move.w #512,d0
+.0001
+	move.b (a0)+,SPI_TX_FIFO_DATA_REG
+	dbra d0,.0001	
+	bsr spi_set_block_address
+	move.b #SPI_RW_WRITE_SD_BLOCK,SPI_TRANS_TYPE_REG	; set write transaction
+	move.b #1,SPI_TRANS_CTRL_REG	; start transaction
+.0002
+	btst.b #0,SPI_TRANS_STS_REG		; wait for transaction not busy
+	bne.s .0002
+	move.b SPI_TRANS_ERR_REG,d0
+	andi.b #$30,d0
+	bne.s .writeerr
+	moveq #E_Ok,d0
+	rts
+.writeerr
+	moveq #E_WriteError,d0
 	rts
 
 ;===============================================================================

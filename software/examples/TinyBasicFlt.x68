@@ -77,7 +77,7 @@ CSTART
 	SUB.L	#512,D0 	reserve variable area (32 16 byte floats)
 	MOVE.L D0,VARBGN
 	bsr ClearStringArea
-WSTART
+WSTART:
 	CLR.L	D0		initialize internal variables
 	move.l #1,_fpTextIncr
 	clr.l IRQROUT
@@ -99,8 +99,8 @@ ST3
 	FMOVE.L FP1,D1
 	TST.L D2			; does line no. exist? (or nonzero?)
 	BEQ	DIRECT		; if not, it's a direct statement
-	CMP.L	#$FFFF,D1	see if line no. is <= 16 bits
-	BCC	QHOW		if not, we've overflowed
+	CMP.L	#$FFFF,D1	; see if line no. is <= 16 bits
+	BCC	QHOW			; if not, we've overflowed
 	MOVE.B	D1,-(A0)	store the binary line no.
 	ROR	#8,D1		(Kludge to store a word on a
 	MOVE.B	D1,-(A0)	possible byte boundary)
@@ -225,6 +225,7 @@ TAB2
 	DC.B	'DRAWBU',('F'+$80)
 	DC.B	'DISPBU',('F'+$80)
 	DC.B	'TEX',('T'+$80)
+	dc.b	'CLEA',('R'+$80)
 	DC.B	0
 TAB4
 	DC.B	'PEE',('K'+$80)         Functions
@@ -310,6 +311,7 @@ TAB2_1
 	DC.L	DRAWBUF
 	DC.L	DISPBUF
 	DC.L	TEXT
+	dc.l	CLEAR
 	DC.L	DEFLT
 TAB4_1
 	DC.L	PEEK			; Functions
@@ -1091,21 +1093,31 @@ CALL
 ;		TRI		- draw triangle
 ;		CURVE	- draw curve
 ;
-; points are seperated with a ':' as in:
-;		LINE x1,y1:x2,y2
-;		TRI x1,y1:x2,y2:x3,y3
+;		LINE x1,y1,x2,y2
+;		TRI x1,y1,x2,y2,x3,y3
 ; RECT specifies a point then width and height
-;		RECT x1,y1:width,height
-; Color is specified with four components (padding,red,green,blue)
-;		COLOR 0,255,0,0		; is the color RED
-; Color depth may be specified in the same manner
-;		COLOR DEPTH	0,8,8,8	; specifies 24-bits for color
+;		RECT x1,y1,width,height
+; Color depth may be specified
+;		COLOR DEPTH	8		; specifies 24-bits for color
+;		COLOR 16711680	; color RED in 24-bit color
+;		COLOR 31744			; color RED in 16-bit color (color depth 5)
+;
+; Other:
+;		CLEAR <device>	- useful for clearing the graphics screen
+;											device #7
 ;******************************************************************
+
+CLEAR:
+	bsr INT_EXPR
+	move.l d0,d7
+	moveq #DEV_CLEAR,d6
+	trap #0
+	bra FINISH
 
 TEXT:
 	bsr INT_EXPR
 	bsr	TSTC					; it must be followed by a comma
-	DC.B	',',TEXTERR-*
+	dc.b	',',TEXTERR-*
 	move.l d0,-(sp)
 	bsr INT_EXPR
 	move.l d0,d2
@@ -1128,73 +1140,78 @@ DRAWBUF:
 	
 DISPBUF:
 	bsr INT_EXPR
-	moveq #7,d7
+	moveq #6,d7
 	moveq #DEV_SET_DISPBUF,d6
 	move.l d0,d1
 	trap #0
 	bra FINISH
 
+; COLOR DEPTH <bits per color component>	- value between 0 and 10
+; To enhance draw performance the resulting color is rounded to a byte aligned
+; value for the following color depths:
+; 10 results in 32 bpp color	(4 bytes of memory per color)
+;	 8 results in 24 bpp color	(3 bytes of memory per color)
+;  5 results in 16 bpp color	(2 bytes of memory per color)
+;  2 results in  8 bpp color	(1 byte of memory per color)
+;  0 results in  8 bpp color	(1 byte of memory per color)
+; for other values the bpp is 3x the color depth (drawing is slower)
+
 COLOR:
 	lea	TAB12,A1 			; use 'EXEC' to look for the
 	lea	TAB12_1,A2		; word 'DEPTH'
 	bra	EXEC
-COLOR2
-	move.l #DEV_SET_COLOR,-(sp)
-	bra COLOR3
 COLOR1
-	move.l #DEV_SET_COLOR_DEPTH,-(sp)
-COLOR3
 	bsr INT_EXPR
-	bsr	TSTC								; it must be followed by a comma
-	DC.B	',',COLORERR-*
-	move.l d0,-(sp)
-	bsr INT_EXPR
-	bsr	TSTC								; it must be followed by a comma
-	DC.B	',',COLORERR1-*
-	move.l d0,-(sp)
-	bsr INT_EXPR
-	bsr	TSTC								; it must be followed by a comma
-	DC.B	',',COLORERR2-*
-	move.l d0,-(sp)
-	bsr INT_EXPR
-	ext.w d0
-	ext.l d0
-	move.l (sp)+,d1
-	ext.w d1
-	ext.l d1
-	rol.l #8,d1
+	cmpi.l #10,d0
+	bhi QWHAT
+	move.l d0,d1
+	lsl.l #4,d0
 	or.l d1,d0
-	move.l (sp)+,d1
-	ext.w d1
-	ext.l d1
-	swap d1
+	lsl.l #4,d0
 	or.l d1,d0
-	move.l (sp)+,d1
-	ext.w d1
-	ext.l d1
-	swap d1
-	rol.l #8,d1
-	or.l d0,d1
+	cmpi.b #10,d1
+	bne.s .0001
+	or.w #$2000,d0
+	bra.s .0002
+.0001
+	cmpi.b #5,d1
+	bne.s .0003
+	or.w #$1000,d0
+	bra.s .0002
+.0003
+	cmpi.b #2,d1
+	bne.s .0004
+	or.w #$2000,d0
+	bra.s .0002
+.0004
+	tst.b d1
+	bne.s .0002
+	move.w #$2222,d0
+.0002
+	moveq #7,d7
+	moveq #DEV_SET_COLOR_DEPTH,d6
+	move.l d0,d1
+	trap #0
+	moveq #6,d7
+	trap #0
+	bra FINISH
+
+COLOR2
+	bsr INT_EXPR
+	move.l d0,d1
 	moveq #7,d7						; graphics accelerator
-	move.l (sp)+,d6
+	moveq #DEV_SET_COLOR,d6
 	trap #0
 	moveq #6,d7						; frame buffer
 	trap #0
 	bra FINISH
-COLORERR
-	add.l #4,sp
-	bra QWHAT
-COLORERR1
-	add.l #8,sp
-	bra QWHAT
-COLORERR2
-	add.l #12,sp
-	bra QWHAT
+
+; POINT <x, y>	- draws a point in the current color
 
 POINT:
 	bsr INT_EXPR
 	bsr	TSTC		it must be followed by a comma
-	DC.B	',',POINTERR-*
+	dc.b	',',POINTERR-*
 	move.l d0,-(sp)
 	bsr INT_EXPR
 	move.l d0,d2
@@ -1208,18 +1225,20 @@ POINT:
 POINTERR
 	bra QWHAT
 
+; LINE <x1,y1,x2,y2>	- draws a line in the current color
+
 LINE:
 	bsr INT_EXPR
 	bsr	TSTC							; it must be followed by a comma
-	DC.B	',',LINEERR-*
+	dc.b	',',LINEERR-*
 	move.l d0,-(sp)
 	bsr INT_EXPR
 	bsr	TSTC							; it must be followed by a comma
-	DC.B	':',LINEERR1-*
+	dc.b	',',LINEERR1-*
 	move.l d0,-(sp)	
 	bsr INT_EXPR
 	bsr	TSTC							; it must be followed by a comma
-	DC.B	',',LINEERR2-*
+	dc.b	',',LINEERR2-*
 	move.l d0,-(sp)
 	bsr INT_EXPR
 	move.l d0,d4
@@ -1250,7 +1269,7 @@ RECT:
 	move.l d0,-(sp)
 	bsr INT_EXPR
 	bsr	TSTC							; it must be followed by a comma
-	DC.B	':',LINEERR1-*
+	DC.B	',',LINEERR1-*
 	move.l d0,-(sp)	
 	bsr INT_EXPR
 	bsr	TSTC							; it must be followed by a comma
@@ -1279,7 +1298,7 @@ TRIANGLE:
 	move.l d0,-(sp)
 	bsr INT_EXPR
 	bsr	TSTC							; it must be followed by a comma
-	DC.B	':',TRIERR1-*
+	DC.B	',',TRIERR1-*
 	move.l d0,-(sp)	
 	bsr INT_EXPR
 	bsr	TSTC							; it must be followed by a comma
@@ -1287,7 +1306,7 @@ TRIANGLE:
 	move.l d0,-(sp)
 	bsr INT_EXPR
 	bsr	TSTC							; it must be followed by a comma
-	DC.B	':',TRIERR3-*
+	DC.B	',',TRIERR3-*
 	move.l d0,-(sp)
 	bsr INT_EXPR
 	bsr	TSTC							; it must be followed by a comma
@@ -1331,7 +1350,7 @@ CURVE:
 	move.l d0,-(sp)
 	bsr INT_EXPR
 	bsr	TSTC							; it must be followed by a comma
-	DC.B	':',TRIERR1-*
+	DC.B	',',TRIERR1-*
 	move.l d0,-(sp)	
 	bsr INT_EXPR
 	bsr	TSTC							; it must be followed by a comma
@@ -1339,7 +1358,7 @@ CURVE:
 	move.l d0,-(sp)
 	bsr INT_EXPR
 	bsr	TSTC							; it must be followed by a comma
-	DC.B	':',TRIERR3-*
+	DC.B	',',TRIERR3-*
 	move.l d0,-(sp)
 	bsr INT_EXPR
 	bsr	TSTC							; it must be followed by a comma
@@ -1670,7 +1689,7 @@ ConcatString:
 ; Multiply / Divide operator level, *,/,mod
 ;-------------------------------------------------------------------------------
 
-EXPR3
+EXPR3:
 	bsr	EXPR4					; get first <EXPR4>
 XP36
 	bsr XP_PUSH
@@ -1720,7 +1739,7 @@ XP_MOD:
 ;		( expr )
 ;-------------------------------------------------------------------------------
 
-EXPR4
+EXPR4:
 	LEA	TAB4,A1 			; find possible function
 	LEA	TAB4_1,A2
 	BRA	EXEC
@@ -2529,7 +2548,7 @@ QSORRY
 ASORRY
 	LEA	SRYMSG,A6
 	BRA	ERROR
-QHOW
+QHOW:
 	MOVE.L	A0,-(SP)	Error: "How?"
 AHOW
 	LEA	HOWMSG,A6
@@ -2565,11 +2584,11 @@ ETYPE
 * 'FNDNXT' will bump A1 by 2, find a CR and then start search.
 * 'FNDSKP' uses A1 to find a CR, and then starts the search.
 
-GETLN
+GETLN:
 	BSR	GOOUT		display the prompt
 	MOVE.B	#' ',D0         and a space
 	BSR	GOOUT
-	LEA	BUFFER,A0	A0 is the buffer pointer
+	LEA	BUFFER,A0	; A0 is the buffer pointer
 GL1
 	bsr	CHKIO		check keyboard
 	BEQ	GL1		wait for a char. to come in
@@ -2619,7 +2638,7 @@ GL7
 	MOVE.B	#LF,D0		echo a LF for the CR
 	BRA	GOOUT
 
-FNDLN
+FNDLN:
 	CMP.L	#$FFFF,D1	line no. must be < 65535
 	BCC	QHOW
 	MOVE.L	TXTBGN,A1	init. the text save pointer
@@ -2909,7 +2928,7 @@ TSTNUM:
 		
 ; ===== Skip over blanks in the text pointed to by A0.
 
-IGNBLK
+IGNBLK:
 	CMP.B	#' ',(A0)+		; see if it's a space
 	BEQ	IGNBLK					; if so, swallow it
 	SUBQ.L #1,A0				; decrement the text pointer
