@@ -50,7 +50,7 @@ import const_pkg::*;
 module IOBridge(rst_i, clk_i, fta_en_i, io_gate_en_i,
 	s1_cyc_i, s1_stb_i, s1_ack_o, s1_we_i, s1_sel_i, s1_adr_i, s1_dat_i, s1_dat_o,
 	s2_cyc_i, s2_stb_i, s2_ack_o, s2_we_i, s2_sel_i, s2_adr_i, s2_dat_i, s2_dat_o,
-	m_cyc_o, m_stb_o, m_ack_i, m_we_o, m_sel_o, m_adr_o, m_dat_i, m_dat_o,
+	m_cyc_o, m_stb_o, m_ack_i, m_stall_i, m_we_o, m_sel_o, m_adr_o, m_dat_i, m_dat_o,
 	m_fta_o);
 parameter WID=32;
 parameter IDLE = 3'd0;
@@ -84,6 +84,7 @@ output reg [31:0] s2_dat_o;
 output reg m_cyc_o;
 output reg m_stb_o;
 input m_ack_i;
+input m_stall_i;
 output reg m_we_o;
 output reg [3:0] m_sel_o;
 output reg [31:0] m_adr_o;
@@ -139,7 +140,7 @@ else begin
 	m_fta_o.req.adr <= 32'd0;
 case(state)
 IDLE:
-  if (~m_ack_i & io_gate_en_i) begin
+  if (~m_ack_i & io_gate_en_i & ~m_stall_i) begin
     // Filter requests to the I/O address range
     if (s1_cyc & s1_stb_i) begin
     	which <= 2'b00;
@@ -325,7 +326,7 @@ WAIT_NACK:
 	end
 default:	state <= IDLE;
 endcase
-	if (s1_stb_i && !s1_cycd && s1_adr_i[31:20]==12'hFD2 && fta_en_i) begin
+	if (s1_stb_i && !s1_cycd && s1_adr_i[31:20]==12'hFD2 && fta_en_i && !m_stall_i) begin
 		which <= 2'b10;
 		m_fta_o.req.cmd <= s1_we_i ? fta_bus_pkg::CMD_STORE : fta_bus_pkg::CMD_LOAD;
 		m_fta_o.req.cyc <= HIGH;

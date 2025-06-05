@@ -47,7 +47,7 @@ module rf68000_soc(cpu_reset_n, sysclk_p, sysclk_n, led, sw, btnl, btnr, btnc, b
   hdmi_tx_clk_p, hdmi_tx_clk_n, hdmi_tx_p, hdmi_tx_n,
 //  ac_mclk, ac_adc_sdata, ac_dac_sdata, ac_bclk, ac_lrclk,
 //  rtc_clk, rtc_data,
-//  spiClkOut, spiDataIn, spiDataOut, spiCS_n,
+  spiClkOut, spiDataIn, spiDataOut, spiCS_n, spiReset, sd_cd,
 //  sd_cmd, sd_dat, sd_clk, sd_cd, sd_reset,
 //  pti_clk, pti_rxf, pti_txe, pti_rd, pti_wr, pti_siwu, pti_oe, pti_dat, spien,
   oled_sdin, oled_sclk, oled_dc, oled_res, oled_vbat, oled_vdd
@@ -88,6 +88,13 @@ output hdmi_tx_clk_n;
 output [2:0] hdmi_tx_p;
 output [2:0] hdmi_tx_n;
 
+output spiClkOut;
+input spiDataIn;
+output spiDataOut;
+output spiCS_n;
+output spiReset;
+input sd_cd;
+
 output oled_sdin;
 output oled_sclk;
 output oled_dc;
@@ -126,7 +133,7 @@ wire node_clk1;
 wire node_clk2;
 wire node_clk3;
 wire node_clk4;
-wire dot_clk = clk140;
+wire dot_clk = clk40;
 wb_cmd_request256_t ch7req;
 wb_cmd_request256_t ch7dreq;	// DRAM request
 wb_cmd_response256_t ch7resp;
@@ -149,6 +156,7 @@ wire [31:0] mmu_dato;
 wire br1_cyc;
 wire br1_stb;
 reg br1_ack;
+reg br1_stall;
 wire br1_we;
 wire [3:0] br1_sel;
 wire [31:0] br1_adr;
@@ -188,6 +196,8 @@ wire acia_irq;
 wire i2c2_ack;
 wire [7:0] i2c2_dato;
 wire i2c2_irq;
+wire [7:0] spi_dato;
+wire spi_ack;
 wire plic_ack;
 wire [3:0] plic_irq;
 wire [31:0] plic_dato;
@@ -235,7 +245,7 @@ WXGA800x600_clkgen ucg1
   .clk200(clk200),	// 200 MHz	ddr3 interface clock
   .clk100(clk100),
   .clk50(clk50),
-  .clk40(),					// 40.000 MHz video / cpu clock
+  .clk40(clk40),					// 40.000 MHz video / cpu clock
   .clk20(clk20),					// cpu
   .clk17(clk17),
   .clk33(clk33),
@@ -268,14 +278,14 @@ assign rst = !(locked|locked2);
 rgb2dvi ur2d1
 (
 	.rst(rst),
-	.PixelClk(clk140),
-	.SerialClk(clk700),
+	.PixelClk(clk40),
+	.SerialClk(clk200),
 	.red(red[7:0]),
 	.green(green[7:0]),
 	.blue(blue[7:0]),
 	.de(~blank),
-	.hSync(~hSync),	// ~ for 640x480 100 Hz
-	.vSync(~vSync),
+	.hSync(hSync),	// ~ for 640x480 100 Hz, -,- for 1920x1080
+	.vSync(vSync),	// +,+ for 800x600
 	.TMDS_Clk_p(hdmi_tx_clk_p),
 	.TMDS_Clk_n(hdmi_tx_clk_n),
 	.TMDS_Data_p(hdmi_tx_p),
@@ -312,6 +322,7 @@ wire cs_sema = cpu_adr[31:16]==16'hFD05 && ch7req.stb && cs_io2;
 wire cs_acia = cpu_adr[31:12]==20'hFD060 && ch7req.stb && cs_io2;
 wire cs_br3_acia = br3_adr[31:12]==20'hFD060 && br3_stb && cs_io2;
 wire cs_br3_i2c2 = br3_adr[31:12]==20'hFD069 && br3_stb && cs_io2;
+wire cs_br3_spi = br3_adr[31:12]==20'hFD06A && br3_stb && cs_io2;
 wire cs_scr = cpu_adr[31:20]==12'h001 && cpu_stb;
 wire cs_plic = cpu_adr[31:12]==20'hFD090 && cs_io2;
 wire cs_br3_plic = br3_adr[31:12]==20'hFD090 && cs_io2;
@@ -395,9 +406,9 @@ begin
 	gfxs_req.dat = br1_dato;
 end
 
-gfx256_top ugfx1
+gfx_top ugfx1
 (
-	.wb_clk_i(clk50),
+	.wb_clk_i(clk100),
 	.wb_rst_i(rst),
 	.wb_inta_o(),
   // Wishbone master signals (interfaces with video memory, write)
@@ -410,13 +421,13 @@ gfx256_top ugfx1
   .wbs_resp(gfxs_resp)
 );
 
-assign gfx_if.clk = clk50;
+assign gfx_if.clk = clk100;
 assign gfx_if.rst = rst;
 
 wb_to_fta_bridge uwb2fta2
 (
 	.rst_i(rst),
-	.clk_i(clk50),
+	.clk_i(clk100),
 	.cs_i(1'b1),
 	.cyc_i(gfxm_req.cyc),
 	.stb_i(gfxm_req.stb),
@@ -517,6 +528,7 @@ IOBridge ubridge1
 	.m_cyc_o(br1_cyc),
 	.m_stb_o(br1_stb),
 	.m_ack_i(br1_ack),
+	.m_stall_i(br1_stall),
 	.m_we_o(br1_we),
 	.m_sel_o(br1_sel),
 	.m_adr_o(br1_adr),
@@ -526,16 +538,19 @@ IOBridge ubridge1
 );
 
 assign br1_fta.rst = rst;
-assign br1_fta.clk = node_clk;
+assign br1_fta.clk = clk100;
 
-always_ff @(posedge node_clk)
+always_ff @(posedge clk100)
 	br1_dati <= tc_dato|gfxs_resp.dat;
 
-always_ff @(posedge node_clk)
+always_ff @(posedge clk100)
 	br1_ack <= tc_ack|gfxs_resp.ack;
 
+always_ff @(posedge clk100)
+	br1_stall <= gfxs_resp.stall;
+
 wire kclk_en, kdat_en;
-PS2kbd #(.pClkFreq(20000000)) ukbd1
+PS2kbd #(.pClkFreq(100000000)) ukbd1
 (
 	// WISHBONE/SoC bus interface 
 	.rst_i(rst),
@@ -657,6 +672,7 @@ IOBridge ubridge3
 	.m_cyc_o(br3_cyc),
 	.m_stb_o(br3_stb),
 	.m_ack_i(br3_ack),
+	.m_stall_i(1'b0),
 	.m_we_o(br3_we),
 	.m_sel_o(br3_sel),
 	.m_adr_o(br3_adr),
@@ -673,17 +689,38 @@ assign br3_fta.resp.dat = 32'd0;
 always_ff @(posedge clk100)
 	casez(cs_br3_leds)
 	1'b1:	br3_dati <= led;
-	1'b0:	br3_dati <= {4{kbd_dato}}|rand_dato|acia_dato|{4{i2c2_dato}};
-	default:	br3_dati <= 32'd0;
+	1'b0:	br3_dati <= {4{kbd_dato}}|rand_dato|acia_dato|{4{i2c2_dato}}|{4{spi_dato}};
 	endcase
 
 always_ff @(posedge clk100)
-	br3_ack <= leds_ack|kbd_ack|rand_ack|acia_ack|i2c2_ack|rst_ack;
+	br3_ack <= leds_ack|kbd_ack|rand_ack|acia_ack|i2c2_ack|rst_ack|spi_ack;
 
 assign leds_ack = cs_br3_leds;
 always_ff @(posedge clk100)
 	if (cs_br3_leds & br3_we)
 		led <= br3_dato[7:0];
+
+spiMaster uspi1 (
+  .clk_i(node_clk),
+  .rst_i(rst),
+  .address_i(br3_adr[7:0]),
+  .data_i(br3_dato[7:0]),
+  .data_o(spi_dato),
+  .strobe_i(br3_cyc && cs_br3_spi),
+  .we_i(br3_we),
+  .ack_o(spi_ack),
+
+  // SPI logic clock
+  .spiSysClk(clk20),
+
+  //SPI bus
+  .cardDetect(sd_cd),
+  .spiReset(spiReset),
+  .spiClkOut(spiClkOut),
+  .spiDataIn(spiDataIn),
+  .spiDataOut(spiDataOut),
+  .spiCS_n(spiCS_n)
+);
 
 wire calib_complete;
 wire [29:0] mem_addr;
@@ -773,8 +810,9 @@ assign ch6_if.req = {$bits(fta_cmd_request256_t){1'b0}};
 
 mpmc11_fta
 #(
-	.PORT_PRESENT(8'h91),
-	.STREAM(8'h21)
+	.PORT_PRESENT(9'h191),
+	.STREAM(8'h21),
+	.CACHE(8'h4E)
 )
 umpmc1
 (
@@ -1139,7 +1177,7 @@ ila_0 uila1 (
 	.clk(mem_ui_clk), // input wire clk
 
 //	.probe0(umpmc1.req_fifoo.req.padr), // input wire [31:0]  probe0  
-	.probe0(unode1.adr1),//umpu1.ucpu1.pc), // input wire [31:0]  probe0  
+	.probe0(ugfx1.render_wbmwriter_addr),//umpu1.ucpu1.pc), // input wire [31:0]  probe0  
 	.probe1(unode1.cyc1),//umpmc1.req_fifoo.req.cyc), // input wire [0:0]  probe1 
 	.probe2(unode1.ack1),//umpmc1.req_fifoo.req.we), // input wire [0:0]  probe2
 	.probe3(unode1.we1),
@@ -1152,18 +1190,28 @@ ila_0 uila1 (
 	.probe10(cs_dram),
 //	.probe11({unode1.ram1_we[3:0],cpu_if.req.cmd}),
 	.probe11({
-		unode1.sel1,
-		ugfx1.wbs_raster_point_write,
+		spiDataOut,
+		spiDataIn,
+		spiClkOut,
+		spiCS_n,
+		spiReset,
+		gfxm_req.cyc,
+		gfxm_req.we,
+		gfxm_resp.ack,
+		ugfx1.wbmreader_arbiter_ack,
 		ugfx1.raster_clip_write,
-		ugfx1.clip_fragment_write_enable,
-		ugfx1.fragment_blender_write_enable,
-		ugfx1.blender_render_write_enable,
+		ugfx1.clip_wbmreader_z_request,
+		ugfx1.fragment_wbmreader_texture_request,
+		ugfx1.blender_wbmreader_target_request,
+		ugfx1.render_wbmwriter_memory_pixel_read,
 		ugfx1.render_wbmwriter_memory_pixel_write,
+		ugfx1.textblit_read_request,
 		ugfx1.clip_ack,
 		ugfx1.fragment_clip_ack,
 		ugfx1.wbmwriter_render_ack,
 		ugfx1.blender_fragment_ack,
 		ugfx1.render_blender_ack,
+		ugfx1.transform_wbs_ack,
 		ugfx1.raster_wbs_ack
 	}),
 	.probe12(umpmc1.app_wdf_rdy),
@@ -1171,11 +1219,11 @@ ila_0 uila1 (
 	.probe14(umpmc1.app_wdf_wren),
 	.probe15(umpmc1.app_rdy),
 	.probe16(umpmc1.app_en),
-	.probe17({ugfx1.rasterizer0.clip_ack_i,ugfx1.rasterizer0.clip_write_o,ugfx1.rasterizer0.state}),
+	.probe17({ugfx1.rasterizer0.clip_ack_i,ugfx1.rasterizer0.clip_write_o,ugfx1.rasterizer0.raster_state}),
 	.probe18(unode1.dato1),
 	.probe19(1'b0),
-	.probe20(ugfx1.clip.state),//uframebuf1.state)
-	.probe21(ugfx1.fp0.state)
+	.probe20(ugfx1.clip.clip_state),//uframebuf1.state)
+	.probe21(umpmc1.req_fifoo.port)
 );
 
 /*
@@ -1248,14 +1296,14 @@ rf68000_node #(.SUPPORT_DECFLT(1'b1)) unode1
 	.clk(node_clk1),
 	.dfclk(dfclk),
 	.packet_i(packet[5]),
-	.packet_o(packet[0]),
+	.packet_o(packet[3]),		// was 0
 	.rpacket_i(rpacket[5]),
-	.rpacket_o(rpacket[0]),
+	.rpacket_o(rpacket[3]),
 	.ipacket_i(ipacket[5]),
-	.ipacket_o(ipacket[0])
+	.ipacket_o(ipacket[3])
 );
 
-
+/*
 rf68000_node #(.SUPPORT_DECFLT(1'b1)) unode2
 (
 	.id(5'd2),
@@ -1271,7 +1319,7 @@ rf68000_node #(.SUPPORT_DECFLT(1'b1)) unode2
 	.ipacket_i(ipacket[0]),
 	.ipacket_o(ipacket[3])
 );
-
+*/
 /*
 rf68000_node #(.SUPPORT_DECFLT(1'b0)) unode3
 (

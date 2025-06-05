@@ -57,6 +57,14 @@ set_property -dict {PACKAGE_PIN Y20 IOSTANDARD LVCMOS33} [get_ports uart_tx_in]
 #set_property -dict { PACKAGE_PIN AE24  IOSTANDARD LVCMOS33 } [get_ports { sd_reset }]; #IO_L12N_T1_MRCC_12 Sch=sd_reset
 #set_property -dict { PACKAGE_PIN R28   IOSTANDARD LVCMOS33 } [get_ports { sd_sclk }]; #IO_L11P_T1_SRCC_14 Sch=sd_sclk
 
+set_property -dict { PACKAGE_PIN P28   IOSTANDARD LVCMOS33 } [get_ports { sd_cd }]; #IO_L8N_T1_D12_14 Sch=sd_cd
+set_property -dict { PACKAGE_PIN AE24  IOSTANDARD LVCMOS33 } [get_ports { spiReset }]; #IO_L12N_T1_MRCC_12 Sch=sd_reset
+set_property -dict { PACKAGE_PIN R29   IOSTANDARD LVCMOS33 } [get_ports { spiDataOut }]; #IO_L7N_T1_D10_14 Sch=sd_cmd
+set_property -dict { PACKAGE_PIN R26   IOSTANDARD LVCMOS33 } [get_ports { spiDataIn }]; #IO_L10N_T1_D15_14 Sch=sd_dat[0]
+set_property -dict { PACKAGE_PIN T30   IOSTANDARD LVCMOS33 } [get_ports { spiCS_n }]; #IO_L9N_T1_DQS_D13_14 Sch=sd_dat[3]
+set_property -dict { PACKAGE_PIN R28   IOSTANDARD LVCMOS33 } [get_ports { spiClkOut }]; #IO_L11P_T1_SRCC_14 Sch=sd_sclk
+
+
 ## Audio Codec
 #set_property -dict { PACKAGE_PIN AH19  IOSTANDARD LVCMOS18 } [get_ports { aud_adc_sdata }]; #IO_L8N_T1_32 Sch=aud_adc_sdata
 #set_property -dict { PACKAGE_PIN AD19  IOSTANDARD LVCMOS18 } [get_ports { aud_adr[0] }]; #IO_L10P_T1_32 Sch=aud_adr[0]
