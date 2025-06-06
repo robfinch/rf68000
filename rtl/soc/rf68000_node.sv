@@ -54,14 +54,16 @@ output packet_t rpacket_o;
 input ipacket_t ipacket_i;
 output ipacket_t ipacket_o;
 
-wire [2:0] fc1, fc2;
+wire [2:0] fc1, fc2, fc1a;
 wire cyc1, stb1, ack1;
+wire cyc1a, stb1a, ack1a;
 wire cyc2, stb2, ack2;
-wire we1, we2;
-wire [3:0] sel1, sel2;
-wire [31:0] adr1, adr2;
+wire we1, we2, we1a;
+wire [3:0] sel1, sel2, sel1a;
+wire [31:0] adr1, adr2, adr1a;
 reg [31:0] dati1, dati2;
-wire [31:0] dato1, dato2;
+wire [31:0] dati1a;
+wire [31:0] dato1, dato2, dato1a;
 wire ram1_en, ram2_en;
 wire [3:0] ram1_we, ram2_we;
 wire [31:0] ram1_adr, ram2_adr;
@@ -80,8 +82,8 @@ wire nic1_sack, nic2_sack;
 wire [31:0] nic1_sdato, nic2_sdato;
 wire [2:0] cpu1_irq, cpu2_irq;
 wire [7:0] cpu1_icause, cpu2_icause;
-wire err1, err2;
-wire vpa1, vpa2;
+wire err1, err2, err1a;
+wire vpa1, vpa2, vpa1a;
 wire spram1_ack, spram2_ack;
 wire [31:0] spram1o, spram2o;
 wire [7:0] asid1, asid2;
@@ -314,24 +316,57 @@ rf68000 #(.SUPPORT_DECFLT(SUPPORT_DECFLT)) ucpu1
 	.dfclk_i(dfclk),
 	.nmi_i(1'b0),
 	.ipl_i(cpu1_irq),
-	.vpa_i(vpa1),
+	.vpa_i(vpa1a),
 	.lock_o(),
-	.cyc_o(cyc1),
-	.stb_o(stb1),
-	.ack_i(ack1),
-	.err_i(err1),
+	.cyc_o(cyc1a),
+	.stb_o(stb1a),
+	.ack_i(ack1a),
+	.err_i(err1a),
 	.rty_i(1'b0),
-	.we_o(we1),
-	.sel_o(sel1),
-	.fc_o(fc1),
+	.we_o(we1a),
+	.sel_o(sel1a),
+	.fc_o(fc1a),
 	.asid_o(asid1),
 	.mmus_o(mmus1),
 	.ios_o(ios1),
 	.iops_o(iops1),
-	.adr_o(adr1),
-	.dat_i(dati1),
-	.dat_o(dato1)
+	.adr_o(adr1a),
+	.dat_i(dati1a),
+	.dat_o(dato1a)
 );
+
+rf68851 ummu1
+(
+	.rst_i(rst1),
+	.clk_i(clk),
+	
+	.cfc_i(fc1a),
+	.ccyc_i(cyc1a),
+	.cstb_i(stb1a),
+	.cack_o(ack1a),
+	.cerr_o(err1a),
+	.cvpa_o(vpa1a),
+	.cwe_i(we1a),
+	.csel_i(sel1a),
+	.cadr_i(adr1a),
+	.cdat_i(dati1a),
+	.cdat_o(dato1a),
+	
+	.mfc_o(fc1),
+	.mcyc_o(cyc1),
+	.mstb_o(stb1),
+	.mack_i(ack1),
+	.merr_i(err1),
+	.mvpa_i(vpa1),
+	.mwe_o(we1),
+	.msel_o(sel1),
+	.madr_o(adr1),
+	.mdat_o(dato1),
+	.mdat_i(dati1),
+
+	.page_fault_o()
+);
+
 
 rf68000 #(.SUPPORT_DECFLT(SUPPORT_DECFLT)) ucpu2
 (
