@@ -35,6 +35,7 @@ DT_NONE equ 0
 DT_NUMERIC equ 1
 DT_STRING equ 2		; string descriptor
 DT_TEXTPTR equ 3	; pointer into program text
+DT_INTEGER equ 4
 
 BUFLEN	EQU	80		length of keyboard input buffer
 STRAREASIZE	EQU	2048	; size of string area
@@ -1407,7 +1408,7 @@ CURVE:
 
 XP_PUSH:
 	move.l (sp)+,a1				; a1 = return address
-	move.l _canary,-(sp)	; push the canary
+;	move.l _canary,-(sp)	; push the canary
 	sub.l #16,sp					; allocate for value
 	move.l d0,(sp)				; push data type
 	fmove.x fp0,4(sp)			; and value
@@ -1422,7 +1423,7 @@ XP_POP:
 	move.l (sp),d0			; pop data type
 	fmove.x 4(sp),fp0		; and data element
 	add.l #16,sp
-	cchk (sp)						; check the canary
+;	cchk (sp)						; check the canary
 	add.l #4,sp					; pop canary	
 	jmp (a1)
 
@@ -1435,7 +1436,7 @@ XP_POP1:
 	move.l (sp),d1			; pop data type
 	fmove.x 4(sp),fp1		; and data element
 	add.l #16,sp
-	cchk (sp)						; check the canary
+;	cchk (sp)						; check the canary
 	add.l #4,sp					; pop canary
 	jmp (a1)
 
@@ -1481,13 +1482,13 @@ EXPR_OR:
 ;-------------------------------------------------------------------------------
 
 XP_OR:
-	BSR EXPR_AND
+	bsr EXPR_AND
 	bsr XP_POP1
 	bsr CheckNumeric
-	FMOVE.L FP1,D1
-	FMOVE.L FP0,D0
-	OR.L D1,D0
-	FMOVE.L D0,FP0
+	fmove.L FP1,D3
+	fmove.L FP0,D2
+	or.L D3,D2
+	fmove.L D2,FP0
 	rts
 	
 ;-------------------------------------------------------------------------------
@@ -1505,10 +1506,10 @@ XP_AND:
 	BSR EXPR_REL
 	bsr XP_POP1
 	bsr CheckNumeric
-	FMOVE.L FP1,D1
-	FMOVE.L FP0,D0
-	AND.L D1,D0
-	FMOVE.L D0,FP0
+	FMOVE.L FP1,D3
+	FMOVE.L FP0,D2
+	AND.L D3,D2
+	FMOVE.L D2,FP0
 	RTS
 	
 XP_ANDX:
@@ -2199,7 +2200,7 @@ PEEK
 	MOVE.B (A1),D0
 	FMOVE.B	D0,FP0 	; get the addressed byte
 	moveq #DT_NUMERIC,d0					; data type is a number
-	RTS							; and return it
+	rts							; and return it
 .0002
 	cmpi.b #'W',d7
 	bne .0003
@@ -2207,7 +2208,7 @@ PEEK
 	MOVE.W (A1),D0
 	FMOVE.W	D0,FP0	;	get the addressed word
 	moveq #DT_NUMERIC,d0					; data type is a number
-	RTS							; and return it
+	rts							; and return it
 .0003
 	cmpi.b #'L',d7
 	bne .0004
@@ -2215,13 +2216,13 @@ PEEK
 	MOVE.L (A1),D0
 	FMOVE.L	D0,FP0 	; get the lword
 	moveq #DT_NUMERIC,d0					; data type is a number
-	RTS							; and return it
+	rts							; and return it
 .0004
 	cmpi.b #'F',d7
 	bne .0005
 	FMOVE.X	(A1),FP0 		; get the addressed float
 	moveq #DT_NUMERIC,d0					; data type is a number
-	RTS			and return it
+	rts							; and return it
 
 ;-------------------------------------------------------------------------------
 ; The RND function returns a random number from 0 to the value of the following
@@ -2451,35 +2452,35 @@ CHR:
 	fmove.x _fpWork,fp0
 	rts
 
-********************************************************************
-*
-* *** SETVAL *** FIN *** ENDCHK *** ERROR (& friends) ***
-*
-* 'SETVAL' expects a variable, followed by an equal sign and then
-* an expression.  It evaluates the expression and sets the variable
-* to that value.
-*
-* 'FIN' checks the end of a command.  If it ended with ":",
-* execution continues.	If it ended with a CR, it finds the
-* the next line and continues from there.
-*
-* 'ENDCHK' checks if a command is ended with a CR. This is
-* required in certain commands, such as GOTO, RETURN, STOP, etc.
-*
-* 'ERROR' prints the string pointed to by A0. It then prints the
-* line pointed to by CURRNT with a "?" inserted at where the
-* old text pointer (should be on top of the stack) points to.
-* Execution of Tiny BASIC is stopped and a warm start is done.
-* If CURRNT is zero (indicating a direct command), the direct
-* command is not printed. If CURRNT is -1 (indicating
-* 'INPUT' command in progress), the input line is not printed
-* and execution is not terminated but continues at 'INPERR'.
-*
-* Related to 'ERROR' are the following:
-* 'QWHAT' saves text pointer on stack and gets "What?" message.
-* 'AWHAT' just gets the "What?" message and jumps to 'ERROR'.
-* 'QSORRY' and 'ASORRY' do the same kind of thing.
-* 'QHOW' and 'AHOW' also do this for "How?".
+;*******************************************************************
+;
+; *** SETVAL *** FIN *** ENDCHK *** ERROR (& friends) ***
+;
+; 'SETVAL' expects a variable, followed by an equal sign and then
+; an expression.  It evaluates the expression and sets the variable
+; to that value.
+;
+; 'FIN' checks the end of a command.  If it ended with ":",
+; execution continues.	If it ended with a CR, it finds the
+; the next line and continues from there.
+;
+; 'ENDCHK' checks if a command is ended with a CR. This is
+; required in certain commands, such as GOTO, RETURN, STOP, etc.
+;
+; 'ERROR' prints the string pointed to by A0. It then prints the
+; line pointed to by CURRNT with a "?" inserted at where the
+; old text pointer (should be on top of the stack) points to.
+; Execution of Tiny BASIC is stopped and a warm start is done.
+; If CURRNT is zero (indicating a direct command), the direct
+; command is not printed. If CURRNT is -1 (indicating
+; 'INPUT' command in progress), the input line is not printed
+; and execution is not terminated but continues at 'INPERR'.
+;
+; Related to 'ERROR' are the following:
+; 'QWHAT' saves text pointer on stack and gets "What?" message.
+; 'AWHAT' just gets the "What?" message and jumps to 'ERROR'.
+; 'QSORRY' and 'ASORRY' do the same kind of thing.
+; 'QHOW' and 'AHOW' also do this for "How?".
 
 ; SETVAL
 ; Returns:

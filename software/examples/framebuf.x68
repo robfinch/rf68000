@@ -135,7 +135,7 @@ framebuf_init:
 	move.b #1,FRAMEBUF+0		; turn on frame buffer
 	move.l #$88880000,FRAMEBUF+FRAMEBUF_COLOR_COMP	; 8-8-8-8 color
 	move.b #$11,FRAMEBUF+2	; hres 1:1 vres 1:1
-	move.l #$3100000F,FRAMEBUF+4		; burst length, burst interval
+	move.l #$6300000F,FRAMEBUF+4		; burst length, burst interval
 	move.l #$ffffff00,framebuf_dcb+DCB_FGCOLOR	; white
 	move.l #$0f000000,framebuf_dcb+DCB_BKCOLOR	; medium blue
 	clr.l framebuf_dcb+DCB_OUTPOSX

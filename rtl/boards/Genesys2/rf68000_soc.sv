@@ -46,7 +46,8 @@ module rf68000_soc(cpu_reset_n, sysclk_p, sysclk_n, led, sw, btnl, btnr, btnc, b
   ps2_clk_0, ps2_data_0, uart_rx_out, uart_tx_in,
   hdmi_tx_clk_p, hdmi_tx_clk_n, hdmi_tx_p, hdmi_tx_n,
 //  ac_mclk, ac_adc_sdata, ac_dac_sdata, ac_bclk, ac_lrclk,
-//  rtc_clk, rtc_data,
+  rtc_clk, rtc_data,
+	aud_adc_sdata, aud_adr, aud_bclk, aud_dac_sdata, aud_lrclk, aud_mclk, aud_scl, aud_sda,
   spiClkOut, spiDataIn, spiDataOut, spiCS_n, spiReset, sd_cd,
 //  sd_cmd, sd_dat, sd_clk, sd_cd, sd_reset,
 //  pti_clk, pti_rxf, pti_txe, pti_rd, pti_wr, pti_siwu, pti_oe, pti_dat, spien,
@@ -87,6 +88,18 @@ output hdmi_tx_clk_p;
 output hdmi_tx_clk_n;
 output [2:0] hdmi_tx_p;
 output [2:0] hdmi_tx_n;
+
+inout tri rtc_clk;
+inout tri rtc_data;
+
+input aud_adc_sdata;
+output [1:0] aud_adr;
+output aud_bclk;
+output aud_dac_sdata;
+output aud_lrclk;
+output aud_mclk;
+inout tri aud_scl;
+inout tri aud_sda;
 
 output spiClkOut;
 input spiDataIn;
@@ -181,6 +194,18 @@ wire fb_ack;
 wire [31:0] fb_dato;
 wire tc_ack;
 wire [31:0] tc_dato;
+
+wire [31:0] psg_dato;
+wire psg_ack;
+wire psgm_cyc;
+wire psgm_stb;
+wire psgm_ack;
+wire psgm_we;
+wire [31:0] psgm_sel;
+wire [31:0] psgm_adr;
+wire [255:0] psgm_dati;
+wire [255:0] psgm_dato;
+
 wire kbd_ack;
 wire kbd_irq;
 wire [7:0] kbd_dato;
@@ -193,6 +218,8 @@ wire [31:0] scr_dato;
 wire acia_ack;
 wire [31:0] acia_dato;
 wire acia_irq;
+wire i2c1_ack;
+wire [7:0] i2c1_dato;
 wire i2c2_ack;
 wire [7:0] i2c2_dato;
 wire i2c2_irq;
@@ -321,7 +348,8 @@ wire cs_br3_rand  = br3_adr[31:8]==24'hFD0FFD && br3_stb && cs_io2;
 wire cs_sema = cpu_adr[31:16]==16'hFD05 && ch7req.stb && cs_io2;
 wire cs_acia = cpu_adr[31:12]==20'hFD060 && ch7req.stb && cs_io2;
 wire cs_br3_acia = br3_adr[31:12]==20'hFD060 && br3_stb && cs_io2;
-wire cs_br3_i2c2 = br3_adr[31:12]==20'hFD069 && br3_stb && cs_io2;
+wire cs_br1_i2c1 = br1_adr[31:4]==28'hFD06900 && br1_stb && cs_io2;
+wire cs_br3_i2c2 = br3_adr[31:4]==28'hFD06901 && br3_stb && cs_io2;
 wire cs_br3_spi = br3_adr[31:12]==20'hFD06A && br3_stb && cs_io2;
 wire cs_scr = cpu_adr[31:20]==12'h001 && cpu_stb;
 wire cs_plic = cpu_adr[31:12]==20'hFD090 && cs_io2;
@@ -334,7 +362,7 @@ fta_bus_interface #(.DATA_WIDTH(256)) fbm_if();
 fta_bus_interface #(.DATA_WIDTH(256)) cpu_if();
 fta_bus_interface #(.DATA_WIDTH(256)) ch1_if();
 fta_bus_interface #(.DATA_WIDTH(256)) ch2_if();
-fta_bus_interface #(.DATA_WIDTH(256)) ch3_if();
+fta_bus_interface #(.DATA_WIDTH(256)) psgm_if();
 fta_bus_interface #(.DATA_WIDTH(256)) ch4_if();
 fta_bus_interface #(.DATA_WIDTH(256)) ch5_if();
 fta_bus_interface #(.DATA_WIDTH(256)) ch6_if();
@@ -537,14 +565,93 @@ IOBridge ubridge1
 	.m_fta_o(br1_fta)
 );
 
+
+PSG32 #(.MDW(256)) upsg1
+(
+	.rst_i(rst),
+	.clk_i(node_clk),
+	.clk100_i(clk100),
+	.cs_i(cs_br1_psg), 
+	.cyc_i(br1_cyc),
+	.stb_i(br1_stb),
+	.ack_o(psg_ack),
+	.rdy_o(),
+	.we_i(br1_we),
+	.adr_i(br1_adr[8:0]),
+	.dat_i(br1_dato),
+	.dat_o(psg_dato),
+	.m_cyc_o(psgm_cyc),
+	.m_stb_o(psgm_stb),
+	.m_ack_i(psgm_ack_i),
+	.m_we_o(psgm_we),
+	.m_sel_o(psgm_sel),
+	.m_adr_o(psgm_adr),
+	.m_dat_i(psgm_dat_i),
+	.m_dat_o(psgm_dat_o),
+	.aud_i(),
+	.aud_o()
+);
+
+assign psgm_if.rst = mem_ui_rst;
+assign psgm_if.clk = clk100;
+
+wb_to_fta_bridge uwb2fta3
+(
+	.rst_i(rst),
+	.clk_i(clk100),
+	.cs_i(1'b1),
+	.cyc_i(psgm_cyc),
+	.stb_i(psgm_stb),
+	.ack_o(psgm_ack),
+	.err_o(),
+	.we_i(psgm_we),
+	.sel_i(psgm_sel),
+	.adr_i(psgm_adr),
+	.dat_i(psgm_dato),
+	.dat_o(psgm_dati),
+	.fta_o(psgm_if)
+);
+
+wire scl, sda;
+wire scl_padoen_o,sda_padoen_o;
+
+i2c_master_top #(
+	.ARST_LVL(1'b1),
+	.ZERO_DATA(1'b1),
+	.TIMING_HONORED(1'b0)
+) ui2c1 
+(
+	.wb_clk_i(node_clk),
+	.wb_rst_i(rst),
+	.arst_i(rst),
+	.wb_adr_i(br1_adr[2:0]),
+	.wb_dat_i(br1_dato[7:0]),
+	.wb_dat_o(i2c1_dato),
+	.wb_we_i(br1_we),
+	.wb_stb_i(br1_stb & cs_br1_i2c1),
+	.wb_cyc_i(br1_cyc & cs_br1_i2c1),
+	.wb_ack_o(i2c1_ack),
+	.wb_inta_o(),
+	.scl_pad_i(aud_scl),
+	.scl_pad_o(scl),
+	.scl_padoen_o(scl_padoen_o),
+	.sda_pad_i(aud_sda),
+	.sda_pad_o(sda),
+	.sda_padoen_o(sda_padoen_o)
+);
+
+assign aud_scl = scl_padoen_o ? 1'bz : scl;
+assign aud_sda = sda_padoen_o ? 1'bz : sda;
+
+
 assign br1_fta.rst = rst;
 assign br1_fta.clk = clk100;
 
 always_ff @(posedge clk100)
-	br1_dati <= tc_dato|gfxs_resp.dat;
+	br1_dati <= tc_dato|gfxs_resp.dat|{4{i2c1_dato}};
 
 always_ff @(posedge clk100)
-	br1_ack <= tc_ack|gfxs_resp.ack;
+	br1_ack <= tc_ack|gfxs_resp.ack|i2c1_ack;
 
 always_ff @(posedge clk100)
 	br1_stall <= gfxs_resp.stall;
@@ -620,8 +727,8 @@ uart6551 #(.pClkFreq(100), .pClkDiv(24'd130)) uuart
 
 wire rtc_clko, rtc_clkoen;
 wire rtc_datao, rtc_dataoen;
-/*
-i2c_master_top ui2cm1
+
+i2c_master_top ui2cm2
 (
 	.wb_clk_i(node_clk),
 	.wb_rst_i(rst),
@@ -641,12 +748,12 @@ i2c_master_top ui2cm1
 	.sda_pad_o(rtc_datao), 
 	.sda_padoen_o(rtc_dataoen)
 );
-assign rtc_clk = rtc_clkoen ? 'bz : rtc_clko;
-assign rtc_data = rtc_dataoen ? 'bz : rtc_datao;
-*/
+assign rtc_clk = rtc_clkoen ? 1'bz : rtc_clko;
+assign rtc_data = rtc_dataoen ? 1'bz : rtc_datao;
+/*
 assign i2c2_dato = 8'd0;
 assign i2c2_ack = 1'b0;
-
+*/
 IOBridge ubridge3
 (
 	.rst_i(rst),
@@ -790,19 +897,16 @@ assign cpu_if.rst = rst;
 assign cpu_if.clk = node_clk;
 assign ch1_if.rst = 1'b1;
 assign ch2_if.rst = 1'b1;
-assign ch3_if.rst = 1'b1;
 assign ch4_if.rst = 1'b1;
 assign ch5_if.rst = 1'b1;
 assign ch6_if.rst = rst;
 assign ch1_if.clk = node_clk;
 assign ch2_if.clk = 1'b0;
-assign ch3_if.clk = 1'b0;
 assign ch4_if.clk = 1'b0;
 assign ch5_if.clk = 1'b0;
 assign ch6_if.clk = 1'b0;
 assign ch1_if.req = {$bits(fta_cmd_request256_t){1'b0}};
 assign ch2_if.req = {$bits(fta_cmd_request256_t){1'b0}};
-assign ch3_if.req = {$bits(fta_cmd_request256_t){1'b0}};
 assign ch4_if.req = {$bits(fta_cmd_request256_t){1'b0}};
 assign ch5_if.req = {$bits(fta_cmd_request256_t){1'b0}};
 assign ch6_if.req = {$bits(fta_cmd_request256_t){1'b0}};
@@ -810,9 +914,9 @@ assign ch6_if.req = {$bits(fta_cmd_request256_t){1'b0}};
 
 mpmc11_fta
 #(
-	.PORT_PRESENT(9'h191),
+	.PORT_PRESENT(9'h199),
 	.STREAM(8'h21),
-	.CACHE(8'h4E)
+	.CACHE(8'h46)
 )
 umpmc1
 (
@@ -840,7 +944,7 @@ umpmc1
 	.ch0(fbm_if),
 	.ch1(ch1_if),
 	.ch2(ch2_if),
-	.ch3(ch3_if),
+	.ch3(psgm_if),
 	.ch4(gfx_if),
 	.ch5(ch5_if),
 	.ch6(ch6_if),
@@ -1195,9 +1299,8 @@ ila_0 uila1 (
 		spiClkOut,
 		spiCS_n,
 		spiReset,
-		gfxm_req.cyc,
-		gfxm_req.we,
-		gfxm_resp.ack,
+		rtc_clk,
+		rtc_data,
 		ugfx1.wbmreader_arbiter_ack,
 		ugfx1.raster_clip_write,
 		ugfx1.clip_wbmreader_z_request,

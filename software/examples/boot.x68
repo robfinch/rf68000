@@ -145,7 +145,7 @@ ACIA_TX		EQU	0
 ACIA_STAT	EQU	4
 ACIA_CMD	EQU	8
 ACIA_CTRL	EQU	12
-I2C2 			equ $01E69000
+I2C2 			equ $01E69010
 I2C_PREL 	equ 0
 I2C_PREH 	equ 1
 I2C_CTRL 	equ 2
@@ -175,7 +175,8 @@ ACIA_TX		EQU	0
 ACIA_STAT	EQU	4
 ACIA_CMD	EQU	8
 ACIA_CTRL	EQU	12
-I2C2 			equ $FD069000
+I2C1 			equ $FD069000
+I2C2 			equ $FD069010
 I2C_PREL 	equ 0
 I2C_PREH 	equ 1
 I2C_CTRL 	equ 2
@@ -461,6 +462,10 @@ start:
 	bsr setup_gfxaccel
 	move.b #9,leds
 	clr.l sys_switches
+	lea I2C2,a6
+	bsr i2c_setup
+	lea I2C1,a6
+	bsr i2c_setup
 	movec.l	coreno,d0					; get core number
 	move.b d0,IOFocus					; Set the IO focus in global memory
 	if HAS_MMU
@@ -2456,12 +2461,12 @@ edtmem1:
 	clr.l	d2
 	bsr EditMemHelper
 	bsr EditMemHelper
-	swap d2
+;	swap d2
 	move.l d2,(a1)+
 	clr.l	d2
 	bsr EditMemHelper
 	bsr EditMemHelper
-	swap d2
+;	swap d2
 	move.l d2,(a1)+
 	bra Monitor
 .0005:
@@ -2471,9 +2476,9 @@ edtmem1:
 	bsr EditMemHelper
 	bsr EditMemHelper
 	exg d1,d2
-	bsr rbo
+;	bsr rbo
 	move.l d1,(a1)+
-	bsr rbo
+;	bsr rbo
 	exg d1,d2
 	clr.l	d2
 	bsr EditMemHelper
@@ -2481,9 +2486,9 @@ edtmem1:
 	bsr EditMemHelper
 	bsr EditMemHelper
 	exg d1,d2
-	bsr rbo
+;	bsr rbo
 	move.l d1,(a1)+
-	bsr rbo
+;	bsr rbo
 	exg d1,d2
 	bra Monitor
 
@@ -2500,7 +2505,7 @@ ExecuteCode:
 	bra Monitor
 
 cmdGrDemo:
-	move.l #$00008888,d1		; 32 bpp
+	move.l #$00001555,d1		; 16 bpp
 	moveq #6,d7							; framebuf device
 	moveq #DEV_SET_COLOR_DEPTH,d6
 	trap #0
@@ -2509,7 +2514,7 @@ cmdGrDemo:
 	move.l #$00110001,d1		; enable, scale 1 clocks/scanlines per pixel, page zero
 	bsr rbo
 ;	move.l d1,FRAMEBUF+FRAMEBUF_CTRL
-	move.l #$0F00063,d1		; burst length of 100, interval of F00h
+	move.l #$0F00031,d1		; burst length of 50, interval of F00h
 	bsr rbo
 	move.l d1,FRAMEBUF+FRAMEBUF_CTRL+4		
 	moveq #6,d7							; framebuf device
@@ -2652,6 +2657,19 @@ clear_graphics_screen2:
 ;	dbra d5,.0002
 	bra Monitor
 
+wait1ms:
+	movem.l d0/d1,-(a7)
+	movec tick,d0
+	add.l #1000000,d0
+	andi.l #$FFFFF000,d0
+.0001
+	movec tick,d1
+	andi.l #$FFFFF000,d1
+	cmp.l d0,d1
+	bne.s .0001
+	movem.l (a7)+,d0/d1
+	rts
+
 white_rect:
 	move.l #$FFFFFFFF,d1
 	bsr gfxaccel_set_color
@@ -2688,25 +2706,20 @@ rand_lines:
 	bsr CheckForCtrlC
 	bsr RandGetNum
 	bsr gfxaccel_set_color
-	bsr RandGetNum
-	move.l d1,d4
-;	divu #VIDEO_Y,d4
-	andi.l #511,d4
-	swap d4
-	bsr RandGetNum
-	move.l d1,d3
-;	divu #VIDEO_X,d3
-	andi.l #511,d3
-	swap d3
-	bsr RandGetNum
-	move.l d1,d2
-;	divu #VIDEO_Y,d2
-	andi.l #511,d2
-	swap d2
-	bsr RandGetNum
-;	divu #VIDEO_X,d1
-	andi.l #511,d1
-	swap d1
+	fmove.l #800,fp2
+	fmove.l #600,fp3
+	bsr _GetRand
+	fmul fp3,fp1
+	fmove.l fp1,d4
+	bsr _GetRand
+	fmul fp2,fp1
+	fmove.l fp1,d3
+	bsr _GetRand
+	fmul fp3,fp1
+	fmove.l fp1,d2
+	bsr _GetRand
+	fmul fp2,fp1
+	fmove.l fp1,d1
 	bsr gfxaccel_draw_line
 	dbra d5,.0001
 	bra Monitor
@@ -2718,25 +2731,20 @@ rand_rect:
 	bsr CheckForCtrlC
 	bsr RandGetNum
 	bsr gfxaccel_set_color
-	bsr RandGetNum
-	move.l d1,d4
-;	divu #VIDEO_Y,d4
-	andi.l #511,d4
-	swap d4
-	bsr RandGetNum
-	move.l d1,d3
-;	divu #VIDEO_X,d3
-	andi.l #511,d3
-	swap d3
-	bsr RandGetNum
-	move.l d1,d2
-;	divu #VIDEO_Y,d2
-	andi.l #511,d2
-	swap d2
-	bsr RandGetNum
-;	divu #VIDEO_X,d1
-	andi.l #511,d1
-	swap d1
+	fmove.l #800,fp2
+	fmove.l #600,fp3
+	bsr _GetRand
+	fmul fp3,fp1
+	fmove.l fp1,d4
+	bsr _GetRand
+	fmul fp2,fp1
+	fmove.l fp1,d3
+	bsr _GetRand
+	fmul fp3,fp1
+	fmove.l fp1,d2
+	bsr _GetRand
+	fmul fp2,fp1
+	fmove.l fp1,d1
 	bsr gfxaccel_draw_rectangle
 	dbra d5,.0003
 	bra Monitor
@@ -2760,6 +2768,7 @@ rand_rect2:
 	bsr RandGetNum
 	divu #VIDEO_X,d1
 	bsr gfxaccel_draw_rectangle
+	bsr wait1ms
 	dbra d5,.0003
 	bra Monitor
 
@@ -2769,35 +2778,26 @@ rand_triangle:
 	bsr CheckForCtrlC
 	bsr RandGetNum
 	bsr gfxaccel_set_color
-	bsr RandGetNum
-	move.l d1,d0
-;	divu #VIDEO_Y,d6
-	andi.l #511,d0
-	swap d0
-	bsr RandGetNum
-	move.l d1,d5
-;	divu #VIDEO_X,d5
-	andi.l #511,d5
-	swap d5
-	bsr RandGetNum
-	move.l d1,d4
-;	divu #VIDEO_Y,d4
-	andi.l #511,d4
-	swap d4
-	bsr RandGetNum
-	move.l d1,d3
-;	divu #VIDEO_X,d3
-	andi.l #511,d3
-	swap d3
-	bsr RandGetNum
-	move.l d1,d2
-;	divu #VIDEO_Y,d2
-	andi.l #511,d2
-	swap d2
-	bsr RandGetNum
-;	divu #VIDEO_X,d1
-	andi.l #511,d1
-	swap d1
+	fmove.l #800,fp2
+	fmove.l #600,fp3
+	bsr _GetRand
+	fmul fp3,fp1
+	fmove.l fp1,d0
+	bsr _GetRand
+	fmul fp2,fp1
+	fmove.l fp1,d5
+	bsr _GetRand
+	fmul fp3,fp1
+	fmove.l fp1,d4
+	bsr _GetRand
+	fmul fp2,fp1
+	fmove.l fp1,d3
+	bsr _GetRand
+	fmul fp3,fp1
+	fmove.l fp1,d2
+	bsr _GetRand
+	fmul fp2,fp1
+	fmove.l fp1,d1
 	bsr gfxaccel_draw_triangle
 	dbra d7,.0006
 	bra Monitor
@@ -2808,35 +2808,26 @@ rand_curve:
 	bsr CheckForCtrlC
 	bsr RandGetNum
 	bsr gfxaccel_set_color
-	bsr RandGetNum
-	move.l d1,d6
-;	divu #VIDEO_Y,d6
-	andi.l #511,d6
-	swap d6
-	bsr RandGetNum
-	move.l d1,d5
-;	divu #VIDEO_X,d5
-	andi.l #511,d5
-	swap d5
-	bsr RandGetNum
-	move.l d1,d4
-;	divu #VIDEO_Y,d4
-	andi.l #511,d4
-	swap d4
-	bsr RandGetNum
-	move.l d1,d3
-;	divu #VIDEO_X,d3
-	andi.l #511,d3
-	swap d3
-	bsr RandGetNum
-	move.l d1,d2
-;	divu #VIDEO_Y,d2
-	andi.l #511,d2
-	swap d2
-	bsr RandGetNum
-;	divu #VIDEO_X,d1
-	andi.l #511,d1
-	swap d1
+	fmove.l #800,fp2
+	fmove.l #600,fp3
+	bsr _GetRand
+	fmul fp3,fp1
+	fmove.l fp1,d0
+	bsr _GetRand
+	fmul fp2,fp1
+	fmove.l fp1,d5
+	bsr _GetRand
+	fmul fp3,fp1
+	fmove.l fp1,d4
+	bsr _GetRand
+	fmul fp2,fp1
+	fmove.l fp1,d3
+	bsr _GetRand
+	fmul fp3,fp1
+	fmove.l fp1,d2
+	bsr _GetRand
+	fmul fp2,fp1
+	fmove.l fp1,d1
 	bsr gfxaccel_draw_curve
 	dbra d7,.0006
 	bra Monitor
@@ -3321,10 +3312,10 @@ spi_setup:
 	; Turn on the power (negate reset) to the card and reset the logic
 	move.b #$01,SPI_MASTER_CTRL_REG
 	movec tick,d0
-	; wait about 10 milli-seconds
+	; wait about 1 milli-seconds
 	; Cannot just compare directly, must mask off lower bits as the tick count
 	; is running very fast. It may take several ticks counts per instruction.
-	add.l #$100000,d0
+	add.l #$10000,d0
 	andi.l #$FFFFF800,d0
 .0003
 	movec tick,d1
@@ -3333,18 +3324,17 @@ spi_setup:
 	bne.s .0003
 init_spi:
 spi_init:
-	btst #2,SPI_MASTER_CTRL_REG
+	btst #2,SPI_MASTER_CTRL_REG		; ensure there is a card present
 	beq.s .0005
-	move.w #65535,d0
+	; reset fifos
+	move.b #1,SPI_TX_FIFO_CTRL_REG
+	move.b #1,SPI_RX_FIFO_CTRL_REG
 .0002
 	move.b #SPI_INIT_SD,SPI_TRANS_TYPE_REG
 	move.b #1,SPI_TRANS_CTRL_REG
 .0001
-	btst #1,SPI_TRANS_STS_REG	
-	beq.s .0004
-	subq.w #1,d0
+	btst #0,SPI_TRANS_STS_REG	
 	bne.s .0001
-	bra.s .err
 .0004
 	move.b SPI_TRANS_ERR_REG,d0
 	andi.b #3,d0
@@ -3436,6 +3426,8 @@ spi_write_block:
 
 ;===============================================================================
 ; Generic I2C routines
+;
+; a6 points to I2C device
 ;===============================================================================
 
 	even
@@ -3445,8 +3437,9 @@ i2c_setup:
 ;		move.w	#19,I2C_PREL(a6)	; setup prescale for 400kHz clock
 ;		move.w	#0,I2C_PREH(a6)
 init_i2c:
-	lea	I2C2,a6				
-	move.b #19,I2C_PREL(a6)	; setup prescale for 400kHz clock, 40MHz master
+;	lea	I2C2,a6				
+	move.b #0,I2C_CTRL(a6)		; make sure I2C disabled
+	move.b #49,I2C_PREL(a6)		; setup prescale for 400kHz clock, 100MHz master
 	move.b #0,I2C_PREH(a6)
 	rts
 
@@ -3457,8 +3450,10 @@ init_i2c:
 
 i2c_wait_tip:
 	move.l d0,-(a7)
-.0001				
+.0001
+	bsr CheckForCtrlC				
 	move.b I2C_STAT(a6),d0		; wait for tip to clear
+	move.b #3,leds
 	btst #1,d0
 	bne.s	.0001
 	move.l (a7)+,d0
@@ -3470,6 +3465,7 @@ i2c_wait_tip:
 ;	a6	 - I2C controller base address
 ;
 i2c_wr_cmd:
+	move.b #2,leds
 	move.b d0,I2C_TXR(a6)
 	move.b d1,I2C_CMD(a6)
 	bsr	i2c_wait_tip
@@ -3491,6 +3487,8 @@ i2c_xmit1:
 i2c_wait_rx_nack:
 	move.l d0,-(a7)
 .0001						
+	move.b #20,leds
+	bsr CheckForCtrlC
 	move.b I2C_STAT(a6),d0		; wait for RXack = 0
 	btst #7,d0
 	bne.s	.0001
@@ -3502,27 +3500,33 @@ i2c_wait_rx_nack:
 ;===============================================================================
 
 rtc_read:
+	move.b #1,leds
 	movea.l	#I2C2,a6
 	lea	RTCBuf,a5
 	move.b	#$80,I2C_CTRL(a6)	; enable I2C
 	move.b	#$DE,d0				; read address, write op
 	move.b	#$90,d1				; STA + wr bit
 	bsr	i2c_wr_cmd
+	move.b #4,leds
 	tst.b	d0
 	bmi	.rxerr
 	move.b #$00,d0				; address zero
 	move.b #$10,d1				; wr bit
 	bsr	i2c_wr_cmd
+	move.b #5,leds
 	tst.b	d0
 	bmi	.rxerr
 	move.b #$DF,d0				; read address, read op
 	move.b #$90,d1				; STA + wr bit
 	bsr i2c_wr_cmd
+	move.b #6,leds
 	tst.b	d0
 	bmi	.rxerr
 		
-	move.w #$20,d2
+	move.w #$00,d2
 .0001
+	move.b #7,leds
+	bsr CheckForCtrlC
 	move.b #$20,I2C_CMD(a6)	; rd bit
 	bsr	i2c_wait_tip
 	bsr	i2c_wait_rx_nack
@@ -3542,14 +3546,17 @@ rtc_read:
 	bmi	.rxerr
 	move.b I2C_RXR(a6),d0
 	move.b d0,(a5,d2.w)
+	bsr i2c_wait_tip
 	move.b #0,I2C_CTRL(a6)		; disable I2C and return 0
 	moveq	#0,d0
 	rts
 .rxerr
+	bsr i2c_wait_tip
 	move.b #0,I2C_CTRL(a6)		; disable I2C and return status
 	rts
 
 rtc_write:
+	move.b #10,leds
 	movea.l	#I2C2,a6
 	lea	RTCBuf,a5
 	move.b #$80,I2C_CTRL(a6)	; enable I2C
@@ -3558,6 +3565,7 @@ rtc_write:
 	bsr	i2c_wr_cmd
 	tst.b	d0
 	bmi	.rxerr
+	move.b #11,leds
 	move.b #$00,d0				; address zero
 	move.b #$10,d1				; wr bit
 	bsr	i2c_wr_cmd
@@ -3565,6 +3573,7 @@ rtc_write:
 	bmi	.rxerr
 	move.w #$20,d2
 .0001
+	bsr CheckForCtrlC
 	move.b (a5,d2.w),d0
 	move.b #$10,d1
 	bsr	i2c_wr_cmd
@@ -3578,10 +3587,12 @@ rtc_write:
 	bsr	i2c_wr_cmd
 	tst.b	d0
 	bmi	.rxerr
+	bsr i2c_wait_tip
 	move.b #0,I2C_CTRL(a6)		; disable I2C and return 0
 	moveq	#0,d0
 	rts
 .rxerr:
+	bsr i2c_wait_tip
 	move.b #0,I2C_CTRL(a6)		; disable I2C and return status
 	rts
 

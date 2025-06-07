@@ -63,18 +63,21 @@ set_property -dict { PACKAGE_PIN R29   IOSTANDARD LVCMOS33 } [get_ports { spiDat
 set_property -dict { PACKAGE_PIN R26   IOSTANDARD LVCMOS33 } [get_ports { spiDataIn }]; #IO_L10N_T1_D15_14 Sch=sd_dat[0]
 set_property -dict { PACKAGE_PIN T30   IOSTANDARD LVCMOS33 } [get_ports { spiCS_n }]; #IO_L9N_T1_DQS_D13_14 Sch=sd_dat[3]
 set_property -dict { PACKAGE_PIN R28   IOSTANDARD LVCMOS33 } [get_ports { spiClkOut }]; #IO_L11P_T1_SRCC_14 Sch=sd_sclk
+set_property PULLUP true [get_ports {spiCS_n}]
+set_property PULLUP true [get_ports {spiDataOut}]
+set_property PULLUP true [get_ports {spiDataIn}]
 
 
 ## Audio Codec
-#set_property -dict { PACKAGE_PIN AH19  IOSTANDARD LVCMOS18 } [get_ports { aud_adc_sdata }]; #IO_L8N_T1_32 Sch=aud_adc_sdata
-#set_property -dict { PACKAGE_PIN AD19  IOSTANDARD LVCMOS18 } [get_ports { aud_adr[0] }]; #IO_L10P_T1_32 Sch=aud_adr[0]
-#set_property -dict { PACKAGE_PIN AG19  IOSTANDARD LVCMOS18 } [get_ports { aud_adr[1] }]; #IO_L8P_T1_32 Sch=aud_adr[1]
-#set_property -dict { PACKAGE_PIN AG18  IOSTANDARD LVCMOS18 } [get_ports { aud_bclk }]; #IO_L11N_T1_SRCC_32 Sch=aud_bclk
-#set_property -dict { PACKAGE_PIN AJ19  IOSTANDARD LVCMOS18 } [get_ports { aud_dac_sdata }]; #IO_L7P_T1_32 Sch=aud_dac_sdata
-#set_property -dict { PACKAGE_PIN AJ18  IOSTANDARD LVCMOS18 } [get_ports { aud_lrclk }]; #IO_L9P_T1_DQS_32 Sch=aud_lrclk
-#set_property -dict { PACKAGE_PIN AK19  IOSTANDARD LVCMOS18 } [get_ports { aud_mclk }]; #IO_L7N_T1_32 Sch=aud_mclk
-#set_property -dict { PACKAGE_PIN AE19  IOSTANDARD LVCMOS18 } [get_ports { aud_scl }]; #IO_L10N_T1_32 Sch=aud_scl
-#set_property -dict { PACKAGE_PIN AF18  IOSTANDARD LVCMOS18 } [get_ports { aud_sda }]; #IO_L11P_T1_SRCC_32 Sch=aud_sda
+set_property -dict { PACKAGE_PIN AH19  IOSTANDARD LVCMOS18 } [get_ports { aud_adc_sdata }]; #IO_L8N_T1_32 Sch=aud_adc_sdata
+set_property -dict { PACKAGE_PIN AD19  IOSTANDARD LVCMOS18 } [get_ports { aud_adr[0] }]; #IO_L10P_T1_32 Sch=aud_adr[0]
+set_property -dict { PACKAGE_PIN AG19  IOSTANDARD LVCMOS18 } [get_ports { aud_adr[1] }]; #IO_L8P_T1_32 Sch=aud_adr[1]
+set_property -dict { PACKAGE_PIN AG18  IOSTANDARD LVCMOS18 } [get_ports { aud_bclk }]; #IO_L11N_T1_SRCC_32 Sch=aud_bclk
+set_property -dict { PACKAGE_PIN AJ19  IOSTANDARD LVCMOS18 } [get_ports { aud_dac_sdata }]; #IO_L7P_T1_32 Sch=aud_dac_sdata
+set_property -dict { PACKAGE_PIN AJ18  IOSTANDARD LVCMOS18 } [get_ports { aud_lrclk }]; #IO_L9P_T1_DQS_32 Sch=aud_lrclk
+set_property -dict { PACKAGE_PIN AK19  IOSTANDARD LVCMOS18 } [get_ports { aud_mclk }]; #IO_L7N_T1_32 Sch=aud_mclk
+set_property -dict { PACKAGE_PIN AE19  IOSTANDARD LVCMOS18 } [get_ports { aud_scl }]; #IO_L10N_T1_32 Sch=aud_scl
+set_property -dict { PACKAGE_PIN AF18  IOSTANDARD LVCMOS18 } [get_ports { aud_sda }]; #IO_L11P_T1_SRCC_32 Sch=aud_sda
 
 ## Ethernet
 #set_property -dict { PACKAGE_PIN AK16  IOSTANDARD LVCMOS18 } [get_ports { eth_int_b }]; #IO_L1P_T0_32 Sch=eth_intb
@@ -155,6 +158,7 @@ set_property -dict {PACKAGE_PIN AB22 IOSTANDARD LVCMOS33} [get_ports oled_vbat]
 set_property -dict {PACKAGE_PIN AG17 IOSTANDARD LVCMOS18} [get_ports oled_vdd]
 
 ## PMOD Header JA
+
 #set_property -dict { PACKAGE_PIN U27   IOSTANDARD LVCMOS33 } [get_ports { ja[0] }]; #IO_L13P_T2_MRCC_14 Sch=ja_p[1]
 #set_property -dict { PACKAGE_PIN U28   IOSTANDARD LVCMOS33 } [get_ports { ja[1] }]; #IO_L13N_T2_MRCC_14 Sch=ja_n[1]
 #set_property -dict { PACKAGE_PIN T26   IOSTANDARD LVCMOS33 } [get_ports { ja[2] }]; #IO_L12P_T1_MRCC_14 Sch=ja_p[2]
@@ -183,6 +187,12 @@ set_property -dict {PACKAGE_PIN AG17 IOSTANDARD LVCMOS18} [get_ports oled_vdd]
 #set_property -dict { PACKAGE_PIN AG30  IOSTANDARD LVCMOS33 } [get_ports { jc[5] }]; #IO_L18P_T2_13 Sch=jc[8]
 #set_property -dict { PACKAGE_PIN AK30  IOSTANDARD LVCMOS33 } [get_ports { jc[6] }]; #IO_L15N_T2_DQS_13 Sch=jc[9]
 #set_property -dict { PACKAGE_PIN AK28  IOSTANDARD LVCMOS33 } [get_ports { jc[7] }]; #IO_L20N_T3_13 Sch=jc[10]
+
+set_property -dict { PACKAGE_PIN AK30  IOSTANDARD LVCMOS33 } [get_ports { rtc_clk }];
+set_property -dict { PACKAGE_PIN AK28  IOSTANDARD LVCMOS33 } [get_ports { rtc_data }];
+set_property PULLUP true [get_ports {rtc_clk}]
+set_property PULLUP true [get_ports {rtc_data}]
+
 
 ## PMOD Header JD
 #set_property -dict { PACKAGE_PIN V27   IOSTANDARD LVCMOS33 } [get_ports { jd[0] }]; #IO_L16N_T2_A15_D31_14 Sch=jd[1]

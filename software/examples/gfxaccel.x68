@@ -138,6 +138,7 @@ setup_gfxaccel:
 	move.l d0,gfxaccel_dcb+DCB_OUTBUFPTR2
 	move.l #$00400000,gfxaccel_dcb+DCB_INBUFSIZE
 	move.l #$00400000,gfxaccel_dcb+DCB_OUTBUFSIZE
+	move.l #$88880000,GFXACCEL+GFX_COLOR_COMP
 	lea.l gfxaccel_dcb+DCB_MAGIC,a1
 	jsr DisplayString
 	jsr CRLF
