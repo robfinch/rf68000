@@ -168,7 +168,7 @@ edge_det edv1
 	.ee()
 );
 
-edge_det edv1
+edge_det edv2
 (
 	.rst(rst_i),
 	.clk(clk_i),
@@ -211,7 +211,7 @@ else begin
 	COP_DECODE:
 		case(doutb[127:124])	
 		4'h0:	// WAIT
-			if (hpos_masked >= hpos_wait && vpos_masked >= vpos_wait && (doutb[112] ? gfx_que_empty : 1'b1))
+			if (hpos_masked >= hpos_wait && vpos_masked >= vpos_wait && (doutb[112] ? gfx_que_empty_i : 1'b1))
 				cop_state <= COP_IFETCH;
 		4'h1:	// MOVE
 			begin
@@ -224,7 +224,7 @@ else begin
 				cop_state <= COP_WAIT_ACK;
 			end
 		4'h2:	// SKIP
-			if (hpos_masked >= hpos_wait && vpos_masked >= vpos_wait && (doutb[112] ? gfx_que_empty : 1'b1))
+			if (hpos_masked >= hpos_wait && vpos_masked >= vpos_wait && (doutb[112] ? gfx_que_empty_i : 1'b1)) begin
 				pc <= pc + 16'd16;
 				cop_state <= COP_IFETCH;
 			end
@@ -276,7 +276,7 @@ else begin
 			endcase
 		endcase	
 	COP_WAIT_ACK:
-		if (ack_i) begin
+		if (mack_i) begin
 			mcyc_o <= 1'b0;
 			mstb_o <= 1'b0;
 			mwe_o <= 1'b0;

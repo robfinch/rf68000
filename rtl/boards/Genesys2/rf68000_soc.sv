@@ -47,6 +47,7 @@ module rf68000_soc(cpu_reset_n, sysclk_p, sysclk_n, led, sw, btnl, btnr, btnc, b
   hdmi_tx_clk_p, hdmi_tx_clk_n, hdmi_tx_p, hdmi_tx_n,
 //  ac_mclk, ac_adc_sdata, ac_dac_sdata, ac_bclk, ac_lrclk,
   rtc_clk, rtc_data,
+  sd_ss, sd_mosi, sd_miso, sd_sck,
 	aud_adc_sdata, aud_adr, aud_bclk, aud_dac_sdata, aud_lrclk, aud_mclk, aud_scl, aud_sda,
   spiClkOut, spiDataIn, spiDataOut, spiCS_n, spiReset, sd_cd,
 //  sd_cmd, sd_dat, sd_clk, sd_cd, sd_reset,
@@ -92,6 +93,11 @@ output [2:0] hdmi_tx_n;
 inout tri rtc_clk;
 inout tri rtc_data;
 
+output sd_sck;
+input sd_miso;
+output sd_mosi;
+output sd_ss;
+
 input aud_adc_sdata;
 output [1:0] aud_adr;
 output aud_bclk;
@@ -135,12 +141,13 @@ output [0:0] ddr3_cs_n;
 wire rst, rstn;
 wire xrst = ~cpu_reset_n;
 wire locked,locked2;
+wire clk10, clk12;
 wire clk20, clk40, clk50, clk100, clk70, clk140, clk200, clk700;
 wire clk17, clk33;
 wire mem_ui_clk;
 wire mem_ui_rst;
 wire xclk_bufg;
-wire node_clk = clk100;
+wire node_clk = clk50;
 wire dfclk = clk20;
 wire node_clk1;
 wire node_clk2;
@@ -225,6 +232,8 @@ wire [7:0] i2c2_dato;
 wire i2c2_irq;
 wire [7:0] spi_dato;
 wire spi_ack;
+wire spi2_ack;
+wire [7:0] spi2_dato;
 wire plic_ack;
 wire [3:0] plic_irq;
 wire [31:0] plic_dato;
@@ -274,8 +283,8 @@ WXGA800x600_clkgen ucg1
   .clk50(clk50),
   .clk40(clk40),					// 40.000 MHz video / cpu clock
   .clk20(clk20),					// cpu
-  .clk17(clk17),
-  .clk33(clk33),
+  .clk17(clk12),		// audio
+//  .clk33(clk33),
 //  .clk10(clk10),
 //  .clk14(clk14),		// 16x baud clock
   // Status and control signals
@@ -350,7 +359,10 @@ wire cs_acia = cpu_adr[31:12]==20'hFD060 && ch7req.stb && cs_io2;
 wire cs_br3_acia = br3_adr[31:12]==20'hFD060 && br3_stb && cs_io2;
 wire cs_br1_i2c1 = br1_adr[31:4]==28'hFD06900 && br1_stb && cs_io2;
 wire cs_br3_i2c2 = br3_adr[31:4]==28'hFD06901 && br3_stb && cs_io2;
-wire cs_br3_spi = br3_adr[31:12]==20'hFD06A && br3_stb && cs_io2;
+wire cs_br1_1761 = br1_adr[31:4]==28'hFD06980 && br1_stb && cs_io2;
+wire cs_br1_psg = br1_adr[31:12]==20'hFD06B && br1_stb && cs_io2;
+wire cs_br3_spi = br3_adr[31:8]==24'hFD06A0 && br3_stb && cs_io2;
+wire cs_br3_spi2 = br3_adr[31:8]==24'hFD06A1 && br3_stb && cs_io2;
 wire cs_scr = cpu_adr[31:20]==12'h001 && cpu_stb;
 wire cs_plic = cpu_adr[31:12]==20'hFD090 && cs_io2;
 wire cs_br3_plic = br3_adr[31:12]==20'hFD090 && cs_io2;
@@ -531,10 +543,14 @@ rfTextController utc1
 	.xonoff_i(sw[1])
 );
 
-IOBridge ubridge1
+AVBridge ubridge1
 (
 	.rst_i(rst),
 	.clk_i(node_clk),
+	.vclk_i(dot_clk),
+	.hsync_i(hSync),
+	.vsync_i(vSync),
+	.gfx_que_empty_i(1'b1),
 	.fta_en_i(1'b1),
 	.io_gate_en_i(io_gate_en),
 	.s1_cyc_i(cpu_cyc),
@@ -545,14 +561,6 @@ IOBridge ubridge1
 	.s1_adr_i(cpu_adr),
 	.s1_dat_i(dato),
 	.s1_dat_o(br1_cdato),
-	.s2_cyc_i(1'b0),
-	.s2_stb_i(1'b0),
-	.s2_ack_o(),
-	.s2_we_i(1'b0),
-	.s2_sel_i(4'h0),
-	.s2_adr_i(32'h0),
-	.s2_dat_i(32'h0),
-	.s2_dat_o(),
 	.m_cyc_o(br1_cyc),
 	.m_stb_o(br1_stb),
 	.m_ack_i(br1_ack),
@@ -565,6 +573,8 @@ IOBridge ubridge1
 	.m_fta_o(br1_fta)
 );
 
+wire [15:0] audi;
+wire [15:0] audo [0:3];
 
 PSG32 #(.MDW(256)) upsg1
 (
@@ -588,9 +598,43 @@ PSG32 #(.MDW(256)) upsg1
 	.m_adr_o(psgm_adr),
 	.m_dat_i(psgm_dat_i),
 	.m_dat_o(psgm_dat_o),
-	.aud_i(),
-	.aud_o()
+	.aud_i(audi),
+	.aud_o(audo)
 );
+
+wire aud_dac_sdata1;
+wire aud_bclk1;
+wire aud_lrclk1;
+wire en_rxtx;
+wire en_tx;
+ADAU1761_Interface uai1
+(
+	.rst_i(rst),
+	.clk_i(node_clk),
+	.cs_i(cs_br1_1761),
+	.cyc_i(br1_cyc),
+	.stb_i(br1_stb),
+	.ack_o(ack_1761),
+	.we_i(br1_we),
+	.dat_i(br1_dato[7:0]),
+	.aud0_i(audo[0]),
+	.aud2_i(audo[2]),
+	.audi_o(audi),
+	.ac_mclk_i(aud_mclk),
+	.ac_bclk_o(aud_bclk1),
+	.ac_lrclk_o(aud_lrclk1),
+	.ac_adc_sdata_i(aud_adc_sdata),
+	.ac_dac_sdata_o(aud_dac_sdata1),
+	.en_rxtx_o(en_rxtx),
+	.en_tx_o(en_tx),
+	.record_i(btnl_db),
+	.playback_i(btnr_db)
+);
+assign aud_mclk = clk12;
+assign aud_bclk = en_rxtx ? aud_bclk1 : 1'bz;
+assign aud_lrclk = en_rxtx ? aud_lrclk1 : 1'bz;
+assign aud_dac_sdata = en_tx ? aud_dac_sdata1 : 1'b0;
+assign aud_adr = 2'b11;
 
 assign psgm_if.rst = mem_ui_rst;
 assign psgm_if.clk = clk100;
@@ -651,7 +695,7 @@ always_ff @(posedge clk100)
 	br1_dati <= tc_dato|gfxs_resp.dat|{4{i2c1_dato}};
 
 always_ff @(posedge clk100)
-	br1_ack <= tc_ack|gfxs_resp.ack|i2c1_ack;
+	br1_ack <= tc_ack|gfxs_resp.ack|i2c1_ack|ack_1761;
 
 always_ff @(posedge clk100)
 	br1_stall <= gfxs_resp.stall;
@@ -796,11 +840,11 @@ assign br3_fta.resp.dat = 32'd0;
 always_ff @(posedge clk100)
 	casez(cs_br3_leds)
 	1'b1:	br3_dati <= led;
-	1'b0:	br3_dati <= {4{kbd_dato}}|rand_dato|acia_dato|{4{i2c2_dato}}|{4{spi_dato}};
+	1'b0:	br3_dati <= {4{kbd_dato}}|rand_dato|acia_dato|{4{i2c2_dato}}|{4{spi_dato}}|{4{spi2_dato}};
 	endcase
 
 always_ff @(posedge clk100)
-	br3_ack <= leds_ack|kbd_ack|rand_ack|acia_ack|i2c2_ack|rst_ack|spi_ack;
+	br3_ack <= leds_ack|kbd_ack|rand_ack|acia_ack|i2c2_ack|rst_ack|spi_ack|spi2_ack;
 
 assign leds_ack = cs_br3_leds;
 always_ff @(posedge clk100)
@@ -818,7 +862,7 @@ spiMaster uspi1 (
   .ack_o(spi_ack),
 
   // SPI logic clock
-  .spiSysClk(clk20),
+  .spiSysClk(clk50),
 
   //SPI bus
   .cardDetect(sd_cd),
@@ -827,6 +871,28 @@ spiMaster uspi1 (
   .spiDataIn(spiDataIn),
   .spiDataOut(spiDataOut),
   .spiCS_n(spiCS_n)
+);
+
+spiMaster uspi2 (
+  .clk_i(node_clk),
+  .rst_i(rst),
+  .address_i(br3_adr[7:0]),
+  .data_i(br3_dato[7:0]),
+  .data_o(spi2_dato),
+  .strobe_i(br3_cyc && cs_br3_spi2),
+  .we_i(br3_we),
+  .ack_o(spi2_ack),
+
+  // SPI logic clock
+  .spiSysClk(clk50),
+
+  //SPI bus
+  .cardDetect(1'b0),
+  .spiReset(),
+  .spiClkOut(sd_sck),
+  .spiDataIn(sd_miso),
+  .spiDataOut(sd_mosi),
+  .spiCS_n(sd_ss)
 );
 
 wire calib_complete;

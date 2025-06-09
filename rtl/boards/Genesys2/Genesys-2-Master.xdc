@@ -78,6 +78,8 @@ set_property -dict { PACKAGE_PIN AJ18  IOSTANDARD LVCMOS18 } [get_ports { aud_lr
 set_property -dict { PACKAGE_PIN AK19  IOSTANDARD LVCMOS18 } [get_ports { aud_mclk }]; #IO_L7N_T1_32 Sch=aud_mclk
 set_property -dict { PACKAGE_PIN AE19  IOSTANDARD LVCMOS18 } [get_ports { aud_scl }]; #IO_L10N_T1_32 Sch=aud_scl
 set_property -dict { PACKAGE_PIN AF18  IOSTANDARD LVCMOS18 } [get_ports { aud_sda }]; #IO_L11P_T1_SRCC_32 Sch=aud_sda
+set_property PULLUP true [get_ports {aud_scl}]
+set_property PULLUP true [get_ports {aud_sda}]
 
 ## Ethernet
 #set_property -dict { PACKAGE_PIN AK16  IOSTANDARD LVCMOS18 } [get_ports { eth_int_b }]; #IO_L1P_T0_32 Sch=eth_intb
@@ -187,6 +189,14 @@ set_property -dict {PACKAGE_PIN AG17 IOSTANDARD LVCMOS18} [get_ports oled_vdd]
 #set_property -dict { PACKAGE_PIN AG30  IOSTANDARD LVCMOS33 } [get_ports { jc[5] }]; #IO_L18P_T2_13 Sch=jc[8]
 #set_property -dict { PACKAGE_PIN AK30  IOSTANDARD LVCMOS33 } [get_ports { jc[6] }]; #IO_L15N_T2_DQS_13 Sch=jc[9]
 #set_property -dict { PACKAGE_PIN AK28  IOSTANDARD LVCMOS33 } [get_ports { jc[7] }]; #IO_L20N_T3_13 Sch=jc[10]
+
+set_property -dict { PACKAGE_PIN AC26  IOSTANDARD LVCMOS33 } [get_ports { sd_ss }]; #IO_L19P_T3_13 Sch=jc[1]
+set_property -dict { PACKAGE_PIN AJ27  IOSTANDARD LVCMOS33 } [get_ports { sd_mosi }]; #IO_L20P_T3_13 Sch=jc[2]
+set_property -dict { PACKAGE_PIN AH30  IOSTANDARD LVCMOS33 } [get_ports { sd_miso }]; #IO_L18N_T2_13 Sch=jc[3]
+set_property -dict { PACKAGE_PIN AK29  IOSTANDARD LVCMOS33 } [get_ports { sd_sck }]; #IO_L15P_T2_DQS_13 Sch=jc[4]
+set_property PULLUP true [get_ports {sd_ss}]
+set_property PULLUP true [get_ports {sd_mosi}]
+set_property PULLUP true [get_ports {sd_miso}]
 
 set_property -dict { PACKAGE_PIN AK30  IOSTANDARD LVCMOS33 } [get_ports { rtc_clk }];
 set_property -dict { PACKAGE_PIN AK28  IOSTANDARD LVCMOS33 } [get_ports { rtc_data }];

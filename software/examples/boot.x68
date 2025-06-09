@@ -177,6 +177,8 @@ ACIA_CMD	EQU	8
 ACIA_CTRL	EQU	12
 I2C1 			equ $FD069000
 I2C2 			equ $FD069010
+SPI_MASTER1	equ	$FD06A000
+SPI_MASTER2	equ $FD06A100
 I2C_PREL 	equ 0
 I2C_PREH 	equ 1
 I2C_CTRL 	equ 2
@@ -214,6 +216,16 @@ endm
 
 macIRQ_proc_label	macro arg1
 IRQ_proc\1:
+endm
+
+macHmash macro arg1
+	swap \1
+	eori.l #DEV_HMASH,\1
+endm
+
+macUnhmash macro arg1
+	eori.l #DEV_HMASH,\1
+	swap \1
 endm
 
 	data
@@ -370,6 +382,7 @@ m_z equ $408D0
 m_w equ $408D4
 next_m_z equ $408D8
 next_m_w equ $408DC
+TimeBuf equ $408E0
 EightPixels equ $40100000	; to $40200020
 
 null_dcb equ $0040A00		; 0
@@ -379,6 +392,7 @@ err_dcb equ textvid_dcb+DCB_SIZE		; 3
 serial_dcb equ err_dcb+DCB_SIZE*2		; 5
 framebuf_dcb equ serial_dcb+DCB_SIZE	; 6
 gfxaccel_dcb equ framebuf_dcb+DCB_SIZE	; 7
+rtc_dcb equ gfxaccel_dcb+DCB_SIZE		; 8
 
 spi_buff equ $0042000
 
@@ -466,6 +480,10 @@ start:
 	bsr i2c_setup
 	lea I2C1,a6
 	bsr i2c_setup
+;	lea SPI_MASTER1,a1
+;	bsr spi_setup
+;	lea SPI_MASTER2,a1
+;	bsr spi_setup
 	movec.l	coreno,d0					; get core number
 	move.b d0,IOFocus					; Set the IO focus in global memory
 	if HAS_MMU
@@ -478,6 +496,9 @@ start:
 	andi.l #$FFFFFF00,d1
 	move.l d1,_canary
 	movec d1,canary
+	bsr AudioTestOn
+	bsr Delay3s
+	bsr AudioTestOff
 ;	bsr	Delay3s						; give devices time to reset
 ;	moveq #2,d7					; device 2
 ;	moveq #DEV_CLEAR,d6	; clear
@@ -585,6 +606,7 @@ InitMMU:
 	include "serial.x68"
 	include "framebuf.x68"
 	include "gfxaccel.x68"
+	include "audio.x68"
 
 ;------------------------------------------------------------------------------
 ;------------------------------------------------------------------------------
@@ -1729,6 +1751,8 @@ cmdString:
 	dc.b	"TF",'P'+$80			; TFP test fp
 	dc.b  "TG",'F'+$80			; TGF test get float
 	dc.b  "TRA",'M'+$80			; TRAM test RAM
+	dc.b	'SET_TIM','E'+$80
+	dc.b	'TIM','E'+$80
 	dc.b	'T','R'+$80				; TR test serial receive
 	dc.b	'TSC','D'+$80			; Test SD card
 	dc.b	'T'+$80						; T test CPU
@@ -1762,6 +1786,8 @@ cmdTable:
 	dc.l  cmdTestFP
 	dc.l	cmdTestGF
 	dc.l  cmdTestRAM
+	dc.l	cmdSetTime
+	dc.l	cmdTime
 	dc.l	cmdTestSerialReceive
 	dc.l	cmdTestSD
 	dc.l	cmdTestCPU
@@ -1914,6 +1940,86 @@ cmdPlants:
 	pea Monitor
 	jmp start_plants
 
+cmdSetTime:
+	bsr ignBlanks
+	bsr GetHexNumber
+	move.b d1,d3					; d3 = hours
+	or.b #$40,d3					; set 12 hour format
+	bsr ignBlanks
+	bsr FromScreen
+	cmpi.b #':',d1
+	bne Monitor
+	bsr ignBlanks
+	bsr GetHexNumber
+	move.b d1,RTCBuf+$01	; save minutes
+	bsr ignBlanks
+	bsr FromScreen
+	cmpi.b #':',d1
+	bne Monitor
+	bsr ignBlanks
+	bsr GetHexNumber
+	ori.b #$80,d1					; flag to turn on oscillator
+	move.b d1,RTCBuf+$00	; save seconds
+	bsr ignBlanks		
+	bsr FromScreen
+	cmpi.b #'p',d1
+	bne .0001
+	ori.b #$20,d3					; set pm bit
+.0001
+	move.b d3,RTCBuf+$02	; set hours
+	bsr rtc_write
+	bra Monitor
+
+; Display the time
+;		4:17:00 am
+	
+cmdTime:
+	lea TimeBuf,a6
+	bsr get_time
+	move.l a6,a1
+	bsr DisplayStringCRLF
+	bra Monitor
+
+; Get the time into a buffer
+; Parameters:
+;		a6 = pointer to buffer to store time as a string
+
+get_time:
+	move.l a6,-(sp)				; sve buffer address
+	bsr rtc_read					; read the RTC registers
+	move.b RTCBuf+$02,d1
+	move.b #0,d3					; flag 24 hour format
+	btst #6,d1						; 0 = 24 hour format
+	beq.s .0001
+	move.b #'a',d3				; default to am
+	btst #5,d1
+	beq.s .0002
+	move.b #'p',d3
+.0002
+	andi.b #$1F,d1
+	bra .0003
+.0001
+	andi.b #$3F,d1
+.0003
+	bsr BufByte						; copy hours to buffer
+	move.b #':',(a6)+
+	move.b RTCBuf+$01,d1
+	bsr BufByte						; copy minutes to buffer
+	move.b #':',(a6)+
+	move.b RTCBuf+$00,d1	
+	andi.b #$3F,d1
+	bsr BufByte						; copy seconds to buffer
+	tst.b d3							; 24 hour format?
+	beq .0004
+	move.b #' ',(a6)+
+	move.b d3,d1
+	move.b d3,(a6)+
+	move.b #'m',(a6)+
+.0004	
+	move.b #0,(a6)+				; NULL terminate
+	move.l (sp)+,a6
+	rts
+	
 cmdTinyBasic:
 	bra	CSTART
 
@@ -2079,16 +2185,25 @@ DisplayHelp:
 	bra			Monitor
 
 cmdTestSD:
+	bsr ignBlanks
+	bsr GetHexNumber
+	move.l #SPI_MASTER1,d3
+	cmpi.b #1,d1
+	beq.s .0005
+	move.l #SPI_MASTER2,d3
+.0005
+	move.l d3,d1
+	macHmash d1
 	bsr spi_setup
 	tst.b d0
 	bne.s .0001
-	lea HelpMsg,a0
-	moveq #1,d1				; write block #1
+	move.l #HelpMsg,d3
+	moveq #1,d2				; write block #1
 	bsr spi_write_block
 	tst.b d0
 	bne.s .0003
-	moveq #1,d1
-	move.l #spi_buff,a0
+	moveq #1,d2
+	move.l #spi_buff,d3
 	bsr spi_read_block
 	tst.b d0
 	bne.s .0004
@@ -3283,145 +3398,293 @@ rbo:
 ;===============================================================================
 ;===============================================================================
 
-SPI_MASTER equ $FD06A000
-SPI_MASTER_VERSION_REG equ SPI_MASTER+0
-SPI_MASTER_CTRL_REG	equ SPI_MASTER+1
-SPI_TRANS_TYPE_REG equ SPI_MASTER+2
-SPI_TRANS_CTRL_REG equ SPI_MASTER+3
-SPI_TRANS_STS_REG equ SPI_MASTER+4
-SPI_TRANS_ERR_REG equ SPI_MASTER+5
-SPI_DIRECT_ACCESS_DATA_REG equ SPI_MASTER+6
-SPI_ADDR_70 equ SPI_MASTER+7
-SPI_ADDR_158 equ SPI_MASTER+8
-SPI_ADDR_2316 equ SPI_MASTER+9
-SPI_ADDR_3124 equ SPI_MASTER+10
-SPI_CLK_DEL_REG equ SPI_MASTER+11
-SPI_RX_FIFO_DATA_REG equ SPI_MASTER+16
-SPI_RX_FIFO_DATA_COUNT_MSB equ SPI_MASTER+18
-SPI_RX_FIFO_DATA_COUNT_LSB equ SPI_MASTER+19
-SPI_RX_FIFO_CTRL_REG equ SPI_MASTER+20
-SPI_TX_FIFO_DATA_REG equ SPI_MASTER+32
-SPI_TX_FIFO_CTRL_REG equ SPI_MASTER+36
+SPI_MASTER_VERSION_REG equ 0
+SPI_MASTER_CTRL_REG	equ 1
+SPI_TRANS_TYPE_REG equ 2
+SPI_TRANS_CTRL_REG equ 3
+SPI_TRANS_STS_REG equ 4
+SPI_TRANS_ERR_REG equ 5
+SPI_DIRECT_ACCESS_DATA_REG equ 6
+SPI_ADDR_70 equ 7
+SPI_ADDR_158 equ 8
+SPI_ADDR_2316 equ 9
+SPI_ADDR_3124 equ 10
+SPI_CLK_DEL_REG equ 11
+SPI_RX_FIFO_DATA_REG equ 16
+SPI_RX_FIFO_DATA_COUNT_MSB equ 18
+SPI_RX_FIFO_DATA_COUNT_LSB equ 19
+SPI_RX_FIFO_CTRL_REG equ 20
+SPI_TX_FIFO_DATA_REG equ 32
+SPI_TX_FIFO_CTRL_REG equ 36
 
 SPI_DIRECT_ACCESS equ	0
 SPI_INIT_SD equ 1
 SPI_RW_READ_SD_BLOCK	equ 2
 SPI_RW_WRITE_SD_BLOCK	equ 3
 
+; Setup the SPI device.
+;
+; Parameters:
+;		d1 = pointer to SPI master device (handle)
+; Returns:
+;		d0 = E_Ok if successful
+;				 E_NoDev is card not present
+
 spi_setup:
-	; Turn on the power (negate reset) to the card and reset the logic
-	move.b #$01,SPI_MASTER_CTRL_REG
-	movec tick,d0
-	; wait about 1 milli-seconds
-	; Cannot just compare directly, must mask off lower bits as the tick count
-	; is running very fast. It may take several ticks counts per instruction.
-	add.l #$10000,d0
-	andi.l #$FFFFF800,d0
-.0003
-	movec tick,d1
-	andi.l #$FFFFF800,d1
-	cmp.l d1,d0
-	bne.s .0003
-init_spi:
 spi_init:
-	btst #2,SPI_MASTER_CTRL_REG		; ensure there is a card present
+init_spi:
+	movem.l d1/a1,-(sp)
+	macUnhmash d1
+	move.l d1,a1
+	; Turn on the power (negate reset) to the card and reset the logic
+	move.b #$01,SPI_MASTER_CTRL_REG(a1)
+	btst #2,SPI_MASTER_CTRL_REG(a1)		; ensure there is a card present
 	beq.s .0005
 	; reset fifos
-	move.b #1,SPI_TX_FIFO_CTRL_REG
-	move.b #1,SPI_RX_FIFO_CTRL_REG
-.0002
-	move.b #SPI_INIT_SD,SPI_TRANS_TYPE_REG
-	move.b #1,SPI_TRANS_CTRL_REG
+	move.b #1,SPI_TX_FIFO_CTRL_REG(a1)
+	move.b #1,SPI_RX_FIFO_CTRL_REG(a1)
+	move.b #SPI_INIT_SD,SPI_TRANS_TYPE_REG(a1)
+	move.b #1,SPI_TRANS_CTRL_REG(a1)
 .0001
-	btst #0,SPI_TRANS_STS_REG	
+	bsr CheckForCtrlC
+	btst #0,SPI_TRANS_STS_REG(a1)	
 	bne.s .0001
 .0004
-	move.b SPI_TRANS_ERR_REG,d0
+	move.b SPI_TRANS_ERR_REG(a1),d0
 	andi.b #3,d0
-	bne.s .0002					; if error try again
+	bne.s .err
+	movem.l (sp)+,d1/a1
 	moveq #E_Ok,d0
 	rts
 .err
-	moveq #E_Timeout,d0
+	movem.l (sp)+,d1/a1
+	moveq #E_InitErr,d0
 	rts
 .0005
+	movem.l (sp)+,d1/a1
 	moveq #E_NoDev,d0
 	rts
+
+;		d1 = pointer to SPI master device (handle)
+;		d2 = byte to write
 ;
-spi_set_block_address:
-	; set the block read address
-	btst #1,SPI_MASTER_CTRL_REG		; check for high-density card
+spi_send_byte:
+	movem.l d1/a1,-(sp)
+	move.l d1,a1
+	macUnhmash d1
+.0001
+	bsr CheckForCtrlC
+	btst #0,SPI_TRANS_STS_REG
 	bne.s .0001
-	lsl.l #8,d1										; for a low density card the address is 
-	lsl.l #1,d1										; specified directly, is not a block address
-.0001:
-	move.b d1,SPI_ADDR_70
-	ror.l #8,d1
-	move.b d1,SPI_ADDR_158
-	ror.l #8,d1
-	move.b d1,SPI_ADDR_2316
-	ror.l #8,d1
-	move.b d1,SPI_ADDR_3124
-	ror.l #8,d1
+	move.b d2,SPI_DIRECT_ACCESS_DATA_REG(a1)
+	move.b #0,SPI_TRANS_TYPE_REG(a1)
+	move.b #1,SPI_TRANS_CTRL_REG(a1)
+	movem.l (sp)+,d1/a1
 	rts
 
 ; Parameters:
-;		d1 = block number to read
-;		a0 = buffer to put read data in
+;		d1 = pointer to SPI master device (handle)
+;		d2 = command
+;		d3 = command arg
+;		d4 = checksum
+
+spi_send_cmd:
+	movem.l d2/d4/a1,-(sp)
+	ori.b #$40,d2
+	bsr spi_send_byte
+	move.l d3,d2
+	rol.l #8,d2
+	bsr spi_send_byte
+	rol.l #8,d2
+	bsr spi_send_byte
+	rol.l #8,d2
+	bsr spi_send_byte
+	rol.l #8,d2
+	bsr spi_send_byte
+	move.b d4,d2
+	bsr spi_send_byte
+	move.w #31,d4
+.0002
+	move.b #$FF,d2
+	bsr spi_send_byte
+	macUnhmash d1
+	move.l d1,a1
+	move.b SPI_DIRECT_ACCESS_DATA_REG(a1),d2
+	macHmash d1
+	btst.l #7,d2
+	beq.s .0001
+	dbra d4,.0002
+.0001	
+	move.b d2,d1
+	movem.l (sp)+,d2/d4/a1
+	move.b #E_Ok,d0
+	rts
+
+;
+;		d1 = pointer to SPI master device (handle)
+;		d2 = block number to write
+;
+spi_setpos:
+spi_set_block_address:
+	movem.l d1/a1,-(sp)
+	macUnhmash d1
+	move.l d1,a1
+	; set the block read address
+	btst #1,SPI_MASTER_CTRL_REG(a1)		; check for high-density card
+	bne.s .0001
+	lsl.l #8,d2										; for a low density card the address is 
+	lsl.l #1,d2										; specified directly, is not a block address
+.0001:
+	move.b d2,SPI_ADDR_70(a1)
+	ror.l #8,d2
+	move.b d2,SPI_ADDR_158(a1)
+	ror.l #8,d2
+	move.b d2,SPI_ADDR_2316(a1)
+	ror.l #8,d2
+	move.b d2,SPI_ADDR_3124(a1)
+	ror.l #8,d2
+	movem.l (sp)+,d1/a1
+	rts
+
+; Parameters:
+;		d1 = pointer to SPI master device (handle)
+;		d2 = block number to read
+;		d3 = buffer to put read data in
 ;
 ; Returns:
 ;		d0 = E_ReadError if there was a read error
 ;		     E_Ok if successful
 ;
 spi_read_block:
+	movem.l d1/a0/a1,-(sp)
+	macUnhmash d1
+	move.l d1,a1
+	move.l d3,a0
 	; set the block read address
 	bsr spi_set_block_address
-	move.b #SPI_RW_READ_SD_BLOCK,SPI_TRANS_TYPE_REG	; set read transaction
-	move.b #1,SPI_TRANS_CTRL_REG	; start transaction
+	move.b #SPI_RW_READ_SD_BLOCK,SPI_TRANS_TYPE_REG(a1)	; set read transaction
+	move.b #1,SPI_TRANS_CTRL_REG(a1)	; start transaction
 .0002
-	btst.b #0,SPI_TRANS_STS_REG		; wait for transaction not busy
+	bsr CheckForCtrlC
+	btst.b #0,SPI_TRANS_STS_REG(a1)		; wait for transaction not busy
 	bne.s .0002
-	move.b SPI_TRANS_ERR_REG,d0
+	move.b SPI_TRANS_ERR_REG(a1),d0
 	andi.b #$0c,d0
 	bne.s .readerr
 	; now read the data from the fifo
 	move.w #512,d0	
 .0003
-	move.b SPI_RX_FIFO_DATA_REG,(a0)+
+	move.b SPI_RX_FIFO_DATA_REG(a1),(a0)+
 	dbra d0,.0003
+	movem.l (sp)+,d1/a0/a1
 	moveq #E_Ok,d0
 	rts
 .readerr:
+	movem.l (sp)+,d1/a0/a1
 	moveq #E_ReadError,d0
 	rts
 
 ; Parameters:
-;		d1 = block number to write
-;		a0 = buffer to output write data from
+;		d1 = pointer to SPI master device (handle)
+;		d2 = block number to write
+;		d3 = buffer to output write data from
 ;
 ; Returns:
 ;		d0 = E_WriteError if there was a write error
 ;		     E_Ok if successful
 ;
 spi_write_block:
+	movem.l d1/a0/a1,-(sp)
+	macUnhmash d1
+	move.l d1,a1
+	move.l d3,a0
 	; First load up the write fifo with data
 	move.w #512,d0
 .0001
-	move.b (a0)+,SPI_TX_FIFO_DATA_REG
+	move.b (a0)+,SPI_TX_FIFO_DATA_REG(a1)
 	dbra d0,.0001	
 	bsr spi_set_block_address
-	move.b #SPI_RW_WRITE_SD_BLOCK,SPI_TRANS_TYPE_REG	; set write transaction
-	move.b #1,SPI_TRANS_CTRL_REG	; start transaction
+	move.b #SPI_RW_WRITE_SD_BLOCK,SPI_TRANS_TYPE_REG(a1)	; set write transaction
+	move.b #1,SPI_TRANS_CTRL_REG(a1)	; start transaction
 .0002
-	btst.b #0,SPI_TRANS_STS_REG		; wait for transaction not busy
+	bsr CheckForCtrlC
+	btst.b #0,SPI_TRANS_STS_REG(a1)		; wait for transaction not busy
 	bne.s .0002
-	move.b SPI_TRANS_ERR_REG,d0
+	move.b SPI_TRANS_ERR_REG(a1),d0
 	andi.b #$30,d0
 	bne.s .writeerr
+	movem.l (sp)+,d1/a0/a1
 	moveq #E_Ok,d0
 	rts
 .writeerr
+	movem.l (sp)+,d1/a0/a1
 	moveq #E_WriteError,d0
+	rts
+
+; Parameters:
+;		d1 = pointer to SPI master device (handle)
+;		d2 = first block number to read
+;		d3 = address of buffer
+;		d4 = length of buffer
+;
+; Returns:
+;		d0 = E_WriteError if there was a write error
+;		     E_Ok if successful
+;
+spi_getbuf:
+	movem.l d1/d2/d3/d4/a0/a1,-(sp)
+	macUnhmash d1
+	move.l d1,a1					; a1 = pointer to SPI device
+	move.l d3,a0					; a0 = address of buffer
+	move.l d2,d1					; d1 = block number to write
+	add.l #511,d4					; round length up to even block number
+	andi.l #$FFFFFE00,d4
+	subq.l #1,d4					; loop the correct number of times
+.0001
+	bsr spi_read_block
+	tst.b d0
+	bne.s .err
+	lea 512(a0),a0				; advance pointer to next block
+	addq.l #1,d1					; advance block number
+	dbra d4,.0001
+	movem.l (sp)+,d1/d2/d3/d4/a0/a1
+	moveq #E_Ok,d0
+	rts
+.err
+	movem.l (sp)+,d1/d2/d3/d4/a0/a1
+	rts
+
+; Parameters:
+;		d1 = pointer to SPI master device (handle)
+;		d2 = first block number to write
+;		d3 = address of buffer
+;		d4 = length of buffer
+;
+; Returns:
+;		d0 = E_WriteError if there was a write error
+;		     E_Ok if successful
+;
+spi_putbuf:
+	movem.l d1/d2/d3/d4/a0/a1,-(sp)
+	macUnhmash d1
+	move.l d1,a1					; a1 = pointer to SPI device
+	move.l d3,a0					; a0 = address of buffer
+	move.l d2,d1					; d1 = block number to write
+	add.l #511,d4					; round length up to even block number
+	andi.l #$FFFFFE00,d4
+	subq.l #1,d4					; loop the correct number of times
+.0001
+	bsr spi_write_block
+	tst.b d0
+	bne.s .err
+	lea 512(a0),a0				; advance pointer to next block
+	addq.l #1,d1					; advance block number
+	dbra d4,.0001
+	movem.l (sp)+,d1/d2/d3/d4/a0/a1
+	moveq #E_Ok,d0
+	rts
+.err
+	movem.l (sp)+,d1/d2/d3/d4/a0/a1
 	rts
 
 ;===============================================================================
@@ -3449,14 +3712,10 @@ init_i2c:
 ; 	a6 - I2C controller base address
 
 i2c_wait_tip:
-	move.l d0,-(a7)
 .0001
 	bsr CheckForCtrlC				
-	move.b I2C_STAT(a6),d0		; wait for tip to clear
-	move.b #3,leds
-	btst #1,d0
+	btst #1,I2C_STAT(a6)			; wait for tip to clear
 	bne.s	.0001
-	move.l (a7)+,d0
 	rts
 
 ; Parameters
@@ -3485,14 +3744,10 @@ i2c_xmit1:
 	bsr	i2c_wait_rx_nack
 
 i2c_wait_rx_nack:
-	move.l d0,-(a7)
 .0001						
-	move.b #20,leds
 	bsr CheckForCtrlC
-	move.b I2C_STAT(a6),d0		; wait for RXack = 0
-	btst #7,d0
+	btst #7,I2C_STAT(a6)		; wait for RXack = 0
 	bne.s	.0001
-	move.l (a7)+,d0
 	rts
 
 ;===============================================================================
@@ -3500,17 +3755,19 @@ i2c_wait_rx_nack:
 ;===============================================================================
 
 rtc_read:
-	move.b #1,leds
+	movem.l d1/d2/a5/a6,-(sp)
 	movea.l	#I2C2,a6
 	lea	RTCBuf,a5
+	moveq #0,d2
 	move.b	#$80,I2C_CTRL(a6)	; enable I2C
-	move.b	#$DE,d0				; read address, write op
-	move.b	#$90,d1				; STA + wr bit
+.0002	
+	move.b #$DE,d0				; read address, write op
+	move.b #$90,d1				; STA + wr bit
 	bsr	i2c_wr_cmd
 	move.b #4,leds
 	tst.b	d0
 	bmi	.rxerr
-	move.b #$00,d0				; address zero
+	move.b d2,d0					; address zero
 	move.b #$10,d1				; wr bit
 	bsr	i2c_wr_cmd
 	move.b #5,leds
@@ -3522,12 +3779,11 @@ rtc_read:
 	move.b #6,leds
 	tst.b	d0
 	bmi	.rxerr
-		
-	move.w #$00,d2
+;	move.w #$00,d2
 .0001
 	move.b #7,leds
 	bsr CheckForCtrlC
-	move.b #$20,I2C_CMD(a6)	; rd bit
+	move.b #$68,I2C_CMD(a6)	; rd bit, STO + nack
 	bsr	i2c_wait_tip
 	bsr	i2c_wait_rx_nack
 	move.b I2C_STAT(a6),d0
@@ -3536,30 +3792,34 @@ rtc_read:
 	move.b I2C_RXR(a6),d0
 	move.b d0,(a5,d2.w)
 	addi.w #1,d2
-	cmpi.w #$5F,d2
-	bne	.0001
-	move.b #$68,I2C_CMD(a6)	; STO, rd bit + nack
-	bsr i2c_wait_tip
-	bsr i2c_wait_rx_nack
-	move.b I2C_STAT(a6),d0
-	tst.b	d0
-	bmi	.rxerr
-	move.b I2C_RXR(a6),d0
-	move.b d0,(a5,d2.w)
-	bsr i2c_wait_tip
+;	move.b #$68,I2C_CMD(a6)	; STO, rd bit + nack
+;	bsr i2c_wait_tip
+	cmpi.w #$60,d2
+	bne	.0002
+;	bsr i2c_wait_rx_nack
+;	move.b I2C_STAT(a6),d0
+;	tst.b	d0
+;	bmi	.rxerr
+;	move.b I2C_RXR(a6),d0
+;	move.b d0,(a5,d2.w)
+;	bsr i2c_wait_tip
 	move.b #0,I2C_CTRL(a6)		; disable I2C and return 0
+	movem.l (sp)+,d1/d2/a5/a6
 	moveq	#0,d0
 	rts
 .rxerr
 	bsr i2c_wait_tip
 	move.b #0,I2C_CTRL(a6)		; disable I2C and return status
+	movem.l (sp)+,d1/d2/a5/a6
 	rts
 
 rtc_write:
-	move.b #10,leds
+	movem.l d1/d2/a5/a6,-(sp)
 	movea.l	#I2C2,a6
 	lea	RTCBuf,a5
 	move.b #$80,I2C_CTRL(a6)	; enable I2C
+	move.w #$00,d2
+.0002
 	move.b #$DE,d0				; read address, write op
 	move.b #$90,d1				; STA + wr bit
 	bsr	i2c_wr_cmd
@@ -3571,29 +3831,37 @@ rtc_write:
 	bsr	i2c_wr_cmd
 	tst.b	d0
 	bmi	.rxerr
-	move.w #$20,d2
+	move.b #$DF,d0				; read address, write op
+	move.b #$90,d1				; STA + wr bit
+	bsr	i2c_wr_cmd
+	tst.b	d0
+	bmi	.rxerr
 .0001
 	bsr CheckForCtrlC
 	move.b (a5,d2.w),d0
-	move.b #$10,d1
+	move.b #$50,d1				; wr bit + STO
 	bsr	i2c_wr_cmd
+	bsr	i2c_wait_rx_nack
+	move.b I2C_STAT(a6),d0
 	tst.b	d0
 	bmi	.rxerr
+;	addi.w #1,d2
+;	cmpi.w #$5F,d2
+;	bne.s	.0001
+;	move.b (a5,d2.w),d0
+;	bsr i2c_wait_tip
 	addi.w #1,d2
-	cmpi.w #$5F,d2
-	bne.s	.0001
-	move.b (a5,d2.w),d0
-	move.b #$50,d1				; STO, wr bit
-	bsr	i2c_wr_cmd
-	tst.b	d0
-	bmi	.rxerr
-	bsr i2c_wait_tip
+	cmpi.w #$60,d2
+	bne.s	.0002
+
 	move.b #0,I2C_CTRL(a6)		; disable I2C and return 0
+	movem.l (sp)+,d1/d2/a5/a6
 	moveq	#0,d0
 	rts
 .rxerr:
 	bsr i2c_wait_tip
 	move.b #0,I2C_CTRL(a6)		; disable I2C and return status
+	movem.l (sp)+,d1/d2/a5/a6
 	rts
 
 msgRtcReadFail:

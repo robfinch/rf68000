@@ -47,8 +47,8 @@
 //
 import const_pkg::*;
 
-module AVBridge(rst_i, clk_i, fta_en_i, io_gate_en_i, hsync_i, vsync_i,
-	gfx_que_empty_i;
+module AVBridge(rst_i, clk_i, vclk_i, fta_en_i, io_gate_en_i, hsync_i, vsync_i,
+	gfx_que_empty_i,
 	s1_cyc_i, s1_stb_i, s1_ack_o, s1_we_i, s1_sel_i, s1_adr_i, s1_dat_i, s1_dat_o,
 	m_cyc_o, m_stb_o, m_ack_i, m_stall_i, m_we_o, m_sel_o, m_adr_o, m_dat_i, m_dat_o,
 	m_fta_o);
@@ -61,6 +61,7 @@ parameter WR_ACK2 = 3'd4;
 
 input rst_i;
 input clk_i;
+input vclk_i;
 input fta_en_i;
 input io_gate_en_i;
 input hsync_i;
@@ -292,7 +293,7 @@ WAIT_ACK:
 			s_ack <= 1'b0;
 			state <= IDLE;
 		end
-		else if (which==2'b01 ? !s2_cyc_i : !s1_cyc) begin
+		else if (which==2'b01 ? !cop_cyc : !s1_cyc) begin
 			if (which != 2'b10) begin
 				tClearBus();
 				s_ack <= 1'b0;
@@ -301,8 +302,8 @@ WAIT_ACK:
 		//		m_dat_o <= 32'd0;
 				if (!s1_cyc)
 					s1_dat_o <= 32'h0;
-				if (!s2_cyc_i)
-					s2_dat_o <= 32'h0;
+				if (!cop_cyc)
+					cop_dati <= 32'h0;
 				state <= IDLE;
 			end
 		end

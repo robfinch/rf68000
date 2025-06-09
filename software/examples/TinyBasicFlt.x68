@@ -1424,7 +1424,7 @@ XP_POP:
 	fmove.x 4(sp),fp0		; and data element
 	add.l #16,sp
 ;	cchk (sp)						; check the canary
-	add.l #4,sp					; pop canary	
+;	add.l #4,sp					; pop canary	
 	jmp (a1)
 
 ;-------------------------------------------------------------------------------
@@ -1437,7 +1437,7 @@ XP_POP1:
 	fmove.x 4(sp),fp1		; and data element
 	add.l #16,sp
 ;	cchk (sp)						; check the canary
-	add.l #4,sp					; pop canary
+;	add.l #4,sp					; pop canary
 	jmp (a1)
 
 ;-------------------------------------------------------------------------------

@@ -6415,7 +6415,7 @@ FADD:
 FINTRZ:	// Also FINT
 	begin
 		fpcnt <= fpcnt + 2'd1;
-		if (fpcnt==8'd6) begin
+		if (fpcnt>=8'd6) begin
 			if (SUPPORT_DECFLT) begin
 				resF <= dftrunco;
 				fzf <= dftrunco[94:0]==95'd0;
@@ -6423,8 +6423,8 @@ FINTRZ:	// Also FINT
 				Rt <= {1'b0,FLTDST};
 				rfwrF <= 1'b1;
 			end
+			ret();
 		end
-		ret();
 	end
 FSCALE:
 	begin

@@ -70,6 +70,24 @@ parameter PTE_R = 2;
 parameter PTE_W = 1;
 parameter PTE_X = 0;
 
+typedef struct packed
+{
+	logic [17:0] ppage;
+	logic p;
+	logic [8:0] resv;
+	logic s;
+	logic r;
+	logic w;
+	logic x;
+} pte_t;
+
+typedef struct packed
+{
+	logic [10:0] pid;
+	logic [17:0] vpage;
+	pte_t pte;
+} atc_entry_t;
+
 integer n1,n2;
 
 reg [2:0] fc_i;
@@ -86,10 +104,10 @@ reg cs_mmu;
 reg ack1,ack2;
 reg cs_root_ptr;
 reg atc_hit, atc_hit_r;
+reg mmu_act;
 reg [5:0] atc_ua;
-reg [10:0] atc_pid [0:63];
-reg [31:14] atc_vadr [0:63];
-reg [31:14] atc_padr [0:63];
+atc_entry_t atc [0:63];
+reg atc_err;
 reg [31:14] padr1;
 reg [31:0] adri_r;
 reg [31:0] dati_r;
@@ -98,7 +116,7 @@ reg [31:0] mmu_en [0:63];
 
 reg [10:0] pid;
 reg [31:8] root_adr;
-reg [31:0] pte;
+pte_t pte;
 reg [31:0] page_fault_addr;
 reg mmu_access;
 reg kernel_as;
@@ -106,9 +124,7 @@ reg kernel_as;
 initial begin
 	for (n2 = 0; n2 < 64; n2 = n2 + 1)
 	begin
-		atc_vadr[n2] = 32'hFFFFFFFF;
-		atc_padr[n2] = 32'hFFFFFFFF;
-		atc_pid[n2] = 11'd0;
+		atc[n2] = {$bits(atc_entry_t){1'b1}};
 		mmu_en[n2] = 32'd0;
 	end
 end
@@ -190,20 +206,43 @@ else
 always_comb
 begin
 	atc_hit = 1'b0;
+	atc_err = 1'b0;
 	for (n1 = 0; n1 < 64; n1 = n1 + 1)
-		if (atc_vadr[n1]==cadr_i[31:14] && pid==atc_pid[n1]) begin
-			padr1 = atc_padr[n1];
+		if (atc[n1].vpage==cadr_i[31:14] && pid==atc[n1].pid) begin
+			padr1 = atc[n1].pte.ppage;
 			atc_hit = 1'b1;
+			case(cfc_i)
+			3'b000:	;	// not used
+			3'b001:		// user data
+				begin
+					if (~atc[n1].pte.w & cwe_i)
+						atc_err = 1'b1;
+					if (~atc[n1].pte.r & ~cwe_i)
+						atc_err = 1'b1;
+				end
+			3'b010:		// user code
+				begin
+					if (~atc[n1].pte.x)
+						atc_err = 1'b1;
+				end
+			3'b011:	;	// not used
+			3'b100:	;	// not used
+			3'b101:	;	// supervisor data
+			3'b110:	;	// supervisor program
+			3'b111:	; // interrupt acknowledge
+			endcase
 			break;
 		end
 end
 
 always_comb
-	atc_hit_r <= atc_hit || !mmu_en[pid[10:5]][pid[4:0]] || kernel_as;
+	atc_hit_r = atc_hit || !mmu_en[pid[10:5]][pid[4:0]] || kernel_as;
+always_comb
+	mmu_act = mmu_en[pid[10:5]][pid[4:0]] && !kernel_as;
 
 always_comb
 begin
-	if (mmu_en[pid[10:5]][pid[4:0]] && !kernel_as) begin
+	if (mmu_act) begin
 		if (atc_hit)
 			adr_i <= {padr1,cadr_i[13:0]};
 	end
@@ -237,11 +276,11 @@ begin
 	mcyc_o = ccyc_i & atc_hit_r;
 	mstb_o = cstb_i & atc_hit_r;
 	cack_o = cs_mmu ? ack1 : mack_i;
-	cerr_o = merr_i;
+	cerr_o = mmu_act ? atc_err|merr_i : merr_i;
 	cvpa_o = mvpa_i;
 	mwe_o = cwe_i;
 	msel_o = csel_i;
-	madr_o = adr_i;
+	madr_o = cadr_i;
 	mdat_o = cdat_o;
 end
 
@@ -282,7 +321,7 @@ else begin
 				work_cyc <= 1'b0;
 				work_stb <= 1'b0;
 				work_sel <= 4'h0;
-				pte <= mdat_i;
+				pte <= pte_t'(mdat_i);
 			end
 		end
 	mmu_state[ST_ACCESS2]:
@@ -292,7 +331,7 @@ else begin
 			work_stb <= 1'b1;
 			work_we <= 1'b0;
 			work_sel <= 4'hF;
-			work_adr <= {pte[31:14],cadr_i[25:14],2'b00};
+			work_adr <= {pte.ppage,cadr_i[25:14],2'b00};
 		end
 	mmu_state[ST_WAIT_ACK2]:
 		begin
@@ -301,22 +340,22 @@ else begin
 			work_stb <= 1'b1;
 			work_we <= 1'b0;
 			work_sel <= 4'hF;
-			work_adr <= {pte[31:14],cadr_i[25:14],2'b00};
+			work_adr <= {pte.ppage,cadr_i[25:14],2'b00};
 			if (mack_i) begin
 				work_cyc <= 1'b0;
 				work_stb <= 1'b0;
 				work_sel <= 4'h0;
-				pte <= mdat_i;
+				pte <= pte_t'(mdat_i);
 			end
 		end	
 	// This update state should cause an immediate hit on the ATC.
 	mmu_state[ST_ATC_UPDATE]:
 		begin
 			mmu_access <= 1'b0;
-			if (pte[PTE_PRESENT]) begin
-				atc_padr[atc_ua] <= pte[31:14];
-				atc_vadr[atc_ua] <= cadr_i[31:14];
-				atc_pid[atc_ua] <= pid;
+			if (pte.p) begin
+				atc[atc_ua].pte <= pte;
+				atc[atc_ua].vpage <= cadr_i[31:14];
+				atc[atc_ua].pid <= pid;
 				atc_ua <= atc_ua + 6'd1;
 			end
 			else begin
