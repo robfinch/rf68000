@@ -6862,36 +6862,36 @@ begin
 	case(mmm)
 	3'd5:	begin	// d16(An)
 				ea <= (MMMRRR ? rfoAna : rfoAn);
-				call(FETCH_D16,size_state);
+				if (lea) goto(size_state); else call(FETCH_D16,size_state);
 			end
 	3'd6:	begin	// d8(An,Xn)
 				ea <= (MMMRRR ? rfoAna : rfoAn);
-				call(FETCH_NDX,size_state);
+				if (lea) goto(size_state); else call(FETCH_NDX,size_state);
 			end
 	3'd7:	begin
 				case(rrr)
 				3'd0:	begin	// abs short
 							ea <= 32'd0;
-							call(FETCH_D16,size_state);
+							if (lea) goto(size_state); else call(FETCH_D16,size_state);
 						end
 				3'd1:	begin	// abs long
 							ea <= 32'd0;
-							call(FETCH_D32,size_state);
+							if (lea) goto(size_state); else call(FETCH_D32,size_state);
 						end
 				3'd2:	begin	// d16(PC)
 							ea <= pc;
-							call(FETCH_D16,size_state);
+							if (lea) goto(size_state); else call(FETCH_D16,size_state);
 						end
 				3'd3:	begin	// d8(PC,Xn)
 							ea <= pc;
-							call(FETCH_NDX,size_state);
+							if (lea) goto(size_state); else call(FETCH_NDX,size_state);
 						end
 				3'd4:	begin	// #i16
-							goto((size_state==FETCH_LWORD||size_state==FETCH_NOP_LWORD||size_state==FETCH_NOP_HEXI)?FETCH_IMM32:FETCH_IMM16);
+							if (lea) goto(size_state); else goto((size_state==FETCH_LWORD||size_state==FETCH_NOP_LWORD||size_state==FETCH_NOP_HEXI)?FETCH_IMM32:FETCH_IMM16);
 							end
 				3'd5:	begin	// #i32
 							state <= FETCH_IMM32;
-							goto (FETCH_IMM32);
+							if (lea) goto(size_state); else goto (FETCH_IMM32);
 						end
 				endcase
 			end
