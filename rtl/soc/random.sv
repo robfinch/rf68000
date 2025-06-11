@@ -1,6 +1,6 @@
 // ============================================================================
 //        __
-//   \\__/ o\    (C) 2011-2022  Robert Finch, Waterloo
+//   \\__/ o\    (C) 2011-2025  Robert Finch, Waterloo
 //    \  __ /    All rights reserved.
 //     \/_//     robfinch<remove>@finitron.ca
 //       ||
@@ -101,7 +101,7 @@ input cyc_i;
 input stb_i;
 output reg ack_o;
 input we_i;
-input [3:0] adr_i;
+input [4:0] adr_i;
 input [31:0] dat_i;
 output reg [31:0] dat_o;
 parameter pAckStyle = 1'b0;
@@ -109,7 +109,7 @@ parameter pAckStyle = 1'b0;
 reg ack;
 reg cs;
 reg we;
-reg [3:0] adr;
+reg [4:0] adr;
 reg [31:0] dat;
 always_ff @(posedge clk_i)
 	cs <= cs_i && cyc_i && stb_i;
@@ -145,18 +145,23 @@ begin
 	next_m_w = (32'h18000 * m_ws[15:0]) + m_ws[31:16];
 end
 
+wire [31:0] num = {m_zs[15:0],16'd0} + m_ws;
+wire [31:0] strm = {22'h0,stream};
+
 // Register read path
 //
 always_ff @(posedge clk_i)
 if (cs_i)
-	case(adr[3:2])
-	2'd0:	dat_o <= {m_zs[15:0],16'd0} + m_ws;
-	2'd1:	dat_o <= {22'h0,stream};
+	case(adr[4:2])
+	3'd0:	dat_o <= num;
+	3'd1:	dat_o <= strm;
 // Uncomment these for register read-back
 //		3'd4:	dat_o <= m_z[31:16];
 //		3'd5:	dat_o <= m_z[15: 0];
 //		3'd6:	dat_o <= m_w[31:16];
 //		3'd7:	dat_o <= m_w[15: 0];
+	3'd4:	dat_o <= {num[7:0],num[15:8],num[23:16],num[31:24]};
+	3'd5:	dat_o <= {strm[7:0],strm[15:8],strm[23:16],strm[31:24]};
 	default:	dat_o <= 32'h0000;
 	endcase
 else
@@ -170,17 +175,20 @@ begin
 	wrz <= `FALSE;
 	if (cs) begin
 		if (pe_we)
-			case(adr[3:2])
-			2'd0:
+			case(adr[4:2])
+			3'd0,3'd4:
 				begin
 					z <= next_m_z;
 					w <= next_m_w;
 					wrw <= `TRUE;
 					wrz <= `TRUE;
 				end
-			2'd1:	stream <= dat[9:0];
-			2'd2:	begin z <= dat; wrz <= `TRUE; end
-			2'd3:	begin w <= dat; wrw <= `TRUE; end
+			3'd1:	stream <= dat[9:0];
+			3'd2:	begin z <= dat; wrz <= `TRUE; end
+			3'd3:	begin w <= dat; wrw <= `TRUE; end
+			3'd5: stream <= {dat[7:0],dat[15:8],dat[23:16],dat[31:24]};
+			3'd6:	begin z <= {dat[7:0],dat[15:8],dat[23:16],dat[31:24]}; wrz <= `TRUE; end
+			3'd7:	begin w <= {dat[7:0],dat[15:8],dat[23:16],dat[31:24]}; wrw <= `TRUE; end
 			endcase
 	end
 end

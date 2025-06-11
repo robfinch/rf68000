@@ -32,7 +32,7 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //                                                            
-// IOBridge.v
+// AVBridge.sv
 //
 // Adds FF's into the io path. This makes it easier for the place and
 // route to take place. This module also filters requests to the I/O
@@ -50,6 +50,7 @@ import const_pkg::*;
 module AVBridge(rst_i, clk_i, vclk_i, fta_en_i, io_gate_en_i, hsync_i, vsync_i,
 	gfx_que_empty_i,
 	s1_cyc_i, s1_stb_i, s1_ack_o, s1_we_i, s1_sel_i, s1_adr_i, s1_dat_i, s1_dat_o,
+	cs0_o, cs1_o, cs2_o, cs3_o, cs4_o, cs5_o, cs6_o, cs7_o,
 	m_cyc_o, m_stb_o, m_ack_i, m_stall_i, m_we_o, m_sel_o, m_adr_o, m_dat_i, m_dat_o,
 	m_fta_o);
 parameter WID=32;
@@ -58,6 +59,15 @@ parameter WAIT_ACK = 3'd1;
 parameter WAIT_NACK = 3'd2;
 parameter WR_ACK = 3'd3;
 parameter WR_ACK2 = 3'd4;
+parameter CS0_MASK = 32'hFFE00000;	// text controller
+parameter CS1_MASK = 32'hFFFF0000;	// frame buffer
+parameter CS2_MASK = 32'hFFFFFC00;	// graphics accelerator
+parameter CS3_MASK = 32'hFFFF0000;
+parameter CS4_MASK = 32'hFFFFFC00;	// sound generator
+parameter CS5_MASK = 32'hFFFFFFF0;	// audio codec
+parameter CS6_MASK = 32'hFFFFFFF0;	// I2C for codec
+parameter CS7_MASK = 32'hFFFF0000;
+parameter BRIDGENUM = 1;
 
 input rst_i;
 input clk_i;
@@ -77,6 +87,15 @@ input [31:0] s1_adr_i;
 input [31:0] s1_dat_i;
 output reg [31:0] s1_dat_o;
 
+output reg cs0_o;
+output reg cs1_o;
+output reg cs2_o;
+output reg cs3_o;
+output reg cs4_o;
+output reg cs5_o;
+output reg cs6_o;
+output reg cs7_o;
+
 output reg m_cyc_o;
 output reg m_stb_o;
 input m_ack_i;
@@ -90,6 +109,8 @@ output reg [31:0] m_dat_o;
 fta_bus_interface.master m_fta_o;
 //assign m_fta_o.clk = clk_i;
 //assign m_fta_o.rst = rst_i;
+reg [31:0] cs [0:7];
+
 
 wire cop_cyc;
 wire cop_stb;
@@ -127,14 +148,62 @@ reg s1_cyc;
 always_comb
 	s1_cyc = s1_cyc_i && s1_adr_i[31:24]==8'hFD && s1_adr_i[23:20]!=4'h2;
 
+reg cop_cs0;
+reg cop_cs1;
+reg cop_cs2;
+reg cop_cs3;
+reg cop_cs4;
+reg cop_cs5;
+reg cop_cs6;
+reg cop_cs7;
+always_comb cop_cs0 = ((cs[0] ^ cop_adr) & CS0_MASK) == 32'd0;
+always_comb cop_cs1 = ((cs[1] ^ cop_adr) & CS1_MASK) == 32'd0;
+always_comb cop_cs2 = ((cs[2] ^ cop_adr) & CS2_MASK) == 32'd0;
+always_comb cop_cs3 = ((cs[3] ^ cop_adr) & CS3_MASK) == 32'd0;
+always_comb cop_cs4 = ((cs[4] ^ cop_adr) & CS4_MASK) == 32'd0;
+always_comb cop_cs5 = ((cs[5] ^ cop_adr) & CS5_MASK) == 32'd0;
+always_comb cop_cs6 = ((cs[6] ^ cop_adr) & CS6_MASK) == 32'd0;
+always_comb cop_cs7 = ((cs[7] ^ cop_adr) & CS7_MASK) == 32'd0;
+reg s1_cs0;
+reg s1_cs1;
+reg s1_cs2;
+reg s1_cs3;
+reg s1_cs4;
+reg s1_cs5;
+reg s1_cs6;
+reg s1_cs7;
+always_comb s1_cs0 = ((cs[0] ^ s1_adr_i) & CS0_MASK) == 32'd0;
+always_comb s1_cs1 = ((cs[1] ^ s1_adr_i) & CS1_MASK) == 32'd0;
+always_comb s1_cs2 = ((cs[2] ^ s1_adr_i) & CS2_MASK) == 32'd0;
+always_comb s1_cs3 = ((cs[3] ^ s1_adr_i) & CS3_MASK) == 32'd0;
+always_comb s1_cs4 = ((cs[4] ^ s1_adr_i) & CS4_MASK) == 32'd0;
+always_comb s1_cs5 = ((cs[5] ^ s1_adr_i) & CS5_MASK) == 32'd0;
+always_comb s1_cs6 = ((cs[6] ^ s1_adr_i) & CS6_MASK) == 32'd0;
+always_comb s1_cs7 = ((cs[7] ^ s1_adr_i) & CS7_MASK) == 32'd0;
+
 always_ff @(posedge clk_i)
 if (rst_i) begin
-	m_cyc_o <= 1'b0;
-	m_stb_o <= 1'b0;
-	m_we_o <= 1'b0;
-	m_sel_o <= 4'h0;
-	m_adr_o <= {32{1'b0}};
-	m_dat_o <= 32'd0;
+	cs[0] = 32'hFD000000;		// Text controller
+	cs[1] = 32'hFD200000;		// Frame buffer
+	cs[2] = 32'hFD210000;		// graphics accelerator
+	cs[3] = 32'hFD400000;		//
+	cs[4] = 32'hFD240000;		// sound generator
+	cs[5] = 32'hFD254000;		// ADAU1761 audio codec
+	cs[6] = 32'hFD250000;		// I2C for codec
+	cs[7] = 32'hFD700000;
+end
+else begin
+	if (s1_cyc_i && s1_stb_i && s1_we_i && s1_adr_i[31:8]==24'hFDFFF1) begin
+		if (s1_adr_i[7])
+			cs[s1_adr_i[4:2]] <= {s1_dat_i[7:0],s1_dat_i[15:8],s1_dat_i[23:16],s1_dat_i[31:24]};
+		else
+			cs[s1_adr_i[4:2]] <= s1_dat_i;
+	end
+end
+
+always_ff @(posedge clk_i)
+if (rst_i) begin
+	tClearBus();
 	s_ack <= 1'b0;
 	s1_dat_o <= 32'd0;
 	cop_dati <= 32'd0;
@@ -155,6 +224,14 @@ IDLE:
   if (~m_ack_i & io_gate_en_i & ~m_stall_i) begin
     if (cop_cyc && cop_adr[31:24]==8'hFD && cop_adr[23:20]!=4'h2) begin
     	which <= 2'b01;
+    	cs0_o <= cop_cs0;
+    	cs1_o <= cop_cs1;
+    	cs2_o <= cop_cs2;
+    	cs3_o <= cop_cs3;
+    	cs4_o <= cop_cs4;
+    	cs5_o <= cop_cs5;
+    	cs6_o <= cop_cs6;
+    	cs7_o <= cop_cs7;
       m_cyc_o <= 1'b1;
       m_stb_o <= 1'b1;
 	    m_we_o <= cop_we;
@@ -176,6 +253,14 @@ IDLE:
     // Filter requests to the I/O address range
     else if (s1_cyc & s1_stb_i & ~cop_cs) begin
     	which <= 2'b00;
+    	cs0_o <= s1_cs0;
+    	cs1_o <= s1_cs1;
+    	cs2_o <= s1_cs2;
+    	cs3_o <= s1_cs3;
+    	cs4_o <= s1_cs4;
+    	cs5_o <= s1_cs5;
+    	cs6_o <= s1_cs6;
+    	cs7_o <= s1_cs7;
       m_cyc_o <= 1'b1;
       m_stb_o <= 1'b1;
 	    m_we_o <= s1_we_i;
@@ -403,6 +488,14 @@ rfCopper ucop1
 
 task tClearBus;
 begin
+	cs0_o <= LOW;
+	cs1_o <= LOW;
+	cs2_o <= LOW;
+	cs3_o <= LOW;
+	cs4_o <= LOW;
+	cs5_o <= LOW;
+	cs6_o <= LOW;
+	cs7_o <= LOW;
 	m_cyc_o <= 1'b0;
 	m_stb_o <= 1'b0;
 	m_we_o <= 1'b0;

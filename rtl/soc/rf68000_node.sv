@@ -39,6 +39,7 @@ import nic_pkg::*;
 module rf68000_node(id, rst1, rst2, nic_rst, clk, dfclk, clken1, clken2, packet_i, packet_o, 
 	rpacket_i, rpacket_o, ipacket_i, ipacket_o);
 parameter SUPPORT_DECFLT = 1'b1;
+parameter ROM_FILE = "rom68k.mem";
 input [4:0] id;
 input rst1;
 input rst2;
@@ -429,19 +430,19 @@ rf68000 #(.SUPPORT_DECFLT(SUPPORT_DECFLT)) ucpu2
    // Xilinx Parameterized Macro, version 2022.2
 
    xpm_memory_tdpram #(
-      .ADDR_WIDTH_A(15),               // DECIMAL
-      .ADDR_WIDTH_B(15),               // DECIMAL
+      .ADDR_WIDTH_A(16),               // DECIMAL
+      .ADDR_WIDTH_B(16),               // DECIMAL
       .AUTO_SLEEP_TIME(0),            // DECIMAL
       .BYTE_WRITE_WIDTH_A(8),        // DECIMAL
       .BYTE_WRITE_WIDTH_B(8),        // DECIMAL
       .CASCADE_HEIGHT(0),             // DECIMAL
       .CLOCKING_MODE("common_clock"), // String
       .ECC_MODE("no_ecc"),            // String
-      .MEMORY_INIT_FILE("rom68k.mem"),    // String
+      .MEMORY_INIT_FILE(ROM_FILE),    // String
       .MEMORY_INIT_PARAM("0"),        // String
       .MEMORY_OPTIMIZATION("true"),   // String
       .MEMORY_PRIMITIVE("block"),      // String
-      .MEMORY_SIZE(131072*8),         // DECIMAL
+      .MEMORY_SIZE(262144*8),         // DECIMAL
       .MESSAGE_CONTROL(0),            // DECIMAL
       .READ_DATA_WIDTH_A(32),         // DECIMAL
       .READ_DATA_WIDTH_B(32),         // DECIMAL
@@ -477,8 +478,8 @@ rf68000 #(.SUPPORT_DECFLT(SUPPORT_DECFLT)) ucpu2
       .sbiterrb(),             				// 1-bit output: Status signal to indicate single bit error occurrence
                                        // on the data output of port B.
 
-      .addra(ram1_adr[16:2]),                   // ADDR_WIDTH_A-bit input: Address for port A write and read operations.
-      .addrb(ram2_adr[16:2]),                   // ADDR_WIDTH_B-bit input: Address for port B write and read operations.
+      .addra(ram1_adr[17:2]),                   // ADDR_WIDTH_A-bit input: Address for port A write and read operations.
+      .addrb(ram2_adr[17:2]),                   // ADDR_WIDTH_B-bit input: Address for port B write and read operations.
       .clka(clk),                     // 1-bit input: Clock signal for port A. Also clocks port B when
                                        // parameter CLOCKING_MODE is "common_clock".
 

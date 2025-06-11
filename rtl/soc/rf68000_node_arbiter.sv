@@ -1,7 +1,7 @@
 `timescale 1ns / 1ps
 // ============================================================================
 //        __
-//   \\__/ o\    (C) 2022  Robert Finch, Waterloo
+//   \\__/ o\    (C) 2022-2025  Robert Finch, Waterloo
 //    \  __ /    All rights reserved.
 //     \/_//     robfinch<remove>@finitron.ca
 //       ||
@@ -198,13 +198,16 @@ else begin
 */
 			cpu_dati <= ram_dato;
 			nic_dati <= ram_dato;
-			if (w1) begin
-				cpu_ack <= 1'b1;
-				cpu_aack <= 1'b1;
-			end
-			else begin
+			case(w1)
+			2'b01:
 				nic_ack <= 1'b1;
-			end
+			2'b10:
+				begin
+					cpu_ack <= 1'b1;
+					cpu_aack <= 1'b1;
+				end
+			default:	;
+			endcase
 		end
 	ST_ACK:
 		begin
