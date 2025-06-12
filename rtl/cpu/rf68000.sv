@@ -991,7 +991,7 @@ wire df2iover1;
 
 reg [3:0] dfscnt;
 
-wire dfmao_overflow;
+wire dfmao_overflow = 1'b0;
 wire dfmao_nan = 1'b0;
 wire [63:0] dfmao, dtrunco, dscaleo, ddivo, i2do, d2io;
 wire dscaleo_overflow = 1'b0;
@@ -1015,7 +1015,7 @@ fpFMA64nrL8 ufdma1 (
 	.o(dfmao),
 	.inf(),
 	.zero(),
-	.overflow(dfmao_overflow),
+	.overflow(),
 	.underflow(),
 	.inexact()
 );
@@ -6625,10 +6625,40 @@ CCHK:
 FADD:
 	begin
 		fpcnt <= fpcnt + 2'd1;
-		case(ir2[12:10])
-		3'b011:
-			if (fpcnt==8'd250) begin
-				if (SUPPORT_DECFLT) begin
+		if (ir2[14]) begin
+			case(ir2[12:10])
+			3'b011:
+				if (fpcnt==8'd250) begin
+					if (SUPPORT_DECFLT) begin
+						fzf <= dfaddsubo[94:0]==95'd0;
+						fnf <= dfaddsubo[95];
+						fvf <= dfaddsubo[94:90]==5'b11110;
+						fnanf <= dfaddsubo[94:90]==5'b11111;
+						resF <= dfaddsubo;
+						Rt <= {1'b0,FLTDST};
+						rfwrF <= 1'b1;
+					end
+					ret();
+				end
+			3'b101:
+				if (fpcnt==8'd10) begin
+					if (SUPPORT_DOUBLE) begin
+						fzf <= dfmao[62:0]==63'd0;
+						fnf <= dfmao[63];
+						fvf <= dfmao_overflow;
+						fnanf <= dfmao_nan;
+						resF <= dfmao;
+						Rt <= {1'b0,FLTDST};
+						rfwrF <= 1'b1;
+					end
+					ret();
+				end
+			default:	;
+			endcase
+		end
+		else begin
+			if (SUPPORT_DECFLT) begin
+				if (fpcnt==8'd250) begin
 					fzf <= dfaddsubo[94:0]==95'd0;
 					fnf <= dfaddsubo[95];
 					fvf <= dfaddsubo[94:90]==5'b11110;
@@ -6639,9 +6669,8 @@ FADD:
 				end
 				ret();
 			end
-		3'b101:
-			if (fpcnt==8'd10) begin
-				if (SUPPORT_DOUBLE) begin
+			else if (SUPPORT_DOUBLE) begin
+				if (fpcnt==8'd10) begin
 					fzf <= dfmao[62:0]==63'd0;
 					fnf <= dfmao[63];
 					fvf <= dfmao_overflow;
@@ -6652,8 +6681,7 @@ FADD:
 				end
 				ret();
 			end
-		default:	;
-		endcase
+		end
 	end
 FINTRZ:	// Also FINT
 	begin
@@ -6770,8 +6798,43 @@ FMUL1:
 			goto (FMUL2);
 	end
 FMUL2:
-	case(ir2[12:10])
-	3'b011:
+	if (ir2[14]) begin
+		case(ir2[12:10])
+		3'b011:
+			if (SUPPORT_DECFLT) begin
+				if (dfmuldone) begin
+					fzf <= dfmulo[94:0]==95'd0;
+					fnf <= dfmulo[95];
+					fvf <= dfmulo[94:90]==5'b11110;
+					fnanf <= dfmulo[94:90]==5'b11111;
+					resF <= dfmulo;
+					Rt <= {1'b0,FLTDST};
+					rfwrF <= 1'b1;
+					ret();
+				end
+			end
+			else
+				ret();
+		3'b101:
+			if (SUPPORT_DOUBLE) begin
+				fpcnt <= fpcnt + 2'd1;
+				if (fpcnt==8'd16) begin
+					fzf <= dfmao[62:0]==63'd0;
+					fnf <= dfmao[63];
+					fvf <= dfmao_overflow;
+					fnanf <= dfmao_nan;
+					resF <= dfmao;
+					Rt <= {1'b0,FLTDST};
+					rfwrF <= 1'b1;
+					ret();
+				end
+			end
+			else
+				ret();
+		default:	ret();
+		endcase
+	end
+	else begin
 		if (SUPPORT_DECFLT) begin
 			if (dfmuldone) begin
 				fzf <= dfmulo[94:0]==95'd0;
@@ -6784,10 +6847,7 @@ FMUL2:
 				ret();
 			end
 		end
-		else
-			ret();
-	3'b101:
-		if (SUPPORT_DOUBLE) begin
+		else if (SUPPORT_DOUBLE) begin
 			fpcnt <= fpcnt + 2'd1;
 			if (fpcnt==8'd16) begin
 				fzf <= dfmao[62:0]==63'd0;
@@ -6802,8 +6862,7 @@ FMUL2:
 		end
 		else
 			ret();
-	default:	ret();
-	endcase
+	end
 	// For divide the done signal may take several cycles to go inactive after
 	// the load signal is activated. Prevent a premature recognition of done
 	// using a counter.
@@ -6822,6 +6881,7 @@ FDIV2:
 			goto (FDIV3);
 	end
 FDIV3:
+	if (ir2[14]) begin
 	case(ir2[12:10])
 	3'b011:
 		if (dfdivdone) begin
@@ -6855,31 +6915,81 @@ FDIV3:
 		end
 	default:	ret();
 	endcase
+	end
+	else begin
+		if (SUPPORT_DECFLT) begin
+			if (dfdivdone) begin
+				fzf <= dfdivo[94:0]==95'd0;
+				fnf <= dfdivo[95];
+				fvf <= dfdivo[94:90]==5'b11110;
+				fnanf <= dfdivo[94:90]==5'b11111;
+				resF <= dfdivo;
+				Rt <= {1'b0,FLTDST};
+				rfwrF <= 1'b1;
+				quotient_bits <= {dfdivo[95],dfdivo[6:0]};
+				quotient_bitshi <= {dfdivo[9:7]};
+			end
+			ret();
+		end
+		else if (SUPPORT_DOUBLE) begin
+			if (ddiv_done) begin
+				fzf <= ddivo[62:0]==63'd0;
+				fnf <= ddivo[63];
+				fvf <= ddivo_overflow;
+				fnanf <= ddivo_nan;
+				resF <= ddivo;
+				Rt <= {1'b0,FLTDST};
+				rfwrF <= 1'b1;
+				quotient_bits <= {ddivo[63],ddivo[6:0]};
+				quotient_bitshi <= {ddivo[9:7]};
+			end
+			ret();
+		end
+		else
+			ret();
+	end
 FCMP:
 	begin
-		case(ir2[12:10])
-		3'b011:
-			begin
-				if (SUPPORT_DECFLT) begin
-					fzf <= dfcmpo[0];
-					fnf <= dfcmpo[1];
-					fvf <= 1'b0;
-					fnanf <= dfcmpo[4];
+		if (ir2[14]) begin
+			case(ir2[12:10])
+			3'b011:
+				begin
+					if (SUPPORT_DECFLT) begin
+						fzf <= dfcmpo[0];
+						fnf <= dfcmpo[1];
+						fvf <= 1'b0;
+						fnanf <= dfcmpo[4];
+					end
+					ret();
 				end
-				ret();
-			end
-		3'b101:
-			begin
-				if (SUPPORT_DOUBLE) begin
-					fzf <= dcmpo[0];
-					fnf <= dcmpo[1];
-					fvf <= 1'b0;
-					fnanf <= dcmpo[4];
+			3'b101:
+				begin
+					if (SUPPORT_DOUBLE) begin
+						fzf <= dcmpo[0];
+						fnf <= dcmpo[1];
+						fvf <= 1'b0;
+						fnanf <= dcmpo[4];
+					end
+					ret();
 				end
-				ret();
+			default:	ret();
+			endcase
+		end
+		else begin
+			if (SUPPORT_DECFLT) begin
+				fzf <= dfcmpo[0];
+				fnf <= dfcmpo[1];
+				fvf <= 1'b0;
+				fnanf <= dfcmpo[4];
 			end
-		default:	ret();
-		endcase
+			else if (SUPPORT_DOUBLE) begin
+				fzf <= dcmpo[0];
+				fnf <= dcmpo[1];
+				fvf <= 1'b0;
+				fnanf <= dcmpo[4];
+			end
+			ret();
+		end
 	end
 FMOVE:
 	begin
@@ -6968,37 +7078,61 @@ I2DF1:
 	end
 I2DF2:
 	begin
-		case(ir2[12:10])
-		3'b011:
-			begin
-				if (SUPPORT_DECFLT) begin
-					if (i2dfdone) begin
-						resF <= i2dfo;
-						fzf <= i2dfo[94:0]==95'd0;
-						fnf <= i2dfo[95];
+		if (ir2[14]) begin
+			case(ir2[12:10])
+			3'b011:
+				begin
+					if (SUPPORT_DECFLT) begin
+						if (i2dfdone) begin
+							resF <= i2dfo;
+							fzf <= i2dfo[94:0]==95'd0;
+							fnf <= i2dfo[95];
+							Rt <= {1'b0,FLTDST};
+							rfwrF <= 1'b1;
+							ret();
+						end
+					end
+					else
+						ret();
+				end
+			3'b101:
+				begin
+					if (SUPPORT_DOUBLE) begin
+						resF <= i2do;
+						fzf <= i2do[62:0]==63'd0;
+						fnf <= i2do[63];
 						Rt <= {1'b0,FLTDST};
 						rfwrF <= 1'b1;
 						ret();
 					end
+					else
+						ret();
 				end
-				else
-					ret();
-			end
-		3'b101:
-			begin
-				if (SUPPORT_DOUBLE) begin
-					resF <= i2do;
-					fzf <= i2do[62:0]==63'd0;
-					fnf <= i2do[63];
+			default:	ret();
+			endcase
+		end
+		else begin
+			if (SUPPORT_DECFLT) begin
+				if (i2dfdone) begin
+					resF <= i2dfo;
+					fzf <= i2dfo[94:0]==95'd0;
+					fnf <= i2dfo[95];
 					Rt <= {1'b0,FLTDST};
 					rfwrF <= 1'b1;
 					ret();
 				end
-				else
-					ret();
 			end
-		default:	ret();
-		endcase
+			else if (SUPPORT_DOUBLE) begin
+				resF <= i2do;
+				fzf <= i2do[62:0]==63'd0;
+				fnf <= i2do[63];
+				Rt <= {1'b0,FLTDST};
+				rfwrF <= 1'b1;
+				ret();
+			end
+			else
+				ret();
+		end
 	end
 DF2I1:
 	begin
