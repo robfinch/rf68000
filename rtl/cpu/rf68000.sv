@@ -991,97 +991,143 @@ wire df2iover1;
 
 reg [3:0] dfscnt;
 
+reg [95:0] fpss;
 wire dfmao_overflow = 1'b0;
 wire dfmao_nan = 1'b0;
-wire [63:0] dfmao, dtrunco, dscaleo, ddivo, i2do, d2io;
+reg [95:0] dfmao, dtrunco, dscaleo, ddivo, i2do, d2io;
+wire [95:0] d2xdo, s2xdo;
+wire [95:0] dfmao1, dtrunco1, dscaleo1, ddivo1, i2do1, d2io1;
 wire dscaleo_overflow = 1'b0;
 wire dscaleo_nan = 1'b0;
 wire ddivo_nan = 1'b0;
-wire ddivo_overflow, ddivo_underflow, d2io_overflow;
+reg ddivo_overflow, ddivo_underflow, d2io_overflow;
+wire ddivo_overflow1, ddivo_underflow1, d2io_overflow1;
 wire ddiv_done;
 wire [11:0] dcmpo;
 wire dcmpo_nan;
 
 generate begin : gDouble
 if (SUPPORT_DOUBLE) begin
-fpFMA64nrL8 ufdma1 (
-	.clk(clk_i),
+
+always_comb
+if (ir2[14])
+	case(ir2[12:10])
+	3'b001:	fpss = s2xdo;
+	3'b010:	fpss = fps;
+	3'b101:	fpss = d2xdo;
+	default:	fpss = fps;
+	endcase
+else
+	fpss = fps;
+
+fpFMA96nrL8 ufdma1 (
+	.clk(dfclk_i),
 	.ce(1'b1),
 	.op(fsub),
 	.rm(3'b0),
-	.a(fpd[63:0]),
-	.b(state==FADD ? 64'h3FF0000000000000 : fps[63:0]),	// FADD/FSUB - multiply by one
-	.c(state==FMUL ? 64'd0 : fps[63:0]),								// FMUL - add zero
-	.o(dfmao),
+	.a(fpd),
+	.b(state==FADD ? 96'h3FFF00000000000000000000 : fpss),	// FADD/FSUB - multiply by one
+	.c((state==FMUL1||state==FMUL2) ? 96'd0 : fpss),								// FMUL - add zero
+	.o(dfmao1),
 	.inf(),
 	.zero(),
 	.overflow(),
 	.underflow(),
 	.inexact()
 );
+always_ff @(posedge clk_i)
+	dfmao <= dfmao1;
 
-fpDivide64 uddiv1
+fpDivide96 uddiv1
 (
 	.rst(rst_i),
-	.clk(clk_i),
+	.clk(dfclk_i),
 	.clk4x(clk_i),
 	.ce(1'b1),
 	.ld(state==FDIV1),
 	.op(1'b0),
 	.a(fpd),
-	.b(fps),
-	.o(ddivo),
+	.b(fpss),
+	.o(ddivo1),
 	.done(ddiv_done),
 	.sign_exe(),
-	.overflow(ddivo_overflow),
-	.underflow(ddivo_underflow)
+	.overflow(ddivo_overflow1),
+	.underflow(ddivo_underflow1)
 );
+always_ff @(posedge clk_i)
+	ddivo <= ddivo1;
+always_ff @(posedge clk_i)
+	ddivo_overflow <= ddivo_overflow1;
+always_ff @(posedge clk_i)
+	ddivo_underflow <= ddivo_underflow1;
 
-fpTrunc64 udtrunc1
+fpTrunc96 udtrunc1
 (
-	.clk(clk_i),
+	.clk(dfclk_i),
 	.ce(1'b1),
-	.i(fps[63:0]),
-	.o(dtrunco)
+	.i(fpss),
+	.o(dtrunco1)
 );
+always_ff @(posedge clk_i)
+	dtrunco <= dtrunco1;
 
-fpScaleb64 udscale1
+fpScaleb96 udscale1
 (
-	.clk(clk_i),
+	.clk(dfclk_i),
 	.ce(1'b1),
-	.a(fpd[63:0]),
+	.a(fpd),
 	.b(s[31:0]),
-	.o(dscaleo)
+	.o(dscaleo1)
 );
+always_ff @(posedge clk_i)
+	dscaleo <= dscaleo1;
 
-fpCompare64 udcmp1
+fpCompare96 udcmp1
 (
 	.a(fpd),
-	.b(fps),
+	.b(fpss),
 	.o(dcmpo),
 	.inf(),
 	.nan(dcmp_nan),
 	.snan()
 );
 
-i2f64 ui2d1
+i2f96 ui2d1
 (
-	.clk(clk_i),
+	.clk(dfclk_i),
 	.ce(1'b1),
 	.op(1'b0),	// 0 = unsigned
 	.rm(3'b0),
-	.i(fps),
-	.o(i2do)
+	.i(fpss),
+	.o(i2do1)
 );
+always_ff @(posedge clk_i)
+	i2do <= i2do1;
 
-f2i64 uf2i1
+f2i96 uf2i1
 (
 	.clk(clk_i),
 	.ce(1'b1),
 	.op(1'b0),
+	.i(fpss),
+	.o(d2io1),
+	.overflow(d2io_overflow1)
+);
+always_ff @(posedge clk_i)
+	d2io <= d2io1;
+always_ff @(posedge clk_i)
+	d2io_overflow <= d2io_overflow1;
+
+fpCvt64To96 ud2xd1
+(
 	.i(fps[63:0]),
-	.o(d2io),
-	.overflow(d2io_overflow)
+	.o(d2xdo)
+);
+
+fpCvt32To96 us2xd1
+(
+	.i(s[31:0]),
+	.o(s2xdo)
 );
 
 end
@@ -6627,6 +6673,19 @@ FADD:
 		fpcnt <= fpcnt + 2'd1;
 		if (ir2[14]) begin
 			case(ir2[12:10])
+			3'b010:
+				if (fpcnt==8'd10) begin
+					if (SUPPORT_DOUBLE) begin
+						fzf <= dfmao[94:0]==95'd0;
+						fnf <= dfmao[95];
+						fvf <= dfmao_overflow;
+						fnanf <= dfmao_nan;
+						resF <= dfmao;
+						Rt <= {1'b0,FLTDST};
+						rfwrF <= 1'b1;
+					end
+					ret();
+				end
 			3'b011:
 				if (fpcnt==8'd250) begin
 					if (SUPPORT_DECFLT) begin
@@ -6898,6 +6957,21 @@ FDIV3:
 			end
 			ret();
 		end
+	3'b010:
+		if (ddiv_done) begin
+			if (SUPPORT_DOUBLE) begin
+				fzf <= ddivo[94:0]==95'd0;
+				fnf <= ddivo[95];
+				fvf <= ddivo_overflow;
+				fnanf <= ddivo_nan;
+				resF <= ddivo;
+				Rt <= {1'b0,FLTDST};
+				rfwrF <= 1'b1;
+				quotient_bits <= {ddivo[95],ddivo[6:0]};
+				quotient_bitshi <= {ddivo[9:7]};
+			end
+			ret();
+		end
 	3'b101:
 		if (ddiv_done) begin
 			if (SUPPORT_DOUBLE) begin
@@ -7038,10 +7112,28 @@ FMOVE:
 						fps <= {64'd0,s};
 						goto (I2DF1);
 					end
+				3'b010:
+					begin
+						resF <= fps[95:0];
+						fzf <= fps[94:0]==95'd0;
+						fnf <= fps[95];
+						Rt <= {1'b0,FLTDST};
+						rfwrF <= 1'b1;
+						ret();
+					end
 				3'b100:
 					begin
 						fps <= {80'd0,s[15:0]};
 						goto (I2DF1);
+					end
+				3'b101:	
+					begin
+						resF <= d2xdo[95:0];
+						fzf <= d2xdo[94:0]==95'd0;
+						fnf <= d2xdo[95];
+						Rt <= {1'b0,FLTDST};
+						rfwrF <= 1'b1;
+						ret();
 					end
 				3'b110:
 					begin
