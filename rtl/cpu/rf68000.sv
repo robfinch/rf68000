@@ -6673,8 +6673,8 @@ FADD:
 		fpcnt <= fpcnt + 2'd1;
 		if (ir2[14]) begin
 			case(ir2[12:10])
-			3'b010:
-				if (fpcnt==8'd10) begin
+			3'b000,3'b001,3'b010,3'b100,3'b110:
+				if (fpcnt>=8'd10) begin
 					if (SUPPORT_DOUBLE) begin
 						fzf <= dfmao[94:0]==95'd0;
 						fnf <= dfmao[95];
@@ -6687,7 +6687,7 @@ FADD:
 					ret();
 				end
 			3'b011:
-				if (fpcnt==8'd250) begin
+				if (fpcnt>=8'd250) begin
 					if (SUPPORT_DECFLT) begin
 						fzf <= dfaddsubo[94:0]==95'd0;
 						fnf <= dfaddsubo[95];
@@ -6700,10 +6700,10 @@ FADD:
 					ret();
 				end
 			3'b101:
-				if (fpcnt==8'd10) begin
+				if (fpcnt>=8'd50) begin
 					if (SUPPORT_DOUBLE) begin
-						fzf <= dfmao[62:0]==63'd0;
-						fnf <= dfmao[63];
+						fzf <= dfmao[94:0]==95'd0;
+						fnf <= dfmao[95];
 						fvf <= dfmao_overflow;
 						fnanf <= dfmao_nan;
 						resF <= dfmao;
@@ -6712,7 +6712,7 @@ FADD:
 					end
 					ret();
 				end
-			default:	;
+			default:	ret();
 			endcase
 		end
 		else begin
@@ -6729,9 +6729,9 @@ FADD:
 				ret();
 			end
 			else if (SUPPORT_DOUBLE) begin
-				if (fpcnt==8'd10) begin
-					fzf <= dfmao[62:0]==63'd0;
-					fnf <= dfmao[63];
+				if (fpcnt>=8'd50) begin
+					fzf <= dfmao[94:0]==95'd0;
+					fnf <= dfmao[95];
 					fvf <= dfmao_overflow;
 					fnanf <= dfmao_nan;
 					resF <= dfmao;
@@ -6758,18 +6758,19 @@ FINTRZ:	// Also FINT
 					end
 					ret();
 				end
+			3'b000,3'b001,3'b010,3'b100,3'b110,
 			3'b101:
 				if (fpcnt>=8'd2) begin
 					if (SUPPORT_DOUBLE) begin
 						resF <= dtrunco;
-						fzf <= dtrunco[62:0]==63'd0;
-						fnf <= dtrunco[63];
+						fzf <= dtrunco[94:0]==95'd0;
+						fnf <= dtrunco[95];
 						Rt <= {1'b0,FLTDST};
 						rfwrF <= 1'b1;
 					end
 					ret();
 				end
-			default:	;
+			default:	ret();
 			endcase
 		end
 		else begin
@@ -6780,10 +6781,10 @@ FINTRZ:	// Also FINT
 				Rt <= {1'b0,FLTDST};
 				rfwrF <= 1'b1;
 			end
-			if (SUPPORT_DOUBLE) begin
+			else if (SUPPORT_DOUBLE) begin
 				resF <= dtrunco;
-				fzf <= dtrunco[62:0]==63'd0;
-				fnf <= dtrunco[63];
+				fzf <= dtrunco[94:0]==95'd0;
+				fnf <= dtrunco[95];
 				Rt <= {1'b0,FLTDST};
 				rfwrF <= 1'b1;
 			end
@@ -6807,11 +6808,12 @@ FSCALE:
 				end
 				ret();
 			end
+		3'b000,3'b001,3'b010,3'b100,3'b110,
 		3'b101:
 			if (fpcnt>=8'd6) begin
 				if (SUPPORT_DOUBLE) begin
-					fzf <= dscaleo[62:0]==63'd0;
-					fnf <= dscaleo[63];
+					fzf <= dscaleo[94:0]==95'd0;
+					fnf <= dscaleo[95];
 					fvf <= dscaleo_overflow;
 					fnanf <= dscaleo_nan;
 					resF <= dscaleo;
@@ -6820,6 +6822,7 @@ FSCALE:
 				end
 				ret();
 			end
+		default:	ret();
 		endcase
 	end
 FNEG:	// Also FABS
@@ -6836,12 +6839,13 @@ FNEG:	// Also FABS
 				end
 				ret();
 			end
+		3'b000,3'b001,3'b010,3'b100,3'b110,
 		3'b101:
 			begin
 				if (SUPPORT_DECFLT) begin
-					resF <= {~fps[63] & ~fabs,fps[63:0]};
-					fzf <= fps[62:0]==63'd0;
-					fnf <= ~fps[63] & ~fabs;
+					resF <= {~fps[95] & ~fabs,fps[94:0]};
+					fzf <= fps[94:0]==95'd0;
+					fnf <= ~fps[95] & ~fabs;
 					Rt <= {1'b0,FLTDST};
 					rfwrF <= 1'b1;
 				end
@@ -6853,7 +6857,7 @@ FNEG:	// Also FABS
 FMUL1:
 	begin
 		fpcnt <= fpcnt + 2'd1;
-		if (fpcnt==8'd6)
+		if (fpcnt>=8'd6)
 			goto (FMUL2);
 	end
 FMUL2:
@@ -6874,12 +6878,13 @@ FMUL2:
 			end
 			else
 				ret();
-		3'b101:
+		3'b000,3'b001,3'b010,3'b100,
+		3'b101,3'b110:
 			if (SUPPORT_DOUBLE) begin
 				fpcnt <= fpcnt + 2'd1;
-				if (fpcnt==8'd16) begin
-					fzf <= dfmao[62:0]==63'd0;
-					fnf <= dfmao[63];
+				if (fpcnt>=8'd50) begin
+					fzf <= dfmao[94:0]==95'd0;
+					fnf <= dfmao[95];
 					fvf <= dfmao_overflow;
 					fnanf <= dfmao_nan;
 					resF <= dfmao;
@@ -6908,9 +6913,9 @@ FMUL2:
 		end
 		else if (SUPPORT_DOUBLE) begin
 			fpcnt <= fpcnt + 2'd1;
-			if (fpcnt==8'd16) begin
-				fzf <= dfmao[62:0]==63'd0;
-				fnf <= dfmao[63];
+			if (fpcnt>=8'd50) begin
+				fzf <= dfmao[94:0]==95'd0;
+				fnf <= dfmao[95];
 				fvf <= dfmao_overflow;
 				fnanf <= dfmao_nan;
 				resF <= dfmao;
@@ -6972,17 +6977,18 @@ FDIV3:
 			end
 			ret();
 		end
+	3'b000,3'b001,3'b100,3'b110,
 	3'b101:
 		if (ddiv_done) begin
 			if (SUPPORT_DOUBLE) begin
-				fzf <= ddivo[62:0]==63'd0;
-				fnf <= ddivo[63];
+				fzf <= ddivo[94:0]==95'd0;
+				fnf <= ddivo[95];
 				fvf <= ddivo_overflow;
 				fnanf <= ddivo_nan;
 				resF <= ddivo;
 				Rt <= {1'b0,FLTDST};
 				rfwrF <= 1'b1;
-				quotient_bits <= {ddivo[63],ddivo[6:0]};
+				quotient_bits <= {ddivo[95],ddivo[6:0]};
 				quotient_bitshi <= {ddivo[9:7]};
 			end
 			ret();
@@ -7007,14 +7013,14 @@ FDIV3:
 		end
 		else if (SUPPORT_DOUBLE) begin
 			if (ddiv_done) begin
-				fzf <= ddivo[62:0]==63'd0;
-				fnf <= ddivo[63];
+				fzf <= ddivo[94:0]==95'd0;
+				fnf <= ddivo[95];
 				fvf <= ddivo_overflow;
 				fnanf <= ddivo_nan;
 				resF <= ddivo;
 				Rt <= {1'b0,FLTDST};
 				rfwrF <= 1'b1;
-				quotient_bits <= {ddivo[63],ddivo[6:0]};
+				quotient_bits <= {ddivo[95],ddivo[6:0]};
 				quotient_bitshi <= {ddivo[9:7]};
 			end
 			ret();
@@ -7036,6 +7042,7 @@ FCMP:
 					end
 					ret();
 				end
+			3'b000,3'b001,3'b010,3'b100,3'b110,
 			3'b101:
 				begin
 					if (SUPPORT_DOUBLE) begin
@@ -7151,9 +7158,9 @@ FMOVE:
 					end
 				endcase
 			else begin
-				resF <= fps[63:0];
-				fzf <= fps[62:0]==63'd0;
-				fnf <= fps[63];
+				resF <= fps[95:0];
+				fzf <= fps[94:0]==95'd0;
+				fnf <= fps[95];
 				Rt <= {1'b0,FLTDST};
 				rfwrF <= 1'b1;
 				ret();
@@ -7187,12 +7194,13 @@ I2DF2:
 					else
 						ret();
 				end
+			3'b000,3'b001,3'b010,3'b100,3'b110,
 			3'b101:
 				begin
 					if (SUPPORT_DOUBLE) begin
 						resF <= i2do;
-						fzf <= i2do[62:0]==63'd0;
-						fnf <= i2do[63];
+						fzf <= i2do[94:0]==95'd0;
+						fnf <= i2do[95];
 						Rt <= {1'b0,FLTDST};
 						rfwrF <= 1'b1;
 						ret();
@@ -7216,8 +7224,8 @@ I2DF2:
 			end
 			else if (SUPPORT_DOUBLE) begin
 				resF <= i2do;
-				fzf <= i2do[62:0]==63'd0;
-				fnf <= i2do[63];
+				fzf <= i2do[94:0]==95'd0;
+				fnf <= i2do[95];
 				Rt <= {1'b0,FLTDST};
 				rfwrF <= 1'b1;
 				ret();
@@ -7254,9 +7262,7 @@ DF2I2:
 				//rfwrL <= 1'b1;
 			end
 		end
-		else
-			ret();
-		if (SUPPORT_DOUBLE) begin
+		else if (SUPPORT_DOUBLE) begin
 			case(ir2[12:10])
 			3'b000:	fs_data(mmm,rrr,STORE_LWORD,D);
 			3'b100:	fs_data(mmm,rrr,STORE_WORD,D);
@@ -7282,7 +7288,7 @@ FTST:
 		case(ir2[12:10])
 		3'b000:	begin fnf <= s[31]; fzf <= s[31:0]==32'd0; fnanf <= 1'b0; fvf <= 1'b0; end
 		3'b100:	begin fnf <= s[15]; fzf <= s[15:0]==16'd0; fnanf <= 1'b0; fvf <= 1'b0; end
-		3'b101:	begin fnf <= fps[63]; fzf <= fps[62:0]==63'd0; fnanf <= 1'b0; fvf <= 1'b0; end	// ToDo: fix for nan/overflow
+		3'b101:	begin fnf <= fps[95]; fzf <= fps[94:0]==95'd0; fnanf <= 1'b0; fvf <= 1'b0; end	// ToDo: fix for nan/overflow
 		3'b110:	begin fnf <= s[ 7]; fzf <= s[ 7:0]== 8'd0; fnanf <= 1'b0; fvf <= 1'b0; end
 		default:
 			begin
