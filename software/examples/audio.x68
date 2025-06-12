@@ -34,8 +34,6 @@
 ;  180-1F8   -------- -------- s---kkkk kkkkkkkk   filter coefficients
 ;
 
-ADAU1761	equ	$FD069800
-PSG equ $FD06B000
 PSG_FREQ equ $00
 PSG_VOICE_TYPE equ $04
 PSG_CTRL equ $05

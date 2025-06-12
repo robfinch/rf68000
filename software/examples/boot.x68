@@ -94,10 +94,10 @@
 ;
 HAS_MMU equ 0
 NCORES equ 4
-TEXTCOL equ 48
+TEXTCOL equ 52
 TEXTROW	equ	32
-VIDEO_X equ 800
-VIDEO_Y equ 600
+VIDEO_X equ 1368
+VIDEO_Y equ 768
 
 CTRLC	EQU		$03
 CTRLH	EQU		$08
@@ -168,17 +168,35 @@ IO_BITMAP	EQU $1F00000
 	else
 TEXTREG		EQU	$FD080000
 txtscreen	EQU	$FD000000
-semamem		EQU	$FD050000
-ACIA			EQU	$FD060000
-ACIA_RX		EQU	0
-ACIA_TX		EQU	0
-ACIA_STAT	EQU	4
-ACIA_CMD	EQU	8
-ACIA_CTRL	EQU	12
-I2C1 			equ $FD069000
-I2C2 			equ $FD069010
-SPI_MASTER1	equ	$FD06A000
-SPI_MASTER2	equ $FD06A100
+MMU				EQU $FDC00000	; physical address
+RST_REG		EQU	$FDFF0000
+RAND			EQU	$FDFF4010
+RAND_NUM	EQU	$FDFF4010
+RAND_STRM	EQU	$FDFF4014
+RAND_MZ		EQU $FDFF4018
+RAND_MW		EQU	$FDFF401C
+keybd			EQU	$FDFF8000
+KEYBD			EQU	$FDFF8000
+leds			EQU	$FDFFC000
+ACIA			EQU	$FDFE0010
+I2C2 			equ $FDFE4000
+IO_BITMAP	EQU $FDE00000
+FRAMEBUF	EQU	$FD208000
+GFXACCEL	EQU	$FD210000
+PSG				EQU $FD240000
+I2C1 			equ $FD250000
+ADAU1761 	equ $FD254000
+PLIC			equ	$FD260000
+SPI_MASTER1	equ	$FD280000
+SPI_MASTER2	equ $FD284000
+COPPER		equ $FD288000
+semamem		equ	$FD300000
+
+ACIA_RX		equ	0
+ACIA_TX		equ	0
+ACIA_STAT	equ	4
+ACIA_CMD	equ	8
+ACIA_CTRL	equ	12
 I2C_PREL 	equ 0
 I2C_PREH 	equ 1
 I2C_CTRL 	equ 2
@@ -186,20 +204,7 @@ I2C_RXR 	equ 3
 I2C_TXR 	equ 3
 I2C_CMD 	equ 4
 I2C_STAT 	equ 4
-PLIC			EQU	$FD090000
-MMU				EQU $FDC00000	; physical address
-leds			EQU	$FD0FFF00	; virtual addresses
-keybd			EQU	$FD0FFE00
-KEYBD			EQU	$FD0FFE00
-RAND			EQU	$FD0FFD00
-RAND_NUM	EQU	$FD0FFD00
-RAND_STRM	EQU	$FD0FFD04
-RAND_MZ		EQU $FD0FFD08
-RAND_MW		EQU	$FD0FFD0C
-RST_REG		EQU	$FD0FFC00
-IO_BITMAP	EQU $FD100000
-FRAMEBUF	EQU	$FD200000
-GFXACCEL	EQU	$FD300000
+
 	endif
 
 SERIAL_SEMA	EQU	2
@@ -1985,41 +1990,41 @@ cmdTime:
 ;		a6 = pointer to buffer to store time as a string
 
 get_time:
-	move.l a6,-(sp)				; sve buffer address
+	movem.l d0/d3/a6,-(sp)	; save buffer address
 	bsr rtc_read					; read the RTC registers
-	move.b RTCBuf+$02,d1
+	move.b RTCBuf+$02,d0
 	move.b #0,d3					; flag 24 hour format
-	btst #6,d1						; 0 = 24 hour format
+	btst #6,d0						; 0 = 24 hour format
 	beq.s .0001
 	move.b #'a',d3				; default to am
-	btst #5,d1
+	btst #5,d0
 	beq.s .0002
 	move.b #'p',d3
 .0002
-	andi.b #$1F,d1
+	andi.b #$1F,d0
 	bra .0003
 .0001
-	andi.b #$3F,d1
+	andi.b #$3F,d0
 .0003
 	bsr BufByte						; copy hours to buffer
 	move.b #':',(a6)+
-	move.b RTCBuf+$01,d1
+	move.b RTCBuf+$01,d0
 	bsr BufByte						; copy minutes to buffer
 	move.b #':',(a6)+
-	move.b RTCBuf+$00,d1	
-	andi.b #$3F,d1
+	move.b RTCBuf+$00,d0	
+	andi.b #$3F,d0
 	bsr BufByte						; copy seconds to buffer
 	tst.b d3							; 24 hour format?
 	beq .0004
 	move.b #' ',(a6)+
-	move.b d3,d1
+	move.b d3,d0
 	move.b d3,(a6)+
 	move.b #'m',(a6)+
 .0004	
 	move.b #0,(a6)+				; NULL terminate
-	move.l (sp)+,a6
+	movem.l (sp)+,d0/d3/a6
 	rts
-	
+
 cmdTinyBasic:
 	bra	CSTART
 
@@ -3706,6 +3711,14 @@ init_i2c:
 	move.b #0,I2C_PREH(a6)
 	rts
 
+i2c_enable:
+	move.b #$80,I2C_CTRL(a6)	; enable I2C
+	rts
+
+i2c_disable:
+	move.b #0,I2C_CTRL(a6)		; disable I2C and return status
+	rts
+
 ; Wait for I2C transfer to complete
 ;
 ; Parameters
@@ -3718,13 +3731,39 @@ i2c_wait_tip:
 	bne.s	.0001
 	rts
 
-; Parameters
-;	d0.b - data to transmit
-;	d1.b - command value
-;	a6	 - I2C controller base address
+; Reads the i2c then outputs a STOP
 ;
+; Parameters
+;		a6	 - I2C controller base address
+; Returns:
+;		d0.b - I2C status
+
+i2c_read_stop:
+	move.b #$68,I2C_CMD(a6)		; rd bit, STO + nack
+	bsr	i2c_wait_tip
+	bsr	i2c_wait_rx_nack
+i2c_get_status:	
+	move.b I2C_STAT(a6),d0
+	rts
+
+i2c_read_ack:
+	move.b #$20,I2C_CMD(a6)		; rd bit+ACK
+	bsr	i2c_wait_tip
+	move.b I2C_STAT(a6),d0
+	rts
+
+i2c_read:
+	move.b I2C_RXR(a6),d0
+	rts
+
+; Parameters
+;		a6	 - I2C controller base address
+;		d0.b - data to transmit
+;		d1.b - command value
+; Returns:
+;		d0.b - I2C status
+
 i2c_wr_cmd:
-	move.b #2,leds
 	move.b d0,I2C_TXR(a6)
 	move.b d1,I2C_CMD(a6)
 	bsr	i2c_wait_tip
@@ -3755,113 +3794,99 @@ i2c_wait_rx_nack:
 ;===============================================================================
 
 rtc_read:
-	movem.l d1/d2/a5/a6,-(sp)
-	movea.l	#I2C2,a6
+	movem.l d1/d2/d3/a5/a6,-(sp)
+	lea	I2C2,a6
 	lea	RTCBuf,a5
+	move.w #20,d3
 	moveq #0,d2
-	move.b	#$80,I2C_CTRL(a6)	; enable I2C
+	bsr i2c_enable
 .0002	
 	move.b #$DE,d0				; read address, write op
 	move.b #$90,d1				; STA + wr bit
 	bsr	i2c_wr_cmd
-	move.b #4,leds
-	tst.b	d0
+	tst.b	d0							; look for ACK(bit7=0)
+	dbpl d3,.0002
 	bmi	.rxerr
-	move.b d2,d0					; address zero
-	move.b #$10,d1				; wr bit
+	move.b d2,d0					; d0=address
+	move.b #$50,d1				; wr bit + STO
 	bsr	i2c_wr_cmd
-	move.b #5,leds
 	tst.b	d0
+	dbpl d3,.0002
 	bmi	.rxerr
+	move.w #20,d3
+.0001
 	move.b #$DF,d0				; read address, read op
 	move.b #$90,d1				; STA + wr bit
-	bsr i2c_wr_cmd
-	move.b #6,leds
-	tst.b	d0
+	bsr	i2c_wr_cmd
+	tst.b	d0							; look for ACK(bit7=0)
+	dbpl d3,.0001
 	bmi	.rxerr
-;	move.w #$00,d2
-.0001
-	move.b #7,leds
-	bsr CheckForCtrlC
-	move.b #$68,I2C_CMD(a6)	; rd bit, STO + nack
-	bsr	i2c_wait_tip
-	bsr	i2c_wait_rx_nack
-	move.b I2C_STAT(a6),d0
-	tst.b	d0
-	bmi	.rxerr
-	move.b I2C_RXR(a6),d0
+.0003
+	bsr i2c_read_ack
+	bsr i2c_read
 	move.b d0,(a5,d2.w)
 	addi.w #1,d2
-;	move.b #$68,I2C_CMD(a6)	; STO, rd bit + nack
-;	bsr i2c_wait_tip
-	cmpi.w #$60,d2
-	bne	.0002
-;	bsr i2c_wait_rx_nack
-;	move.b I2C_STAT(a6),d0
-;	tst.b	d0
-;	bmi	.rxerr
-;	move.b I2C_RXR(a6),d0
-;	move.b d0,(a5,d2.w)
-;	bsr i2c_wait_tip
-	move.b #0,I2C_CTRL(a6)		; disable I2C and return 0
-	movem.l (sp)+,d1/d2/a5/a6
+	cmpi.w #$5f,d2
+	bne	.0003
+	bsr i2c_read_stop
+	bsr i2c_read
+	move.b d0,(a5,d2.w)
+	bsr i2c_disable
+	movem.l (sp)+,d1/d2/d3/a5/a6
 	moveq	#0,d0
 	rts
 .rxerr
-	bsr i2c_wait_tip
-	move.b #0,I2C_CTRL(a6)		; disable I2C and return status
-	movem.l (sp)+,d1/d2/a5/a6
+	bsr i2c_disable
+	movem.l (sp)+,d1/d2/d3/a5/a6
 	rts
 
 rtc_write:
-	movem.l d1/d2/a5/a6,-(sp)
+	movem.l d1/d2/d3/a5/a6,-(sp)
 	movea.l	#I2C2,a6
 	lea	RTCBuf,a5
-	move.b #$80,I2C_CTRL(a6)	; enable I2C
+	bsr i2c_enable
 	move.w #$00,d2
+	move.w #20,d3
 .0002
 	move.b #$DE,d0				; read address, write op
 	move.b #$90,d1				; STA + wr bit
 	bsr	i2c_wr_cmd
 	tst.b	d0
-	bmi	.rxerr
-	move.b #11,leds
-	move.b #$00,d0				; address zero
+	dbpl d3,.0002
+	bmi .rxerr
+	move.b d2,d0					; address zero
 	move.b #$10,d1				; wr bit
 	bsr	i2c_wr_cmd
 	tst.b	d0
-	bmi	.rxerr
-	move.b #$DF,d0				; read address, write op
-	move.b #$90,d1				; STA + wr bit
-	bsr	i2c_wr_cmd
-	tst.b	d0
-	bmi	.rxerr
+	dbpl d3,.0002						; received a NACK, try again
+	bmi.s .rxerr
+.0004
+	move.w #20,d3
 .0001
-	bsr CheckForCtrlC
+	move.b (a5,d2.w),d0
+	move.b #$10,d1				; wr bit
+	bsr	i2c_wr_cmd
+	tst.b d0
+	dbpl d3,.0001
+	bmi.s .rxerr
+	addi.w #1,d2
+	cmpi.w #$5f,d2
+	bne.s	.0004
+	move.w #20,d3
+.0003
 	move.b (a5,d2.w),d0
 	move.b #$50,d1				; wr bit + STO
 	bsr	i2c_wr_cmd
-	bsr	i2c_wait_rx_nack
-	move.b I2C_STAT(a6),d0
-	tst.b	d0
-	bmi	.rxerr
-;	addi.w #1,d2
-;	cmpi.w #$5F,d2
-;	bne.s	.0001
-;	move.b (a5,d2.w),d0
-;	bsr i2c_wait_tip
-	addi.w #1,d2
-	cmpi.w #$60,d2
-	bne.s	.0002
-
-	move.b #0,I2C_CTRL(a6)		; disable I2C and return 0
-	movem.l (sp)+,d1/d2/a5/a6
+	tst.b d0
+	dbpl d3,.0003
+	bmi.s .rxerr
+	bsr i2c_disable
+	movem.l (sp)+,d1/d2/d3/a5/a6
 	moveq	#0,d0
 	rts
 .rxerr:
-	bsr i2c_wait_tip
-	move.b #0,I2C_CTRL(a6)		; disable I2C and return status
-	movem.l (sp)+,d1/d2/a5/a6
+	bsr i2c_disable
+	movem.l (sp)+,d1/d2/d3/a5/a6
 	rts
 
 msgRtcReadFail:

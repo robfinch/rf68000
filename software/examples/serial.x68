@@ -152,10 +152,10 @@ SerialInit:
 	clr.w		SerTailXmit
 	clr.b		SerRcvXon						; and Xon,Xoff flags
 	clr.b		SerRcvXoff
-	move.l	#$09000000,d0				; dtr,rts active, rxint enabled, no parity
+	move.l	#$00000009,d0				; dtr,rts active, rxint enabled, no parity
 	move.l	d0,ACIA+ACIA_CMD
 ;	move.l	#$1E00F700,d0				; fifos enabled
-	move.l	#$1E000000,d0				; fifos disabled
+	move.l	#$0000001E,d0				; fifos disabled
 	move.l	d0,ACIA+ACIA_CTRL
 	rts
 ;	move.l	#$0F000000,d0				; transmit a break for a while
@@ -206,7 +206,7 @@ SerialGetChar:
 	clr.b			SerRcvXoff					; clear XOFF status
 	move.b		d1,SerRcvXon				; flag so we don't send it multiple times
 	bsr				SerialPutChar				; send it
-.sgc2:
+.sgc2
 	move.w		SerHeadRcv,d1				; check if anything is in buffer
 	cmp.w			SerTailRcv,d1
 	beq				.NoChars						; no?
@@ -216,9 +216,9 @@ SerialGetChar:
 	andi.w		#$FFF,SerHeadRcv		; 4k wrap around
 	andi.l		#$FF,d1
 	bra				.Xit
-.NoChars:
+.NoChars
 	moveq			#-1,d1
-.Xit:
+.Xit
 	exg				d1,d2
 	movec			coreno,d0
 	swap			d0
@@ -257,9 +257,9 @@ SerialPeekChar:
 	lea	SerRcvBuf,a0
 	move.b (a0,d2.w),d2		; get byte from buffer
 	bra	.Xit
-.NoChars:
+.NoChars
 	moveq	#-1,d2
-.Xit:
+.Xit
 	movec	coreno,d0
 	swap d0
 	moveq	#SERIAL_SEMA,d1
@@ -290,7 +290,7 @@ SerialPeekCharDirect:
 	moveq.l	#0,d1							; clear upper bits of return value
 	move.b	ACIA+ACIA_RX,d1		; get data from ACIA
 	rts												; return
-.0001:
+.0001
 	moveq		#-1,d1
 	rts
 
@@ -311,7 +311,7 @@ SerialPeekCharDirect:
 ;------------------------------------------------------------------------------
 
 SerialPutChar:
-.0004:
+.0004
 	tst.w serial_dcb+DCB_OUTBUFSIZE	; buffered output?
 	beq.s SerialPutCharDirect
 	movem.l d0/d1/d2/a0,-(a7)
@@ -325,7 +325,7 @@ SerialPutChar:
 	cmp.w serial_dcb+DCB_OUTBUFSIZE,d0
 	blo.s .0002
 	clr.w d0
-.0002:
+.0002
 	cmp.w SerHeadXmit,d0			; Is Xmit buffer full?
 	bne.s .0003
 	movec	coreno,d0						; buffer full, unlock semaphore and wait
@@ -333,7 +333,7 @@ SerialPutChar:
 	moveq	#SERIAL_SEMA,d1
 	bsr	UnlockSemaphore
 	bra.s .0004
-.0003:
+.0003
 	move.w d0,SerTailXmit			; update tail pointer
 	lea SerXmitBuf,a0
 	move.b d1,(a0,d2.w)				; store byte in Xmit buffer
@@ -346,7 +346,7 @@ SerialPutChar:
 
 SerialPutCharDirect:
 	movem.l	d0/d1,-(a7)							; push d0,d1
-.0001:
+.0001
 	move.b ACIA+ACIA_STAT,d0	; wait until the uart indicates tx empty
 	btst #4,d0								; bit #4 of the status reg
 	beq.s	.0001			    			; branch if transmitter is not empty
@@ -354,16 +354,6 @@ SerialPutCharDirect:
 	movem.l	(a7)+,d0/d1				; pop d0,d1
 	rts
 	
-;------------------------------------------------------------------------------
-; Reverse the order of bytes in d1.
-;------------------------------------------------------------------------------
-
-SerialRbo:
-	rol.w		#8,d1
-	swap		d1
-	rol.w		#8,d1
-	rts
-
 ;------------------------------------------------------------------------------
 ; Calculate number of character in input buffer
 ;
@@ -374,11 +364,11 @@ SerialRbo:
 SerialRcvCount:
 	move.w	SerTailRcv,d0
 	sub.w		SerHeadRcv,d0
-	bge			.0001
+	bge.s		.0001
 	move.w	#$1000,d0
 	sub.w		SerHeadRcv,d0
 	add.w		SerTailRcv,d0
-.0001:
+.0001
 	rts
 
 ;------------------------------------------------------------------------------
@@ -399,16 +389,20 @@ SerialRcvCount:
 SerialIRQ:
 	move.w	#$2300,sr						; disable lower level IRQs
 	movem.l	d0/d1/d2/a0,-(a7)
+	lea $FD000000+(TEXTCOL-2)*4,a0			; display field address
+	move.l (a0),d2						; get char from screen
+	eori.l #$000000FF,d2
+	move.l d2,(a0)						; update onscreen IRQ flag
 	movec	coreno,d0
 	swap d0
 	moveq	#SERIAL_SEMA,d1
 	bsr	LockSemaphore
-sirqNxtByte:
+sirqNxtByte
 	move.b ACIA+ACIA_STAT,d1		; check the status
 	btst #3,d1									; bit 3 = rx full
 	beq	notRxInt
 	move.b ACIA+ACIA_RX,d1
-sirq0001:
+sirq0001
 	move.w SerTailRcv,d0				; check if recieve buffer full
 	addi.w #1,d0
 	andi.w #$FFF,d0
@@ -429,8 +423,8 @@ sirq0001:
 	move.b d1,SerRcvXoff				; set XOFF status
 	bsr	SerialPutChar						; send XOFF
 	bra	sirqNxtByte     				; check the status for another byte
-sirqRxFull:
-notRxInt:
+sirqRxFull
+notRxInt
 	btst #4,d1									; TX empty?
 	beq.s notTxInt
 	tst.b SerXmitXoff						; and allowed to send?
@@ -448,10 +442,10 @@ notRxInt:
 	cmp.w SerHeadXmit,d0
 	bhi.s sirq0002
 	clr.w SerHeadXmit						; wrap around
-sirq0002:
-sirqXmitOff:
-sirqTxEmpty:
-notTxInt:
+sirq0002
+sirqXmitOff
+sirqTxEmpty
+notTxInt
 	movec	coreno,d0
 	swap d0
 	moveq	#SERIAL_SEMA,d1

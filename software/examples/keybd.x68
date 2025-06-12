@@ -398,6 +398,7 @@ GetKey:
 ; back into the monitor.
 ;------------------------------------------------------------------------------
 
+_CheckForCtrlC:
 CheckForCtrlC:
 	move.l d1,-(a7)
 	bsr	KeybdGetCharNoWait

@@ -144,6 +144,7 @@ wire locked,locked2;
 wire clk10, clk12;
 wire clk20, clk40, clk50, clk100, clk70, clk140, clk200, clk700;
 wire clk17, clk33;
+wire clk86, clk429;
 wire mem_ui_clk;
 wire mem_ui_rst;
 wire xclk_bufg;
@@ -283,7 +284,7 @@ WXGA800x600_clkgen ucg1
   .clk50(clk50),
   .clk40(clk40),					// 40.000 MHz video / cpu clock
   .clk20(clk20),					// cpu
-  .clk17(clk12),		// audio
+  .clk12(clk12),		// audio
 //  .clk33(clk33),
 //  .clk10(clk10),
 //  .clk14(clk14),		// 16x baud clock
@@ -295,6 +296,18 @@ WXGA800x600_clkgen ucg1
   .clk_in1_n(sysclk_n)
 );
 
+WXGA1366x768_clkgen ucg2
+(
+  // Clock out ports
+  .clk429(clk429),	// 429.3 MHz	dvi clock
+  .clk86(clk86),	// 85.86 MHz	dot clock
+  // Status and control signals
+  .reset(xrst), 
+  .locked(locked2),       // output locked
+ // Clock in ports
+  .clk_in1(clk200)
+);
+/*
 WXGA1920x1080_clkgen ucg2
 (
   // Clock out ports
@@ -308,20 +321,21 @@ WXGA1920x1080_clkgen ucg2
  // Clock in ports
   .clk_in1(clk200)
 );
+*/
 
 assign rst = !(locked|locked2);
 
 rgb2dvi ur2d1
 (
 	.rst(rst),
-	.PixelClk(clk40),
+	.PixelClk(dot_clk),
 	.SerialClk(clk200),
 	.red(red[7:0]),
 	.green(green[7:0]),
 	.blue(blue[7:0]),
 	.de(~blank),
-	.hSync(hSync),	// ~ for 640x480 100 Hz, -,- for 1920x1080
-	.vSync(vSync),	// +,+ for 800x600
+	.hSync(hSync),	// ~ for 640x480 100 Hz, -,- for 1920x1080, - for 1368x768
+	.vSync(vSync),	// +,+ for 800x600, -,+ for 1368x768
 	.TMDS_Clk_p(hdmi_tx_clk_p),
 	.TMDS_Clk_n(hdmi_tx_clk_n),
 	.TMDS_Data_p(hdmi_tx_p),
@@ -337,37 +351,31 @@ assign cs_iobitmap = iops;	//ch7req.adr[31:16]==16'hFC10;
 wire cs_mmu;
 assign cs_mmu = mmus;	//cpu_adr[31:16]==16'hFC00 || cpu_adr[31:16]==16'hFC01;
 
-wire cs_tc = (cpu_adr[31:16]==16'hFD00 || cpu_adr[31:16]==16'hFD01 ||
-							cpu_adr[31:16]==16'hFD02 || cpu_adr[31:16]==16'hFD03 ||
-							cpu_adr[31:16]==16'hFD04 || cpu_adr[31:16]==16'hFD08
-							) && ch7req.stb && cs_io2;
-wire cs_br1_tc = (br1_adr[31:16]==16'hFD00 || br1_adr[31:16]==16'hFD01 ||
-									br1_adr[31:16]==16'hFD02 || br1_adr[31:16]==16'hFD03 ||
-									br1_adr[31:16]==16'hFD04 || br1_adr[31:16]==16'hFD08
-									) && br1_stb && cs_io2;
-wire cs_fb = cpu_adr[31:16]==16'hFE40 && ch7req.stb && cs_io2;
-wire cs_br1_fb = br1_adr[31:16]==16'hFE40 && br1_stb && cs_io2;
-wire cs_leds = cpu_adr[31:8]==24'hFD0FFF && ch7req.stb && cs_io2;
-wire cs_br3_leds = br3_adr[31:8]==24'hFD0FFF && br3_stb && cs_io2;
-wire cs_br3_rst  = br3_adr[31:8]==24'hFD0FFC && br3_stb && cs_io2;
-wire cs_kbd  = cpu_adr[31:8]==24'hFD0FFE && cpu_stb && cs_io2;
-wire cs_br3_kbd  = br3_adr[31:8]==24'hFD0FFE && br3_stb && cs_io2;
-wire cs_rand  = cpu_adr[31:8]==24'hFD0FFD && ch7req.stb && cs_io2;
-wire cs_br3_rand  = br3_adr[31:8]==24'hFD0FFD && br3_stb && cs_io2;
-wire cs_sema = cpu_adr[31:16]==16'hFD05 && ch7req.stb && cs_io2;
-wire cs_acia = cpu_adr[31:12]==20'hFD060 && ch7req.stb && cs_io2;
-wire cs_br3_acia = br3_adr[31:12]==20'hFD060 && br3_stb && cs_io2;
-wire cs_br1_i2c1 = br1_adr[31:4]==28'hFD06900 && br1_stb && cs_io2;
-wire cs_br3_i2c2 = br3_adr[31:4]==28'hFD06901 && br3_stb && cs_io2;
-wire cs_br1_1761 = br1_adr[31:4]==28'hFD06980 && br1_stb && cs_io2;
-wire cs_br1_psg = br1_adr[31:12]==20'hFD06B && br1_stb && cs_io2;
-wire cs_br3_spi = br3_adr[31:8]==24'hFD06A0 && br3_stb && cs_io2;
-wire cs_br3_spi2 = br3_adr[31:8]==24'hFD06A1 && br3_stb && cs_io2;
-wire cs_scr = cpu_adr[31:20]==12'h001 && cpu_stb;
-wire cs_plic = cpu_adr[31:12]==20'hFD090 && cs_io2;
-wire cs_br3_plic = br3_adr[31:12]==20'hFD090 && cs_io2;
-wire cs_dram = (cpu_adr[31:30]==2'b01 || cpu_adr[31:30]==2'b10) && cpu_cyc && !cs_mmu && !cs_iobitmap && !cs_io;
-wire cs_gfx = br1_adr[31:16]==16'hFD30 && br1_stb;
+wire cs_tc = (cpu_adr[31:20]==12'hFD0 || cpu_adr[31:20]==12'hFD1)
+							&& ch7req.stb && cs_io2;
+wire cs_br1_tc = (br1_adr[31:20]==12'hFD0 || br1_adr[31:20]==12'hFD1)
+							&& br1_stb && cs_io2;
+wire cs_br3_rst  = br3_adr[31:14]==18'b1111_1101_1111_1111_00 && br3_stb && cs_io2;
+wire cs_rand  	 = cpu_adr[31:14]==18'b1111_1101_1111_1111_01 && ch7req.stb && cs_io2;
+wire cs_br3_rand = br3_adr[31:14]==18'b1111_1101_1111_1111_01 && br3_stb && cs_io2;
+wire cs_kbd  		 = cpu_adr[31:14]==18'b1111_1101_1111_1111_10 && cpu_stb && cs_io2;
+wire cs_br3_kbd  = br3_adr[31:14]==18'b1111_1101_1111_1111_10 && br3_stb && cs_io2;
+wire cs_leds 		 = cpu_adr[31:14]==18'b1111_1101_1111_1111_11 && ch7req.stb && cs_io2;
+wire cs_br3_leds = br3_adr[31:14]==18'b1111_1101_1111_1111_11 && br3_stb && cs_io2;
+wire cs_sema 		 = cpu_adr[31:16]==16'hFD30 && cpu_stb && cs_io2;
+wire cs_acia 		 = cpu_adr[31:14]==18'b1111_1101_1111_1110_00 && cpu_stb && cs_io2;
+wire cs_br3_acia = br3_adr[31:14]==18'b1111_1101_1111_1110_00 && br3_stb && cs_io2;
+wire cs_br3_i2c2 = br3_adr[31:14]==18'b1111_1101_1111_1110_01 && br3_stb && cs_io2;
+wire cs_br3_spi  = br3_adr[31:14]==18'b1111_1101_0010_1000_00 && br3_stb && cs_io2;
+wire cs_br3_spi2 = br3_adr[31:14]==18'b1111_1101_0010_1000_01 && br3_stb && cs_io2;
+wire cs_scr 		 = cpu_adr[31:20]==12'h001 && cpu_stb;
+wire cs_plic 		 = cpu_adr[31:14]==18'b1111_1101_0010_0110_00 && cs_io2;
+wire cs_br3_plic = br3_adr[31:14]==18'b1111_1101_0010_0110_00 && cs_io2;
+wire cs_dram 		 = (cpu_adr[31:30]==2'b01 || cpu_adr[31:30]==2'b10) && cpu_cyc && !cs_mmu && !cs_iobitmap && !cs_io;
+wire cs_gfx      = br1_adr[31:14]==18'b1111_1101_0010_0001_00 && br1_stb;
+wire cs_br1_i2c1 = br1_adr[31:14]==18'b1111_1101_0010_0101_00 && br1_stb && cs_io2;
+wire cs_br1_1761 = br1_adr[31:14]==18'b1111_1101_0010_0101_01 && br1_stb && cs_io2;
+wire cs_br1_psg  = br1_adr[31:14]==18'b1111_1101_0010_0100_00 && br1_stb && cs_io2;
 
 fta_bus_interface #(.DATA_WIDTH(256)) gfx_if();
 fta_bus_interface #(.DATA_WIDTH(256)) fbm_if();
@@ -692,10 +700,10 @@ assign br1_fta.rst = rst;
 assign br1_fta.clk = clk100;
 
 always_ff @(posedge clk100)
-	br1_dati <= tc_dato|gfxs_resp.dat|{4{i2c1_dato}};
+	br1_dati <= tc_dato|gfxs_resp.dat|{4{i2c1_dato}}|psg_dato;
 
 always_ff @(posedge clk100)
-	br1_ack <= tc_ack|gfxs_resp.ack|i2c1_ack|ack_1761;
+	br1_ack <= tc_ack|gfxs_resp.ack|i2c1_ack|psg_ack|ack_1761;
 
 always_ff @(posedge clk100)
 	br1_stall <= gfxs_resp.stall;
@@ -735,7 +743,7 @@ random urnd1
 	.stb_i(br3_stb),
 	.ack_o(rand_ack),
 	.we_i(br3_we),
-	.adr_i(br3_adr[3:0]),
+	.adr_i(br3_adr[4:0]),
 	.dat_i(br3_dato),
 	.dat_o(rand_dato)
 );
@@ -751,7 +759,7 @@ uart6551 #(.pClkFreq(100), .pClkDiv(24'd130)) uuart
 	.ack_o(acia_ack),
 	.we_i(br3_we),
 	.sel_i(br3_sel),
-	.adr_i(br3_adr[3:2]),
+	.adr_i(br3_adr[4:2]),
 	.dat_i(br3_dato),
 	.dat_o(acia_dato),
 	.cts_ni(1'b0),

@@ -23,9 +23,14 @@ BIOS:
 #	cc64 $(CFLAGS) SieveOfE.c
 #	cc64 $(CFLAGS) os_stub.c
 
+	vbccm68k bootrom.c -fpu=68881
+	vbccm68k gfx.c -fpu=68881
 	vbccm68k sieve.c
 #	vbccm68k prtflt.c -fpu=68881
 #	vasmrf68000_mot_win32.exe -Fvobj -L fibonacci.lst fibonacci.asm -o fibonacci.o
+	vasmrf68000_mot.exe -Fvobj -L lib.lst lib.x68 -o lib.o -m68010 -m68881
+	vasmrf68000_mot.exe -Fvobj -L gfx.lst gfx.asm -o gfx.o -m68010 -m68881
+	vasmrf68000_mot.exe -Fvobj -L bootrom.lst bootrom.asm -o bootrom.o -m68010 -m68881
 	vasmrf68000_mot.exe -Fvobj -L LEDTest.lst LEDTest.asm -o LEDTest.o
 	vasmrf68000_mot.exe -Fvobj -L cputest.lst cputest.asm -o cputest.o
 	vasmrf68000_mot.exe -Fvobj -L boot.lst boot.x68 -o boot.o -m68010 -m68881
@@ -35,6 +40,7 @@ BIOS:
 #	vlink -T rom_bios.cmd -brawbin1 cputest.o -o cputest.bin
 	vlink -T rom_bios.cmd -bsrec37 boot.o -o boot.s37
 	vlink -T rom_bios.cmd -brawbin1 boot.o -o boot.bin
+	vlink -T bios.cmd -bsrec37 bootrom.o lib.o gfx.o -o bootrom.s37
 #	vlink -T rom_bios.cmd -brawbin1 add.o -o add.bin
 #	bin2ver fibonacci.bin 128
 #	bin2ver LEDTest.bin 32 m
