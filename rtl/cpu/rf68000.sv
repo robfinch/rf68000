@@ -6960,6 +6960,7 @@ FCVTI1:
 			goto (FCVTI2);
 		case(ir2[12:10])
 		3'b000:	fps <= {64'd0,s[31:0]};
+		3'b001:	fps <= {64'd0,s[31:0]};
 		3'b100:	fps <= {80'd0,s[15:0]};
 		3'b110:	fps <= {88'd0,s[7:0]};
 		default:	fps <= fps;
