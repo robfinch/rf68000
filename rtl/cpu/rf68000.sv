@@ -1017,10 +1017,10 @@ reg [95:0] dfpss1;
 
 reg [3:0] dfscnt;
 
-reg [63:0] fpss;
-reg [63:0] dfmao, dtrunco, dscaleo, ddivo, i2do, d2io;
-wire [63:0] d2xdo, s2xdo;
-wire [63:0] dfmao1, dtrunco1, dscaleo1, ddivo1, i2do1, d2io1;
+reg [95:0] fpss;
+reg [95:0] dfmao, dtrunco, dscaleo, ddivo, i2do, d2io;
+wire [95:0] d2xdo, s2xdo;
+wire [95:0] dfmao1, dtrunco1, dscaleo1, ddivo1, i2do1, d2io1;
 reg dscaleo_overflow;
 reg dscaleo_nan;
 wire ddivo_nan = 1'b0;
@@ -1033,6 +1033,8 @@ reg i2d_done,d2i_done;
 wire [11:0] dcmpo;
 wire dcmpo_nan;
 reg dfmao_nan;
+wire [63:0] fp96To64o;
+wire [31:0] fp96To32o;
 
 generate begin : gBinaryFloat
 if (SUPPORT_BINFLT) begin
@@ -1056,14 +1058,14 @@ if (ir2[14])
 else
 	fpss = fps;
 
-fpFMA64nrL8 ufdma1 (
+fpFMA96nrL8 ufdma1 (
 	.clk(dfclk_i),
 	.ce(1'b1),
 	.op(fsub),
 	.rm(3'b0),
 	.a(fpd),
-	.b(state==FADD ? 64'h3FF0000000000000 : fpss),	// FADD/FSUB - multiply by one
-	.c((state==FMUL1||state==FMUL2) ? 64'd0 : fpss),								// FMUL - add zero
+	.b(state==FADD ? 96'h3FFF00000000000000000000 : fpss),	// FADD/FSUB - multiply by one
+	.c((state==FMUL1||state==FMUL2) ? 96'd0 : fpss),								// FMUL - add zero
 	.o(dfmao1),
 	.inf(dfmao_inf1),
 	.zero(),
@@ -1076,9 +1078,9 @@ always_ff @(posedge clk_i)
 always_ff @(posedge clk_i)
 	dfmao_overflow <= dfmao_overflow1;
 always_ff @(posedge clk_i)
-	dfmao_nan <= dfmao1[62:52]==11'h7ff && !dfmao_inf1;
+	dfmao_nan <= dfmao1[94:80]==15'h7fff && !dfmao_inf1;
 
-fpDivide64 uddiv1
+fpDivide96 uddiv1
 (
 	.rst(rst_i),
 	.clk(dfclk_i),
@@ -1101,7 +1103,7 @@ always_ff @(posedge clk_i)
 always_ff @(posedge clk_i)
 	ddivo_underflow <= ddivo_underflow1;
 
-fpTrunc64 udtrunc1
+fpTrunc96 udtrunc1
 (
 	.clk(dfclk_i),
 	.ce(1'b1),
@@ -1111,7 +1113,7 @@ fpTrunc64 udtrunc1
 always_ff @(posedge clk_i)
 	dtrunco <= dtrunco1;
 
-fpScaleb64 udscale1
+fpScaleb96 udscale1
 (
 	.clk(dfclk_i),
 	.ce(1'b1),
@@ -1126,7 +1128,7 @@ always_ff @(posedge clk_i)
 always_ff @(posedge clk_i)
 	dscaleo_nan <= dscaleo1[62:52]==11'h7ff && dscaleo1[51:0]!=52'd0;
 
-fpCompare64 udcmp1
+fpCompare96 udcmp1
 (
 	.a(fpd),
 	.b(fpss),
@@ -1136,7 +1138,7 @@ fpCompare64 udcmp1
 	.snan()
 );
 
-i2f64 ui2d1
+i2f96 ui2d1
 (
 	.clk(dfclk_i),
 	.ce(1'b1),
@@ -1150,7 +1152,7 @@ always_ff @(posedge clk_i)
 always_ff @(posedge clk_i)
 	i2d_done <= 1'b1;
 
-f2i64 uf2i1
+f2i96 uf2i1
 (
 	.clk(clk_i),
 	.ce(1'b1),
@@ -1166,19 +1168,30 @@ always_ff @(posedge clk_i)
 always_ff @(posedge clk_i)
 	d2i_done <= 1'b1;
 
-/*
+
 fpCvt64To96 ud2xd1
 (
 	.i(fps[63:0]),
 	.o(d2xdo)
 );
-*/
-fpCvt32To64 us2xd1
+
+fpCvt32To96 us2xd1
 (
 	.i(s[31:0]),
 	.o(s2xdo)
 );
 
+fpCvt96To64 ufp96To64
+(
+	.i(rfoFpdst),
+	.o(fp96To64o)
+);
+
+fpCvt96To32 ufp96To32
+(
+	.i(rfoFpdst),
+	.o(fp96To32o)
+);
 end
 end
 endgenerate
@@ -3043,7 +3056,7 @@ DECODE:
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
 	5'h1F:
-		if (SUPPORT_DECFLT) begin
+		begin
 			ext_ir <= 1'b0;
 			if (ir[11:9]==3'b001) begin	// Co-processor #1
 				casez(ir2[15:8])
@@ -3057,12 +3070,18 @@ DECODE:
 							end
 						3'b001:	// single
 							begin
-								d <= dfp96To32o;
+								if (SUPPORT_DECFLT)
+									d <= dfp96To32o;
+								else if (SUPPORT_BINFLT)
+									d <= fp96To32o;
 								fs_data(mmm,rrr,STORE_LWORD,D);
 							end
 						3'b101:	// double
 							begin
-								fpd <= dfp96To64o;
+								if (SUPPORT_DECFLT)
+									fpd <= dfp96To64o;
+								else if (SUPPORT_BINFLT)
+									fpd <= fp96To64o;
 								fs_data(mmm,rrr,STORE_OCTA,D);
 							end
 						default:
@@ -6724,8 +6743,8 @@ FADD1:
 		end
 		else if (SUPPORT_BINFLT) begin
 			if (fpcnt==8'd50) begin
-				fzf <= dfmao[62:0]==63'd0;
-				fnf <= dfmao[63];
+				fzf <= dfmao[94:0]==95'd0;
+				fnf <= dfmao[95];
 				fvf <= dfmao_overflow;
 				fnanf <= dfmao_nan;
 				resF <= dfmao;
@@ -6759,8 +6778,8 @@ FINTRZ1:	// Also FINT
 			end
 			else if (SUPPORT_BINFLT) begin
 				resF <= dtrunco;
-				fzf <= dtrunco[62:0]==63'd0;
-				fnf <= dtrunco[63];
+				fzf <= dtrunco[95:0]==95'd0;
+				fnf <= dtrunco[95];
 				Rt <= {1'b0,FLTDST};
 				rfwrF <= 1'b1;
 			end
@@ -6792,8 +6811,8 @@ FSCALE1:
 				rfwrF <= 1'b1;
 			end
 			else if (SUPPORT_BINFLT) begin
-				fzf <= dscaleo[62:0]==63'd0;
-				fnf <= dscaleo[63];
+				fzf <= dscaleo[94:0]==95'd0;
+				fnf <= dscaleo[95];
 				fvf <= dscaleo_overflow;
 				fnanf <= dscaleo_nan;
 				resF <= dscaleo;
@@ -6824,9 +6843,9 @@ FNEG1:	// Also FABS
 			rfwrF <= 1'b1;
 		end
 		else if (SUPPORT_BINFLT) begin
-			resF <= {~fps[63] & ~fabs,fps[62:0]};
-			fzf <= fps[62:0]==63'd0;
-			fnf <= ~fps[63] & ~fabs;
+			resF <= {~fps[95] & ~fabs,fps[94:0]};
+			fzf <= fps[94:0]==95'd0;
+			fnf <= ~fps[95] & ~fabs;
 			Rt <= {1'b0,FLTDST};
 			rfwrF <= 1'b1;
 		end
@@ -6865,10 +6884,10 @@ FMUL2:
 	else if (SUPPORT_BINFLT) begin
 		fpcnt <= fpcnt + 2'd1;
 		if (fpcnt >= 8'd50) begin
-			fzf <= dfmao[62:0]==63'd0;
-			fnf <= dfmao[63];
-			fvf <= dfmao[62:52]==11'h7ff && dfmao[51:0]==52'd0;
-			fnanf <= dfmao[62:52]==11'h7ff && dfmao[51:0]!=52'd0;
+			fzf <= dfmao[94:0]==95'd0;
+			fnf <= dfmao[95];
+			fvf <= dfmao[94:80]==15'h7fff && dfmao[79:0]==80'd0;
+			fnanf <= dfmao[94:80]==15'h7fff && dfmao[79:0]!=80'd0;
 			resF <= dfmao;
 			Rt <= {1'b0,FLTDST};
 			rfwrF <= 1'b1;
@@ -6922,14 +6941,14 @@ FDIV3:
 	end
 	else if (SUPPORT_BINFLT) begin
 		if (ddiv_done) begin
-			fzf <= ddivo[62:0]==63'd0;
-			fnf <= ddivo[63];
-			fvf <= ddivo[62:52]==11'h7ff && ddivo[51:0]==52'd0;
-			fnanf <= ddivo[62:52]==11'h7ff && ddivo[51:0]!=52'd0;
+			fzf <= ddivo[94:0]==95'd0;
+			fnf <= ddivo[95];
+			fvf <= ddivo[94:80]==15'h7fff && ddivo[79:0]==80'd0;
+			fnanf <= ddivo[94:80]==15'h7fff && ddivo[79:0]!=80'd0;
 			resF <= ddivo;
 			Rt <= {1'b0,FLTDST};
 			rfwrF <= 1'b1;
-			quotient_bits <= {ddivo[63],ddivo[6:0]};
+			quotient_bits <= {ddivo[95],ddivo[6:0]};
 			quotient_bitshi <= {ddivo[9:7]};
 			ret();
 		end
@@ -6951,17 +6970,26 @@ FCVTI2:
 		case(ir2[12:10])
 		3'b000,3'b100,3'b110:
 			if (i2dfdone) begin
-				fps <= i2dfo;
+				if (SUPPORT_DECFLT)
+					fps <= i2dfo;
+				else if (SUPPORT_BINFLT)
+					fps <= i2do;
 				ret();
 			end
 		3'b001:
 			begin
-				fps <= dfp32To96;
+				if (SUPPORT_DECFLT)
+					fps <= dfp32To96;
+				else if (SUPPORT_BINFLT)
+					fps <= fp32To96;
 				ret();
 			end
 		3'b101:
 			begin
-				fps <= dfp64To96;
+				if (SUPPORT_DECFLT)
+					fps <= dfp64To96;
+				else if (SUPPORT_BINFLT)
+					fps <= fp64To96;
 				ret();
 			end
 		default:
@@ -7019,7 +7047,16 @@ FMOVE1:
 			rfwrF <= 1'b1;
 			ret();
 		end
-		else if (SUPPORT_BINFLT) begin
+		else if (SUPPORT_DECFLT) begin
+			resF <= fps[95:0];
+			fzf <= fps[94:0]==95'd0;
+			fnf <= fps[95];
+			Rt <= {1'b0,FLTDST};
+			rfwrF <= 1'b1;
+			ret();
+		end
+		// DEAD code
+		else begin
 			if (ir2[14])
 				case(ir2[12:10])
 				3'b000:
@@ -7089,8 +7126,8 @@ I2DF2:
 		else if (SUPPORT_BINFLT) begin
 			if (i2d_done) begin
 				resF <= i2do;
-				fzf <= i2do[62:0]==63'd0;
-				fnf <= i2do[63];
+				fzf <= i2do[94:0]==95'd0;
+				fnf <= i2do[95];
 				Rt <= {1'b0,FLTDST};
 				rfwrF <= 1'b1;
 				ret();
@@ -7148,9 +7185,9 @@ DF2I2:
 				resW <= d2io[15:0];
 				resB <= d2io[ 7:0];
 				d <= d2io;
-				fzf <= d2io[62:0]==63'd0;
-				fnf <= d2io[63];
-				fvf <= d2io[62:52]==11'h7ff && d2io[51:0]==52'd0;
+				fzf <= d2io[94:0]==95'd0;
+				fnf <= d2io[95];
+				fvf <= d2io[94:80]==15'h7fff && d2io[79:0]==80'd0;
 				//Rt <= {1'b0,FLTDST};
 				//rfwrL <= 1'b1;
 			end
@@ -7178,10 +7215,10 @@ FTST1:
 			fvf <= fps[94:90]==5'b11110;
 		end
 		else if (SUPPORT_BINFLT) begin
-			fnf <= fps[63];
-			fzf <= fps[62:0]==63'd0;
-			fnanf <= fps[62:52]==11'h7ff && fps[51:0]!=52'd0;
-			fvf <= fps[62:52]==11'h7ff && fps[51:0]==52'd0;
+			fnf <= fps[95];
+			fzf <= fps[94:0]==95'd0;
+			fnanf <= fps[94:80]==15'h7fff && fps[79:0]!=80'd0;
+			fvf <= fps[94:80]==15'h7fff && fps[79:0]==80'd0;
 		end
 		ret();
 	end
