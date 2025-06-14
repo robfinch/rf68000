@@ -6982,7 +6982,7 @@ FCVTI2:
 				if (SUPPORT_DECFLT)
 					fps <= dfp32To96;
 				else if (SUPPORT_BINFLT)
-					fps <= fp32To96;
+					fps <= s2xdo;
 				ret();
 			end
 		3'b101:
@@ -6990,7 +6990,7 @@ FCVTI2:
 				if (SUPPORT_DECFLT)
 					fps <= dfp64To96;
 				else if (SUPPORT_BINFLT)
-					fps <= fp64To96;
+					fps <= d2xdo;
 				ret();
 			end
 		default:
@@ -7103,8 +7103,6 @@ FMOVE1:
 				ret();
 			end
 		end
-		else
-			ret();
 	end
 I2DF1:
 	begin
@@ -7186,9 +7184,11 @@ DF2I2:
 				resW <= d2io[15:0];
 				resB <= d2io[ 7:0];
 				d <= d2io;
-				fzf <= d2io[94:0]==95'd0;
-				fnf <= d2io[95];
-				fvf <= d2io[94:80]==15'h7fff && d2io[79:0]==80'd0;
+				if (ir2[15:13]!=3'b011) begin
+					fzf <= d2io[94:0]==95'd0;
+					fnf <= d2io[95];
+					fvf <= d2io[94:80]==15'h7fff && d2io[79:0]==80'd0;
+				end
 				//Rt <= {1'b0,FLTDST};
 				//rfwrL <= 1'b1;
 			end
