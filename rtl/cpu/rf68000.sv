@@ -143,8 +143,8 @@
 module rf68000(coreno_i, clken_i, rst_i, rst_o, clk_i, dfclk_i, nmi_i, ipl_i, vpa_i,
 	lock_o, cyc_o, stb_o, ack_i, err_i, rty_i, we_o, sel_o, fc_o, 
 	asid_o, mmus_o, ios_o, iops_o, adr_o, dat_i, dat_o);
-parameter SUPPORT_DECFLT = 1'b0;
-parameter SUPPORT_DOUBLE = 1'b1;
+parameter SUPPORT_DECFLT = 1'b1;
+parameter SUPPORT_BINFLT = 1'b0;
 parameter IOPS_ADDR = 32'hFDE00000;
 parameter MMU_ADDR = 32'hFDC00000;
 
@@ -410,25 +410,37 @@ typedef enum logic [7:0] {
 
 	IFETCH2,
 	FADD,
+	FADD1,
 
-	// 200
+	// 201
 	FCMP,
+	FCMP1,
+	FCVTI1,
+	FCVTI2,
+
+	FMUL,
 	FMUL1,
 	FMUL2,
+	FDIV,
 	FDIV1,
 	FDIV2,
 	FDIV3,
 	FNEG,
+	FNEG1,
 	FMOVE,
+	FMOVE1,
 	I2DF1,
 	I2DF2,
 	DF2I1,
 	DF2I2,
 	FTST,
+	FTST1,
 	FBCC,
 	FSCALE,
+	FSCALE1,
 	FCOPYEXP,
 	FINTRZ,
+	FINTRZ1,
 
 	FETCH_HEXI1,
 	FETCH_HEXI2,
@@ -440,13 +452,6 @@ typedef enum logic [7:0] {
 	STORE_HEXI3,
 	STORE_HEXI4,
 
-	FETCH_OCTA1,
-	FETCH_OCTA2,
-	FETCH_OCTA3,
-	STORE_OCTA1,
-	STORE_OCTA2,
-	STORE_OCTA3,
-
 	FMOVEM1,
 
 	FETCH_IMM96,
@@ -456,7 +461,21 @@ typedef enum logic [7:0] {
 	
 	CCHK,
 	
-	FSDATA2
+	FSDATA2,
+	
+	FETCH_OCTA,
+	FETCH_OCTA1,
+	FETCH_OCTA2,
+	FETCH_NOP_OCTA,
+
+	STORE_OCTA,
+	STORE_OCTA1,
+	STORE_OCTA2,
+	
+	FETCH_IMM64,
+	FETCH_IMM64b,
+	FETCH_IMM64c
+
 } state_t;
 
 typedef enum logic [4:0] {
@@ -523,6 +542,7 @@ state_t state_stk2;
 state_t state_stk3;
 state_t state_stk4;
 state_t state_stk5;
+state_t state_stk6;
 state_t sz_state;
 flag_update_t flag_update;
 reg [31:0] d0 = 'd0;
@@ -600,7 +620,7 @@ reg [7:0] fpexc,fpaexc;
 wire [31:0] fpsr = {1'b0,quotient_bitshi,fnf,fzf,fvf,fnanf,quotient_bits,fpexc,fpaexc};
 reg [31:0] isr;
 reg [3:0] ifmt;
-reg [7:0] fpcnt;
+reg [11:0] fpcnt;
 reg [31:0] pc;
 reg [31:0] opc;			// pc for branch references
 reg [31:0] fpiar;
@@ -986,59 +1006,79 @@ reg i2dfdone, df2idone;
 wire i2dfdone1, df2idone1;
 reg df2iover;
 wire df2iover1;
+wire [95:0] dfp32To96;
+wire [95:0] dfp64To96;
+wire [63:0] dfp96To64o;
+wire [31:0] dfp96To32o;
+reg [95:0] dfpss1;
+
 //DFP96U fpsu, fpdu;
 //DFP96 fpdp;
 
 reg [3:0] dfscnt;
 
-reg [95:0] fpss;
-wire dfmao_overflow = 1'b0;
-wire dfmao_nan = 1'b0;
-reg [95:0] dfmao, dtrunco, dscaleo, ddivo, i2do, d2io;
-wire [95:0] d2xdo, s2xdo;
-wire [95:0] dfmao1, dtrunco1, dscaleo1, ddivo1, i2do1, d2io1;
-wire dscaleo_overflow = 1'b0;
-wire dscaleo_nan = 1'b0;
+reg [63:0] fpss;
+reg [63:0] dfmao, dtrunco, dscaleo, ddivo, i2do, d2io;
+wire [63:0] d2xdo, s2xdo;
+wire [63:0] dfmao1, dtrunco1, dscaleo1, ddivo1, i2do1, d2io1;
+reg dscaleo_overflow;
+reg dscaleo_nan;
 wire ddivo_nan = 1'b0;
+wire dfmao_overflow1, dfmao_inf1;
+reg dfmao_overflow;
 reg ddivo_overflow, ddivo_underflow, d2io_overflow;
 wire ddivo_overflow1, ddivo_underflow1, d2io_overflow1;
 wire ddiv_done;
+reg i2d_done,d2i_done;
 wire [11:0] dcmpo;
 wire dcmpo_nan;
+reg dfmao_nan;
 
-generate begin : gDouble
-if (SUPPORT_DOUBLE) begin
+generate begin : gBinaryFloat
+if (SUPPORT_BINFLT) begin
 
 always_comb
 if (ir2[14])
-	case(ir2[12:10])
-	3'b001:	fpss = s2xdo;
-	3'b010:	fpss = fps;
-	3'b101:	fpss = d2xdo;
-	default:	fpss = fps;
+	casez(ir2[15:8])
+	8'h6?,8'h7?:	// FMOVE to memory
+		fpss = fps;
+	default:
+		case(ir2[12:10])
+		3'b000:	fpss = i2do1;
+		3'b001:	fpss = s2xdo;
+		3'b010:	fpss = fps;
+		3'b100:	fpss = i2do1;
+		3'b101:	fpss = fps;
+		3'b110:	fpss = i2do1;
+		default:	fpss = fps;
+		endcase
 	endcase
 else
 	fpss = fps;
 
-fpFMA96nrL8 ufdma1 (
+fpFMA64nrL8 ufdma1 (
 	.clk(dfclk_i),
 	.ce(1'b1),
 	.op(fsub),
 	.rm(3'b0),
 	.a(fpd),
-	.b(state==FADD ? 96'h3FFF00000000000000000000 : fpss),	// FADD/FSUB - multiply by one
-	.c((state==FMUL1||state==FMUL2) ? 96'd0 : fpss),								// FMUL - add zero
+	.b(state==FADD ? 64'h3FF0000000000000 : fpss),	// FADD/FSUB - multiply by one
+	.c((state==FMUL1||state==FMUL2) ? 64'd0 : fpss),								// FMUL - add zero
 	.o(dfmao1),
-	.inf(),
+	.inf(dfmao_inf1),
 	.zero(),
-	.overflow(),
+	.overflow(dfmao_overflow1),
 	.underflow(),
 	.inexact()
 );
 always_ff @(posedge clk_i)
 	dfmao <= dfmao1;
+always_ff @(posedge clk_i)
+	dfmao_overflow <= dfmao_overflow1;
+always_ff @(posedge clk_i)
+	dfmao_nan <= dfmao1[62:52]==11'h7ff && !dfmao_inf1;
 
-fpDivide96 uddiv1
+fpDivide64 uddiv1
 (
 	.rst(rst_i),
 	.clk(dfclk_i),
@@ -1061,7 +1101,7 @@ always_ff @(posedge clk_i)
 always_ff @(posedge clk_i)
 	ddivo_underflow <= ddivo_underflow1;
 
-fpTrunc96 udtrunc1
+fpTrunc64 udtrunc1
 (
 	.clk(dfclk_i),
 	.ce(1'b1),
@@ -1071,7 +1111,7 @@ fpTrunc96 udtrunc1
 always_ff @(posedge clk_i)
 	dtrunco <= dtrunco1;
 
-fpScaleb96 udscale1
+fpScaleb64 udscale1
 (
 	.clk(dfclk_i),
 	.ce(1'b1),
@@ -1081,8 +1121,12 @@ fpScaleb96 udscale1
 );
 always_ff @(posedge clk_i)
 	dscaleo <= dscaleo1;
+always_ff @(posedge clk_i)
+	dscaleo_overflow <= dscaleo1[62:52]==11'h7ff && dscaleo1[51:0]==52'd0;
+always_ff @(posedge clk_i)
+	dscaleo_nan <= dscaleo1[62:52]==11'h7ff && dscaleo1[51:0]!=52'd0;
 
-fpCompare96 udcmp1
+fpCompare64 udcmp1
 (
 	.a(fpd),
 	.b(fpss),
@@ -1092,19 +1136,21 @@ fpCompare96 udcmp1
 	.snan()
 );
 
-i2f96 ui2d1
+i2f64 ui2d1
 (
 	.clk(dfclk_i),
 	.ce(1'b1),
 	.op(1'b0),	// 0 = unsigned
 	.rm(3'b0),
-	.i(fpss),
+	.i(fps),
 	.o(i2do1)
 );
 always_ff @(posedge clk_i)
 	i2do <= i2do1;
+always_ff @(posedge clk_i)
+	i2d_done <= 1'b1;
 
-f2i96 uf2i1
+f2i64 uf2i1
 (
 	.clk(clk_i),
 	.ce(1'b1),
@@ -1117,14 +1163,17 @@ always_ff @(posedge clk_i)
 	d2io <= d2io1;
 always_ff @(posedge clk_i)
 	d2io_overflow <= d2io_overflow1;
+always_ff @(posedge clk_i)
+	d2i_done <= 1'b1;
 
+/*
 fpCvt64To96 ud2xd1
 (
 	.i(fps[63:0]),
 	.o(d2xdo)
 );
-
-fpCvt32To96 us2xd1
+*/
+fpCvt32To64 us2xd1
 (
 	.i(s[31:0]),
 	.o(s2xdo)
@@ -1157,6 +1206,17 @@ DFPUnpack uunpack1
 	.o(fpsu)
 );
 */
+
+always_comb
+if (ir2[14])
+	case(ir2[12:10])
+	3'b001:	dfpss1 = s;
+	3'b010:	dfpss1 = fps;
+	3'b101:	dfpss1 = fps;
+	default:	dfpss1 = fps;
+	endcase
+else
+	dfpss1 = fps;
 
 DFPAddsub96nr ufaddsub1
 (
@@ -1241,7 +1301,7 @@ i2df96 ui2df1
 	.rst(rst_i),
 	.clk(dfclk_i),
 	.ce(1'b1),
-	.ld(state==I2DF1),
+	.ld(state==I2DF1||state==FCVTI1),
 	.op(1'b0),	// 0=unsigned, 1= signed
 	.rm(3'b000),
 	.i(fps),
@@ -1297,6 +1357,28 @@ DFPTrunc96 udftrunc1
 // Cross clock domain sync.
 always_ff @(posedge clk_i)
 	dftrunco <= dftrunco1;
+
+DFP32To96 udfp32To96 (
+	.i(dfpss1[31:0]),
+	.o(dfp32To96)
+);
+
+DFP64To96 udfp32To64 (
+	.i(dfpss1[63:0]),
+	.o(dfp64To96)
+);
+
+DFP96To64 udfp96To64
+(
+	.i(rfoFpdst),
+	.o(dfp96To64o)
+);
+
+DFP96To32 udfp96To32
+(
+	.i(rfoFpdst),
+	.o(dfp96To32o)
+);
 
 end
 end
@@ -2081,7 +2163,7 @@ IFETCH:
 		is_illegal <= 1'b0;
 		use_sfc <= 1'b0;
 		use_dfc <= 1'b0;
-		fpcnt <= 8'd0;
+		fpcnt <= 12'd0;
 		fpiar <= pc;
 		ext_ir <= 1'b0;
 		if (!cyc_o) begin
@@ -2973,10 +3055,15 @@ DECODE:
 								fps <= rfoFpdst;
 								goto (DF2I1);
 							end
-						3'b011:
+						3'b001:	// single
 							begin
-								fpd <= rfoFpdst;
-								fs_data(mmm,rrr,STORE_HEXI1,D);
+								d <= dfp96To32o;
+								fs_data(mmm,rrr,STORE_LWORD,D);
+							end
+						3'b101:	// double
+							begin
+								fpd <= dfp96To64o;
+								fs_data(mmm,rrr,STORE_OCTA,D);
 							end
 						default:
 							begin
@@ -3025,64 +3112,30 @@ DECODE:
 				8'h0?,8'h1?,8'h2?,8'h3?,8'h4?,8'h5?:
 					case(ir2[6:0])
 					7'b0000000:	// FMOVE
-						if (ir2[14]) begin	// RM
-							push(FMOVE);
-							case(ir2[12:10])
-							3'b000:	fs_data(mmm,rrr,FETCH_LWORD,S);	// long integer
-							3'b001:	fs_data(mmm,rrr,FETCH_LWORD,S);	// S single precsion real
-							3'b010:	fs_data(mmm,rrr,FETCH_HEXI1,S);	// X extended precision real
-							3'b011:	fs_data(mmm,rrr,FETCH_HEXI1,S);	// P packed decimal real
-							3'b100:	fs_data(mmm,rrr,FETCH_WORD,S);	// W word integer
-							3'b101:	fs_data(mmm,rrr,FETCH_OCTA1,S);	// D double precision real
-							3'b110:	fs_data(mmm,rrr,FETCH_BYTE,S);	// B byte integer
-							default:	fs_data(mmm,rrr,FETCH_HEXI1,S);
-							endcase
+						if (ir2[14]) begin	// RM from memory
+							push(FMOVE1);
+							goto(FMOVE);
 						end
 						else begin
 							fps <= rfoFpsrc;
-							goto(FMOVE);
+							goto(FMOVE1);
 						end
 					7'b0000001,	// FINT
 					7'b0000011:	// FINTRZ
 						if (ir2[14]) begin
-							case(ir2[12:10])
-							3'b000:	fs_data(mmm,rrr,FETCH_LWORD,S);	// long integer
-							3'b001:	fs_data(mmm,rrr,FETCH_LWORD,S);	// S single precsion real
-							3'b010:	fs_data(mmm,rrr,FETCH_HEXI1,S);	// X extended precision real
-							3'b011:	fs_data(mmm,rrr,FETCH_HEXI1,S);	// P packed decimal real
-							3'b100:	fs_data(mmm,rrr,FETCH_WORD,S);	// W word integer
-							3'b101:	fs_data(mmm,rrr,FETCH_OCTA1,S);	// D double precision real
-							3'b110:	fs_data(mmm,rrr,FETCH_BYTE,S);	// B byte integer
-							default:	fs_data(mmm,rrr,FETCH_HEXI1,S);
-							endcase
-							/*
-							push(FINTRZ);
-							case(ir2[12:10])
-							3'b000:	fs_data(mmm,rrr,FETCH_LWORD,S);
-							3'b100:	fs_data(mmm,rrr,FETCH_WORD,S);
-							3'b110:	fs_data(mmm,rrr,FETCH_BYTE,S);
-							default:	fs_data(mmm,rrr,FETCH_HEXI1,S);
-							endcase
-							*/
+							//tIllegal();
+							push(FINTRZ1);
+							goto(FINTRZ);
 						end
 						else begin
 							fps <= rfoFpsrc;
-							goto(FINTRZ);
+							goto(FINTRZ1);
 						end
 					7'b0100000:	// FDIV
 						if (ir2[14]) begin	// RM
 							fpd <= rfoFpdst;
 							push(FDIV1);
-							case(ir2[12:10])
-							3'b000:	fs_data(mmm,rrr,FETCH_LWORD,S);	// long integer
-							3'b001:	fs_data(mmm,rrr,FETCH_LWORD,S);	// S single precsion real
-							3'b010:	fs_data(mmm,rrr,FETCH_HEXI1,S);	// X extended precision real
-							3'b011:	fs_data(mmm,rrr,FETCH_HEXI1,S);	// P packed decimal real
-							3'b100:	fs_data(mmm,rrr,FETCH_WORD,S);	// W word integer
-							3'b101:	fs_data(mmm,rrr,FETCH_OCTA1,S);	// D double precision real
-							3'b110:	fs_data(mmm,rrr,FETCH_BYTE,S);	// B byte integer
-							default:	fs_data(mmm,rrr,FETCH_HEXI1,S);
-							endcase
+							goto(FDIV);
 						end
 						else begin
 							fpd <= rfoFpdst;
@@ -3092,37 +3145,19 @@ DECODE:
 					7'b0100010:	// FADD
 						if (ir2[14]) begin	// RM
 							fpd <= rfoFpdst;
-							push(FADD);
-							case(ir2[12:10])
-							3'b000:	fs_data(mmm,rrr,FETCH_LWORD,S);	// long integer
-							3'b001:	fs_data(mmm,rrr,FETCH_LWORD,S);	// S single precsion real
-							3'b010:	fs_data(mmm,rrr,FETCH_HEXI1,S);	// X extended precision real
-							3'b011:	fs_data(mmm,rrr,FETCH_HEXI1,S);	// P packed decimal real
-							3'b100:	fs_data(mmm,rrr,FETCH_WORD,S);	// W word integer
-							3'b101:	fs_data(mmm,rrr,FETCH_OCTA1,S);	// D double precision real
-							3'b110:	fs_data(mmm,rrr,FETCH_BYTE,S);	// B byte integer
-							default:	fs_data(mmm,rrr,FETCH_HEXI1,S);
-							endcase
+							push(FADD1);
+							goto(FADD);
 						end
 						else begin
 							fpd <= rfoFpdst;
 							fps <= rfoFpsrc;
-							goto(FADD);
+							goto(FADD1);
 						end
 					7'b0100011:	// FMUL
 						if (ir2[14]) begin	// RM
 							fpd <= rfoFpdst;
 							push(FMUL1);
-							case(ir2[12:10])
-							3'b000:	fs_data(mmm,rrr,FETCH_LWORD,S);	// long integer
-							3'b001:	fs_data(mmm,rrr,FETCH_LWORD,S);	// S single precsion real
-							3'b010:	fs_data(mmm,rrr,FETCH_HEXI1,S);	// X extended precision real
-							3'b011:	fs_data(mmm,rrr,FETCH_HEXI1,S);	// P packed decimal real
-							3'b100:	fs_data(mmm,rrr,FETCH_WORD,S);	// W word integer
-							3'b101:	fs_data(mmm,rrr,FETCH_OCTA1,S);	// D double precision real
-							3'b110:	fs_data(mmm,rrr,FETCH_BYTE,S);	// B byte integer
-							default:	fs_data(mmm,rrr,FETCH_HEXI1,S);
-							endcase
+							goto(FMUL);
 						end
 						else begin
 							fpd <= rfoFpdst;
@@ -3133,120 +3168,65 @@ DECODE:
 						if (ir2[14]) begin	// RM
 							fsub <= 1'b1;
 							fpd <= rfoFpdst;
-							push(FADD);
-							case(ir2[12:10])
-							3'b000:	fs_data(mmm,rrr,FETCH_LWORD,S);	// long integer
-							3'b001:	fs_data(mmm,rrr,FETCH_LWORD,S);	// S single precsion real
-							3'b010:	fs_data(mmm,rrr,FETCH_HEXI1,S);	// X extended precision real
-							3'b011:	fs_data(mmm,rrr,FETCH_HEXI1,S);	// P packed decimal real
-							3'b100:	fs_data(mmm,rrr,FETCH_WORD,S);	// W word integer
-							3'b101:	fs_data(mmm,rrr,FETCH_OCTA1,S);	// D double precision real
-							3'b110:	fs_data(mmm,rrr,FETCH_BYTE,S);	// B byte integer
-							default:	fs_data(mmm,rrr,FETCH_HEXI1,S);
-							endcase
+							push(FADD1);
+							goto(FADD);
 						end
 						else begin
 							fsub <= 1'b1;
 							fpd <= rfoFpdst;
 							fps <= rfoFpsrc;
-							goto(FADD);
+							goto(FADD1);
 						end
 					7'b0011000:	// FABS
 						if (ir2[14]) begin	// RM
 							fabs <= 1'b1;
-							push(FNEG);
-							case(ir2[12:10])
-							3'b000:	fs_data(mmm,rrr,FETCH_LWORD,S);	// long integer
-							3'b001:	fs_data(mmm,rrr,FETCH_LWORD,S);	// S single precsion real
-							3'b010:	fs_data(mmm,rrr,FETCH_HEXI1,S);	// X extended precision real
-							3'b011:	fs_data(mmm,rrr,FETCH_HEXI1,S);	// P packed decimal real
-							3'b100:	fs_data(mmm,rrr,FETCH_WORD,S);	// W word integer
-							3'b101:	fs_data(mmm,rrr,FETCH_OCTA1,S);	// D double precision real
-							3'b110:	fs_data(mmm,rrr,FETCH_BYTE,S);	// B byte integer
-							default:	fs_data(mmm,rrr,FETCH_HEXI1,S);
-							endcase
+							push(FNEG1);
+							goto(FNEG);
 						end
 						else begin
 							fabs <= 1'b1;
 							fps <= rfoFpsrc;
-							goto(FNEG);
+							goto(FNEG1);
 						end
 					7'b0011010:	// FNEG
 						if (ir2[14]) begin	// RM
-							push(FNEG);
-							case(ir2[12:10])
-							3'b000:	fs_data(mmm,rrr,FETCH_LWORD,S);	// long integer
-							3'b001:	fs_data(mmm,rrr,FETCH_LWORD,S);	// S single precsion real
-							3'b010:	fs_data(mmm,rrr,FETCH_HEXI1,S);	// X extended precision real
-							3'b011:	fs_data(mmm,rrr,FETCH_HEXI1,S);	// P packed decimal real
-							3'b100:	fs_data(mmm,rrr,FETCH_WORD,S);	// W word integer
-							3'b101:	fs_data(mmm,rrr,FETCH_OCTA1,S);	// D double precision real
-							3'b110:	fs_data(mmm,rrr,FETCH_BYTE,S);	// B byte integer
-							default:	fs_data(mmm,rrr,FETCH_HEXI1,S);
-							endcase
+							push(FNEG1);
+							goto(FNEG);
 						end
 						else begin
 							fps <= rfoFpsrc;
-							goto(FNEG);
+							goto(FNEG1);
 						end
 					7'b0111000:	// FCMP
 						if (ir2[14]) begin	// RM
 							fpd <= rfoFpdst;
-							push(FCMP);
-							case(ir2[12:10])
-							3'b000:	fs_data(mmm,rrr,FETCH_LWORD,S);	// long integer
-							3'b001:	fs_data(mmm,rrr,FETCH_LWORD,S);	// S single precsion real
-							3'b010:	fs_data(mmm,rrr,FETCH_HEXI1,S);	// X extended precision real
-							3'b011:	fs_data(mmm,rrr,FETCH_HEXI1,S);	// P packed decimal real
-							3'b100:	fs_data(mmm,rrr,FETCH_WORD,S);	// W word integer
-							3'b101:	fs_data(mmm,rrr,FETCH_OCTA1,S);	// D double precision real
-							3'b110:	fs_data(mmm,rrr,FETCH_BYTE,S);	// B byte integer
-							default:	fs_data(mmm,rrr,FETCH_HEXI1,S);
-							endcase
+							push(FCMP1);
+							goto(FCMP);
 						end
 						else begin
 							fpd <= rfoFpdst;
 							fps <= rfoFpsrc;
-							goto(FCMP);
+							goto(FCMP1);
 						end
 					7'b0111010:	// FTST
 						if (ir2[14]) begin
-							push (FTST);
-							case(ir2[12:10])
-							3'b000:	fs_data(mmm,rrr,FETCH_LWORD,S);	// long integer
-							3'b001:	fs_data(mmm,rrr,FETCH_LWORD,S);	// S single precsion real
-							3'b010:	fs_data(mmm,rrr,FETCH_HEXI1,S);	// X extended precision real
-							3'b011:	fs_data(mmm,rrr,FETCH_HEXI1,S);	// P packed decimal real
-							3'b100:	fs_data(mmm,rrr,FETCH_WORD,S);	// W word integer
-							3'b101:	fs_data(mmm,rrr,FETCH_OCTA1,S);	// D double precision real
-							3'b110:	fs_data(mmm,rrr,FETCH_BYTE,S);	// B byte integer
-							default:	fs_data(mmm,rrr,FETCH_HEXI1,S);
-							endcase
+							push (FTST1);
+							goto (FTST);
 						end
 						else begin
-							fnf <= rfoFpsrc[95];
-							fzf <= rfoFpsrc[94:0]=='d0;
-							ret();
+							fps <= rfoFpsrc;
+							goto (FTST1);
 						end
 					7'b0100110:	// FSCALE
 						if (ir2[14]) begin	// RM
 							fpd <= rfoFpdst;
-							push(FSCALE);
-							case(ir2[12:10])
-							3'b000:	fs_data(mmm,rrr,FETCH_LWORD,S);	// long integer
-							3'b001:	fs_data(mmm,rrr,FETCH_LWORD,S);	// S single precsion real
-							3'b010:	fs_data(mmm,rrr,FETCH_HEXI1,S);	// X extended precision real
-							3'b011:	fs_data(mmm,rrr,FETCH_HEXI1,S);	// P packed decimal real
-							3'b100:	fs_data(mmm,rrr,FETCH_WORD,S);	// W word integer
-							3'b101:	fs_data(mmm,rrr,FETCH_OCTA1,S);	// D double precision real
-							3'b110:	fs_data(mmm,rrr,FETCH_BYTE,S);	// B byte integer
-							default:	fs_data(mmm,rrr,FETCH_HEXI1,S);
-							endcase
+							push(FSCALE1);
+							goto(FSCALE);
 						end
 						else begin
 							fpd <= rfoFpdst;
 							fps <= rfoFpsrc;
-							goto(FSCALE);
+							goto(FSCALE1);
 						end
 /*						
 					7'b0011011:	// FGETEXP2
@@ -4761,6 +4741,29 @@ FETCH_IMM32b:
 		ret();
 	end
 	
+FETCH_IMM64:
+	begin
+		call(FETCH_IMM32,FETCH_IMM64b);
+	end
+FETCH_IMM64b:
+	begin
+`ifdef BIG_ENDIAN
+		fps[63:32] <= imm;
+`else
+		fps[31: 0] <= imm;
+`endif
+		call(FETCH_IMM32,FETCH_IMM64c);
+	end
+FETCH_IMM64c:
+	begin
+`ifdef BIG_ENDIAN
+		fps[31: 0] <= imm;
+`else
+		fps[63:32] <= imm;
+`endif
+		ret();
+	end
+
 FETCH_IMM96:
 	begin
 		call(FETCH_IMM32,FETCH_IMM96b);
@@ -5105,9 +5108,9 @@ FETCH_LWORDa:
 		ret();
 	end
 
+FETCH_OCTA:
+	call (FETCH_LWORD,FETCH_OCTA1);
 FETCH_OCTA1:
-	call (FETCH_LWORD,FETCH_OCTA2);
-FETCH_OCTA2:
 	begin
 `ifdef BIG_ENDIAN
 		if (ds==S)
@@ -5121,9 +5124,9 @@ FETCH_OCTA2:
 			fpd[31: 0] <= d;
 `endif
 		ea <= ea + 4'd4;			
-		call (FETCH_LWORD,FETCH_OCTA3);
+		call (FETCH_LWORD,FETCH_OCTA2);
 	end
-FETCH_OCTA3:
+FETCH_OCTA2:
 	begin
 `ifdef BIG_ENDIAN
 		if (ds==S)
@@ -5188,6 +5191,31 @@ FETCH_HEXI4:
 			fpd[95:64] <= d;
 `endif
 		ea <= ea - 4'd8;			
+		ret();
+	end
+
+STORE_OCTA:
+	begin
+`ifdef BIG_ENDIAN
+		d <= fpd[63:32];
+`else
+		d <= fpd[31: 0];
+`endif
+		call (STORE_LWORD,STORE_OCTA1);
+	end
+STORE_OCTA1:
+	begin
+`ifdef BIG_ENDIAN
+		d <= fpd[31: 0];
+`else
+		d <= fpd[63:32];
+`endif
+		ea <= ea + 4'd4;
+		call (STORE_LWORD,STORE_OCTA2);
+	end
+STORE_OCTA2:
+	begin
+		ea <= ea - 4'd4;
 		ret();
 	end
 
@@ -6670,252 +6698,34 @@ CCHK:
 	end
 FADD:
 	begin
-		fpcnt <= fpcnt + 2'd1;
-		if (ir2[14]) begin
-			case(ir2[12:10])
-			3'b000,3'b001,3'b010,3'b100,3'b110:
-				if (fpcnt>=8'd10) begin
-					if (SUPPORT_DOUBLE) begin
-						fzf <= dfmao[94:0]==95'd0;
-						fnf <= dfmao[95];
-						fvf <= dfmao_overflow;
-						fnanf <= dfmao_nan;
-						resF <= dfmao;
-						Rt <= {1'b0,FLTDST};
-						rfwrF <= 1'b1;
-					end
-					ret();
-				end
-			3'b011:
-				if (fpcnt>=8'd250) begin
-					if (SUPPORT_DECFLT) begin
-						fzf <= dfaddsubo[94:0]==95'd0;
-						fnf <= dfaddsubo[95];
-						fvf <= dfaddsubo[94:90]==5'b11110;
-						fnanf <= dfaddsubo[94:90]==5'b11111;
-						resF <= dfaddsubo;
-						Rt <= {1'b0,FLTDST};
-						rfwrF <= 1'b1;
-					end
-					ret();
-				end
-			3'b101:
-				if (fpcnt>=8'd50) begin
-					if (SUPPORT_DOUBLE) begin
-						fzf <= dfmao[94:0]==95'd0;
-						fnf <= dfmao[95];
-						fvf <= dfmao_overflow;
-						fnanf <= dfmao_nan;
-						resF <= dfmao;
-						Rt <= {1'b0,FLTDST};
-						rfwrF <= 1'b1;
-					end
-					ret();
-				end
-			default:	ret();
-			endcase
-		end
-		else begin
-			if (SUPPORT_DECFLT) begin
-				if (fpcnt==8'd250) begin
-					fzf <= dfaddsubo[94:0]==95'd0;
-					fnf <= dfaddsubo[95];
-					fvf <= dfaddsubo[94:90]==5'b11110;
-					fnanf <= dfaddsubo[94:90]==5'b11111;
-					resF <= dfaddsubo;
-					Rt <= {1'b0,FLTDST};
-					rfwrF <= 1'b1;
-				end
-				ret();
-			end
-			else if (SUPPORT_DOUBLE) begin
-				if (fpcnt>=8'd50) begin
-					fzf <= dfmao[94:0]==95'd0;
-					fnf <= dfmao[95];
-					fvf <= dfmao_overflow;
-					fnanf <= dfmao_nan;
-					resF <= dfmao;
-					Rt <= {1'b0,FLTDST};
-					rfwrF <= 1'b1;
-				end
-				ret();
-			end
-		end
-	end
-FINTRZ:	// Also FINT
-	begin
-		fpcnt <= fpcnt + 2'd1;
-		if (ir2[14]) begin
-			case (ir2[12:10])
-			3'b011:
-				if (fpcnt>=8'd6) begin
-					if (SUPPORT_DECFLT) begin
-						resF <= dftrunco;
-						fzf <= dftrunco[94:0]==95'd0;
-						fnf <= dftrunco[95];
-						Rt <= {1'b0,FLTDST};
-						rfwrF <= 1'b1;
-					end
-					ret();
-				end
-			3'b000,3'b001,3'b010,3'b100,3'b110,
-			3'b101:
-				if (fpcnt>=8'd2) begin
-					if (SUPPORT_DOUBLE) begin
-						resF <= dtrunco;
-						fzf <= dtrunco[94:0]==95'd0;
-						fnf <= dtrunco[95];
-						Rt <= {1'b0,FLTDST};
-						rfwrF <= 1'b1;
-					end
-					ret();
-				end
-			default:	ret();
-			endcase
-		end
-		else begin
-			if (SUPPORT_DECFLT) begin
-				resF <= dftrunco;
-				fzf <= dftrunco[94:0]==95'd0;
-				fnf <= dftrunco[95];
-				Rt <= {1'b0,FLTDST};
-				rfwrF <= 1'b1;
-			end
-			else if (SUPPORT_DOUBLE) begin
-				resF <= dtrunco;
-				fzf <= dtrunco[94:0]==95'd0;
-				fnf <= dtrunco[95];
-				Rt <= {1'b0,FLTDST};
-				rfwrF <= 1'b1;
-			end
-			ret();
-		end
-	end
-FSCALE:
-	begin
-		fpcnt <= fpcnt + 2'd1;
 		case(ir2[12:10])
-		3'b011:
-			if (fpcnt==8'd20) begin
-				if (SUPPORT_DECFLT) begin
-					fzf <= dfscaleo[94:0]==95'd0;
-					fnf <= dfscaleo[95];
-					fvf <= dfscaleo[94:90]==5'b11110;
-					fnanf <= dfscaleo[94:90]==5'b11111;
-					resF <= dfscaleo;
-					Rt <= {1'b0,FLTDST};
-					rfwrF <= 1'b1;
-				end
-				ret();
-			end
-		3'b000,3'b001,3'b010,3'b100,3'b110,
-		3'b101:
-			if (fpcnt>=8'd6) begin
-				if (SUPPORT_DOUBLE) begin
-					fzf <= dscaleo[94:0]==95'd0;
-					fnf <= dscaleo[95];
-					fvf <= dscaleo_overflow;
-					fnanf <= dscaleo_nan;
-					resF <= dscaleo;
-					Rt <= {1'b0,FLTDST};
-					rfwrF <= 1'b1;
-				end
-				ret();
-			end
-		default:	ret();
+		3'b000:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_LWORD,S); end
+		3'b001:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_LWORD,S); end
+		3'b100:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_WORD,S); end
+		3'b101:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_OCTA,S); end
+		3'b110:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_BYTE,S); end
+		default:	fs_data(mmm,rrr,FETCH_HEXI1,S);
 		endcase
 	end
-FNEG:	// Also FABS
-	begin
-		case(ir2[12:10])
-		3'b011:
-			begin
-				if (SUPPORT_DECFLT) begin
-					resF <= {~fps[95] & ~fabs,fps[94:0]};
-					fzf <= fps[94:0]==95'd0;
-					fnf <= ~fps[95] & ~fabs;
-					Rt <= {1'b0,FLTDST};
-					rfwrF <= 1'b1;
-				end
-				ret();
-			end
-		3'b000,3'b001,3'b010,3'b100,3'b110,
-		3'b101:
-			begin
-				if (SUPPORT_DECFLT) begin
-					resF <= {~fps[95] & ~fabs,fps[94:0]};
-					fzf <= fps[94:0]==95'd0;
-					fnf <= ~fps[95] & ~fabs;
-					Rt <= {1'b0,FLTDST};
-					rfwrF <= 1'b1;
-				end
-				ret();
-			end
-		default:	;
-		endcase
-	end
-FMUL1:
+FADD1:
 	begin
 		fpcnt <= fpcnt + 2'd1;
-		if (fpcnt>=8'd6)
-			goto (FMUL2);
-	end
-FMUL2:
-	if (ir2[14]) begin
-		case(ir2[12:10])
-		3'b011:
-			if (SUPPORT_DECFLT) begin
-				if (dfmuldone) begin
-					fzf <= dfmulo[94:0]==95'd0;
-					fnf <= dfmulo[95];
-					fvf <= dfmulo[94:90]==5'b11110;
-					fnanf <= dfmulo[94:90]==5'b11111;
-					resF <= dfmulo;
-					Rt <= {1'b0,FLTDST};
-					rfwrF <= 1'b1;
-					ret();
-				end
-			end
-			else
-				ret();
-		3'b000,3'b001,3'b010,3'b100,
-		3'b101,3'b110:
-			if (SUPPORT_DOUBLE) begin
-				fpcnt <= fpcnt + 2'd1;
-				if (fpcnt>=8'd50) begin
-					fzf <= dfmao[94:0]==95'd0;
-					fnf <= dfmao[95];
-					fvf <= dfmao_overflow;
-					fnanf <= dfmao_nan;
-					resF <= dfmao;
-					Rt <= {1'b0,FLTDST};
-					rfwrF <= 1'b1;
-					ret();
-				end
-			end
-			else
-				ret();
-		default:	ret();
-		endcase
-	end
-	else begin
 		if (SUPPORT_DECFLT) begin
-			if (dfmuldone) begin
-				fzf <= dfmulo[94:0]==95'd0;
-				fnf <= dfmulo[95];
-				fvf <= dfmulo[94:90]==5'b11110;
-				fnanf <= dfmulo[94:90]==5'b11111;
-				resF <= dfmulo;
+			if (fpcnt>=12'd300) begin
+				fzf <= dfaddsubo[94:0]==95'd0;
+				fnf <= dfaddsubo[95];
+				fvf <= dfaddsubo[94:90]==5'b11110;
+				fnanf <= dfaddsubo[94:90]==5'b11111;
+				resF <= dfaddsubo;
 				Rt <= {1'b0,FLTDST};
 				rfwrF <= 1'b1;
 				ret();
 			end
 		end
-		else if (SUPPORT_DOUBLE) begin
-			fpcnt <= fpcnt + 2'd1;
-			if (fpcnt>=8'd50) begin
-				fzf <= dfmao[94:0]==95'd0;
-				fnf <= dfmao[95];
+		else if (SUPPORT_BINFLT) begin
+			if (fpcnt==8'd50) begin
+				fzf <= dfmao[62:0]==63'd0;
+				fnf <= dfmao[63];
 				fvf <= dfmao_overflow;
 				fnanf <= dfmao_nan;
 				resF <= dfmao;
@@ -6924,12 +6734,163 @@ FMUL2:
 				ret();
 			end
 		end
-		else
-			ret();
 	end
+FINTRZ:
+	begin
+		case(ir2[12:10])
+		3'b000:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_LWORD,S); end
+		3'b001:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_LWORD,S); end
+		3'b100:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_WORD,S); end
+		3'b101:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_OCTA,S); end
+		3'b110:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_BYTE,S); end
+		default:	fs_data(mmm,rrr,FETCH_HEXI1,S);
+		endcase
+	end
+FINTRZ1:	// Also FINT
+	begin
+		fpcnt <= fpcnt + 2'd1;
+		if (fpcnt>=8'd6) begin
+			if (SUPPORT_DECFLT) begin
+				resF <= dftrunco;
+				fzf <= dftrunco[94:0]==95'd0;
+				fnf <= dftrunco[95];
+				Rt <= {1'b0,FLTDST};
+				rfwrF <= 1'b1;
+			end
+			else if (SUPPORT_BINFLT) begin
+				resF <= dtrunco;
+				fzf <= dtrunco[62:0]==63'd0;
+				fnf <= dtrunco[63];
+				Rt <= {1'b0,FLTDST};
+				rfwrF <= 1'b1;
+			end
+			ret();
+		end
+	end
+FSCALE:
+	begin
+		case(ir2[12:10])
+		3'b000:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_LWORD,S); end
+		3'b001:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_LWORD,S); end
+		3'b100:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_WORD,S); end
+		3'b101:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_OCTA,S); end
+		3'b110:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_BYTE,S); end
+		default:	fs_data(mmm,rrr,FETCH_LWORD,S);	// ToDo: convert to int first
+		endcase
+	end
+FSCALE1:
+	begin
+		fpcnt <= fpcnt + 2'd1;
+		if (fpcnt==8'd20) begin
+			if (SUPPORT_DECFLT) begin
+				fzf <= dfscaleo[94:0]==95'd0;
+				fnf <= dfscaleo[95];
+				fvf <= dfscaleo[94:90]==5'b11110;
+				fnanf <= dfscaleo[94:90]==5'b11111;
+				resF <= dfscaleo;
+				Rt <= {1'b0,FLTDST};
+				rfwrF <= 1'b1;
+			end
+			else if (SUPPORT_BINFLT) begin
+				fzf <= dscaleo[62:0]==63'd0;
+				fnf <= dscaleo[63];
+				fvf <= dscaleo_overflow;
+				fnanf <= dscaleo_nan;
+				resF <= dscaleo;
+				Rt <= {1'b0,FLTDST};
+				rfwrF <= 1'b1;
+			end
+			ret();
+		end
+	end
+FNEG:
+	begin
+		case(ir2[12:10])
+		3'b000:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_LWORD,S); end
+		3'b001:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_LWORD,S); end
+		3'b100:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_WORD,S); end
+		3'b101:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_OCTA,S); end
+		3'b110:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_BYTE,S); end
+		default:	fs_data(mmm,rrr,FETCH_HEXI1,S);
+		endcase
+	end
+FNEG1:	// Also FABS
+	begin
+		if (SUPPORT_DECFLT) begin
+			resF <= {~fps[95] & ~fabs,fps[94:0]};
+			fzf <= fps[94:0]==95'd0;
+			fnf <= ~fps[95] & ~fabs;
+			Rt <= {1'b0,FLTDST};
+			rfwrF <= 1'b1;
+		end
+		else if (SUPPORT_BINFLT) begin
+			resF <= {~fps[63] & ~fabs,fps[62:0]};
+			fzf <= fps[62:0]==63'd0;
+			fnf <= ~fps[63] & ~fabs;
+			Rt <= {1'b0,FLTDST};
+			rfwrF <= 1'b1;
+		end
+		ret();
+	end
+FMUL:
+	begin
+		case(ir2[12:10])
+		3'b000:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_LWORD,S); end
+		3'b001:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_LWORD,S); end
+		3'b100:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_WORD,S); end
+		3'b101:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_OCTA,S); end
+		3'b110:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_BYTE,S); end
+		default:	fs_data(mmm,rrr,FETCH_HEXI1,S);
+		endcase
+	end	
+FMUL1:
+	begin
+		fpcnt <= fpcnt + 2'd1;
+		if (fpcnt==8'd6)
+			goto (FMUL2);
+	end
+FMUL2:
+	if (SUPPORT_DECFLT) begin
+		if (dfmuldone) begin
+			fzf <= dfmulo[94:0]==95'd0;
+			fnf <= dfmulo[95];
+			fvf <= dfmulo[94:90]==5'b11110;
+			fnanf <= dfmulo[94:90]==5'b11111;
+			resF <= dfmulo;
+			Rt <= {1'b0,FLTDST};
+			rfwrF <= 1'b1;
+			ret();
+		end
+	end
+	else if (SUPPORT_BINFLT) begin
+		fpcnt <= fpcnt + 2'd1;
+		if (fpcnt >= 8'd50) begin
+			fzf <= dfmao[62:0]==63'd0;
+			fnf <= dfmao[63];
+			fvf <= dfmao[62:52]==11'h7ff && dfmao[51:0]==52'd0;
+			fnanf <= dfmao[62:52]==11'h7ff && dfmao[51:0]!=52'd0;
+			resF <= dfmao;
+			Rt <= {1'b0,FLTDST};
+			rfwrF <= 1'b1;
+			ret();
+		end
+	end
+	else
+		ret();
 	// For divide the done signal may take several cycles to go inactive after
 	// the load signal is activated. Prevent a premature recognition of done
 	// using a counter.
+FDIV:
+	begin	
+		case(ir2[12:10])
+		3'b000:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_LWORD,S); end
+		3'b001:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_LWORD,S); end
+		3'b100:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_WORD,S); end
+		3'b101:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_OCTA,S); end
+		3'b110:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_BYTE,S); end
+		default:	fs_data(mmm,rrr,FETCH_HEXI1,S);
+		endcase
+	end
 FDIV1:
 	begin
 		fpcnt <= fpcnt + 2'd1;
@@ -6945,173 +6906,120 @@ FDIV2:
 			goto (FDIV3);
 	end
 FDIV3:
-	if (ir2[14]) begin
-	case(ir2[12:10])
-	3'b011:
+	if (SUPPORT_DECFLT) begin
 		if (dfdivdone) begin
-			if (SUPPORT_DECFLT) begin
-				fzf <= dfdivo[94:0]==95'd0;
-				fnf <= dfdivo[95];
-				fvf <= dfdivo[94:90]==5'b11110;
-				fnanf <= dfdivo[94:90]==5'b11111;
-				resF <= dfdivo;
-				Rt <= {1'b0,FLTDST};
-				rfwrF <= 1'b1;
-				quotient_bits <= {dfdivo[95],dfdivo[6:0]};
-				quotient_bitshi <= {dfdivo[9:7]};
-			end
+			fzf <= dfdivo[94:0]==95'd0;
+			fnf <= dfdivo[95];
+			fvf <= dfdivo[94:90]==5'b11110;
+			fnanf <= dfdivo[94:90]==5'b11111;
+			resF <= dfdivo;
+			Rt <= {1'b0,FLTDST};
+			rfwrF <= 1'b1;
+			quotient_bits <= {dfdivo[95],dfdivo[6:0]};
+			quotient_bitshi <= {dfdivo[9:7]};
 			ret();
 		end
-	3'b010:
-		if (ddiv_done) begin
-			if (SUPPORT_DOUBLE) begin
-				fzf <= ddivo[94:0]==95'd0;
-				fnf <= ddivo[95];
-				fvf <= ddivo_overflow;
-				fnanf <= ddivo_nan;
-				resF <= ddivo;
-				Rt <= {1'b0,FLTDST};
-				rfwrF <= 1'b1;
-				quotient_bits <= {ddivo[95],ddivo[6:0]};
-				quotient_bitshi <= {ddivo[9:7]};
-			end
-			ret();
-		end
-	3'b000,3'b001,3'b100,3'b110,
-	3'b101:
-		if (ddiv_done) begin
-			if (SUPPORT_DOUBLE) begin
-				fzf <= ddivo[94:0]==95'd0;
-				fnf <= ddivo[95];
-				fvf <= ddivo_overflow;
-				fnanf <= ddivo_nan;
-				resF <= ddivo;
-				Rt <= {1'b0,FLTDST};
-				rfwrF <= 1'b1;
-				quotient_bits <= {ddivo[95],ddivo[6:0]};
-				quotient_bitshi <= {ddivo[9:7]};
-			end
-			ret();
-		end
-	default:	ret();
-	endcase
 	end
-	else begin
-		if (SUPPORT_DECFLT) begin
-			if (dfdivdone) begin
-				fzf <= dfdivo[94:0]==95'd0;
-				fnf <= dfdivo[95];
-				fvf <= dfdivo[94:90]==5'b11110;
-				fnanf <= dfdivo[94:90]==5'b11111;
-				resF <= dfdivo;
-				Rt <= {1'b0,FLTDST};
-				rfwrF <= 1'b1;
-				quotient_bits <= {dfdivo[95],dfdivo[6:0]};
-				quotient_bitshi <= {dfdivo[9:7]};
-			end
+	else if (SUPPORT_BINFLT) begin
+		if (ddiv_done) begin
+			fzf <= ddivo[62:0]==63'd0;
+			fnf <= ddivo[63];
+			fvf <= ddivo[62:52]==11'h7ff && ddivo[51:0]==52'd0;
+			fnanf <= ddivo[62:52]==11'h7ff && ddivo[51:0]!=52'd0;
+			resF <= ddivo;
+			Rt <= {1'b0,FLTDST};
+			rfwrF <= 1'b1;
+			quotient_bits <= {ddivo[63],ddivo[6:0]};
+			quotient_bitshi <= {ddivo[9:7]};
 			ret();
 		end
-		else if (SUPPORT_DOUBLE) begin
-			if (ddiv_done) begin
-				fzf <= ddivo[94:0]==95'd0;
-				fnf <= ddivo[95];
-				fvf <= ddivo_overflow;
-				fnanf <= ddivo_nan;
-				resF <= ddivo;
-				Rt <= {1'b0,FLTDST};
-				rfwrF <= 1'b1;
-				quotient_bits <= {ddivo[95],ddivo[6:0]};
-				quotient_bitshi <= {ddivo[9:7]};
+	end
+FCVTI1:
+	begin
+		fpcnt <= fpcnt + 2'd1;
+		if (fpcnt>=8'd7)
+			goto (FCVTI2);
+		case(ir2[12:10])
+		3'b000:	fps <= {64'd0,s[31:0]};
+		3'b100:	fps <= {80'd0,s[15:0]};
+		3'b110:	fps <= {88'd0,s[7:0]};
+		default:	fps <= fps;
+		endcase
+	end
+FCVTI2:
+	begin
+		case(ir2[12:10])
+		3'b000,3'b100,3'b110:
+			if (i2dfdone) begin
+				fps <= i2dfo;
+				ret();
 			end
-			ret();
-		end
-		else
-			ret();
+		3'b001:
+			begin
+				fps <= dfp32To96;
+				ret();
+			end
+		3'b101:
+			begin
+				fps <= dfp64To96;
+				ret();
+			end
+		default:
+			begin
+				fps <= fps;
+				ret();
+			end
+		endcase
 	end
 FCMP:
 	begin
-		if (ir2[14]) begin
-			case(ir2[12:10])
-			3'b011:
-				begin
-					if (SUPPORT_DECFLT) begin
-						fzf <= dfcmpo[0];
-						fnf <= dfcmpo[1];
-						fvf <= 1'b0;
-						fnanf <= dfcmpo[4];
-					end
-					ret();
-				end
-			3'b000,3'b001,3'b010,3'b100,3'b110,
-			3'b101:
-				begin
-					if (SUPPORT_DOUBLE) begin
-						fzf <= dcmpo[0];
-						fnf <= dcmpo[1];
-						fvf <= 1'b0;
-						fnanf <= dcmpo[4];
-					end
-					ret();
-				end
-			default:	ret();
-			endcase
+		case(ir2[12:10])
+		3'b000:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_LWORD,S); end
+		3'b001:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_LWORD,S); end
+		3'b100:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_WORD,S); end
+		3'b101:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_OCTA,S); end
+		3'b110:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_BYTE,S); end
+		default:	fs_data(mmm,rrr,FETCH_HEXI1,S);
+		endcase
+	end
+FCMP1:
+	begin
+		if (SUPPORT_DECFLT) begin
+			fzf <= dfcmpo[0];
+			fnf <= dfcmpo[1];
+			fvf <= 1'b0;
+			fnanf <= dfcmpo[4];
 		end
-		else begin
-			if (SUPPORT_DECFLT) begin
-				fzf <= dfcmpo[0];
-				fnf <= dfcmpo[1];
-				fvf <= 1'b0;
-				fnanf <= dfcmpo[4];
-			end
-			else if (SUPPORT_DOUBLE) begin
-				fzf <= dcmpo[0];
-				fnf <= dcmpo[1];
-				fvf <= 1'b0;
-				fnanf <= dcmpo[4];
-			end
-			ret();
+		else if (SUPPORT_BINFLT) begin
+			fzf <= dcmpo[0];
+			fnf <= dcmpo[1];
+			fvf <= 1'b0;
+			fnanf <= dcmpo[4];
 		end
+		ret();
 	end
 FMOVE:
 	begin
+		case(ir2[12:10])
+		3'b000:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_LWORD,S); end
+		3'b001:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_LWORD,S); end
+		3'b100:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_WORD,S); end
+		3'b101:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_OCTA,S); end
+		3'b110:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_BYTE,S); end
+		default:	fs_data(mmm,rrr,FETCH_HEXI1,S);
+		endcase
+	end
+FMOVE1:
+	begin
 		if (SUPPORT_DECFLT) begin
-			if (ir2[14])
-				case(ir2[12:10])
-				3'b000:
-					begin
-						fps <= {64'd0,s};
-						goto (I2DF1);
-					end
-				3'b100:
-					begin
-						fps <= {80'd0,s[15:0]};
-						goto (I2DF1);
-					end
-				3'b110:
-					begin
-						fps <= {88'd0,s[7:0]};
-						goto (I2DF1);
-					end
-				default:
-					begin
-						resF <= fps[95:0];
-						fzf <= fps[94:0]==95'd0;
-						fnf <= fps[95];
-						Rt <= {1'b0,FLTDST};
-						rfwrF <= 1'b1;
-						ret();
-					end
-				endcase
-			else begin
-				resF <= fps[95:0];
-				fzf <= fps[94:0]==95'd0;
-				fnf <= fps[95];
-				Rt <= {1'b0,FLTDST};
-				rfwrF <= 1'b1;
-				ret();
-			end
+			resF <= fps[95:0];
+			fzf <= fps[94:0]==95'd0;
+			fnf <= fps[95];
+			Rt <= {1'b0,FLTDST};
+			rfwrF <= 1'b1;
+			ret();
 		end
-		else if (SUPPORT_DOUBLE) begin
+		else if (SUPPORT_BINFLT) begin
 			if (ir2[14])
 				case(ir2[12:10])
 				3'b000:
@@ -7119,11 +7027,11 @@ FMOVE:
 						fps <= {64'd0,s};
 						goto (I2DF1);
 					end
-				3'b010:
+				3'b001:
 					begin
-						resF <= fps[95:0];
-						fzf <= fps[94:0]==95'd0;
-						fnf <= fps[95];
+						resF <= fpss[63:0];
+						fzf <= fpss[62:0]==63'd0;
+						fnf <= fpss[63];
 						Rt <= {1'b0,FLTDST};
 						rfwrF <= 1'b1;
 						ret();
@@ -7133,15 +7041,6 @@ FMOVE:
 						fps <= {80'd0,s[15:0]};
 						goto (I2DF1);
 					end
-				3'b101:	
-					begin
-						resF <= d2xdo[95:0];
-						fzf <= d2xdo[94:0]==95'd0;
-						fnf <= d2xdo[95];
-						Rt <= {1'b0,FLTDST};
-						rfwrF <= 1'b1;
-						ret();
-					end
 				3'b110:
 					begin
 						fps <= {88'd0,s[7:0]};
@@ -7149,18 +7048,18 @@ FMOVE:
 					end
 				default:
 					begin
-						resF <= fps[95:0];
-						fzf <= fps[94:0]==95'd0;
-						fnf <= fps[95];
+						resF <= fps[63:0];
+						fzf <= fps[62:0]==63'd0;
+						fnf <= fps[63];
 						Rt <= {1'b0,FLTDST};
 						rfwrF <= 1'b1;
 						ret();
 					end
 				endcase
 			else begin
-				resF <= fps[95:0];
-				fzf <= fps[94:0]==95'd0;
-				fnf <= fps[95];
+				resF <= fps[63:0];
+				fzf <= fps[62:0]==63'd0;
+				fnf <= fps[63];
 				Rt <= {1'b0,FLTDST};
 				rfwrF <= 1'b1;
 				ret();
@@ -7172,67 +7071,33 @@ FMOVE:
 I2DF1:
 	begin
 		fpcnt <= fpcnt + 2'd1;
-		if (fpcnt==8'd6)
+		if (fpcnt>=8'd7)
 			goto (I2DF2);
 	end
 I2DF2:
 	begin
-		if (ir2[14]) begin
-			case(ir2[12:10])
-			3'b011:
-				begin
-					if (SUPPORT_DECFLT) begin
-						if (i2dfdone) begin
-							resF <= i2dfo;
-							fzf <= i2dfo[94:0]==95'd0;
-							fnf <= i2dfo[95];
-							Rt <= {1'b0,FLTDST};
-							rfwrF <= 1'b1;
-							ret();
-						end
-					end
-					else
-						ret();
-				end
-			3'b000,3'b001,3'b010,3'b100,3'b110,
-			3'b101:
-				begin
-					if (SUPPORT_DOUBLE) begin
-						resF <= i2do;
-						fzf <= i2do[94:0]==95'd0;
-						fnf <= i2do[95];
-						Rt <= {1'b0,FLTDST};
-						rfwrF <= 1'b1;
-						ret();
-					end
-					else
-						ret();
-				end
-			default:	ret();
-			endcase
-		end
-		else begin
-			if (SUPPORT_DECFLT) begin
-				if (i2dfdone) begin
-					resF <= i2dfo;
-					fzf <= i2dfo[94:0]==95'd0;
-					fnf <= i2dfo[95];
-					Rt <= {1'b0,FLTDST};
-					rfwrF <= 1'b1;
-					ret();
-				end
-			end
-			else if (SUPPORT_DOUBLE) begin
-				resF <= i2do;
-				fzf <= i2do[94:0]==95'd0;
-				fnf <= i2do[95];
+		if (SUPPORT_DECFLT) begin
+			if (i2dfdone) begin
+				resF <= i2dfo;
+				fzf <= i2dfo[94:0]==95'd0;
+				fnf <= i2dfo[95];
 				Rt <= {1'b0,FLTDST};
 				rfwrF <= 1'b1;
 				ret();
 			end
-			else
-				ret();
 		end
+		else if (SUPPORT_BINFLT) begin
+			if (i2d_done) begin
+				resF <= i2do;
+				fzf <= i2do[62:0]==63'd0;
+				fnf <= i2do[63];
+				Rt <= {1'b0,FLTDST};
+				rfwrF <= 1'b1;
+				ret();
+			end
+		end
+		else
+			ret();
 	end
 DF2I1:
 	begin
@@ -7244,41 +7109,51 @@ DF2I2:
 	begin
 		if (SUPPORT_DECFLT) begin
 			if (df2idone) begin
+				if (ir2[14])
+					case(ir2[12:10])
+					3'b000:	fs_data(mmm,rrr,STORE_LWORD,D);
+					3'b100:	fs_data(mmm,rrr,STORE_WORD,D);
+					3'b110:	fs_data(mmm,rrr,STORE_BYTE,D);
+					default:	ret();
+					endcase
+				else begin
+					rfwrF <= 1'b1;
+					ret();
+				end
+				resF <= df2io;
+				resL <= df2io[31:0];
+				resW <= df2io[15:0];
+				resB <= df2io[ 7:0];
+				d <= df2io;
+				// Flags are not affected by FMOVE
+				if (ir2[15:13]!=3'b011) begin
+					fzf <= df2io[94:0]==95'd0;
+					fnf <= df2io[95];
+					fvf <= df2iover;
+				end
+				//Rt <= {1'b0,FLTDST};
+				//rfwrL <= 1'b1;
+			end
+		end
+		else if (SUPPORT_BINFLT) begin
+			if (d2i_done) begin
 				case(ir2[12:10])
 				3'b000:	fs_data(mmm,rrr,STORE_LWORD,D);
 				3'b100:	fs_data(mmm,rrr,STORE_WORD,D);
 				3'b110:	fs_data(mmm,rrr,STORE_BYTE,D);
 				default:	ret();
 				endcase
-				resF <= df2io;
-				resL <= df2io[31:0];
-				resW <= df2io[15:0];
-				resB <= df2io[ 7:0];
-				d <= df2io;
-				fzf <= df2io[94:0]==95'd0;
-				fnf <= df2io[95];
-				fvf <= df2iover;
+				resF <= d2io;
+				resL <= d2io[31:0];
+				resW <= d2io[15:0];
+				resB <= d2io[ 7:0];
+				d <= d2io;
+				fzf <= d2io[62:0]==63'd0;
+				fnf <= d2io[63];
+				fvf <= d2io[62:52]==11'h7ff && d2io[51:0]==52'd0;
 				//Rt <= {1'b0,FLTDST};
 				//rfwrL <= 1'b1;
 			end
-		end
-		else if (SUPPORT_DOUBLE) begin
-			case(ir2[12:10])
-			3'b000:	fs_data(mmm,rrr,STORE_LWORD,D);
-			3'b100:	fs_data(mmm,rrr,STORE_WORD,D);
-			3'b110:	fs_data(mmm,rrr,STORE_BYTE,D);
-			default:	ret();
-			endcase
-			resF <= d2io;
-			resL <= d2io[31:0];
-			resW <= d2io[15:0];
-			resB <= d2io[ 7:0];
-			d <= d2io;
-			fzf <= d2io[62:0]==63'd0;
-			fnf <= d2io[63];
-			fvf <= d2io_overflow;
-			//Rt <= {1'b0,FLTDST};
-			//rfwrL <= 1'b1;
 		end
 		else
 			ret();
@@ -7286,18 +7161,28 @@ DF2I2:
 FTST:
 	begin
 		case(ir2[12:10])
-		3'b000:	begin fnf <= s[31]; fzf <= s[31:0]==32'd0; fnanf <= 1'b0; fvf <= 1'b0; end
-		3'b100:	begin fnf <= s[15]; fzf <= s[15:0]==16'd0; fnanf <= 1'b0; fvf <= 1'b0; end
-		3'b101:	begin fnf <= fps[95]; fzf <= fps[94:0]==95'd0; fnanf <= 1'b0; fvf <= 1'b0; end	// ToDo: fix for nan/overflow
-		3'b110:	begin fnf <= s[ 7]; fzf <= s[ 7:0]== 8'd0; fnanf <= 1'b0; fvf <= 1'b0; end
-		default:
-			begin
-				fnf <= fps[95];
-				fzf <= fps[94:0]==95'd0;
-				fnanf <= fps[94:90]==5'b11111;
-				fvf <= fps[94:90]==5'b11110;
-			end
+		3'b000:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_LWORD,S); end
+		3'b001:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_LWORD,S); end
+		3'b100:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_WORD,S); end
+		3'b101:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_OCTA,S); end
+		3'b110:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_BYTE,S); end
+		default:	fs_data(mmm,rrr,FETCH_HEXI1,S);
 		endcase
+	end
+FTST1:
+	begin
+		if (SUPPORT_DECFLT) begin
+			fnf <= fps[95];
+			fzf <= fps[94:0]==95'd0;
+			fnanf <= fps[94:90]==5'b11111;
+			fvf <= fps[94:90]==5'b11110;
+		end
+		else if (SUPPORT_BINFLT) begin
+			fnf <= fps[63];
+			fzf <= fps[62:0]==63'd0;
+			fnanf <= fps[62:52]==11'h7ff && fps[51:0]!=52'd0;
+			fvf <= fps[62:52]==11'h7ff && fps[51:0]==52'd0;
+		end
 		ret();
 	end
 FBCC:
@@ -7512,7 +7397,9 @@ begin
 						end
 						// ToDo: add FETCH_IMM128
 				3'd4:	begin	// #i16
-							goto(size_state==FETCH_NOP_HEXI ? FETCH_IMM96:(size_state==FETCH_LWORD||size_state==FETCH_NOP_LWORD)?FETCH_IMM32:FETCH_IMM16);
+							goto(size_state==FETCH_NOP_HEXI ? FETCH_IMM96 : 
+								(size_state==FETCH_NOP_OCTA||size_state==FETCH_OCTA) ? FETCH_IMM64 : 
+								(size_state==FETCH_LWORD||size_state==FETCH_NOP_LWORD)?FETCH_IMM32:FETCH_IMM16);
 						end
 				3'd5:	begin	// #i32
 							state <= FETCH_IMM32;
@@ -7536,36 +7423,36 @@ begin
 	case(mmm)
 	3'd5:	begin	// d16(An)
 				ea <= (MMMRRR ? rfoAna : rfoAn);
-				if (lea) goto(size_state); else call(FETCH_D16,size_state);
+				call(FETCH_D16,size_state);
 			end
 	3'd6:	begin	// d8(An,Xn)
 				ea <= (MMMRRR ? rfoAna : rfoAn);
-				if (lea) goto(size_state); else call(FETCH_NDX,size_state);
+				call(FETCH_NDX,size_state);
 			end
 	3'd7:	begin
 				case(rrr)
 				3'd0:	begin	// abs short
 							ea <= 32'd0;
-							if (lea) goto(size_state); else call(FETCH_D16,size_state);
+							call(FETCH_D16,size_state);
 						end
 				3'd1:	begin	// abs long
 							ea <= 32'd0;
-							if (lea) goto(size_state); else call(FETCH_D32,size_state);
+							call(FETCH_D32,size_state);
 						end
 				3'd2:	begin	// d16(PC)
 							ea <= pc;
-							if (lea) goto(size_state); else call(FETCH_D16,size_state);
+							call(FETCH_D16,size_state);
 						end
 				3'd3:	begin	// d8(PC,Xn)
 							ea <= pc;
-							if (lea) goto(size_state); else call(FETCH_NDX,size_state);
+							call(FETCH_NDX,size_state);
 						end
 				3'd4:	begin	// #i16
-							if (lea) goto(size_state); else goto((size_state==FETCH_LWORD||size_state==FETCH_NOP_LWORD||size_state==FETCH_NOP_HEXI)?FETCH_IMM32:FETCH_IMM16);
+							goto((size_state==FETCH_LWORD||size_state==FETCH_NOP_LWORD||size_state==FETCH_NOP_HEXI)?FETCH_IMM32:FETCH_IMM16);
 							end
 				3'd5:	begin	// #i32
 							state <= FETCH_IMM32;
-							if (lea) goto(size_state); else goto (FETCH_IMM32);
+							goto (FETCH_IMM32);
 						end
 				endcase
 			end
@@ -7588,6 +7475,7 @@ begin
 	state_stk3 <= state_stk2;
 	state_stk4 <= state_stk3;
 	state_stk5 <= state_stk4;
+	state_stk6 <= state_stk5;
 	state <= tgt;
 end
 endtask
@@ -7601,6 +7489,7 @@ begin
 	state_stk3 <= state_stk2;
 	state_stk4 <= state_stk3;
 	state_stk5 <= state_stk4;
+	state_stk6 <= state_stk5;
 	state <= tgt;
 end
 endtask
@@ -7613,6 +7502,7 @@ begin
 	state_stk3 <= state_stk2;
 	state_stk4 <= state_stk3;
 	state_stk5 <= state_stk4;
+	state_stk6 <= state_stk5;
 end
 endtask
 
@@ -7664,6 +7554,7 @@ begin
 	state_stk2 <= state_stk3;
 	state_stk3 <= state_stk4;
 	state_stk4 <= state_stk5;
+	state_stk5 <= state_stk6;
 end
 endtask
 
