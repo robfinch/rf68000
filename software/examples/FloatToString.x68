@@ -37,7 +37,6 @@ _msgInf dc.b "Inf",0
 _CheckNan:
 	link a2,#-12
 	movem.l d0/a1,(sp)
-	move.l _canary,8(sp)
 	fmove.x fp0,_fpWork
 	move.b _fpWork,d0				; get sign+combo
 	andi.b #$7C,d0					; mask for combo bits
@@ -55,13 +54,11 @@ _CheckNan:
 	move.b (a1)+,(a0)+
 	clr.b (a0)
 	movem.l (sp),d0/a1
-	cchk 8(sp)
 	unlk a2
 	ori #1,ccr							; set carry and return
 	rts
 .notInf
 	movem.l (sp),d0/a1
-	cchk 8(sp)
 	unlk a2
 	andi #$FE,ccr						; clear carry and return
 	rts
@@ -126,6 +123,7 @@ _MakeBig:
 .0002
 	fcmp fp1,fp0						; is fp0 > 1?
 	fbge .0001							; yes, return
+	move.b #3,leds
 	fscale.l #6,fp0					; multiply fp0 by a million
 	subi.w #6,d6						; decrement exponent by six
 	bra .0002								; keep trying until number is > 1
@@ -165,6 +163,7 @@ _LessThanDbl:
 	fcmp fp2,fp0				; if (dbl > dbl2)
 	fble .0004
 .0006
+	move.b #2,leds
 	fcmp fp0,fp2				; while (dbl2 <= dbl)
 	fbgt .0005
 	fscale.w #1,fp2			; dbl2 *= 10 (increase exponent by one)
@@ -289,7 +288,6 @@ _LeadingZero:
 	
 _SpitOutDigits:
 	link a2,#-24
-	move.l _canary,20(sp)
 	fmove.x fp7,(sp)
 	movem.l d0/d1,12(sp)
 	move.w #24,d0			; d0 = nn
@@ -301,10 +299,12 @@ _SpitOutDigits:
 .0013
 	fcmp fp2,fp0
 	fblt .0012
+	move.b #1,leds
 	fsub fp2,fp0			; dbl -= dbl2
 	addi.b #1,d1			; digit++
 	bra .0013
 .0012
+	move.b #5,leds
 	addi.b #'0',d1		; convert digit to ascii
 	move.b d1,(a0)+		; and store
 	subi.b #'0',d1		; d1 = binary digit again
@@ -331,7 +331,6 @@ _SpitOutDigits:
 .0011
 	movem.l 12(sp),d0/d1
 	fmove.x (sp),fp7
-	cchk 20(sp)
 	unlk a2
 	rts
 
@@ -536,23 +535,27 @@ _PadLeft:
 	movem.l d0/d1/d2/d3,-(a7)
 	tst.b _width
 	ble .0041
+	move.b #12,leds
 	move.l a0,d0
 	sub.l #_fpBuf,d0	; d0 = ndx
 	cmp.b _width,d0
 	bge .0041
 	move.w #49,d1			; d1 = nn
 .0040
+	move.b #13,leds
 	move.b _width,d2
 	ext.w d2
 	sub.w d0,d2				; d2 = width-ndx
 	cmp.w d2,d1
 	blt .0039
+	move.b #14,leds
 	move.w d1,d3			; d3 = nn
 	sub.w d2,d3				; d3 = nn-(width-ndx)
 	move.b (a0,d3.w),(a0,d1.w)
 	subi.w #1,d1
 	bra .0040
 .0039
+	move.b #15,leds
 	tst.w d1
 	bmi .0041
 	move.b #' ',(a0,d1.w)
@@ -620,6 +623,7 @@ _PadRight:
 
 _FloatToString:
 	move.l d6,-(a7)
+	move.b #5,leds
 	bsr _CheckNegative			; is number negative?
 	bsr _CheckZero					; check for zero
 	beq .0001								; branch since already output "0"
@@ -632,12 +636,19 @@ _FloatToString:
 	bsr _ComputeDigitsBeforeDecpt
 	bsr _LeadingZero
 	bsr _SpitOutDigits
+	move.b #4,leds
 	bsr _TrimTrailingZeros
+	move.b #6,leds
 	bsr _TrimTrailingPoint
+	move.b #7,leds
 	bsr _TrimDotZero
+	move.b #8,leds
 	bsr _ExtExpDigits				; extract exponent digits
+	move.b #9,leds
 	bsr _PadLeft						; pad the number to the left or right
+	move.b #10,leds
 	bsr _PadRight
+	move.b #11,leds
 .0001
 	move.l (a7)+,d6
 	rts

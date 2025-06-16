@@ -2,8 +2,8 @@
 
 #define SYS_FREQ	50e6
 
-#define I2C1 0xFD069000
-#define I2C2 0xFD069010
+#define I2C1 0xFD250000
+#define I2C2 0xFDFE4000
 #define I2C_PREL 0
 #define I2C_PREH 1
 #define I2C_CTRL 2
@@ -12,18 +12,39 @@
 #define I2C_CMD 4
 #define I2C_STAT 4
 
-#define RAND 0xFD0FFD10
+#define RAND 0xFDFF4010
 #define RAND_NUM	0
 #define RAND_STRM	1
 #define RAND_MZ		2
 #define RAND_MW		3
 
+typedef struct _tagdecflt
+{
+	int w[3];
+} decflt_t;
+
+extern int GetCharNonBlocking();
+extern void clear(unsigned int dev);
+extern void set_color_depth(unsigned int dev, unsigned int tot, unsigned int red, unsigned int green, unsigned int blue);
+extern void set_color(unsigned int dev, unsigned int color);
+extern void dispbuf(unsigned int dev, unsigned int adr);
+extern void drawbuf(unsigned int dev, unsigned int adr);
+extern void plot_point(unsigned int dev, unsigned int x, unsigned int y, unsigned int color);
+extern void draw_line(unsigned int dev, unsigned int x0, unsigned int y0, unsigned int x1, unsigned int y1, unsigned int color);
+extern double CvtStringToDecflt(char* s);
+extern void DumpStack();
 extern char OutputDevice;
 extern void OutputChar(int ch);
+extern void OutputNumber(int num, int sz);
 extern int coreno;
-extern void CheckForCtrlC();
+extern int CheckForCtrlC();
 
 static char RTCBuf[96];
+
+void bootrom1()
+{
+	bootrom();
+}
 
 int i2c_init(char* i2c)
 {
@@ -169,26 +190,46 @@ void rand_init(int* p)
 	p[RAND_NUM] = 0x12345678;	
 }
 
-int get_rand(int* p)
+int get_rand(int* p, int max)
 {
-	int r;
+	int r,s;
+	int cnt;
 	
 	r = p[RAND_NUM];
 	p[RAND_NUM] = r;
-	return (r);
+	if (max==-1)
+		return (r);
+	for (s = cnt = 0; cnt < 16; cnt++) {
+		if (r & 1)
+			s = s + max;
+		r >>= 1;
+		max <<= 1;
+	}
+	return (s>>16);
 }
 
 // Get a random float number between 0 and 1.0.
 
 double get_rand_float(int* p)
 {
-	int r;
+	unsigned int r;
 	double d;
+	static int first = 1;
+	static double divisor;
 	
+	if (first) {
+		first = 0;
+		divisor = CvtStringToDecflt("2147483648.0");
+		OutputFloat(divisor);
+		OutputCRLF();
+		GetChar();
+	}
 	r = p[RAND_NUM];
 	p[RAND_NUM] = r;
 	d = (r >> 1);
-	d /= 2147483648.0;
+	d /= divisor;
+	OutputFloat(d);
+	OutputCRLF();
 	return (d);
 }
 
@@ -200,45 +241,173 @@ void OutputString(char* str)
 	}
 }
 
+void DisplayAddress(unsigned long addr)
+{
+	OutputWyde(addr >> 20);
+	OutputChar('\r');
+}
+
+void log_ramtest_err(unsigned long addr, unsigned long val)
+{
+	OutputTetra(addr);
+	OutputChar(' ');
+	OutputTetra(val);
+	OutputChar('\r');
+	OutputChar('\n');
+}
+
+void ramtest1(unsigned long val1, unsigned long val2)
+{
+	unsigned long* pRAM = (unsigned long*)0x40000000;
+	
+	while (pRAM < (unsigned long*)0x7FFFFFC0) {
+		if ((pRAM & 0xffff)==0)	
+			DisplayAddress(pRAM);
+		pRAM[0] = val1;
+		pRAM[1] = val2;
+		pRAM += 2;
+	}
+}
+
+void ramtest2(unsigned long val1, unsigned long val2)
+{
+	unsigned long* pRAM = (unsigned long*)0x40000000;
+	
+	while (pRAM < (unsigned long*)0x7FFFFFC0) {
+		if ((pRAM & 0xffff)==0)	
+			DisplayAddress(pRAM);
+		if (pRAM[0] != val1)
+			log_ramtest_err(&pRAM[0], pRAM[0]);
+		if (pRAM[1] != val1)
+			log_ramtest_err(&pRAM[1], pRAM[1]);
+		pRAM += 2;
+	}
+}
+
+// Double checkboard RAM test.
+void ramtest()
+{
+	OutputString("Running RAM test\r\n");
+	ramtest1(0xAAAAAAAA,0x55555555);
+	ramtest2(0xAAAAAAAA,0x55555555);
+	ramtest1(0x55555555,0xAAAAAAAA);
+	ramtest2(0x55555555,0xAAAAAAAA);
+}
+
 void bootrom()
 {
-	int x0i, y0i, x1i, y1i;
+	unsigned int x0i, y0i, x1i, y1i;
 	int nn;
 	int color;
-	double width = 800.0;
-	double height = 600.0;
+	int width = 1024;
+	int height = 768;
+	unsigned int buf = 0;
 	
 	OutputDevice = 2;
 	OutputString("Booting \r\n");
-	i2c_init(I2C1);
-	i2c_init(I2C2);
+//	i2c_init(I2C1);
+//	i2c_init(I2C2);
 	rand_init(RAND);
 
-	gfx_set_color_depth(10);
+	set_color_depth(7,16,5,5,5);
+	set_color_depth(6,16,5,5,5);
+
+	dispbuf(6,buf);
+	drawbuf(7,buf);
+
 	// Erase screen
-	gfx_set_color(0);
-	gfx_rect(0,0,800<<16,600<<16);
+	set_color(7,0x0000007F);	// medium blue
+	clear(7);
+
 	// Draw random points
-	for (nn = 0; nn < 20000; nn++) {
-		x0i = (get_rand_float(RAND) * width);
-		y0i = (get_rand_float(RAND) * height);
-		x0i <<= 16;
-		y0i <<= 16;
-		color = get_rand(RAND);
-		gfx_set_pixel(x0i,y0i,color);
+	for (nn = 0; nn < 50000; nn++) {
+		dispbuf(6,buf);
+		drawbuf(7,buf);
+		x0i = get_rand(RAND, -1) & 0x3ffffff;
+		y0i = (get_rand(RAND, -1) & 0x1ffffff) + (get_rand(RAND, -1) & 0xffffff);
+		color = get_rand(RAND,-1);
+		plot_point(7, x0i, y0i, color);
 	}
+	OutputString("Drew Points \r\n");
 	// Draw random lines
 	for (nn = 0; nn < 20000; nn++) {
-		x0i = (get_rand_float(RAND) * width);
-		y0i = (get_rand_float(RAND) * height);
-		x1i = (get_rand_float(RAND) * width);
-		y1i = (get_rand_float(RAND) * height);
-		x0i <<= 16;
-		y0i <<= 16;
-		x1i <<= 16;
-		y1i <<= 16;
-		color = get_rand(RAND);
-		gfx_set_color(color);
-		gfx_line(x0i,y0i,x1i,y1i);
+		dispbuf(6,buf);
+		drawbuf(7,buf);
+		x0i = get_rand(RAND, -1) & 0x3ffffff;
+		y0i = (get_rand(RAND, -1) & 0x1ffffff) + (get_rand(RAND, -1) & 0xffffff);
+		x1i = get_rand(RAND, -1) & 0x3ffffff;
+		y1i = (get_rand(RAND, -1) & 0x1ffffff) + (get_rand(RAND, -1) & 0xffffff);
+		color = get_rand(RAND,-1);
+		draw_line(7,x0i,y0i,x1i,y1i,color);
+	}
+	OutputString("Drew Lines \r\n");
+	OutputString("Demo Finished \r\n");
+}
+
+char cmdTable[] =
+{
+	'J'+0x80,
+	'G','R'+0x80,
+	'T','R','A','M'+0x80,
+	0,0
+}
+
+int (*(*shell_cmd)[]) = {
+	cmdJump,
+	cmdGrTest,
+	cmdTestRAM
+}
+
+void shell()
+{
+	int ch, posx,posy,posz;
+	int n, cmd_num;
+
+	OutputString("Monitor v0.1 \r\n");
+	while(1) {
+		OutputChar('$');
+		do {
+			ch = GetCharNonBlocking();
+		} while (ch != 13);
+		get_output_pos(2,&posx,&posy,&posz);
+		// Go to start of line
+		set_input_pos(2,0,posy,posz);
+
+		cmd_num = 0;
+		// Skip prompt character
+		do {
+			ch = get_char(2);
+		while (ch == '$');
+		// Skip leading blanks
+		do {
+			ch = get_char(2);
+		while (ch == ' ');
+		// Remember start position
+		get_input_pos(2,&posx,&posy,&posz);
+		while (1) {
+			if (ch != cmdTable[n])
+				if ((cmdTable[n] & 0x80)==0x80) && (ch == (cmdTable[n] & 0x7f)) {
+					(*shell_cmd[cmd_num])();
+					break;
+				}
+				// Scan to end of command
+				while((cmdTable[n] & 0x80)==0)
+					n++;
+				n++;
+				// Reached end of table?
+				if (cmdTable[n]==0) {
+					OutputString("??\r\n");
+					break;
+				}
+				// Reset input position for next compare
+				set_input_pos(2,posx,posy,posz);
+				ch = get_char(2);
+				cmd_num++;
+			}
+			else {
+				n++;
+				ch = get_char(2);
+			}
+		}
 	}
 }

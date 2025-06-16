@@ -103,7 +103,7 @@ framebuf_cmdproc:
 	movem.l d6/a0,-(a7)
 	ext.w d6
 	ext.l d6
-	lsl.w #2,d6
+	lsl.w #1,d6
 	lea.l FRAMEBUF_CMDTBL(pc),a0
 	move.w (a0,d6.w),d6
 	ext.l d6
@@ -153,16 +153,16 @@ framebuf_init:
 	clr.l framebuf_dcb+DCB_INPOSX
 	clr.l framebuf_dcb+DCB_INPOSY
 	move.b #1,framebuf_dcb+DCB_OPCODE	; raster op = copy
-	move.w #800,framebuf_dcb+DCB_OUTDIMX		; set rows and columns
-	move.w #600,framebuf_dcb+DCB_OUTDIMY
-	move.w #800,framebuf_dcb+DCB_INDIMX			; set rows and columns
-	move.w #600,framebuf_dcb+DCB_INDIMY
+	move.w #1024,framebuf_dcb+DCB_OUTDIMX		; set rows and columns
+	move.w #768,framebuf_dcb+DCB_OUTDIMY
+	move.w #1024,framebuf_dcb+DCB_INDIMX			; set rows and columns
+	move.w #768,framebuf_dcb+DCB_INDIMY
 	move.l #$00000000,framebuf_dcb+DCB_INBUFPTR
 	move.l #$00400000,framebuf_dcb+DCB_INBUFPTR2
 	move.l #$00000000,framebuf_dcb+DCB_OUTBUFPTR
-	move.l #$00200000,framebuf_dcb+DCB_OUTBUFPTR2
+	move.l #$00400000,framebuf_dcb+DCB_OUTBUFPTR2
 	move.l #$00000000,FRAMEBUF+FRAMEBUF_PAGE1_ADDR	; base addr 1
-	move.l #$00200000,FRAMEBUF+FRAMEBUF_PAGE2_ADDR	; base addr 2
+	move.l #$00400000,FRAMEBUF+FRAMEBUF_PAGE2_ADDR	; base addr 2
 	rts
 
 	align 2
@@ -212,7 +212,7 @@ framebuf_swapbuf:
 	move.l framebuf_dcb+DCB_OUTBUFPTR2,d0
 	move.l d2,framebuf_dcb+DCB_OUTBUFPTR2
 	move.l d0,framebuf_dcb+DCB_OUTBUFPTR
-	move.l d0,GFXACCEL+16+256
+	move.l d0,GFXACCEL+FRAMEBUF_PAGE1_ADDR
 	move.l framebuf_dcb+DCB_INBUFPTR,d2
 	move.l framebuf_dcb+DCB_INBUFPTR2,d0
 	move.l d2,framebuf_dcb+DCB_INBUFPTR2
@@ -223,7 +223,8 @@ framebuf_swapbuf:
 
 	align 2
 framebuf_set_dispbuf:
-	move.b d1,FRAMEBUF+3					; set display page
+	move.l d1,FRAMEBUF+FRAMEBUF_PAGE1_ADDR
+	move.b #0,FRAMEBUF+3					; set display page
 	move.l #E_Ok,d0
 	rts
 

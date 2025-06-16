@@ -15,12 +15,54 @@
 ;
 ;==============================================================================
 
+KEYBD_DCB	equ keybd_dcb
+
+KBD_CMDADDR macro arg1
+	dc.b ((\1-KBD_CMDTBL)>>2)
+endm
+
+KBD_CMDTBL:
+	KBD_CMDADDR keybd_init				; 0
+	KBD_CMDADDR keybd_stat
+	KBD_CMDADDR keybd_stub
+	KBD_CMDADDR keybd_putbuf
+	KBD_CMDADDR keybd_getchar
+	KBD_CMDADDR keybd_getbuf
+	KBD_CMDADDR keybd_set_inpos
+	KBD_CMDADDR keybd_set_outpos
+	KBD_CMDADDR keybd_stub
+	KBD_CMDADDR keybd_stub
+	; 10
+	KBD_CMDADDR keybd_stub
+	KBD_CMDADDR keybd_putchar_direct
+	KBD_CMDADDR keybd_clear
+	
+
+keybd_cmdproc:
+	cmpi.b #12,d6
+	bhs.s .0001
+	movem.l d6/a0,-(a7)
+	ext.w d6
+	lea KBD_CMDTBL(pc),a0
+	move.b (a0,d6.w),d6
+	ext.w d6
+	ext.l d6
+	lsl.l #2,d6
+	add.l d6,a0
+	jsr (a0)
+	movem.l (a7)+,d6/a0
+	rts
+.0001:
+	moveq #E_NotSupported,d0
+	rts
+
 ;------------------------------------------------------------------------------
 ; Setup the Keyboard device
 ;------------------------------------------------------------------------------
+	align 2
 setup_keybd:
 keybd_init:
-	movem.l d0/a0/a1,-(a7)
+	movem.l d0/a1,-(a7)
 	moveq #32,d0
 	lea.l keybd_dcb,a0
 .0001:
@@ -29,62 +71,52 @@ keybd_init:
 	move.l #$44434220,keybd_dcb+DCB_MAGIC				; 'DCB '
 	move.l #$4B424400,keybd_dcb+DCB_NAME				; 'KBD'
 	move.l #keybd_cmdproc,keybd_dcb+DCB_CMDPROC
-	move.l #_KeybdBuf,keybd_dcb+DCB_INBUFPTR
-	move.l #_KeybdOBuf,keybd_dcb+DCB_OUTBUFPTR
-	move.l #32,keybd_dcb+DCB_INBUFSIZE
-	move.l #32,keybd_dcb+DCB_OUTBUFSIZE
-	clr.b keybd_dcb+DCB_OUTDIMX	; set rows and columns
-	clr.b keybd_dcb+DCB_OUTDIMY
-	clr.b keybd_dcb+DCB_INDIMX		; set rows and columns
-	clr.b keybd_dcb+DCB_INDIMY
+	move.l #_KeybdBuf,KEYBD_DCB+DCB_INBUFPTR
+	move.l #_KeybdOBuf,KEYBD_DCB+DCB_OUTBUFPTR
+	move.l #32,KEYBD_DCB+DCB_INBUFSIZE
+	move.l #32,KEYBD_DCB+DCB_OUTBUFSIZE
+	clr.b KEYBD_DCB+DCB_OUTDIMX		; set rows and columns
+	clr.b KEYBD_DCB+DCB_OUTDIMY
+	clr.b KEYBD_DCB+DCB_INDIMX		; set rows and columns
+	clr.b KEYBD_DCB+DCB_INDIMY
 ;	bsr KeybdInit
-	lea.l keybd_dcb+DCB_MAGIC,a1
-	jsr DisplayString
-	jsr CRLF
-	movem.l (a7)+,d0/a0/a1
+	bsr keybd_clear
+	moveq #13,d0									; DisplayStringCRLF function
+	lea.l KEYBD_DCB+DCB_MAGIC,a1
+	trap #15
+	movem.l (a7)+,d0/a1
 	rts
 
 	align 2
-KBD_CMDTBL:
-	dc.l keybd_init				; 0
-	dc.l keybd_stat
-	dc.l keybd_putchar
-	dc.l keybd_putbuf
-	dc.l keybd_getchar
-	dc.l keybd_getbuf
-	dc.l keybd_set_inpos
-	dc.l keybd_set_outpos
-
-keybd_cmdproc:
-	cmpi.b #8,d6
-	bhs.s .0001
-	movem.l d6/a0,-(a7)
-	asl.b #2,d6
-	ext.w d6
-	lea KBD_CMDTBL,a0
-	move.l (a0,d6.w),a0
-	jsr (a0)
-	movem.l (a7)+,d6/a0
-	rts
-.0001:
-	moveq #E_Func,d0
-	rts
-
 keybd_stat:
 	bsr _KeybdGetStatus
 	moveq #E_Ok,d0
 	rts
 
-keybd_putchar:
+	align 2
+keybd_clear:
+	clr.b _KeybdHead
+	clr.b _KeybdTail
+	clr.b _KeybdCnt
+	clr.b _KeyState1
+	clr.b _KeyState2
+	moveq #E_Ok,d0
+	rts
+
+	align 2
+keybd_putchar_direct:
 	bsr KeybdSendByte
 	moveq #E_Ok,d0
 	rts
 
+	align 2
 keybd_getchar:
 	bsr GetKey
 	moveq #E_Ok,d0
 	rts
 
+	align 2
+keybd_stub:
 keybd_putbuf:
 keybd_getbuf:
 keybd_set_inpos:
@@ -380,16 +412,21 @@ GetKey:
 	beq.s	.0003								; no echo, just return the key
 	cmpi.b #CR,d1							; convert CR keystroke into CRLF
 	bne.s	.0005
-	bsr	CRLF
+	moveq #6,d0								; output character
+	move.b #13,d0							; output carriage return
+	trap #15
+	move.b #10,d0							; output line feed
+	trap #15
 	bra.s	.0003
 .0005:
-	bsr	OutputChar
+	moveq #6,d0								; output character
+	trap #15
 .0003:
-	move.l (a7)+,d0						; pop d0
+	move.l (a7)+,d0						; pop d0,d6
 	rts												; return key
 ; Return -1 indicating no char was available
 .0004:
-	move.l (a7)+,d0						; pop d0
+	move.l (a7)+,d0						; pop d0,d6
 	moveq	#-1,d1							; return no key available
 	rts
 
@@ -676,7 +713,15 @@ KeybdIRQ:
 	clr.b	_KeybdTail
 	clr.b	_KeybdCnt
 	bra	.0002									; do not store Alt-Tab
-.0003:
+.0003
+	btst #2,_KeyState2				; Is Ctrl down?
+	beq.s .0004
+	cmpi.b #SC_C,d1						; Is if Ctrl-C ?
+	bne.s .0004
+	move.l #Monitor,a0				; Stuff the Monitor address as
+	move.l a0,14(sp)					; the return address
+	bra .0002
+.0004
 	; Insert keyboard scan code into raw keyboard buffer
 	cmpi.b #32,_KeybdCnt			; see if keyboard buffer full
 	bhs.s	.0002
@@ -688,12 +733,12 @@ KeybdIRQ:
 	andi.b #31,d0							; wrap at buffer limit
 	move.b d0,_KeybdTail			; update tail index
 	addi.b #1,_KeybdCnt				; increment buffer count
-.0002:
+.0002
 	movec	coreno,d0
 	swap d0
 	moveq	#KEYBD_SEMA,d1
 	bsr	UnlockSemaphore
-.0001:
+.0001
 	movem.l	(a7)+,d0/d1/a0		; return
 	rte
 

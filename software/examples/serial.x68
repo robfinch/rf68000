@@ -152,10 +152,10 @@ SerialInit:
 	clr.w		SerTailXmit
 	clr.b		SerRcvXon						; and Xon,Xoff flags
 	clr.b		SerRcvXoff
-	move.l	#$00000009,d0				; dtr,rts active, rxint enabled, no parity
+	move.l	#$09000000,d0				; dtr,rts active, rxint enabled, no parity
 	move.l	d0,ACIA+ACIA_CMD
 ;	move.l	#$1E00F700,d0				; fifos enabled
-	move.l	#$0000001E,d0				; fifos disabled
+	move.l	#$1E000000,d0				; fifos disabled
 	move.l	d0,ACIA+ACIA_CTRL
 	rts
 ;	move.l	#$0F000000,d0				; transmit a break for a while

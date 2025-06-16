@@ -40,11 +40,11 @@ DT_INTEGER equ 4
 BUFLEN	EQU	80		length of keyboard input buffer
 STRAREASIZE	EQU	2048	; size of string area
 	CODE
-*	ORG	$10000		first free address using Tutor
-*
-* Standard jump table. You can change these addresses if you are
-* customizing this interpreter for a different environment.
-*
+;	ORG	$10000		first free address using Tutor
+;
+; Standard jump table. You can change these addresses if you are
+; customizing this interpreter for a different environment.
+;
 START	BRA	CSTART		Cold Start entry point
 GOWARM	BRA	WSTART		Warm Start entry point
 GOOUT	BRA OUTC		Jump to character-out routine
@@ -52,68 +52,68 @@ GOIN	BRA INC		Jump to character-in routine
 GOAUXO	BRA	AUXOUT		Jump to auxiliary-out routine
 GOAUXI	BRA	AUXIN		Jump to auxiliary-in routine
 GOBYE	BRA	BYEBYE		Jump to monitor, DOS, etc.
-*
-* Modifiable system constants:
-*
-TXTBGN	DC.L	$41000		beginning of program memory
+;
+; Modifiable system constants:
+;
+TXTBGN	DC.L	$43000		beginning of program memory
 ENDMEM	DC.L	$47FF0		end of available memory
-*
-* The main interpreter starts here:
-*
+;
+; The main interpreter starts here:
+;
 CSTART
-	MOVE.L ENDMEM,SP	initialize stack pointer
+	move.l ENDMEM,sp					; initialize stack pointer
 	move.l #INC1,INPPTR
 	move.b #1,InputDevice			; keyboard
 	move.b #2,OutputDevice		; text video
 	move.l #1,_fpTextIncr
-	LEA	INITMSG,A6	tell who we are
-	BSR	PRMESG
-	MOVE.L TXTBGN,TXTUNF	init. end-of-program pointer
-	MOVE.L ENDMEM,D0	get address of end of memory
+	lea	INITMSG,a6	tell who we are
+	bsr	PRMESG
+	move.l TXTBGN,TXTUNF			; init. end-of-program pointer
+	move.l ENDMEM,d0					; get address of end of memory
 	move.l ENDMEM,STKFP
-	SUB.L	#4096,D0	reserve 4K for the stack
-	MOVE.L D0,STRSTK
-	ADD.L #32,D0
-	MOVE.L D0,STKLMT
-	SUB.L	#512,D0 	reserve variable area (32 16 byte floats)
-	MOVE.L D0,VARBGN
+	sub.l	#4096,d0						; reserve 4K for the stack
+	move.l d0,STRSTK
+	add.l #32,D0
+	move.l d0,STKLMT
+	sub.l	#512,D0 						; reserve variable area (32 16 byte floats)
+	move.l D0,VARBGN
 	bsr ClearStringArea
 WSTART:
-	CLR.L	D0		initialize internal variables
+	clr.l	d0									; initialize internal variables
 	move.l #1,_fpTextIncr
 	clr.l IRQROUT
-	MOVE.L	D0,LOPVAR
-	MOVE.L	D0,STKGOS
-	MOVE.L	D0,CURRNT	; current line number pointer = 0
-	MOVE.L ENDMEM,SP	; init S.P. again, just in case
+	move.l d0,LOPVAR
+	move.l d0,STKGOS
+	move.l d0,CURRNT		; current line number pointer = 0
+	move.l ENDMEM,SP		; init S.P. again, just in case
 	bsr ClearStringStack
-	LEA	OKMSG,A6			; display "OK"
+	lea	OKMSG,A6				; display "OK"
 	bsr	PRMESG
 ST3
-	MOVE.B	#'>',D0         Prompt with a '>' and
-	bsr	GETLN		read a line.
-	bsr	TOUPBUF 	convert to upper case
-	MOVE.L	A0,A4		save pointer to end of line
-	LEA	BUFFER,A0	point to the beginning of line
-	bsr	TSTNUM		is there a number there?
-	bsr	IGNBLK		skip trailing blanks
-	FMOVE.L FP1,D1
-	TST.L D2			; does line no. exist? (or nonzero?)
-	BEQ	DIRECT		; if not, it's a direct statement
-	CMP.L	#$FFFF,D1	; see if line no. is <= 16 bits
-	BCC	QHOW			; if not, we've overflowed
-	MOVE.B	D1,-(A0)	store the binary line no.
-	ROR	#8,D1		(Kludge to store a word on a
-	MOVE.B	D1,-(A0)	possible byte boundary)
-	ROL	#8,D1
-	bsr	FNDLN		find this line in save area
-	MOVE.L	A1,A5		save possible line pointer
-	BNE	ST4		if not found, insert
-	bsr	FNDNXT		find the next line (into A1)
-	MOVE.L	A5,A2		pointer to line to be deleted
-	MOVE.L	TXTUNF,A3	points to top of save area
-	bsr	MVUP		move up to delete
-	MOVE.L	A2,TXTUNF	update the end pointer
+	move.b #'>',D0      ; Prompt with a '>' and
+	bsr	GETLN						; read a line.
+	bsr	TOUPBUF 				; convert to upper case
+	move.l a0,a4				; save pointer to end of line
+	lea	BUFFER,a0				; point to the beginning of line
+	bsr	TSTNUM					; is there a number there?
+	bsr	IGNBLK					; skip trailing blanks
+	fmove.l fp1,d1
+	tst.l d2						; does line no. exist? (or nonzero?)
+	beq	DIRECT					; if not, it's a direct statement
+	cmp.l	#$FFFF,D1			; see if line no. is <= 16 bits
+	bcc	QHOW						; if not, we've overflowed
+	move.b d1,-(a0)			; store the binary line no.
+	ror	#8,d1						; (Kludge to store a word on a
+	move.b d1,-(a0)			; possible byte boundary)
+	rol	#8,D1
+	bsr	FNDLN						; find this line in save area
+	move.l a1,a5				; save possible line pointer
+	bne	ST4							; if not found, insert
+	bsr	FNDNXT					; find the next line (into A1)
+	move.l a5,a2				; pointer to line to be deleted
+	move.l TXTUNF,a3		; points to top of save area
+	bsr	MVUP						; move up to delete
+	move.l a2,TXTUNF		; update the end pointer
 ST4
 	MOVE.L	A4,D0		calculate the length of new line
 	SUB.L	A0,D0
@@ -122,7 +122,7 @@ ST4
 	MOVE.L TXTUNF,A3	compute new end
 	MOVE.L A3,A6
 	ADD.L	D0,A3
-	MOVE.L StrArea,D0	see if there's enough room
+	MOVE.L StrArea,D0	see if there is enough room
 	CMP.L	A3,D0
 	BLS	QSORRY		if not, say so
 	MOVE.L	A3,TXTUNF	if so, store new end position
@@ -132,14 +132,14 @@ ST4
 	MOVE.L	A0,A1		set up to do the insertion
 	MOVE.L	A5,A2
 	MOVE.L	A4,A3
-	bsr	MVUP		do it
-	BRA	ST3		go back and get another line
+	bsr	MVUP						; do it
+	bra	ST3							; go back and get another line
 
 ClearStringArea:
 	move.l VARBGN,d0
-	SUB.L #STRAREASIZE,D0
-	MOVE.L D0,StrArea
-	MOVE.L D0,LastStr
+	sub.l #STRAREASIZE,d0
+	move.l d0,StrArea
+	move.l d0,LastStr
 	move.l StrArea,a0
 	clr.l (a0)+
 	clr.l (a0)+
@@ -393,15 +393,16 @@ EXGO
 	MOVE.L (A2),A3		; execute the appropriate routine
 	JMP	(A3)
 
-*******************************************************************
-* Console redirection
-* <COM will redirect input to the COM port
-* >COM will redirect output to the COM port
-* <CON will redirect input to the console
-* >CON will redirect output to the console
-* <>COM will redirect input and output to the COM port
-* <>CON will redirect input and output to the console
-*******************************************************************
+;******************************************************************
+; Console redirection
+; <COM will redirect input to the COM port
+; >COM will redirect output to the COM port
+; <CON will redirect input to the console
+; >CON will redirect output to the console
+; <>COM will redirect input and output to the COM port
+; <>CON will redirect input and output to the console
+;******************************************************************
+
 INCON
 	move.l	#INC1,INPPTR
 	bra			FINISH
@@ -543,51 +544,51 @@ WAITIRQ:
 	beq	WAITIRQ
 	jmp	FINISH
 
-*******************************************************************
-*
-* *** LIST *** PRINT ***
-*
-* LIST has two forms:
-* 'LIST<CR>' lists all saved lines
-* 'LIST #<CR>' starts listing at the line #
-* Control-S pauses the listing, control-C stops it.
-*
-* PRINT command is 'PRINT ....:' or 'PRINT ....<CR>'
-* where '....' is a list of expressions, formats, back-arrows,
-* and strings.	These items a separated by commas.
-*
-* A format is a pound sign followed by a number.  It controls
-* the number of spaces the value of an expression is going to
-* be printed in.  It stays effective for the rest of the print
-* command unless changed by another format.  If no format is
-* specified, 11 positions will be used.
-*
-* A string is quoted in a pair of single- or double-quotes.
-*
-* An underline (back-arrow) means generate a <CR> without a <LF>
-*
-* A <CR LF> is generated after the entire list has been printed
-* or if the list is empty.  If the list ends with a semicolon,
-* however, no <CR LF> is generated.
-*
+;******************************************************************
+;
+; *** LIST *** PRINT ***
+;
+; LIST has two forms:
+; 'LIST<CR>' lists all saved lines
+; 'LIST #<CR>' starts listing at the line #
+; Control-S pauses the listing, control-C stops it.
+;
+; PRINT command is 'PRINT ....:' or 'PRINT ....<CR>'
+; where '....' is a list of expressions, formats, back-arrows,
+; and strings.	These items a separated by commas.
+;
+; A format is a pound sign followed by a number.  It controls
+; the number of spaces the value of an expression is going to
+; be printed in.  It stays effective for the rest of the print
+; command unless changed by another format.  If no format is
+; specified, 11 positions will be used.
+;
+; A string is quoted in a pair of single- or double-quotes.
+;
+; An underline (back-arrow) means generate a <CR> without a <LF>
+;
+; A <CR LF> is generated after the entire list has been printed
+; or if the list is empty.  If the list ends with a semicolon,
+; however, no <CR LF> is generated.
+;
 
 LIST:	
-	bsr	TSTNUM		see if there's a line no.
-	bsr	ENDCHK		if not, we get a zero
-	bsr	FNDLN		find this or next line
+	bsr	TSTNUM		; see if there is a line no.
+	bsr	ENDCHK		; if not, we get a zero
+	bsr	FNDLN			; find this or next line
 LS1
-	BCS	FINISH		warm start if we passed the end
-	bsr	PRTLN		print the line
-	bsr	CHKIO		check for listing halt request
-	BEQ	LS3
-	CMP.B	#CTRLS,D0	pause the listing?
-	BNE	LS3
+	bcs	FINISH		; warm start if we passed the end
+	bsr	PRTLN			; print the line
+	bsr	CHKIO			; check for listing halt request
+	beq	LS3
+	cmp.b	#CTRLS,D0		; pause the listing?
+	bne	LS3
 LS2
-	bsr	CHKIO		if so, wait for another keypress
-	BEQ	LS2
+	bsr	CHKIO			; if so, wait for another keypress
+	beq	LS2
 LS3
-	bsr	FNDLNP		find the next line
-	BRA	LS1
+	bsr	FNDLNP		; find the next line
+	bra	LS1
 
 PRINT:	
 	MOVE.L #11,D4		D4 = number of print spaces
@@ -724,9 +725,9 @@ FOR:
 	bsr	PUSHA			; save the old 'FOR' save area
 	bsr	SETVAL		; set the control variable
 	move.l a6,LOPVAR		; save its address
-	LEA	TAB5,A1 	; use 'EXEC' to test for 'TO'
-	LEA	TAB5_1,A2
-	BRA	EXEC
+	lea	TAB5,A1 	; use 'EXEC' to test for 'TO'
+	lea	TAB5_1,A2
+	bra	EXEC
 FR1	
 	bsr	NUM_EXPR		; evaluate the limit
 	FMOVE.X	FP0,LOPLMT	; save that
@@ -734,8 +735,8 @@ FR1
 	LEA	TAB6_1,A2		; word 'STEP'
 	BRA	EXEC
 FR2
-	bsr	NUM_EXPR		found it, get the step value
-	BRA	FR4
+	bsr	NUM_EXPR		; found it, get the step value
+	bra	FR4
 FR3
 	FMOVE.B #1,FP0	; not found, step defaults to 1
 FR4
@@ -753,14 +754,14 @@ FR7
 	MOVE.L	(A6),D0 	; is it zero?
 	BEQ	FR8						; if so, we're done
 	CMP.L	LOPVAR,D0		; same as current LOPVAR?
-	BNE	FR6						; nope, look some more
+	bne	FR6						; nope, look some more
 	MOVE.L	SP,A2			; Else remove 9 long words from...
 	MOVE.L	A6,A1			; inside the stack.
 	lea	36(a1),a3
 	bsr	MVDOWN
-	MOVE.L	A3,SP		set the SP 9 long words up
+	move.l a3,sp			; set the SP 9 long words up
 FR8
-	BRA	FINISH		and continue execution
+	bra	FINISH				; and continue execution
 
 NEXT	
 	bsr	TSTV						; get address of variable
@@ -794,62 +795,62 @@ NX2
 	bsr	POPA		purge this loop
 	BRA	FINISH
 
-*******************************************************************
-*
-* *** REM *** IF *** INPUT *** LET (& DEFLT) ***
-*
-* 'REM' can be followed by anything and is ignored by the
-* interpreter.
-*
-* 'IF' is followed by an expression, as a condition and one or
-* more commands (including other 'IF's) separated by colons.
-* Note that the word 'THEN' is not used.  The interpreter evaluates
-* the expression.  If it is non-zero, execution continues.  If it
-* is zero, the commands that follow are ignored and execution
-* continues on the next line.
-*
-* 'INPUT' is like the 'PRINT' command, and is followed by a list
-* of items.  If the item is a string in single or double quotes,
-* or is an underline (back arrow), it has the same effect as in
-* 'PRINT'.  If an item is a variable, this variable name is
-* printed out followed by a colon, then the interpreter waits for
-* an expression to be typed in.  The variable is then set to the
-* value of this expression.  If the variable is preceeded by a
-* string (again in single or double quotes), the string will be
-* displayed followed by a colon.  The interpreter the waits for an
-* expression to be entered and sets the variable equal to the
-* expression's value.  If the input expression is invalid, the
-* interpreter will print "What?", "How?", or "Sorry" and reprint
-* the prompt and redo the input.  The execution will not terminate
-* unless you press control-C.  This is handled in 'INPERR'.
-*
-* 'LET' is followed by a list of items separated by commas.
-* Each item consists of a variable, an equals sign, and an
-* expression.  The interpreter evaluates the expression and sets
-* the variable to that value.  The interpreter will also handle
-* 'LET' commands without the word 'LET'.  This is done by 'DEFLT'.
+;******************************************************************
+;
+; *** REM *** IF *** INPUT *** LET (& DEFLT) ***
+;
+; 'REM' can be followed by anything and is ignored by the
+; interpreter.
+;
+; 'IF' is followed by an expression, as a condition and one or
+; more commands (including other 'IF's) separated by colons.
+; Note that the word 'THEN' is not used.  The interpreter evaluates
+; the expression.  If it is non-zero, execution continues.  If it
+; is zero, the commands that follow are ignored and execution
+; continues on the next line.
+;
+; 'INPUT' is like the 'PRINT' command, and is followed by a list
+; of items.  If the item is a string in single or double quotes,
+; or is an underline (back arrow), it has the same effect as in
+; 'PRINT'.  If an item is a variable, this variable name is
+; printed out followed by a colon, then the interpreter waits for
+; an expression to be typed in.  The variable is then set to the
+; value of this expression.  If the variable is preceeded by a
+; string (again in single or double quotes), the string will be
+; displayed followed by a colon.  The interpreter the waits for an
+; expression to be entered and sets the variable equal to the
+; expression's value.  If the input expression is invalid, the
+; interpreter will print "What?", "How?", or "Sorry" and reprint
+; the prompt and redo the input.  The execution will not terminate
+; unless you press control-C.  This is handled in 'INPERR'.
+;
+; 'LET' is followed by a list of items separated by commas.
+; Each item consists of a variable, an equals sign, and an
+; expression.  The interpreter evaluates the expression and sets
+; the variable to that value.  The interpreter will also handle
+; 'LET' commands without the word 'LET'.  This is done by 'DEFLT'.
 
-REM
-	BRA	IF2		skip the rest of the line
+REM:
+	bra	IF2		skip the rest of the line
 
-IF
-	bsr	INT_EXPR		evaluate the expression
+IF:
+	bsr	INT_EXPR		; evaluate the expression
 IF1
-	TST.L	d0		is it zero?
-	BNE	RUNSML		if not, continue
+	tst.l	d0				; is it zero?
+	bne	RUNSML			; if not, continue
 IF2
-	MOVE.L	A0,A1
-	CLR.L	D1
-	bsr	FNDSKP		if so, skip the rest of the line
-	BCC	RUNTSL		and run the next line
-	BRA	WSTART		if no next line, do a warm start
+	move.l a0,a1
+	clr.l	d1
+	bsr	FNDSKP			; if so, skip the rest of the line
+	bcc	RUNTSL			; and run the next line
+	bra	WSTART			; if no next line, do a warm start
 
 INPERR	MOVE.L	STKINP,SP	restore the old stack pointer
 	MOVE.L	(SP)+,CURRNT	and old 'CURRNT'
 	ADDQ.L	#4,SP
 	MOVE.L	(SP)+,A0	and old text pointer
 
-INPUT	
+INPUT:	
 	MOVE.L	A0,-(SP)	save in case of error
 	bsr EXPR
 	cmpi.b #DT_STRING,d0
@@ -1138,7 +1139,7 @@ DRAWBUF:
 	move.l d0,d1
 	trap #0
 	bra FINISH
-	
+
 DISPBUF:
 	bsr INT_EXPR
 	moveq #6,d7
@@ -1471,11 +1472,11 @@ INT_EXPR:
 
 EXPR:
 EXPR_OR:
-	BSR EXPR_AND
-	BSR XP_PUSH
-	LEA TAB10,A1
-	LEA TAB10_1,A2
-	BRA EXEC
+	bsr EXPR_AND
+	bsr XP_PUSH
+	lea TAB10,a1
+	lea TAB10_1,a2
+	bra EXEC
 	
 ;-------------------------------------------------------------------------------
 ; Boolean 'Or' level
@@ -1503,7 +1504,7 @@ EXPR_AND:
 	BRA EXEC
 
 XP_AND:
-	BSR EXPR_REL
+	bsr EXPR_REL
 	bsr XP_POP1
 	bsr CheckNumeric
 	FMOVE.L FP1,D3
@@ -1579,12 +1580,12 @@ XP16:
 	RTS
 
 XPRT0:
-	FMOVE.B #0,FP0	; return fp0 = 0 (false)
-	RTS
+	fmove.b #0,FP0	; return fp0 = 0 (false)
+	rts
 
 XPRT1:
-	FMOVE.B #1,FP0	; return fp0 = 1 (true)
-	RTS
+	fmove.b #1,FP0	; return fp0 = 1 (true)
+	rts
 
 XP17:								; it's not a rel. operator
 	bsr XP_POP				;	return FP0=<EXPR2>
@@ -1604,14 +1605,14 @@ XP18:
 
 EXPR2
 	bsr	TSTC		; negative sign?
-	DC.B	'-',XP21-*
-	FMOVE.B #0,FP0
-	BRA	XP26
+	dc.b	'-',XP21-*
+	fmove.b #0,FP0
+	bra	XP26
 XP21	
 	bsr	TSTC		; positive sign? ignore it
-	DC.B	'+',XP22-*
+	dc.b '+',XP22-*
 XP22
-	BSR	EXPR3		; first <EXPR3>
+	bsr	EXPR3		; first <EXPR3>
 XP23
 	bsr	TSTC		; add?
 	DC.B	'+',XP25-*
@@ -1639,7 +1640,7 @@ XP25
 	dc.b	'-',XP27-*
 XP26
 	bsr XP_PUSH
-	BSR	EXPR3					; get second <EXPR3>
+	bsr	EXPR3					; get second <EXPR3>
 	cmpi.b #DT_NUMERIC,d0
 	bne ETYPE
 	FNEG FP0					; change its sign
@@ -1741,9 +1742,9 @@ XP_MOD:
 ;-------------------------------------------------------------------------------
 
 EXPR4:
-	LEA	TAB4,A1 			; find possible function
-	LEA	TAB4_1,A2
-	BRA	EXEC
+	lea	TAB4,A1 			; find possible function
+	lea	TAB4_1,A2
+	bra	EXEC
 XP40
 	bsr	TSTV					; nope, not a function
 	bcs	XP41					; nor a variable
@@ -2093,11 +2094,11 @@ USP1:
 
 TSTV:
 	bsr	IGNBLK
-	CLR.L	D0
-	MOVE.B (A0),D0 	 	; look at the program text
-	SUB.B	#'@',D0
-	BCS	TSTVRT				; C=1: not a variable
-	BNE	TV1						; branch if not "@" array
+	clr.l	d0
+	move.b (a0),d0 	 	; look at the program text
+	sub.b	#'@',D0
+	bcs	TSTVRT				; C=1: not a variable
+	bne	TV1						; branch if not "@" array
 	ADDQ #1,A0				; If it is, it should be
 	BSR	PARN					; followed by (EXPR) as its index.
 	ADD.L	D0,D0
@@ -2118,10 +2119,10 @@ TSTV:
 	sub.l	d1,d0				; into D0
 	rts
 TV1
-	CMP.B	#27,D0			; if not @, is it A through Z?
-	EOR	#1,CCR
-	BCS	TSTVRT				; if not, set Carry and return
-	ADDQ #1,A0				; else bump the text pointer
+	cmp.b	#27,D0			; if not @, is it A through Z?
+	eor	#1,CCR
+	bcs	TSTVRT				; if not, set Carry and return
+	addq #1,a0				; else bump the text pointer
 	cmpi.b #'L',d0		; is it a local? L0 to L7
 	bne TV2
 	move.b (a0),d0
@@ -2136,11 +2137,11 @@ TV1
 	add.l #4,d0
 	rts
 TV2
-	LSL.L #4,D0			; compute the variable's address
-	MOVE.L VARBGN,D1
-	ADD.L	D1,D0			; and return it in D0 with Carry=0
+	lsl.l #4,d0			; compute the variable's address
+	move.l VARBGN,d1
+	add.l	d1,d0			; and return it in D0 with Carry=0
 TSTVRT
-	RTS
+	rts
 
 
 * ===== Divide the 32 bit value in D0 by the 32 bit value in D1.

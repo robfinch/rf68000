@@ -94,9 +94,9 @@
 ;
 HAS_MMU equ 0
 NCORES equ 4
-TEXTCOL equ 52
-TEXTROW	equ	32
-VIDEO_X equ 1368
+TEXTCOL equ 64
+TEXTROW	equ	36
+VIDEO_X equ 1024
 VIDEO_Y equ 768
 
 CTRLC	EQU		$03
@@ -178,11 +178,11 @@ RAND_MW		EQU	$FDFF401C
 keybd			EQU	$FDFF8000
 KEYBD			EQU	$FDFF8000
 leds			EQU	$FDFFC000
-ACIA			EQU	$FDFE0010
+ACIA			EQU	$FDFE0000
 I2C2 			equ $FDFE4000
 IO_BITMAP	EQU $FDE00000
 FRAMEBUF	EQU	$FD208000
-GFXACCEL	EQU	$FD210000
+GFXACCEL	equ	$FD210000
 PSG				EQU $FD240000
 I2C1 			equ $FD250000
 ADAU1761 	equ $FD254000
@@ -388,6 +388,7 @@ m_w equ $408D4
 next_m_z equ $408D8
 next_m_w equ $408DC
 TimeBuf equ $408E0
+numwka equ $40980
 EightPixels equ $40100000	; to $40200020
 
 null_dcb equ $0040A00		; 0
@@ -485,6 +486,7 @@ start:
 	bsr i2c_setup
 	lea I2C1,a6
 	bsr i2c_setup
+	bsr scan_for_io
 ;	lea SPI_MASTER1,a1
 ;	bsr spi_setup
 ;	lea SPI_MASTER2,a1
@@ -560,6 +562,219 @@ do_nothing:
 	bra			StartMon
 	bra			do_nothing
 
+;==============================================================================
+; Scan the I/O address space looking for I/O devices.
+;
+; The I/O address space has the upper eight bits of the address equal to
+;		$FD
+; Each I/O device has a 16kB block of address space reserved for it. A device
+; has the string "DCB " stored at offset $3E00 in the block followed by an
+; eleven character NULL terminated device name.
+;
+;==============================================================================
+
+scan_for_io:
+	move.l #$FD000000,a0
+	moveq #0,d1
+.0001
+	move.l $3F00(a0),d0
+	cmpi.l #"DCB ",d0
+	beq.s .0002
+.0003
+	add.l #$4000,a0
+	cmp.l #$FE000000,a0
+	blo.s .0001
+	moveq #3,d0
+	trap #15
+	lea msgDeviceCount(pc),a1
+	moveq #13,d0
+	trap #15
+	rts
+.0002
+	addq.l #1,d1
+	moveq #14,d0
+	lea msgFound(pc),a1
+	trap #15
+	moveq #13,d0
+	lea $3F04(a0),a1
+	trap #15
+	bra.s .0003
+
+msgFound
+	dc.b "Found ",0
+msgDeviceCount
+	dc.b " devices",0
+
+	even
+	
+;==============================================================================
+; TRAP #15 handler
+;
+; Parameters:
+;		d0.b = function number to perform
+;==============================================================================
+
+T15DTAddr macro arg1
+	dc.w ((\1-T15DispatchTable)>>1)
+endm
+
+	align	2
+T15DispatchTable:
+	T15DTAddr	DisplayStringLimitedCRLF
+	T15DTAddr	DisplayStringLimited
+	T15DTAddr	StubRout
+	T15DTAddr	DisplayNumber
+	T15DTAddr	StubRout
+	T15DTAddr	GetKey
+	T15DTAddr	OutputChar
+	T15DTAddr	CheckForKey
+	T15DTAddr	GetTick
+	T15DTAddr	StubRout
+	; 10
+	T15DTAddr	StubRout
+	T15DTAddr	T15Cursor
+	T15DTAddr	SetKeyboardEcho
+	T15DTAddr	DisplayStringCRLF
+	T15DTAddr	DisplayString
+	T15DTAddr	StubRout
+	T15DTAddr	StubRout
+	T15DTAddr	StubRout
+	T15DTAddr	StubRout
+	T15DTAddr	CheckForKey
+	; 20
+	T15DTAddr	StubRout
+	T15DTAddr	StubRout
+	T15DTAddr	T15ReadScreenChar
+	T15DTAddr	T15Wait100ths
+	T15DTAddr	StubRout
+	T15DTAddr	StubRout
+	T15DTAddr	StubRout
+	T15DTAddr	StubRout
+	T15DTAddr	StubRout
+	T15DTAddr	StubRout
+	; 30
+	T15DTAddr	StubRout
+	T15DTAddr	StubRout
+	T15DTAddr	SimHardware	;rotate_iofocus
+	T15DTAddr	T15GetWindowSize	;SerialPeekCharDirect
+	T15DTAddr	SerialPutChar
+	T15DTAddr	SerialPeekChar
+	T15DTAddr	SerialGetChar
+	T15DTAddr	T15LockSemaphore
+	T15DTAddr	T15UnlockSemaphore
+	T15DTAddr	prtflt
+	; 40
+	T15DTAddr  _GetRand
+	T15DTAddr	T15GetFloat
+	T15DTAddr	T15Abort
+	T15DTAddr	T15FloatToString
+	T15DTAddr	StubRout
+	T15DTAddr	StubRout
+	T15DTAddr	StubRout
+	T15DTAddr	StubRout
+	T15DTAddr	StubRout
+	T15DTAddr	StubRout
+	; 50
+	T15DTAddr	StubRout
+	T15DTAddr	StubRout
+	T15DTAddr	StubRout
+	T15DTAddr	StubRout
+	T15DTAddr	StubRout
+	T15DTAddr	StubRout
+	T15DTAddr	StubRout
+	T15DTAddr	StubRout
+	T15DTAddr	StubRout
+	T15DTAddr	StubRout
+	; 60
+	T15DTAddr	StubRout
+	T15DTAddr	StubRout
+	T15DTAddr	StubRout
+	T15DTAddr	StubRout
+	T15DTAddr	StubRout
+	T15DTAddr	StubRout
+	T15DTAddr	StubRout
+	T15DTAddr	StubRout
+	T15DTAddr	StubRout
+	T15DTAddr	StubRout
+	; 70
+	T15DTAddr	StubRout
+	T15DTAddr	StubRout
+	T15DTAddr	StubRout
+	T15DTAddr	StubRout
+	T15DTAddr	StubRout
+	T15DTAddr	StubRout
+	T15DTAddr	StubRout
+	T15DTAddr	StubRout
+	T15DTAddr	StubRout
+	T15DTAddr	StubRout
+	; 80
+	T15DTAddr	SetPenColor
+	T15DTAddr	StubRout
+	T15DTAddr	StubRout
+	T15DTAddr	StubRout
+	T15DTAddr	StubRout
+	T15DTAddr	DrawToXY
+	T15DTAddr	MoveToXY
+	T15DTAddr	StubRout
+	T15DTAddr	StubRout
+	T15DTAddr	StubRout
+	; 90
+	T15DTAddr	T15Rectangle
+	T15DTAddr	StubRout
+	T15DTAddr	SetDrawMode
+	T15DTAddr	StubRout
+	T15DTAddr	GRBufferToScreen
+	T15DTAddr	StubRout
+	T15DTAddr	StubRout
+	T15DTAddr	StubRout
+	T15DTAddr	StubRout
+	T15DTAddr	StubRout
+
+TRAP15:
+	movem.l	d0/a0,-(a7)
+	lea T15DispatchTable(pc),a0
+	ext.w d0
+	lsl.w #1,d0
+	move.w (a0,d0.w),d0
+	ext.l d0
+	lsl.l #1,d0
+	add.l d0,a0
+	jsr (a0)
+	movem.l (a7)+,d0/a0
+	rte
+
+
+; Parameters:
+; 	d1 = text co-ordinates
+;		d1.low word = colum
+; 	d1.high word = row
+; Returns:
+;		d1.w = ascii code for screen character
+
+|T15ReadScreenChar:
+	movem.l d2/d3/a0,-(sp)
+	move.l d1,d2
+	ext.l d2				; d2 = col
+	swap d1
+	ext.l d1				; d1 = row
+	move.b TextCols,d3
+	ext.w d3
+	mulu d3,d1			; d1 row * #cols
+	add.l d2,d1			; d1 = row * #cols + col
+	if (SCREEN_FORMAT==1)
+		lsl.l #2,d1
+	else
+		lsl.l #3,d1
+	endif
+	add.l TextScr,d1
+	move.l d1,a0
+	move.l (a0),d1
+	bsr rbo
+	and.l #$01FF,d1
+	movem.l (sp)+,d2/d3/a0
+	rts
+
+	
 ;------------------------------------------------------------------------------
 ; Initialize the MMU to allow thread #0 access to IO
 ;------------------------------------------------------------------------------
@@ -600,6 +815,7 @@ InitMMU:
 	rts	
 	endif
 
+	align 2
 ;------------------------------------------------------------------------------
 ; Device drivers
 ;------------------------------------------------------------------------------
@@ -1090,136 +1306,99 @@ DisplayStringLimited:
 DisplayStringLimitedCRLF:
 	bsr		DisplayStringLimited
 	bra		CRLF
-	
 
-;==============================================================================
-; TRAP #15 handler
+; divide d1 by d2
 ;
-; Parameters:
-;		d0.w = function number to perform
-;==============================================================================
+; Returns:
+;		d1 = quotient
+;		d2 = remainder
+	
+msgDivZero
+	dc.b "Divide by zero ",0
 
-TRAP15:
-	movem.l	d0/a0,-(a7)
-	lea T15DispatchTable,a0
-	ext.w d0
-	lsl.w #2,d0
-	move.l (a0,d0.w),a0
-	jsr (a0)
-	movem.l (a7)+,d0/a0
-	rte
+	even
+div32:
+	movem.l d0/d3/d4/d7,-(sp)
+	tst.l d2							; check for divide-by-zero
+	bne .0006
+  lea	msgDivZero(pc),a1
+  bsr DisplayStringCRLF
+  bra Monitor
+.0006
+	moveq #31,d0					; iteration count for 32 bits
+	moveq #0,d3						; q = 0
+	moveq #0,d4						; r = 0
+	move.l d2,d7
+	eor.l d1,d7
+	tst.l d1							; take absolute value of d1 (a)
+	bpl .0001
+	neg d1
+.0001
+	tst.l d2							; take absolute value of d2 (b)
+	bpl .0002
+	neg d2
+.0002
+	lsl.l #1,d3						; q <<= 1
+	lsl.l #1,d1						; a <<= 1
+	addx d4,d4						; r <<= 1 | a MSB
+	cmp.l d2,d4						; is b < r?
+	blt.s .0004
+	sub.l d2,d4						; r -= b	
+	ori.l #1,d3						; q |= 1
+.0004
+	dbra d0,.0002
+	tst.l d7
+	bpl.s .0005
+	neg d4
+	neg d3
+.0005
+	move.l d4,d2
+	move.l d3,d1
+	movem.l (sp)+,d0/d3/d4/d7
+	rts
+	
+; d1 = number to print
+; d2 = number of digits
+; Register Usage
+;	d5 = number of padding spaces
 
-		align	2
-T15DispatchTable:
-	dc.l	DisplayStringLimitedCRLF
-	dc.l	DisplayStringLimited
-	dc.l	StubRout
-	dc.l	StubRout
-	dc.l	StubRout
-	dc.l	GetKey
-	dc.l	OutputChar
-	dc.l	CheckForKey
-	dc.l	GetTick
-	dc.l	StubRout
-	; 10
-	dc.l	StubRout
-	dc.l	Cursor1
-	dc.l	SetKeyboardEcho
-	dc.l	DisplayStringCRLF
-	dc.l	DisplayString
-	dc.l	StubRout
-	dc.l	StubRout
-	dc.l	StubRout
-	dc.l	StubRout
-	dc.l	CheckForKey
-	; 20
-	dc.l	StubRout
-	dc.l	StubRout
-	dc.l	StubRout
-	dc.l	T15Wait100ths
-	dc.l	StubRout
-	dc.l	StubRout
-	dc.l	StubRout
-	dc.l	StubRout
-	dc.l	StubRout
-	dc.l	StubRout
-	; 30
-	dc.l	StubRout
-	dc.l	StubRout
-	dc.l	SimHardware	;rotate_iofocus
-	dc.l	T15GetWindowSize	;SerialPeekCharDirect
-	dc.l	SerialPutChar
-	dc.l	SerialPeekChar
-	dc.l	SerialGetChar
-	dc.l	T15LockSemaphore
-	dc.l	T15UnlockSemaphore
-	dc.l	prtflt
-	; 40
-	dc.l  _GetRand
-	dc.l	T15GetFloat
-	dc.l	T15Abort
-	dc.l	T15FloatToString
-	dc.l	StubRout
-	dc.l	StubRout
-	dc.l	StubRout
-	dc.l	StubRout
-	dc.l	StubRout
-	dc.l	StubRout
-	; 50
-	dc.l	StubRout
-	dc.l	StubRout
-	dc.l	StubRout
-	dc.l	StubRout
-	dc.l	StubRout
-	dc.l	StubRout
-	dc.l	StubRout
-	dc.l	StubRout
-	dc.l	StubRout
-	dc.l	StubRout
-	; 60
-	dc.l	StubRout
-	dc.l	StubRout
-	dc.l	StubRout
-	dc.l	StubRout
-	dc.l	StubRout
-	dc.l	StubRout
-	dc.l	StubRout
-	dc.l	StubRout
-	dc.l	StubRout
-	dc.l	StubRout
-	; 70
-	dc.l	StubRout
-	dc.l	StubRout
-	dc.l	StubRout
-	dc.l	StubRout
-	dc.l	StubRout
-	dc.l	StubRout
-	dc.l	StubRout
-	dc.l	StubRout
-	dc.l	StubRout
-	dc.l	StubRout
-	; 80
-	dc.l	SetPenColor
-	dc.l	StubRout
-	dc.l	StubRout
-	dc.l	StubRout
-	dc.l	StubRout
-	dc.l	DrawToXY
-	dc.l	MoveToXY
-	dc.l	StubRout
-	dc.l	StubRout
-	dc.l	StubRout
-	; 90
-	dc.l	T15Rectangle
-	dc.l	StubRout
-	dc.l	SetDrawMode
-	dc.l	StubRout
-	dc.l	GRBufferToScreen
-	dc.l	StubRout
-	dc.l	StubRout
-	dc.l	StubRout
-	dc.l	StubRout
-	dc.l	StubRout
+DisplayNumber:
+	movem.l d1/d2/d5/d6/a0,-(sp)
+	lea	numwka,a0		; a0 = pointer to numeric work area
+	move.l d1,d6		; save number for later
+	move.l d2,d5		; d5 = min number of chars
+	tst.l d1				; is it negative?
+	bpl .0001				; if not
+	neg.l d1				; else make it positive
+	subi.b #1,d5		; one less for width count
+.0001
+	moveq #10,d2		; divide by 10
+	bsr div32
+	add.b #'0',d2		; convert remainder to ascii
+	move.b d2,(a0)+	; and store in buffer
+	subi.b #1,d5		; decrement width
+	tst.l d1
+	bne.s .0001
+.0002
+	tst.b d5				; test pad count
+	ble .0003
+.0004
+	move.b #' ',d1
+	bsr OutputChar
+	subi.b #1,d5
+	bne .0004
+.0003
+	tst.l d6				; is number negative?
+	bpl.s .0005
+	move.b #'-',d1	; if so, display the sign
+	bsr OutputChar
+.0005
+	move.b -(a0),d1	; now unstack the digits and display
+	bsr OutputChar
+	cmpa.l #numwka,a0
+	bhi .0005
+	movem.l (sp)+,d1/d2/d5/d6/a0
+	rts
 
 ;------------------------------------------------------------------------------
 
@@ -1615,6 +1794,8 @@ DrawVertTo:
 ;------------------------------------------------------------------------------
 ; Cursor positioning / Clear screen
 ; - out of range settings are ignored
+; Pass $FF00 to clear the screen
+; Pass $FE00 in d1.w to get the position
 ;
 ; Parameters:
 ;		d1.w cursor position, bits 0 to 7 are row, bits 8 to 15 are column.
@@ -1622,7 +1803,18 @@ DrawVertTo:
 ;		none
 ;------------------------------------------------------------------------------
 
-Cursor1:
+T15Cursor:
+	cmpi.w #$FE00,d1
+	bne.s .0003
+	movem.l d2/d6/d7,-(sp)
+	moveq #2,d7
+	moveq #DEV_GET_OUTPOS,d6
+	trap #0
+	swap d1				; d1.high = row
+	move.w d2,d1	; d1.low = col
+	movem.l (sp)+,d2/d6/d7
+	rts
+.0003
 	movem.l d0/d1/d2/d3/d6/d7,-(a7)
 	cmpi.w #$FF00,d1
 	bne.s .0002
@@ -1636,7 +1828,7 @@ Cursor1:
 	trap #0
 	movem.l (a7)+,d0/d1/d2/d3/d6/d7
 	rts
-.0002:
+.0002
 	moveq #2,d7
 	moveq #DEV_SET_OUTPOS,d6
 	clr.l d2
@@ -2632,10 +2824,8 @@ cmdGrDemo:
 	moveq #7,d7							; same for graphics accelerator device
 	trap #0
 	move.l #$00110001,d1		; enable, scale 1 clocks/scanlines per pixel, page zero
-	bsr rbo
 ;	move.l d1,FRAMEBUF+FRAMEBUF_CTRL
-	move.l #$0F00031,d1		; burst length of 50, interval of F00h
-	bsr rbo
+	move.l #$0F00003F,d1		; burst length of 50, interval of F00h
 	move.l d1,FRAMEBUF+FRAMEBUF_CTRL+4		
 	moveq #6,d7							; framebuf device
 	moveq #DEV_SET_DIMEN,d6
@@ -4170,19 +4360,22 @@ DispatchMsg:
 ;------------------------------------------------------------------------------
 
 prtflt:
+	move.b #10,leds
 	link a2,#-48
-	move.l _canary,44(sp)
 	movem.l d0/d1/d2/d3/d6/a0/a1/a2,(sp)
 	fmove.x fp0,32(sp)
+	move.b #11,leds
 	move.l a1,a0						; a0 = pointer to buffer to use
 	move.b d1,_width
 	move.l d2,_precision
 	move.b d3,_E
 	bsr _FloatToString
+	move.b #12,leds
 	bsr DisplayString
+	move.b #13,leds
 	fmove.x 32(sp),fp0
+	move.b #14,leds
 	movem.l (sp),d0/d1/d2/d3/d6/a0/a1/a2
-	cchk 44(sp)
 	unlk a2
 	rts
 

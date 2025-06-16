@@ -7,16 +7,15 @@
 	even
 DisplayAddr:
 	move.l a0,d1
-	lsr.l #8,d1
-	lsr.l #8,d1
-	lsr.l #4,d1
+	moveq #20,d2
+	lsr.l d2,d1
 	subi.w #1024,d1
 	bin2bcd d1
 	bsr	DisplayWyde
 	bsr DisplaySpace
 	move.b #CR,d1
 	bsr OutputChar
-	btst #$83,d0
+	rts
 	
 cmdTestRAM:
 ramtest:
@@ -35,7 +34,7 @@ rmtst5:
   movea.l #$7FFFFFF8,a0
   move.l a0,memend
 	; Create very first memory block.
-  movea.l #$3FFFFFF4,a0
+  movea.l #$3FFFFFE4,a0
   move.l a0,$40000004		; length of block
   move.l #$46524545,$40000000
 	moveq #38,d0					; unlock semaphore
@@ -61,7 +60,7 @@ ramtest1:
   bsr DisplayAddr
   bsr CheckForCtrlC
 rmtst1:
-  cmpa.l #$7FFFFFF8,a0
+  cmpa.l #$7FFFFFC0,a0
   blo.s ramtest1
   bsr	CRLF
 ;------------------------------------------------------
