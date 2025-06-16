@@ -101,22 +101,23 @@ input cyc_i;
 input stb_i;
 output reg ack_o;
 input we_i;
-input [4:0] adr_i;
+input [31:0] adr_i;
 input [31:0] dat_i;
 output reg [31:0] dat_o;
+parameter RAND_ADDR = 32'hFDFF4000;
 parameter pAckStyle = 1'b0;
 
 reg ack;
 reg cs;
 reg we;
-reg [4:0] adr;
-reg [31:0] dat;
+reg [13:0] adr;
+reg [31:0] dat,dato;
 always_ff @(posedge clk_i)
-	cs <= cs_i && cyc_i && stb_i;
+	cs <= cs_i && RAND_ADDR[31:14]==adr_i[31:14] && cyc_i && stb_i;
 always_ff @(posedge clk_i)
 	we <= we_i;
 always_ff @(posedge clk_i)
-	adr <= adr_i;
+	adr <= adr_i[13:0];
 always_ff @(posedge clk_i)
 	dat <= dat_i;
 
@@ -151,21 +152,36 @@ wire [31:0] strm = {22'h0,stream};
 // Register read path
 //
 always_ff @(posedge clk_i)
-if (cs_i)
-	case(adr[4:2])
-	3'd0:	dat_o <= num;
-	3'd1:	dat_o <= strm;
+if (cs)
+	casez(adr)
+	14'b000000000000??:	dato <= num;
+	14'b000000000001??:	dato <= strm;
 // Uncomment these for register read-back
 //		3'd4:	dat_o <= m_z[31:16];
 //		3'd5:	dat_o <= m_z[15: 0];
 //		3'd6:	dat_o <= m_w[31:16];
 //		3'd7:	dat_o <= m_w[15: 0];
-	3'd4:	dat_o <= {num[7:0],num[15:8],num[23:16],num[31:24]};
-	3'd5:	dat_o <= {strm[7:0],strm[15:8],strm[23:16],strm[31:24]};
-	default:	dat_o <= 32'h0000;
+	14'b000000000100??:	dato <= {num[7:0],num[15:8],num[23:16],num[31:24]};
+	14'b000000000101??:	dato <= {strm[7:0],strm[15:8],strm[23:16],strm[31:24]};
+	14'b111110000000??:	dato <= "DCB ";
+	14'b111110000001??:	dato <= "RAND";
+	14'b111110000010??:	dato <= "    ";
+	14'b111110000011??:	dato <= {8'h00,"   "};
+	14'b111111000000??:	dato <= " BCD";
+	14'b111111000001??:	dato <= "DNAR";
+	14'b111111000010??:	dato <= "    ";
+	14'b111111000011??:	dato <= {"   ",8'h00};
+	14'b11111?????????:	dato <= 32'd0;	// dcb RAM
+	default:	dato <= 32'h0000;
 	endcase
 else
-	dat_o <= 32'h0;
+	dato <= 32'h0;
+	
+always_comb
+    if (cs)
+        dat_o = dato;
+    else
+        dat_o = 32'd0;
 
 // Register write path
 //
@@ -175,20 +191,22 @@ begin
 	wrz <= `FALSE;
 	if (cs) begin
 		if (pe_we)
-			case(adr[4:2])
-			3'd0,3'd4:
+			casez(adr)
+			14'b000000000000??,
+			14'b000000000100??:
 				begin
 					z <= next_m_z;
 					w <= next_m_w;
 					wrw <= `TRUE;
 					wrz <= `TRUE;
 				end
-			3'd1:	stream <= dat[9:0];
-			3'd2:	begin z <= dat; wrz <= `TRUE; end
-			3'd3:	begin w <= dat; wrw <= `TRUE; end
-			3'd5: stream <= {dat[7:0],dat[15:8],dat[23:16],dat[31:24]};
-			3'd6:	begin z <= {dat[7:0],dat[15:8],dat[23:16],dat[31:24]}; wrz <= `TRUE; end
-			3'd7:	begin w <= {dat[7:0],dat[15:8],dat[23:16],dat[31:24]}; wrw <= `TRUE; end
+			14'b000000000001??:	stream <= dat[9:0];
+			14'b000000000010??:	begin z <= dat; wrz <= `TRUE; end
+			14'b000000000011??:	begin w <= dat; wrw <= `TRUE; end
+			14'b000000000101??: stream <= {dat[7:0],dat[15:8],dat[23:16],dat[31:24]};
+			14'b000000000110??:	begin z <= {dat[7:0],dat[15:8],dat[23:16],dat[31:24]}; wrz <= `TRUE; end
+			14'b000000000111??:	begin w <= {dat[7:0],dat[15:8],dat[23:16],dat[31:24]}; wrw <= `TRUE; end
+			default:	;
 			endcase
 	end
 end

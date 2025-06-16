@@ -19,15 +19,26 @@ set_property CLOCK_DEDICATED_ROUTE BACKBONE [get_nets ucg1/inst/clk_in1_WXGA800x
 set_clock_groups -asynchronous -group {clk_pll_i_1 \
 clk742_WXGA1920x1080_clkgen_1 \
 clk148_WXGA1920x1080_clkgen_1} \
--group { clk200_WXGA800x600_clkgen \
-clk100_WXGA800x600_clkgen \
-clk50_WXGA800x600_clkgen \
-clk20_WXGA800x600_clkgen}
+-group { \
+clk429_WXGA1366x768_clkgen \
+clk86_WXGA1366x768_clkgen \
+} \
+-group { \
+clk325_XGA1024x768_clkgen_1 \
+clk65_XGA1024x768_clkgen_1 \
+} \
+-group { clk_pll_i } \
+-group { clk200_WXGA800x600_clkgen } \
+-group { clk100_WXGA800x600_clkgen } \
+-group { clk50_WXGA800x600_clkgen } \
+-group { clk20_WXGA800x600_clkgen }\
+-group { clk12_WXGA800x600_clkgen \
+}
 
-set_false_path -from [get_clocks ucg1/clk20] -to [get_clocks ucg2/clk148]
-set_false_path -from [get_clocks ucg1/clk100] -to [get_clocks ucg2/clk148]
-set_false_path -from [get_clocks ucg2/clk148] -to [get_clocks ucg1/clk20]
-set_false_path -from [get_clocks ucg2/clk148] -to [get_clocks ucg1/clk100]
+#set_false_path -from [get_clocks ucg1/clk20] -to [get_clocks ucg2/clk148]
+#set_false_path -from [get_clocks ucg1/clk100] -to [get_clocks ucg2/clk148]
+#set_false_path -from [get_clocks ucg2/clk148] -to [get_clocks ucg1/clk20]
+#set_false_path -from [get_clocks ucg2/clk148] -to [get_clocks ucg1/clk100]
 
 #set_clock_groups -asynchronous #-group { #uddr3/u_mig_7series_0_mig/u_ddr3_infrastructure/gen_mmcm.mmcm_i/CLKIN1 #ucg1/inst/mmcm_adv_inst/CLKOUT0 #ucg1/inst/mmcm_adv_inst/CLKOUT1 #} #-group { #ucg1/inst/mmcm_adv_inst/CLKOUT3 #} #-group { #ucg1/inst/mmcm_adv_inst/CLKOUT2 #ucg1/inst/mmcm_adv_inst/CLKOUT6 #}
 

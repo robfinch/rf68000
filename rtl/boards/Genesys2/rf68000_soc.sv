@@ -68,6 +68,7 @@ parameter HAS_TEXTCTRL = 1'b1;
 parameter HAS_PRNG = 1'b1;
 parameter HAS_UART = 1'b1;
 parameter HAS_PS2KBD = 1'b1;
+parameter HAS_POWER_CPU = 1'b0;
 parameter SIM = 1'b0;
 input cpu_reset_n;
 input sysclk_p;
@@ -145,6 +146,7 @@ wire clk10, clk12;
 wire clk20, clk40, clk50, clk100, clk70, clk140, clk200, clk700;
 wire clk17, clk33;
 wire clk86, clk429;
+wire dot5_clk;
 wire mem_ui_clk;
 wire mem_ui_rst;
 wire xclk_bufg;
@@ -154,7 +156,7 @@ wire node_clk1;
 wire node_clk2;
 wire node_clk3;
 wire node_clk4;
-wire dot_clk = clk40;
+wire dot_clk;// = clk40;
 wb_cmd_request256_t ch7req;
 wb_cmd_request256_t ch7dreq;	// DRAM request
 wb_cmd_response256_t ch7resp;
@@ -216,7 +218,7 @@ wire [255:0] psgm_dato;
 
 wire kbd_ack;
 wire kbd_irq;
-wire [7:0] kbd_dato;
+wire [31:0] kbd_dato;
 wire rand_ack;
 wire [31:0] rand_dato;
 wire sema_ack;
@@ -242,7 +244,6 @@ wire [7:0] plic_cause;
 wire [5:0] plic_core;
 mpmc10_pkg::mpmc10_state_t dram_state;
 wire [7:0] asid;
-wire io_ack;
 wire [31:0] io_dato;
 wire io_gate, io_gate_en;
 wire dram_ack;
@@ -252,6 +253,8 @@ wire [7:0] mpmc_fifo_rst;
 wire leds_ack;
 reg [7:0] rst_reg;
 wire rst_ack;
+wire io_ack;
+reg io_ack2;
 
 wire hSync, vSync;
 wire blank, border;
@@ -296,11 +299,24 @@ WXGA800x600_clkgen ucg1
   .clk_in1_n(sysclk_n)
 );
 
+/*
 WXGA1366x768_clkgen ucg2
 (
   // Clock out ports
   .clk429(clk429),	// 429.3 MHz	dvi clock
   .clk86(clk86),	// 85.86 MHz	dot clock
+  // Status and control signals
+  .reset(xrst), 
+  .locked(locked2),       // output locked
+ // Clock in ports
+  .clk_in1(clk200)
+);
+*/
+XGA1024x768_clkgen ucg2
+(
+  // Clock out ports
+  .clk325(dot5_clk),	// 250 MHz	dvi clock
+  .clk65(dot_clk),	// 50 MHz	dot clock
   // Status and control signals
   .reset(xrst), 
   .locked(locked2),       // output locked
@@ -329,13 +345,13 @@ rgb2dvi ur2d1
 (
 	.rst(rst),
 	.PixelClk(dot_clk),
-	.SerialClk(clk200),
+	.SerialClk(dot5_clk),
 	.red(red[7:0]),
 	.green(green[7:0]),
 	.blue(blue[7:0]),
 	.de(~blank),
 	.hSync(hSync),	// ~ for 640x480 100 Hz, -,- for 1920x1080, - for 1368x768
-	.vSync(vSync),	// +,+ for 800x600, -,+ for 1368x768
+	.vSync(~vSync),	// +,+ for 800x600, -,+ for 1368x768, +,- for 1024x768
 	.TMDS_Clk_p(hdmi_tx_clk_p),
 	.TMDS_Clk_n(hdmi_tx_clk_n),
 	.TMDS_Data_p(hdmi_tx_p),
@@ -358,8 +374,6 @@ wire cs_br1_tc = (br1_adr[31:20]==12'hFD0 || br1_adr[31:20]==12'hFD1)
 wire cs_br3_rst  = br3_adr[31:14]==18'b1111_1101_1111_1111_00 && br3_stb && cs_io2;
 wire cs_rand  	 = cpu_adr[31:14]==18'b1111_1101_1111_1111_01 && ch7req.stb && cs_io2;
 wire cs_br3_rand = br3_adr[31:14]==18'b1111_1101_1111_1111_01 && br3_stb && cs_io2;
-wire cs_kbd  		 = cpu_adr[31:14]==18'b1111_1101_1111_1111_10 && cpu_stb && cs_io2;
-wire cs_br3_kbd  = br3_adr[31:14]==18'b1111_1101_1111_1111_10 && br3_stb && cs_io2;
 wire cs_leds 		 = cpu_adr[31:14]==18'b1111_1101_1111_1111_11 && ch7req.stb && cs_io2;
 wire cs_br3_leds = br3_adr[31:14]==18'b1111_1101_1111_1111_11 && br3_stb && cs_io2;
 wire cs_sema 		 = cpu_adr[31:16]==16'hFD30 && cpu_stb && cs_io2;
@@ -372,7 +386,7 @@ wire cs_scr 		 = cpu_adr[31:20]==12'h001 && cpu_stb;
 wire cs_plic 		 = cpu_adr[31:14]==18'b1111_1101_0010_0110_00 && cs_io2;
 wire cs_br3_plic = br3_adr[31:14]==18'b1111_1101_0010_0110_00 && cs_io2;
 wire cs_dram 		 = (cpu_adr[31:30]==2'b01 || cpu_adr[31:30]==2'b10) && cpu_cyc && !cs_mmu && !cs_iobitmap && !cs_io;
-wire cs_gfx      = br1_adr[31:14]==18'b1111_1101_0010_0001_00 && br1_stb;
+wire cs_gfx;//      = br1_adr[31:14]==18'b1111_1101_0010_0001_00 && br1_stb;
 wire cs_br1_i2c1 = br1_adr[31:14]==18'b1111_1101_0010_0101_00 && br1_stb && cs_io2;
 wire cs_br1_1761 = br1_adr[31:14]==18'b1111_1101_0010_0101_01 && br1_stb && cs_io2;
 wire cs_br1_psg  = br1_adr[31:14]==18'b1111_1101_0010_0100_00 && br1_stb && cs_io2;
@@ -381,6 +395,7 @@ fta_bus_interface #(.DATA_WIDTH(256)) gfx_if();
 fta_bus_interface #(.DATA_WIDTH(256)) fbm_if();
 fta_bus_interface #(.DATA_WIDTH(256)) cpu_if();
 fta_bus_interface #(.DATA_WIDTH(256)) ch1_if();
+fta_bus_interface #(.DATA_WIDTH(256)) pwr_if();
 fta_bus_interface #(.DATA_WIDTH(256)) ch2_if();
 fta_bus_interface #(.DATA_WIDTH(256)) psgm_if();
 fta_bus_interface #(.DATA_WIDTH(256)) ch4_if();
@@ -561,6 +576,7 @@ AVBridge ubridge1
 	.gfx_que_empty_i(1'b1),
 	.fta_en_i(1'b1),
 	.io_gate_en_i(io_gate_en),
+	.cs2_o(cs_gfx),
 	.s1_cyc_i(cpu_cyc),
 	.s1_stb_i(cpu_stb),
 	.s1_ack_o(br1_cack),
@@ -709,18 +725,23 @@ always_ff @(posedge clk100)
 	br1_stall <= gfxs_resp.stall;
 
 wire kclk_en, kdat_en;
-PS2kbd #(.pClkFreq(100000000)) ukbd1
+PS2kbd #(
+	.pClkFreq(50000000),
+	.KBD_ADDR(32'hFDFF8000)
+)
+ukbd1
 (
 	// WISHBONE/SoC bus interface 
 	.rst_i(rst),
 	.clk_i(node_clk),	// system clock
-	.cs_i(cs_br3_kbd),
+	.cs_i(cs_io2),
 	.cyc_i(br3_cyc),
 	.stb_i(br3_stb),	// core select (active high)
 	.ack_o(kbd_ack),	// bus transfer acknowledged
 	.we_i(br3_we),	// I/O write taking place (active high)
-	.adr_i(br3_adr[3:0]),	// address
-	.dat_i(br3_dato[7:0]),	// data in
+	.sel_i(br3_sel),
+	.adr_i(br3_adr),	// address
+	.dat_i(br3_dato),	// data in
 	.dat_o(kbd_dato),	// data out
 	.db(),
 	//-------------
@@ -734,16 +755,19 @@ PS2kbd #(.pClkFreq(100000000)) ukbd1
 assign ps2_clk_0 = kclk_en ? 1'b0 : 1'bz;
 assign ps2_data_0 = kdat_en ? 1'b0 : 1'bz;
 
-random urnd1
+random #(
+	.RAND_ADDR(32'hFDFF4000)
+)
+urnd1
 (
 	.rst_i(rst),
 	.clk_i(node_clk),
-	.cs_i(cs_br3_rand),
+	.cs_i(cs_io2),
 	.cyc_i(br3_cyc),
 	.stb_i(br3_stb),
 	.ack_o(rand_ack),
 	.we_i(br3_we),
-	.adr_i(br3_adr[4:0]),
+	.adr_i(br3_adr),
 	.dat_i(br3_dato),
 	.dat_o(rand_dato)
 );
@@ -846,9 +870,9 @@ assign br3_fta.resp.ack = 1'b0;
 assign br3_fta.resp.dat = 32'd0;
 
 always_ff @(posedge clk100)
-	casez(cs_br3_leds)
+	case(cs_br3_leds)
 	1'b1:	br3_dati <= led;
-	1'b0:	br3_dati <= {4{kbd_dato}}|rand_dato|acia_dato|{4{i2c2_dato}}|{4{spi_dato}}|{4{spi2_dato}};
+	1'b0:	br3_dati <= kbd_dato|rand_dato|acia_dato|{4{i2c2_dato}}|{4{spi_dato}}|{4{spi2_dato}};
 	endcase
 
 always_ff @(posedge clk100)
@@ -969,12 +993,14 @@ mig_7series_0 uddr3
 
 assign cpu_if.rst = rst;
 assign cpu_if.clk = node_clk;
+assign pwr_if.rst = rst;
 assign ch1_if.rst = 1'b1;
 assign ch2_if.rst = 1'b1;
 assign ch4_if.rst = 1'b1;
 assign ch5_if.rst = 1'b1;
 assign ch6_if.rst = rst;
-assign ch1_if.clk = node_clk;
+assign pwr_if.clk = node_clk;
+assign ch1_if.clk = 1'b0;
 assign ch2_if.clk = 1'b0;
 assign ch4_if.clk = 1'b0;
 assign ch5_if.clk = 1'b0;
@@ -995,7 +1021,7 @@ mpmc11_fta
 umpmc1
 (
 	.rst(rst),
-	.sys_clk_i(clk100),//sysclk_p),
+	.sys_clk_i(clk200),//sysclk_p),
 	.mem_ui_rst(mem_ui_rst),
 	.mem_ui_clk(mem_ui_clk),
 	.calib_complete(calib_complete || SIM),
@@ -1044,6 +1070,51 @@ wb_to_fta_bridge uwb2fta1
 	.dat_o(dram_dato),
 	.fta_o(cpu_if)
 );
+
+wire pwr_cyc, pwr_stb, pwr_we;
+wire [31:0] pwr_sel;
+wire [31:0] pwr_adr;
+wire [255:0] pwr_dato, pwr_dati;
+
+generate begin : gPowerCPU
+if (HAS_POWER_CPU) begin
+wb_to_fta_bridge uPwrBridge1
+(
+	.rst_i(rst),
+	.clk_i(node_clk),
+	.cs_i(1'b1),
+	.cyc_i(pwr_cyc),
+	.stb_i(pwr_stb),
+	.ack_o(pwr_ack),
+	.err_o(),
+	.we_i(pwr_we),
+	.sel_i(pwr_sel),
+	.adr_i(pwr_adr),
+	.dat_i(pwr_dato),
+	.dat_o(pwr_dati),
+	.fta_o(pwr_if)
+);
+
+nPower uPower1
+(
+	.rst_i(rst),
+	.clk_i(node_clk),
+	.nmi_i(1'b0),
+	.irq_i(1'b0),
+	.icause_i(8'h00),
+	.vpa_o(),
+	.cyc_o(pwr_cyc),
+	.stb_o(pwr_stb),
+	.ack_i(pwr_ack),
+	.we_o(pwr_we),
+	.sel_o(pwr_sel),
+	.adr_o(pwr_adr),
+	.dat_i(pwr_dati),
+	.dat_o(pwr_dato)
+);
+end
+end
+endgenerate
 
 /*
 mpmc10_wb umpmc1
@@ -1233,6 +1304,29 @@ BusError ube1
 	.err_o(bus_err)
 );
 
+// Generate an ack for the I/O address range if no devices have responded
+// within 16 clock cycle. This allows the CPU to scan I/O addresses without
+// generating bus errors.
+
+reg [5:0] ack_cnt;
+
+always_ff @(posedge node_clk)
+if (rst) begin
+	ack_cnt <= 6'd0;
+	io_ack2 <= 1'b0;
+end
+else begin
+	if (!(cpu_cyc & cpu_stb)) begin
+		ack_cnt <= 6'd0;
+		io_ack2 <= 1'b0;
+	end
+	if (cpu_adr[31:24]==8'hFD && cpu_cyc && cpu_stb) begin
+		ack_cnt <= ack_cnt + 6'd1;
+		if (ack_cnt[5])
+			io_ack2 <= 1'b1;
+	end
+end
+
 reg [6:0] rst_cnt;
 reg [15:0] rsts;
 reg [15:0] clken_reg;
@@ -1308,7 +1402,7 @@ rf68000_nic unic1
 	.s_iops_i(1'b0),
 	.m_cyc_o(cpu_cyc),
 	.m_stb_o(cpu_stb),
-	.m_ack_i(ack),
+	.m_ack_i(ack|io_ack2),
 	.m_err_i(cs_dram?(dram_err!=fta_bus_pkg::OKAY):bus_err),
 	.m_vpa_i(vpa),
 	.m_we_o(cpu_we),
@@ -1320,7 +1414,7 @@ rf68000_nic unic1
 	.m_fc_o(cpu_fc),
 	.m_adr_o(cpu_adr),
 	.m_dat_o(cpu_dato),
-	.m_dat_i(dati),
+	.m_dat_i(io_ack2 ? 32'hFFFFFFFF : dati),
 	.packet_i(packet[3]),//clken_reg[3] ? packet[2] : clken_reg[2] ? packet[1] : packet[0]),
 	.packet_o(packet[4]),
 	.ipacket_i(ipacket[3]),//clken_reg[3] ? ipacket[2] : clken_reg[2] ? ipacket[1] : ipacket[0]),
@@ -1368,6 +1462,8 @@ ila_0 uila1 (
 	.probe10(cs_dram),
 //	.probe11({unode1.ram1_we[3:0],cpu_if.req.cmd}),
 	.probe11({
+		br1_stall,
+		io_gate_en,
 		spiDataOut,
 		spiDataIn,
 		spiClkOut,

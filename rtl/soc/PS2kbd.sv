@@ -133,13 +133,7 @@
 //
 //==================================================================
 
-`define KBD_TX	1	// include transmitter
-
-`define S_KBDRX_WAIT_CLK		0
-`define S_KBDRX_CHK_CLK_LOW		1
-`define S_KBDRX_CAPTURE_BIT		2
-
-module PS2kbd(
+module PS2kbd (
 	// WISHBONE/SoC bus interface 
 	input rst_i,
 	input clk_i,	// system clock
@@ -148,10 +142,11 @@ module PS2kbd(
 	input stb_i,	// core select (active high)
 	output reg ack_o,	// bus transfer acknowledged
 	input we_i,	// I/O write taking place (active high)
-	input [3:0] adr_i,	// address
-	input [7:0] dat_i,	// data in
-	output reg [7:0] dat_o,	// data out
-	inout tri [7:0] db,
+	input [3:0] sel_i,
+	input [31:0] adr_i,	// address
+	input [31:0] dat_i,	// data in
+	output reg [31:0] dat_o,	// data out
+	inout tri [31:0] db,
 	//-------------
 	output irq,	// interrupt request (active high)
 	input kclk_i,	// keyboard clock from keyboard
@@ -159,20 +154,34 @@ module PS2kbd(
 	input kdat_i,	// keyboard data
 	output kdat_en	// 1 = drive data low
 );
-parameter pClkFreq = 40000000;
+parameter pClkFreq = 50000000;
 parameter pAckStyle = 1'b0;
-parameter p5us = pClkFreq / 200000;		// number of clocks for 5us
-parameter p100us = pClkFreq / 10000;	// number of clocks for 100us
+parameter KBD_TX = 1'b1;	// include transmitter
+parameter KBD_ADDR = 32'hFDFF8000;
+localparam p5us = pClkFreq / 200000;		// number of clocks for 5us
+localparam p100us = pClkFreq / 10000;	// number of clocks for 100us
+
+wire cs = cs_i && adr_i[31:14]==KBD_ADDR[31:14] && cyc_i && stb_i;
+
+// keyboard receive state
+typedef enum logic [1:0] {
+	S_KBDRX_WAIT_CLK = 2'd0,
+	S_KBDRX_CHK_CLK_LOW,
+	S_KBDRX_CAPTURE_BIT
+} kbdrx_state_t;
+kbdrx_state_t s_rx;
 
 reg [13:0] os;	// one shot
 wire os_5us_done = os==p5us;
 wire os_100us_done = os==p100us;
 reg [10:0] q;	// receive register
 reg tc;			// transmit complete indicator
-reg [1:0] s_rx;	// keyboard receive state
 reg [7:0] scbuf,statbuf;
 reg [7:0] kq;
 reg [15:0] kqc;
+reg [31:0] dcb_ram [0:63];
+reg [31:0] irq_vec [0: 3];
+
 // Use majority logic for bit capture
 // 4 or more bits high = 1, otherwise 0
 wire [2:0] kqs = {2'b0,kq[0]}+
@@ -184,21 +193,17 @@ wire [2:0] kqs = {2'b0,kq[0]}+
 				{2'b0,kq[6]};
 wire kqcne;			// negative edge on kqc
 wire kqcpe;			// positive edge on kqc
-assign irq = ~q[0];
+assign irq = ~q[0];// ? irq_vec[0] : 12'd0;
 reg kack;			// keyboard acknowledge bit
-`ifdef KBD_TX
+
 reg [16:0] tx_state;	// transmitter states
 reg klow;		// force clock line low
 reg [10:0] t;	// transmit register
-wire rx_inh = ~tc;	// inhibit receive while transmit occuring
+wire rx_inh = ~tc & KBD_TX;	// inhibit receive while transmit occuring
 reg [3:0] bitcnt;
 wire shift_done = bitcnt==0;
 reg tx_oe;			// transmitter output enable / shift enable
-`else
-wire rx_inh = 0;
-`endif
 
-wire cs = cyc_i & stb_i & cs_i;
 //reg ack,ack1;
 //always @(posedge clk_i) begin ack <= cs; ack1 <= ack & cs; end
 always_ff @(posedge clk_i)
@@ -209,20 +214,52 @@ edge_det ed1 (.rst(rst_i), .clk(clk_i), .ce(1'b1), .i(cs), .pe(pe_cs), .ne(), .e
 
 // register read path
 always_ff @(posedge clk_i)
-if (cs_i)
-	case(adr_i[1:0])
-	2'd0:	dat_o <= q[8:1];
-	2'd1:
+if (cs)
+	casez(adr_i[13:0])
+	14'b000000??????00:	dat_o <= {4{q[8:1]}};
+	14'b000000??????01:
 		begin
-			dat_o <= {~q[0],tc,~kack,4'b0,~^q[9:1]};
+			dat_o <= {4{~q[0],tc,~kack,4'b0,~^q[9:1]}};
 			scbuf <= q[8:1];
 			statbuf <= {~q[0],tc,~kack,4'b0,~^q[9:1]};
 		end
-	2'd2:	dat_o <= scbuf;
-	2'd3:	dat_o <= statbuf;
+	14'b000000??????10:	dat_o <= {4{scbuf}};
+	14'b000000??????11:	dat_o <= {4{statbuf}};
+	14'b11110?????????:	dat_o <= dcb_ram[adr_i[7:2]];
+	14'b111110000000??:	dat_o <= "DCB ";
+	14'b111110000001??:	dat_o <= "KEYB";
+	14'b111110000010??:	dat_o <= "D   ";
+	14'b111110000011??:	dat_o <= {8'h00,"   "};
+	14'b111111000000??:	dat_o <= " BCD";
+	14'b111111000001??:	dat_o <= "BYEK";
+	14'b111111000010??:	dat_o <= "   D";
+	14'b111111000011??:	dat_o <= {8'h00,"   "};
+	default:	dat_o <= 32'd0;
 	endcase
 else
-	dat_o <= 8'd0;
+	dat_o <= 32'd0;
+
+always_ff @(posedge clk_i)
+if (cs & we_i)
+	casez(adr_i[13:0])
+	14'b11111?????????:
+		begin
+			if (sel_i[0]) dcb_ram[adr_i[7:2]][ 7: 0] <= dat_i[ 7: 0];
+			if (sel_i[1]) dcb_ram[adr_i[7:2]][15: 8] <= dat_i[15: 8];
+			if (sel_i[2]) dcb_ram[adr_i[7:2]][23:16] <= dat_i[23:16];
+			if (sel_i[3]) dcb_ram[adr_i[7:2]][31:24] <= dat_i[31:24];
+			casez(adr_i)
+			14'b1111111101????:
+				begin
+					if (sel_i[0]) irq_vec[adr_i[3:2]][ 7: 0] <= dat_i[ 7: 0];
+					if (sel_i[1]) irq_vec[adr_i[3:2]][15: 8] <= dat_i[15: 8];
+					if (sel_i[2]) irq_vec[adr_i[3:2]][23:16] <= dat_i[23:16];
+					if (sel_i[3]) irq_vec[adr_i[3:2]][31:24] <= dat_i[31:24];
+				end
+			default:	;
+			endcase
+		end
+	endcase
 
 assign db = (cs & ~we_i) ? dat_o : {8{1'bz}};
 
@@ -230,13 +267,16 @@ assign db = (cs & ~we_i) ? dat_o : {8{1'bz}};
 // this character has been processed.
 // Holding the clock line low does this.
 //assign kclk = irq ? 1'b0 : 1'bz;
-`ifdef KBD_TX
+generate begin : gKClk
+	if (KBD_TX) begin
 // Force clock and data low during transmits
 assign kclk_en = klow | irq;
 assign kdat_en = tx_oe & ~t[0];// ? 1'b0 : 1'bz;
-`else
+	end
+	else
 assign kclk_en = irq;
-`endif
+end
+endgenerate
 
 // stabilize clock and data
 always_ff @(posedge clk_i) begin
@@ -248,15 +288,13 @@ edge_det ed0 (.rst(rst_i), .clk(clk_i), .ce(1'b1), .i(kqc[10]), .pe(kqcpe), .ne(
 
 
 // The debounce one-shot and 100us timer	
-always @(posedge clk_i)
+always_ff @(posedge clk_i)
 	if (rst_i)
 		os <= 0;
 	else begin
-		if ((s_rx==`S_KBDRX_WAIT_CLK && kqcne && ~rx_inh)||
-			(s_rx==`S_KBDRX_CHK_CLK_LOW && rx_inh)
-`ifdef KBD_TX
-			||tx_state[0]||tx_state[2]||tx_state[5]||tx_state[7]||tx_state[9]||tx_state[11]||tx_state[14]
-`endif
+		if ((s_rx==S_KBDRX_WAIT_CLK && kqcne && ~rx_inh)||
+			(s_rx==S_KBDRX_CHK_CLK_LOW && rx_inh) ||
+			(KBD_TX && (tx_state[0]||tx_state[2]||tx_state[5]||tx_state[7]||tx_state[9]||tx_state[11]||tx_state[14]))
 			)
 			os <= 0;
 		else
@@ -268,51 +306,53 @@ always @(posedge clk_i)
 always_ff @(posedge clk_i) begin
 	if (rst_i) begin
 		q <= 11'h7FF;
-		s_rx <= `S_KBDRX_WAIT_CLK;
+		s_rx <= S_KBDRX_WAIT_CLK;
 	end
 	else begin
 
 		// clear rx on write to status reg
-		if (cs && we_i && adr_i[1:0]==2'd1 && dat_i[7:0]==8'h00)
+		if (cs && we_i && adr_i[13:0]==14'd1 && dat_i[7:0]==8'h00)
 			q <= 11'h7FF;
 
 		// Receive state machine
 		case (s_rx)	// synopsys full_case parallel_case
 		// negedge on kclk ?
 		// then set debounce one-shot
-		`S_KBDRX_WAIT_CLK:
+		S_KBDRX_WAIT_CLK:
 			if (kqcne && ~rx_inh)
-				s_rx <= `S_KBDRX_CHK_CLK_LOW;
+				s_rx <= S_KBDRX_CHK_CLK_LOW;
 
 		// wait 5us
 		// check if clock low
-		`S_KBDRX_CHK_CLK_LOW:
+		S_KBDRX_CHK_CLK_LOW:
 			if (rx_inh)
-				s_rx <= `S_KBDRX_WAIT_CLK;
+				s_rx <= S_KBDRX_WAIT_CLK;
 			else if (os_5us_done) begin
 				// clock low ?
 				if (~kqc[10])
-					s_rx <= `S_KBDRX_CAPTURE_BIT;
+					s_rx <= S_KBDRX_CAPTURE_BIT;
 				else
-					s_rx <= `S_KBDRX_WAIT_CLK;	// no - spurious
+					s_rx <= S_KBDRX_WAIT_CLK;	// no - spurious
 			end
 
 		// capture keyboard bit
 		// keyboard transmits LSB first
-		`S_KBDRX_CAPTURE_BIT:
+		S_KBDRX_CAPTURE_BIT:
 			begin
 			q <= {kq[2],q[10:1]};
-			s_rx <= `S_KBDRX_WAIT_CLK;
+			s_rx <= S_KBDRX_WAIT_CLK;
 			end
 
 		default:
-			s_rx <= `S_KBDRX_WAIT_CLK;
+			s_rx <= S_KBDRX_WAIT_CLK;
 		endcase
 	end
 end
 
 
-`ifdef KBD_TX
+generate begin : gKbdtx
+
+if (KBD_TX) begin
 
 // Transmit state machine
 // a shift register / ring counter is used
@@ -359,7 +399,7 @@ always_comb
 	default:		adv_tx_state <= 0;
 	endcase
 
-wire load_tx = cs && we_i && adr_i[1:0]==2'b0;
+wire load_tx = cs && we_i && adr_i[13:0]==14'b0;
 wire shift_tx = (tx_state[7] & kqcpe)|tx_state[4];
 
 // It can take up to 20ms for the keyboard to accept data
@@ -382,7 +422,7 @@ always_ff @(posedge clk_i) begin
 			tc <= 0;
 		end
 		// write to status register clears transmit state
-		else if (cs && we_i && adr_i[1:0]==2'd1 && dat_i[7:0]==8'hFF) begin
+		else if (cs && we_i && adr_i[13:0]==14'd1 && dat_i[7:0]==8'hFF) begin
 			tc <= 1;
 			tx_oe <= 0;
 			klow <= 1'b0;
@@ -448,6 +488,8 @@ always_ff @(posedge clk_i)
 			bitcnt <= bitcnt - 4'd1;
 	end
 
-`endif
+end
+end
+endgenerate
 
 endmodule
