@@ -128,7 +128,7 @@ reg [2:0] state;
 reg s_ack;
 reg s1_cycd;
 always_ff @(posedge clk_i)
-	s1_cycd <= s1_stb_i && s1_adr_i[31:20]==12'hFD2;
+	s1_cycd <= s1_stb_i && s1_adr_i[31:16]==12'hFD20;
 always_comb// @(posedge clk_i)
 if (rst_i)
 	s1_ack_o <= 1'b0;
@@ -142,11 +142,11 @@ else
 
 reg cop_cs;
 always_comb
-	cop_cs = s1_cyc_i && s1_adr_i[31:20]==12'hFD1;
+	cop_cs = s1_cyc_i && s1_adr_i[31:14]==18'b1111_1101_0010_1000_10;
 
 reg s1_cyc;
 always_comb
-	s1_cyc = s1_cyc_i && s1_adr_i[31:24]==8'hFD && s1_adr_i[23:20]!=4'h2;
+	s1_cyc = s1_cyc_i && (s1_adr_i[31:24]==8'hFD && s1_adr_i[23:16]!=8'h20) || (s1_adr_i[31:28]==4'hD);
 
 reg cop_cs0;
 reg cop_cs1;
@@ -222,7 +222,7 @@ else begin
 case(state)
 IDLE:
   if (~m_ack_i & io_gate_en_i & ~m_stall_i) begin
-    if (cop_cyc && cop_adr[31:24]==8'hFD && cop_adr[23:20]!=4'h2) begin
+    if (cop_cyc && cop_adr[31:24]==8'hFD && cop_adr[23:16]!=8'h20) begin
     	which <= 2'b01;
     	cs0_o <= cop_cs0;
     	cs1_o <= cop_cs1;
@@ -430,7 +430,7 @@ WAIT_NACK:
 	end
 default:	state <= IDLE;
 endcase
-	if (s1_stb_i && !s1_cycd && s1_adr_i[31:20]==12'hFD2 && fta_en_i && !m_stall_i) begin
+	if (s1_stb_i && !s1_cycd && s1_adr_i[31:16]==16'hFD20 && fta_en_i && !m_stall_i) begin
 		which <= 2'b10;
 		m_fta_o.req.cmd <= s1_we_i ? fta_bus_pkg::CMD_STORE : fta_bus_pkg::CMD_LOAD;
 		m_fta_o.req.cyc <= HIGH;
