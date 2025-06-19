@@ -615,7 +615,7 @@ msgDeviceCount
 ;==============================================================================
 
 T15DTAddr macro arg1
-	dc.w ((\1-T15DispatchTable)>>1)
+	dc.w (\1-T15DispatchTable)
 endm
 
 	align	2
@@ -737,7 +737,6 @@ TRAP15:
 	lsl.w #1,d0
 	move.w (a0,d0.w),d0
 	ext.l d0
-	lsl.l #1,d0
 	add.l d0,a0
 	jsr (a0)
 	movem.l (a7)+,d0/a0
@@ -751,7 +750,7 @@ TRAP15:
 ; Returns:
 ;		d1.w = ascii code for screen character
 
-|T15ReadScreenChar:
+T15ReadScreenChar:
 	movem.l d2/d3/a0,-(sp)
 	move.l d1,d2
 	ext.l d2				; d2 = col
