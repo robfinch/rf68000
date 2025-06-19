@@ -554,6 +554,7 @@ begin
 				s_ack1 <= wr & ~SYNC_WRITE;
 			end
 		/* I/O area */
+		8'hD0,	// Discovery block
 		8'hFD,
 		8'h01:	// virtual address
 			begin
