@@ -114,7 +114,7 @@ else
 
 reg s1_cyc;
 always_comb
-	s1_cyc = s1_cyc_i && s1_adr_i[31:24]==8'hFD && s1_adr_i[23:20]!=4'h2;
+	s1_cyc = s1_cyc_i && ((s1_adr_i[31:24]==8'hFD && s1_adr_i[23:20]!=4'h2) || (s1_adr_i[31:28]==4'hD));
 
 always @(posedge clk_i)
 if (rst_i) begin
