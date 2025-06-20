@@ -400,10 +400,10 @@ CheckForKey:
 ;------------------------------------------------------------------------------
 
 GetKey:
-	move.l	d0,-(a7)					; push d0
-	move.b	IOFocus,d1				; Check if the core has the IO focus
+	move.l d0,-(a7)						; push d0
+	move.l IOFocus,d1					; Check if the core has the IO focus
 	movec.l	coreno,d0
-	cmp.b	d0,d1
+	cmp.l	#2,d0	;,d1
 	bne.s	.0004								; go return no key available, if not in focus
 	bsr	KeybdGetCharNoWait		; get a character
 	tst.l	d1									; was a key available?
@@ -413,10 +413,10 @@ GetKey:
 	cmpi.b #CR,d1							; convert CR keystroke into CRLF
 	bne.s	.0005
 	moveq #6,d0								; output character
-	move.b #13,d0							; output carriage return
+	trap #15									; output carriage return
+	move.b #10,d1							; output line feed
 	trap #15
-	move.b #10,d0							; output line feed
-	trap #15
+	move.b #13,d1
 	bra.s	.0003
 .0005:
 	moveq #6,d0								; output character

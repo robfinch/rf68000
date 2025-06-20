@@ -60,6 +60,21 @@ COM_CMDTBL:
 ;------------------------------------------------------------------------------
 	even
 
+serial_cmdproc:
+	cmpi.b #12,d6
+	bhs.s .0001
+	movem.l d6/a0,-(a7)
+	ext.w d6
+	lsl.w #2,d6
+	lea COM_CMDTBL,a0
+	move.l (a0,d6.w),a0
+	jsr (a0)
+	movem.l (a7)+,d6/a0
+	rts
+.0001:
+	moveq #E_Func,d0
+	rts
+
 serial_init:
 setup_serial:
 	movem.l d0/a0/a1,-(a7)
@@ -79,21 +94,6 @@ setup_serial:
 	jsr DisplayString
 	jsr CRLF
 	movem.l (a7)+,d0/a0/a1
-	rts
-
-serial_cmdproc:
-	cmpi.b #12,d6
-	bhs.s .0001
-	movem.l d6/a0,-(a7)
-	ext.w d6
-	lsl.w #2,d6
-	lea COM_CMDTBL,a0
-	move.l (a0,d6.w),a0
-	jsr (a0)
-	movem.l (a7)+,d6/a0
-	rts
-.0001:
-	moveq #E_Func,d0
 	rts
 
 serial_stat:
@@ -152,10 +152,10 @@ SerialInit:
 	clr.w		SerTailXmit
 	clr.b		SerRcvXon						; and Xon,Xoff flags
 	clr.b		SerRcvXoff
-	move.l	#$09000000,d0				; dtr,rts active, rxint enabled, no parity
+	move.l	#$00000090,d0				; dtr,rts active, rxint enabled, no parity
 	move.l	d0,ACIA+ACIA_CMD
 ;	move.l	#$1E00F700,d0				; fifos enabled
-	move.l	#$1E000000,d0				; fifos disabled
+	move.l	#$0000001E,d0				; fifos disabled
 	move.l	d0,ACIA+ACIA_CTRL
 	rts
 ;	move.l	#$0F000000,d0				; transmit a break for a while
@@ -284,11 +284,11 @@ SerialPeekChar:
 ;------------------------------------------------------------------------------
 
 SerialPeekCharDirect:
-	move.b	ACIA+ACIA_STAT,d1	; get serial status
+	move.l	ACIA+ACIA_STAT,d1	; get serial status
 	btst		#3,d1							; look for Rx not empty
 	beq.s		.0001
 	moveq.l	#0,d1							; clear upper bits of return value
-	move.b	ACIA+ACIA_RX,d1		; get data from ACIA
+	move.l	ACIA+ACIA_RX,d1		; get data from ACIA
 	rts												; return
 .0001
 	moveq		#-1,d1
@@ -347,10 +347,10 @@ SerialPutChar:
 SerialPutCharDirect:
 	movem.l	d0/d1,-(a7)							; push d0,d1
 .0001
-	move.b ACIA+ACIA_STAT,d0	; wait until the uart indicates tx empty
+	move.l ACIA+ACIA_STAT,d0	; wait until the uart indicates tx empty
 	btst #4,d0								; bit #4 of the status reg
 	beq.s	.0001			    			; branch if transmitter is not empty
-	move.b d1,ACIA+ACIA_TX		; send the byte
+	move.l d1,ACIA+ACIA_TX		; send the byte
 	movem.l	(a7)+,d0/d1				; pop d0,d1
 	rts
 	
@@ -398,10 +398,10 @@ SerialIRQ:
 	moveq	#SERIAL_SEMA,d1
 	bsr	LockSemaphore
 sirqNxtByte
-	move.b ACIA+ACIA_STAT,d1		; check the status
+	move.l ACIA+ACIA_STAT,d1		; check the status
 	btst #3,d1									; bit 3 = rx full
 	beq	notRxInt
-	move.b ACIA+ACIA_RX,d1
+	move.l ACIA+ACIA_RX,d1
 sirq0001
 	move.w SerTailRcv,d0				; check if recieve buffer full
 	addi.w #1,d0
@@ -436,7 +436,7 @@ notRxInt
 	beq.s sirqTxEmpty
 	lea SerXmitBuf,a0
 	move.b (a0,d0.w),d1
-	move.b d1,ACIA+ACIA_TX			; transmit character
+	move.l d1,ACIA+ACIA_TX			; transmit character
 	addi.w #1,SerHeadXmit				; advance head index
 	move.w serial_dcb+DCB_OUTBUFSIZE,d0
 	cmp.w SerHeadXmit,d0

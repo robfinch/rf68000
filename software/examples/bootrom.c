@@ -23,6 +23,7 @@ typedef struct _tagdecflt
 	int w[3];
 } decflt_t;
 
+int shell();
 extern int GetCharNonBlocking();
 extern void clear(unsigned int dev);
 extern void set_color_depth(unsigned int dev, unsigned int tot, unsigned int red, unsigned int green, unsigned int blue);
@@ -35,15 +36,20 @@ extern double CvtStringToDecflt(char* s);
 extern void DumpStack();
 extern char OutputDevice;
 extern void OutputChar(int ch);
+extern void OutputCRLF();
+extern void OutputFloat(double);
 extern void OutputNumber(int num, int sz);
+extern void OutputTetra(unsigned int);
+extern void OutputWyde(unsigned int);
 extern int coreno;
 extern int CheckForCtrlC();
+extern int GetChar();
 
 static char RTCBuf[96];
 
-void bootrom1()
+void bootrom()
 {
-	bootrom();
+	shell();
 }
 
 int i2c_init(char* i2c)
@@ -261,8 +267,8 @@ void ramtest1(unsigned long val1, unsigned long val2)
 	unsigned long* pRAM = (unsigned long*)0x40000000;
 	
 	while (pRAM < (unsigned long*)0x7FFFFFC0) {
-		if ((pRAM & 0xffff)==0)	
-			DisplayAddress(pRAM);
+		if (((unsigned long)pRAM & 0xffff)==0)	
+			DisplayAddress((unsigned long)pRAM);
 		pRAM[0] = val1;
 		pRAM[1] = val2;
 		pRAM += 2;
@@ -274,18 +280,18 @@ void ramtest2(unsigned long val1, unsigned long val2)
 	unsigned long* pRAM = (unsigned long*)0x40000000;
 	
 	while (pRAM < (unsigned long*)0x7FFFFFC0) {
-		if ((pRAM & 0xffff)==0)	
-			DisplayAddress(pRAM);
+		if (((unsigned long)pRAM & 0xffff)==0)	
+			DisplayAddress((unsigned long)pRAM);
 		if (pRAM[0] != val1)
-			log_ramtest_err(&pRAM[0], pRAM[0]);
+			log_ramtest_err((unsigned long)&pRAM[0], pRAM[0]);
 		if (pRAM[1] != val1)
-			log_ramtest_err(&pRAM[1], pRAM[1]);
+			log_ramtest_err((unsigned long)&pRAM[1], pRAM[1]);
 		pRAM += 2;
 	}
 }
 
 // Double checkboard RAM test.
-void ramtest()
+void cmdTestRAM()
 {
 	OutputString("Running RAM test\r\n");
 	ramtest1(0xAAAAAAAA,0x55555555);
@@ -294,7 +300,7 @@ void ramtest()
 	ramtest2(0x55555555,0xAAAAAAAA);
 }
 
-void bootrom()
+void cmdGrTest()
 {
 	unsigned int x0i, y0i, x1i, y1i;
 	int nn;
@@ -352,10 +358,70 @@ char cmdTable[] =
 	0,0
 }
 
-int (*(*shell_cmd)[]) = {
+int asciiToHexNybble(int ch)
+{
+	if (ch >= '0' && ch <= '9')	
+		return (ch-'0');
+	if (ch >= 'a' && ch <= 'f')
+		return (ch-'a' + 10);
+	if (ch >= 'A' && ch <= 'F')
+		return (ch-'A' + 10);
+	return (0);
+}
+
+int isHexDigit(int ch)
+{
+	if (ch >= '0' && ch <= '9')
+		return (1);
+	if (ch >= 'a' && ch <= 'f')
+		return (1);
+	if (ch >= 'A' && ch <= 'F')
+		return (1);
+	return (0);
+}
+
+int GetHexNumber(unsigned int* num)
+{
+	unsigned int n;
+	unsigned int dc;
+	int ch;
+
+	do {
+		ch = get_char(2);
+	} while (ch==' ');
+	if (!isHexDigit(ch))
+		return (0);
+	n = 0;
+	dc = 0;
+	do {
+		n << 4;
+		n = n | asciiToHexNybble(ch);
+		ch = get_char(2);
+		dc++;
+	} while (isHexDigit(ch));
+	if (num)
+		*num = n;
+	return (dc);
+}
+
+int cmdJump()
+{
+	int (*addr)();
+	
+	if (GetHexNumber((unsigned int*)&addr))
+		return ((*addr)());
+	return (0);
+}
+
+int (*shell_cmd[])() = {
 	cmdJump,
 	cmdGrTest,
 	cmdTestRAM
+}
+
+void prompt()
+{
+	OutputString("\r\n$");
 }
 
 void shell()
@@ -363,11 +429,17 @@ void shell()
 	int ch, posx,posy,posz;
 	int n, cmd_num;
 
+/*	set_sp(0x47FF0); */
 	OutputString("Monitor v0.1 \r\n");
 	while(1) {
-		OutputChar('$');
+/*		set_sp(0x47FF0); */
+		prompt();
 		do {
-			ch = GetCharNonBlocking();
+			// Grab a character from the keyboard
+			ch = get_char(1);
+			// Echo back out to display
+			if (ch > 0)
+				put_char(2,ch);
 		} while (ch != 13);
 		get_output_pos(2,&posx,&posy,&posz);
 		// Go to start of line
@@ -377,17 +449,21 @@ void shell()
 		// Skip prompt character
 		do {
 			ch = get_char(2);
-		while (ch == '$');
+		} while (ch == '$');
 		// Skip leading blanks
-		do {
+		while (ch == ' ')
 			ch = get_char(2);
-		while (ch == ' ');
 		// Remember start position
 		get_input_pos(2,&posx,&posy,&posz);
+		if (posx > 0) {
+			posx--;
+			set_input_pos(2,posx,posy,posz);
+		}
 		while (1) {
-			if (ch != cmdTable[n])
-				if ((cmdTable[n] & 0x80)==0x80) && (ch == (cmdTable[n] & 0x7f)) {
-					(*shell_cmd[cmd_num])();
+			ch = get_char(2);
+			if (ch != cmdTable[n]) {
+				if (((cmdTable[n] & 0x80)==0x80) && (ch == (cmdTable[n] & 0x7f))) {
+					shell_cmd[cmd_num]();
 					break;
 				}
 				// Scan to end of command
@@ -401,12 +477,10 @@ void shell()
 				}
 				// Reset input position for next compare
 				set_input_pos(2,posx,posy,posz);
-				ch = get_char(2);
 				cmd_num++;
 			}
 			else {
 				n++;
-				ch = get_char(2);
 			}
 		}
 	}

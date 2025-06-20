@@ -46,8 +46,6 @@
 ;					 |   bios mem     |       |
 ; 00001000 +----------------+       |
 ;					 |   bios code    |       |
-; 00020000 +----------------+      <+
-;					 |    unused      |
 ; 00040000 +----------------+
 ;					 |   local ram    |
 ; 00048000 +----------------+
@@ -94,10 +92,11 @@
 ;
 HAS_MMU equ 0
 NCORES equ 4
-TEXTCOL equ 64
-TEXTROW	equ	36
-VIDEO_X equ 1024
-VIDEO_Y equ 768
+TEXTCOL equ 60
+TEXTROW	equ	32
+VIDEO_X equ 800
+VIDEO_Y equ 600
+VIDEO_Z	equ	256
 
 CTRLC	EQU		$03
 CTRLH	EQU		$08
@@ -139,7 +138,7 @@ SCREEN_FORMAT = 1
 TEXTREG		EQU	$1E3FF00	; virtual addresses
 txtscreen	EQU	$1E00000
 semamem		EQU	$1E50000
-ACIA			EQU	$1E60000
+ACIA			EQU	$1E60100
 ACIA_RX		EQU	0
 ACIA_TX		EQU	0
 ACIA_STAT	EQU	4
@@ -166,7 +165,8 @@ RAND_MW		EQU	$1EFFD0C
 RST_REG		EQU	$1EFFC00
 IO_BITMAP	EQU $1F00000
 	else
-TEXTREG		EQU	$FD080000
+TEXTREG		equ	$FD080000
+TEXTREG_CURSOR_POS	equ $24
 txtscreen	EQU	$FD000000
 MMU				EQU $FDC00000	; physical address
 RST_REG		EQU	$FDFF0000
@@ -178,7 +178,7 @@ RAND_MW		EQU	$FDFF401C
 keybd			EQU	$FDFF8000
 KEYBD			EQU	$FDFF8000
 leds			EQU	$FDFFC000
-ACIA			EQU	$FDFE0000
+ACIA			EQU	$FDFE0100
 I2C2 			equ $FDFE4000
 IO_BITMAP	EQU $FDE00000
 FRAMEBUF	EQU	$FD208000
@@ -405,7 +405,8 @@ spi_buff equ $0042000
 TimerStack	equ	$41BFC
 
 ; Keyboard buffer is in shared memory
-IOFocus			EQU	$00100000
+scratch_ram	equ $00100000
+IOFocus			equ	$00100000
 memend			equ $00100004
 KeybdLEDs		equ	$0010000E
 _KeyState1	equ	$0010000F
@@ -414,7 +415,7 @@ _KeybdHead	equ	$00100011
 _KeybdTail	equ	$00100012
 _KeybdCnt		equ	$00100013
 KeybdID			equ	$00100018
-_Keybd_tick	equ $0001001C
+_Keybd_tick	equ $0010001C
 _KeybdBuf		equ	$00100020
 _KeybdOBuf	equ	$00100080
 S19Checksum	equ	$00100150
@@ -428,6 +429,7 @@ SerXmitXoff	equ	$0010016A
 SerRcvBuf		equ	$00101000
 SerXmitBuf	equ	$00102000
 RTCBuf			equ $00100200	; to $0010023F
+_PAM				equ $0011E000
 
 	code
 	align		2
@@ -435,6 +437,7 @@ start:
 ;	fadd (a0)+,fp2
 	move.b #1,leds
 	move.w #$2700,sr					; enable level 6 and higher interrupts
+	move.l #2,IOFocus					; Set the IO focus in global memory
 	moveq #0,d0								; set address space zero
 	movec d0,asid
 	; Setup circuit select signals
@@ -458,7 +461,7 @@ start:
 	lsl.l #8,d0
 	movec d0,tr
 	; Prepare local variable storage
-	move.w #1023,d0						; 1024 longs to clear
+	move.w #767,d0						; 768 longs to clear
 	lea	$40000,a0							; non shared local memory address
 .0111:
 	clr.l	(a0)+								; clear the memory area
@@ -467,6 +470,7 @@ start:
 	move.b #1,InputDevice			; select keyboard input
 	move.b #2,OutputDevice		; select text screen output
 	bsr setup_textvid
+	bsr test_scratchpad_ram
 	move.b #3,leds
 	bsr setup_null
 	move.b #4,leds
@@ -486,13 +490,12 @@ start:
 	bsr i2c_setup
 	lea I2C1,a6
 	bsr i2c_setup
-	bsr scan_for_io
+	move.l #2,IOFocus					; Set the IO focus in global memory
+	bsr scan_for_dev
 ;	lea SPI_MASTER1,a1
 ;	bsr spi_setup
 ;	lea SPI_MASTER2,a1
 ;	bsr spi_setup
-	movec.l	coreno,d0					; get core number
-	move.b d0,IOFocus					; Set the IO focus in global memory
 	if HAS_MMU
 		bsr InitMMU							; Can't access anything till this is done'
 	endif
@@ -563,45 +566,111 @@ do_nothing:
 	bra			do_nothing
 
 ;==============================================================================
-; Scan the I/O address space looking for I/O devices.
+; Test the scratchpad RAM using a checkerboard pattern.
+; Starts just past the I/O focus variable, the fourth byte of the RAM.
+;==============================================================================
+
+test_scratchpad_ram:
+	lea msgTestScratch,a1		; announce
+	moveq #13,d0
+	trap #15
+
+	move.l #$aaaaaaaa,d3		; checkerboard pattern
+	move.l #$55555555,d4
+	lea scratch_ram+4,a0
+	move.l #16382,d2				; 32768 lwords (128kB)
+	; Fill SRAM with checkerboard
+.0001
+	move.l d3,(a0)					; fill odd lword with 'a's
+	move.l d4,4(a0)					; fill even lword with 5s
+	lea 8(a0),a0						; advance eight bytes
+	dbra d2,.0001
+	; Readback stored values
+	lea scratch_ram+4,a0
+	move.l #16382,d2				; 32768 lwords (128kB)
+.0002
+	move.l (a0),d3
+	move.l 4(a0),d4
+	move.l d3,d1
+	cmp.l #$aaaaaaaa,d3
+	bne.s .log_err
+	move.l d4,d1
+	cmp.l #$55555555,d4
+	bne.s .log_err
+.0003
+	lea 8(a0),a0
+	dbra d2,.0002	
+	rts
+.log_err:
+	bsr DisplayTetra
+	moveq #' ',d1
+	bsr OutputChar
+	move.l a0,d1
+	bsr DisplayTetra
+	bsr CRLF
+	bra.s .0003
+
+msgTestScratch
+	dc.b "Testing scratchpad RAM...",0
+	
+	even
+
+;==============================================================================
+; Scan the I/O discovery address space looking for I/O devices.
 ;
-; The I/O address space has the upper eight bits of the address equal to
-;		$FD
+; The I/O discovery address space has the upper four bits of the address
+; equal to $D. Only the $D0 block is scanned.
+;
 ; Each I/O device has a 16kB block of address space reserved for it. A device
-; has the string "DCB " stored at offset $3E00 in the block followed by an
-; eleven character NULL terminated device name.
+; has an eleven character NULL terminated device name stored at $80 in the
+; discovery block.
 ;
 ;==============================================================================
 
-scan_for_io:
-	move.l #$FD000000,a0
-	moveq #0,d1
+scan_for_dev:
+	moveq #13,d0					; DisplayStringCRLF
+	lea msgScanning(pc),a1
+	trap #15
+	move.l #$D0000000,a0
+	moveq #0,d2
 .0001
-	move.l $3F00(a0),d0
-	cmpi.l #"DCB ",d0
-	beq.s .0002
+	move.l (a0),d0
+	cmpi.l #-1,d0
+	bne.s .0002
 .0003
 	add.l #$4000,a0
-	cmp.l #$FE000000,a0
+	cmp.l #$D1000000,a0
 	blo.s .0001
 	moveq #3,d0
+	move.l d2,d1
 	trap #15
 	lea msgDeviceCount(pc),a1
 	moveq #13,d0
 	trap #15
 	rts
 .0002
-	addq.l #1,d1
-	moveq #14,d0
+	addq.l #1,d2
+	moveq #14,d0					; DisplayString
 	lea msgFound(pc),a1
 	trap #15
-	moveq #13,d0
-	lea $3F04(a0),a1
+	moveq #1,d0						; DisplayStringLimited
+	moveq #12,d1					; max 12 chars
+	lea $80(a0),a1
 	trap #15
+	lea msgAt(pc),a1
+	moveq #14,d0
+	trap #15
+	move.l a0,d1
+	bsr DisplayTetra
+	bsr CRLF
 	bra.s .0003
 
+msgScanning
+	dc.b "Scanning for devices...",0
 msgFound
 	dc.b "Found ",0
+msgAt
+	dc.b " at ",0
 msgDeviceCount
 	dc.b " devices",0
 
@@ -615,7 +684,7 @@ msgDeviceCount
 ;==============================================================================
 
 T15DTAddr macro arg1
-	dc.w (\1-T15DispatchTable)
+	dc.w ((\1-T15DispatchTable)>>1)
 endm
 
 	align	2
@@ -737,6 +806,7 @@ TRAP15:
 	lsl.w #1,d0
 	move.w (a0,d0.w),d0
 	ext.l d0
+	lsl.l #1,d0
 	add.l d0,a0
 	jsr (a0)
 	movem.l (a7)+,d0/a0
@@ -1794,29 +1864,41 @@ DrawVertTo:
 ; Cursor positioning / Clear screen
 ; - out of range settings are ignored
 ; Pass $FF00 to clear the screen
-; Pass $FE00 in d1.w to get the position
+; Pass $FF01 in d1.w to get the output position
+;	Pass $FF02 in d1.w to get the input position
 ;
 ; Parameters:
-;		d1.w cursor position, bits 0 to 7 are row, bits 8 to 15 are column.
-;	Returns:
+;		d1.l cursor position, bits 0 to 7 are row, bits 8 to 15 are column.
+;		d1[bit16]: 0=set output position, 1=set input position
+;	Returns (get position):
+;		d1.[15:8] = column
+;		d1.[7:0] = row
+;		d1[bit 16] = 0=output position,1=input position
 ;		none
 ;------------------------------------------------------------------------------
 
 T15Cursor:
-	cmpi.w #$FE00,d1
-	bne.s .0003
-	movem.l d2/d6/d7,-(sp)
+	cmpi.w #$FF00,d1
+	blo.s .0002
+	cmpi.w #$FF00,d1					; clear screen request?
+	beq.s .0003
+	movem.l d2/d3/d6/d7,-(sp)
 	moveq #2,d7
 	moveq #DEV_GET_OUTPOS,d6
+	moveq #0,d3
+	btst.l #0,d1
+	bne.s .0004
+	moveq #DEV_GET_INPOS,d6
+	bset.l #16,d3
+.0004
 	trap #0
-	swap d1				; d1.high = row
-	move.w d2,d1	; d1.low = col
-	movem.l (sp)+,d2/d6/d7
+	lsl.l #8,d1
+	or.w d2,d1	; d1[15:8] = col, d1[7:0] = row
+	or.l d3,d1
+	movem.l (sp)+,d2/d3/d6/d7
 	rts
 .0003
 	movem.l d0/d1/d2/d3/d6/d7,-(a7)
-	cmpi.w #$FF00,d1
-	bne.s .0002
 	moveq #2,d7
 	moveq #DEV_CLEAR,d6	; clear screen
 	trap #0
@@ -1830,6 +1912,10 @@ T15Cursor:
 .0002
 	moveq #2,d7
 	moveq #DEV_SET_OUTPOS,d6
+	btst #16,d1
+	beq.s .0005
+	moveq #DEV_SET_INPOS,d6
+.0005
 	clr.l d2
 	move.b d1,d2		; d2 = row (y pos)
 	lsr.w #8,d1			; d1 = col (x pos)
@@ -1870,14 +1956,14 @@ select_iofocus:
 ;------------------------------------------------------------------------------
 
 rotate_iofocus:
-	move.b IOFocus,d0					; d0 = focus, we can trash d0
-	add.b	#1,d0								; increment the focus
-	cmp.b	#NCORES+1,d0				; limit to 2 to 9
+	move.l IOFocus,d0					; d0 = focus, we can trash d0
+	addq.l #1,d0							; increment the focus
+	cmp.l	#NCORES+1,d0				; limit to 2 to 9
 	bls.s	.0001
-	move.b #2,d0
+	move.l #2,d0
 .0001:
 select_focus1:
-	move.b	d0,IOFocus				; set IO focus
+	move.l d0,IOFocus				;	 set IO focus
 	; reset keyboard processor to focus core
 ;	move.l #$3C060500,d0			; core=??,level sensitive,enabled,irq6,inta
 ;	or.b IOFocus,d0
@@ -1999,13 +2085,15 @@ cmdTable:
 ; Get a word from screen memory and swap byte order
 
 FromScreen:
-	move.l (a0),d1
-	bsr	rbo
 	if (SCREEN_FORMAT==1)
-		lea	4(a0),a0	; increment screen pointer
+		move.l (a0)+,d1
 	else
-		lea	8(a0),a0	; increment screen pointer
+		move.l 4(a0),d1
+		lea 8(a0),a0
 	endif
+	rol.w #8,d1
+	swap d1
+	rol.w #8,d1
 	rts
 
 StartMon:
@@ -2013,6 +2101,7 @@ StartMon:
 	bsr	ClearBreakpointList
 cmdMonitor:
 Monitor:
+	move.l #2,IOFocus					; Set the IO focus in global memory
 	; Reset the stack pointer on each entry into the monitor
 	move.l #$47FFC,sp		; reset core's stack
 	pea Monitor					; Cause any RTS to go here
@@ -2030,8 +2119,9 @@ PromptLn:
 ; Get characters until a CR is keyed
 ;
 Prompt3:
+	move.l #2,IOFocus					; Set the IO focus in global memory
 	bsr	GetKey
-	cmpi.b #-1,d1
+	cmpi.w #-1,d1
 	beq.s	Prompt3
 	cmpi.b #CR,d1
 	beq.s	Prompt1
@@ -2045,17 +2135,23 @@ Prompt1:
 	moveq #DEV_GET_OUTPOS,d6
 	trap #0
 ;	clr.b	CursorCol				; go back to the start of the line
-	moveq #DEV_SET_OUTPOS,d6
+	moveq #DEV_SET_INPOS,d6
 	moveq #0,d1						; go back to the start of the line
 	trap #0
-	moveq #DEV_GET_OUTPTR,d6
+	moveq #DEV_GET_INPTR,d6
 	trap #0
-	move.l d1,a0					; a0 = pointer to buffer
+	move.l d1,a0
 ;	bsr	CalcScreenLoc			; a0 = screen memory location
-.0001:
+.0001
 	bsr	FromScreen				; grab character off screen
 	cmpi.b #'$',d1				; skip over '$' prompt character
 	beq.s	.0001
+.0002
+	cmpi.b #' ',d1				; skip over leading spaces
+	bne.s .0003
+	bsr FromScreen
+	bra .0002
+.0003
 
 ; Dispatch based on command string
 
@@ -2816,7 +2912,7 @@ ExecuteCode:
 	bra Monitor
 
 cmdGrDemo:
-	move.l #$00001555,d1		; 16 bpp
+	move.l #$00008888,d1		; 32 bpp
 	moveq #6,d7							; framebuf device
 	moveq #DEV_SET_COLOR_DEPTH,d6
 	trap #0
@@ -2824,7 +2920,7 @@ cmdGrDemo:
 	trap #0
 	move.l #$00110001,d1		; enable, scale 1 clocks/scanlines per pixel, page zero
 ;	move.l d1,FRAMEBUF+FRAMEBUF_CTRL
-	move.l #$0F00003F,d1		; burst length of 50, interval of F00h
+	move.l #$0F000063,d1		; burst length of 100, interval of F00h
 	move.l d1,FRAMEBUF+FRAMEBUF_CTRL+4		
 	moveq #6,d7							; framebuf device
 	moveq #DEV_SET_DIMEN,d6
@@ -2835,15 +2931,20 @@ cmdGrDemo:
 	trap #0
 	moveq #7,d7							; same for graphics accelerator device
 	trap #0
-	moveq #6,d7
-	moveq #2,d0							; set window dimensions
-	trap #0
+;	moveq #6,d7
+;	moveq #2,d0							; set window dimensions
+;	trap #0
 	; Set destination buffer #0
 	moveq #7,d7
 	moveq #DEV_SET_DESTBUF,d6	; write to buffer 0
 	moveq #0,d1
 	trap #0
+	moveq #7,d7
+	moveq #DEV_SET_COLOR,d6
+	moveq #0,d1
+	trap #0
 	; Clear the screen
+	moveq #7,d7
 	moveq #DEV_CLEAR,d6
 	trap #0
 	; Now display the clear screen
@@ -2861,14 +2962,14 @@ cmdGrDemo:
 	move.l #VIDEO_Y,d3
 	move.l #$40000000,a4
 .0002:
-	move.l #$FF7FFF7F,d2	; white
-	move.w d2,(a4)
+	move.l #$00FFFFFF,d2	; white
+	move.l d2,(a4)
 	add.l #VIDEO_X*4+4,a4
 	dbra d3,.0002
 	move.l #VIDEO_Y,d3
-	move.l #$40000000+VIDEO_X*2,a4
+	move.l #$40000000+VIDEO_X*4,a4
 .0007:
-	move.w d2,(a4)
+	move.l d2,(a4)
 	add.l #VIDEO_X*4-4,a4
 	dbra d3,.0007
 	bra Monitor
@@ -2876,23 +2977,27 @@ cmdGrDemo:
 ;	bra Monitor
 plot_rand_points:
 	move.l #$7F127F12,d1
-	bsr rbo
-	bsr gfxaccel_set_color
+	moveq #7,d7
+	moveq #DEV_SET_COLOR,d6
+	trap #0
 	move.l #10000,d5
 .0005:
 	move.l #$40000000,a4
 	bsr RandGetNum
-	move.l d1,d4
+	move.l d1,d4					; color
 	bsr RandGetNum
+	andi.l #$0FFFF,d1
+	mulu #VIDEO_Y,d1
 	move.l d1,d2
-	andi.l #$ff,d2
 	bsr RandGetNum
-	andi.l #$1ff,d1
-	mulu #960,d2
-	add.l d1,d2
-	add.l d1,d2
-	add.l d2,a4
-	move.w d4,(a4)				; plot point
+	andi.l #$0FFFF,d1
+	mulu #VIDEO_X,d1
+	swap d2
+	swap d1
+	mulu #VIDEO_X,d2
+	add.l d2,d1
+	lsl.l #2,d1
+	move.l d4,(a4,d1.l)	; plot point
 	dbra d5,.0005
 	bra Monitor
 
@@ -2981,30 +3086,38 @@ wait1ms:
 
 white_rect:
 	move.l #$FFFFFFFF,d1
-	bsr gfxaccel_set_color
+	moveq #7,d7
+	moveq #DEV_SET_COLOR,d6
+	trap #0
 	move.l #100<<16,d1
 	move.l #300<<16,d2
-	move.l #250<<16,d3
-	move.l #550<<16,d4
-	bsr gfxaccel_draw_rectangle
+	move.l #20,d3
+	move.l #250<<16,d4
+	move.l #550<<16,d5
+	move.l #20,d0
+	moveq #DEV_DRAW_RECTANGLE,d6
+	trap #0
 	bra Monitor
 
 rand_points:
 	move.l #30000,d5
 .0004:
+	moveq #7,d7
+	moveq #DEV_SET_COLOR,d6
 	bsr RandGetNum
-	bsr gfxaccel_set_color
+	trap #0
 	move.l #0,d3					; Z
 	bsr RandGetNum
+	andi.l #$0FFFF,d1
+	mulu #VIDEO_Y,d1
 	move.l d1,d2
-;	divu #VIDEO_Y,d2			; Y
-	andi.l #511,d2
-	swap d2
 	bsr RandGetNum
-;	divu #VIDEO_X,d1
-	andi.l #511,d1
-	swap d1
-	bsr gfxaccel_plot_point
+	andi.l #$0FFFF,d1
+	mulu #VIDEO_X,d1
+	moveq #7,d7
+	moveq #DEV_PLOT_POINT,d6
+	trap #0
+	bsr wait1ms
 	dbra d5,.0004
 	bra Monitor
 
@@ -3012,24 +3125,40 @@ rand_lines:
 	move.l #30000,d5
 .0001:
 .0006:
+	move.l d5,-(sp)
 	bsr CheckForCtrlC
+	moveq #7,d7
+	moveq #DEV_SET_COLOR,d6
 	bsr RandGetNum
-	bsr gfxaccel_set_color
-	fmove.l #800,fp2
-	fmove.l #600,fp3
-	bsr _GetRand
-	fmul fp3,fp1
-	fmove.l fp1,d4
-	bsr _GetRand
-	fmul fp2,fp1
-	fmove.l fp1,d3
-	bsr _GetRand
-	fmul fp3,fp1
-	fmove.l fp1,d2
-	bsr _GetRand
-	fmul fp2,fp1
-	fmove.l fp1,d1
-	bsr gfxaccel_draw_line
+	trap #0
+	bsr RandGetNum
+	andi.l #$0FFFF,d1
+	mulu #VIDEO_Z,d1
+	moveq #0,d0
+	bsr RandGetNum
+	andi.l #$0FFFF,d1
+	mulu #VIDEO_Y,d1
+	move.l d1,d5
+	bsr RandGetNum
+	andi.l #$0FFFF,d1
+	mulu #VIDEO_X,d1
+	move.l d1,d4
+	bsr RandGetNum
+	andi.l #$0FFFF,d1
+	mulu #VIDEO_Z,d1
+	moveq #0,d3
+	bsr RandGetNum
+	andi.l #$0FFFF,d1
+	mulu #VIDEO_Y,d1
+	move.l d1,d2
+	bsr RandGetNum
+	andi.l #$0FFFF,d1
+	mulu #VIDEO_X,d1
+	moveq #7,d7
+	moveq #DEV_DRAW_LINE,d6
+	trap #0
+	bsr wait1ms
+	move.l (sp),d5
 	dbra d5,.0001
 	bra Monitor
 
@@ -3037,24 +3166,40 @@ rand_rect:
 	move.l #30000,d5
 .0003:
 .0006:
+	move.l d5,-(sp)
 	bsr CheckForCtrlC
+	moveq #7,d7
+	moveq #DEV_SET_COLOR,d6
 	bsr RandGetNum
-	bsr gfxaccel_set_color
-	fmove.l #800,fp2
-	fmove.l #600,fp3
-	bsr _GetRand
-	fmul fp3,fp1
-	fmove.l fp1,d4
-	bsr _GetRand
-	fmul fp2,fp1
-	fmove.l fp1,d3
-	bsr _GetRand
-	fmul fp3,fp1
-	fmove.l fp1,d2
-	bsr _GetRand
-	fmul fp2,fp1
-	fmove.l fp1,d1
-	bsr gfxaccel_draw_rectangle
+	trap #0
+	bsr RandGetNum
+	andi.l #$0FFFF,d1
+	mulu #VIDEO_Z,d1
+	moveq #0,d0
+	bsr RandGetNum
+	andi.l #$0FFFF,d1
+	mulu #VIDEO_Y,d1
+	move.l d1,d5
+	bsr RandGetNum
+	andi.l #$0FFFF,d1
+	mulu #VIDEO_X,d1
+	move.l d1,d4
+	bsr RandGetNum
+	andi.l #$0FFFF,d1
+	mulu #VIDEO_Z,d1
+	moveq #0,d3
+	bsr RandGetNum
+	andi.l #$0FFFF,d1
+	mulu #VIDEO_Y,d1
+	move.l d1,d2
+	bsr RandGetNum
+	andi.l #$0FFFF,d1
+	mulu #VIDEO_X,d1
+	moveq #7,d7
+	moveq #DEV_DRAW_RECTANGLE,d6
+	trap #0
+	bsr wait1ms
+	move.l (sp),d5
 	dbra d5,.0003
 	bra Monitor
 
@@ -3083,61 +3228,103 @@ rand_rect2:
 
 rand_triangle:
 	move.l #30000,d7
-.0006:
+.0006
+	move.l d7,-(sp)
 	bsr CheckForCtrlC
+	moveq #7,d7
+	moveq #DEV_SET_COLOR,d6
 	bsr RandGetNum
-	bsr gfxaccel_set_color
-	fmove.l #800,fp2
-	fmove.l #600,fp3
-	bsr _GetRand
-	fmul fp3,fp1
-	fmove.l fp1,d0
-	bsr _GetRand
-	fmul fp2,fp1
-	fmove.l fp1,d5
-	bsr _GetRand
-	fmul fp3,fp1
-	fmove.l fp1,d4
-	bsr _GetRand
-	fmul fp2,fp1
-	fmove.l fp1,d3
-	bsr _GetRand
-	fmul fp3,fp1
-	fmove.l fp1,d2
-	bsr _GetRand
-	fmul fp2,fp1
-	fmove.l fp1,d1
-	bsr gfxaccel_draw_triangle
+	trap #0
+	bsr RandGetNum
+	andi.l #$0FFFF,d1
+	mulu #VIDEO_Z,d1
+	move.l #0,a3
+	bsr RandGetNum
+	andi.l #$0FFFF,d1
+	mulu #VIDEO_Y,d1
+	move.l d1,a2
+	bsr RandGetNum
+	andi.l #$0FFFF,d1
+	mulu #VIDEO_X,d1
+	move.l d1,a1
+	bsr RandGetNum
+	andi.l #$0FFFF,d1
+	mulu #VIDEO_Z,d1
+	move.l #0,d0
+	bsr RandGetNum
+	andi.l #$0FFFF,d1
+	mulu #VIDEO_Y,d1
+	move.l d1,d5
+	bsr RandGetNum
+	andi.l #$0FFFF,d1
+	mulu #VIDEO_X,d1
+	move.l d1,d4
+	bsr RandGetNum
+	andi.l #$0FFFF,d1
+	mulu #VIDEO_Z,d1
+	move.l #0,d3
+	bsr RandGetNum
+	andi.l #$0FFFF,d1
+	mulu #VIDEO_Y,d1
+	move.l d1,d2
+	bsr RandGetNum
+	andi.l #$0FFFF,d1
+	mulu #VIDEO_X,d1
+	moveq #7,d7
+	moveq #DEV_DRAW_TRIANGLE,d6
+	trap #0
+	bsr wait1ms
+	move.l (sp)+,d7
 	dbra d7,.0006
 	bra Monitor
 
 rand_curve:
 	move.l #10000,d7
 .0006:
+	move.l d7,-(sp)
 	bsr CheckForCtrlC
+	moveq #DEV_SET_COLOR,d6
 	bsr RandGetNum
-	bsr gfxaccel_set_color
-	fmove.l #800,fp2
-	fmove.l #600,fp3
-	bsr _GetRand
-	fmul fp3,fp1
-	fmove.l fp1,d0
-	bsr _GetRand
-	fmul fp2,fp1
-	fmove.l fp1,d5
-	bsr _GetRand
-	fmul fp3,fp1
-	fmove.l fp1,d4
-	bsr _GetRand
-	fmul fp2,fp1
-	fmove.l fp1,d3
-	bsr _GetRand
-	fmul fp3,fp1
-	fmove.l fp1,d2
-	bsr _GetRand
-	fmul fp2,fp1
-	fmove.l fp1,d1
-	bsr gfxaccel_draw_curve
+	trap #0
+	bsr RandGetNum
+	andi.l #$0FFFF,d1
+	mulu #VIDEO_Z,d1
+	move.l #0,a3
+	bsr RandGetNum
+	andi.l #$0FFFF,d1
+	mulu #VIDEO_Y,d1
+	move.l d1,a2
+	bsr RandGetNum
+	andi.l #$0FFFF,d1
+	mulu #VIDEO_X,d1
+	move.l d1,a1
+	bsr RandGetNum
+	andi.l #$0FFFF,d1
+	mulu #VIDEO_Z,d1
+	move.l #0,d0
+	bsr RandGetNum
+	andi.l #$0FFFF,d1
+	mulu #VIDEO_Y,d1
+	move.l d1,d5
+	bsr RandGetNum
+	andi.l #$0FFFF,d1
+	mulu #VIDEO_X,d1
+	move.l d1,d4
+	bsr RandGetNum
+	andi.l #$0FFFF,d1
+	mulu #VIDEO_Z,d1
+	move.l #0,d3
+	bsr RandGetNum
+	andi.l #$0FFFF,d1
+	mulu #VIDEO_Y,d1
+	move.l d1,d2
+	bsr RandGetNum
+	andi.l #$0FFFF,d1
+	mulu #VIDEO_X,d1
+	moveq #7,d7
+	moveq #DEV_DRAW_CURVE,d6
+	move.l (sp)+,d7
+	bsr wait1ms
 	dbra d7,.0006
 	bra Monitor
 
@@ -3898,8 +4085,15 @@ init_i2c:
 	move.b #0,I2C_CTRL(a6)		; make sure I2C disabled
 	move.b #49,I2C_PREL(a6)		; setup prescale for 400kHz clock, 100MHz master
 	move.b #0,I2C_PREH(a6)
+	lea msgI2CSetup(pc),a1
+	moveq #13,d0
+	trap #15
 	rts
 
+msgI2CSetup:
+	dc.b "I2C setup",0
+	
+	even
 i2c_enable:
 	move.b #$80,I2C_CTRL(a6)	; enable I2C
 	rts

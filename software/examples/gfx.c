@@ -20,10 +20,10 @@ Anton Fosselius, Per Lenander 2012
 //#define VGA_HTIM       (VGA_BASEADDR + 0x008) /* Horisontal Timing Register */
 //#define VGA_VTIM       (VGA_BASEADDR + 0x00c) /* Vertical Timing Register */
 //#define VGA_HVLEN      (VGA_BASEADDR + 0x010) /* Horisontal and Vertical Total Screen Size, (Screen size + Blank) */
-#define FRAMEBUF_VBARA     	(FRAMEBUF_BASEADDR + 0x008) /* Adress to Video Base Register A */
-#define FRAMEBUF_VBARB     	(FRAMEBUF_BASEADDR + 0x00C) /* Adress to Video Base Register B */
+#define FRAMEBUF_VBARA     	(FRAMEBUF_BASEADDR + 0x010) /* Adress to Video Base Register A */
+#define FRAMEBUF_VBARB     	(FRAMEBUF_BASEADDR + 0x018) /* Adress to Video Base Register B */
 #define FRAMEBUF_PALETTE   	(FRAMEBUF_BASEADDR + 0x2000) /* Color Palette */
-#define FRAMEBUF_COLOR_COMP	(FRAMEBUF_BASEADDR + 0x04C)
+#define FRAMEBUF_COLOR_COMP	(FRAMEBUF_BASEADDR + 0x098)
 
 
 //#define VGA_STAT_AVMP 16
@@ -87,10 +87,15 @@ Anton Fosselius, Per Lenander 2012
 #define REG32(add) *((volatile unsigned int   *)(add))
 
 // Wait until req_spaces number of places in the instruction fifo are clear
-inline void gfx_wait(unsigned int reg_spaces)
+int gfx_wait(unsigned int reg_spaces)
 {
 //  while( REG32(GFX_STATUS)) & GFX_BUSY );
-  while((REG32(GFX_STATUS) >> GFX_STAT_COUNT_OFFSET) + reg_spaces > GFX_INSTRUCTION_FIFO_SIZE);
+  while((REG32(GFX_STATUS) >> GFX_STAT_COUNT_OFFSET) + reg_spaces > GFX_INSTRUCTION_FIFO_SIZE)
+  {
+  	if (CheckForCtrlC())
+  		return (0);
+  }
+  return (1);
 }
 
 unsigned int memory_base = GFX_VMEM;
@@ -102,7 +107,8 @@ unsigned int gfx_control_reg_memory = 0;
 // Forward or transform points?
 unsigned int transformation_mode = GFX_FORWARD_POINT;
 
-void gfx_set_color_depth(unsigned char bpp);
+void set_color_depth(unsigned int dev, unsigned int comp,  
+	unsigned int r, unsigned int g, unsigned int b);
 /*
 void Set640x480_60(void)
 {
@@ -187,13 +193,13 @@ void gfx_vga_set_vbarb(unsigned int addr)
     REG32(FRAMEBUF_VBARB) = addr;
 }
 
-inline void gfx_vga_bank_switch()
+void gfx_vga_bank_switch()
 {
   gfx_wait(GFX_INSTRUCTION_FIFO_SIZE);
 //    REG32(VGA_CTRL) = REG32(VGA_CTRL)|VGA_CTRL_VBSWE;
 }
 
-inline unsigned int gfx_vga_AVMP()
+unsigned int gfx_vga_AVMP()
 {
   // Get the active memory page bit
 //  unsigned int status_reg = REG32(VGA_STAT);
@@ -201,29 +207,30 @@ inline unsigned int gfx_vga_AVMP()
 //  return status_reg & 1;
 }
 
-void gfx_set_color_depth(unsigned int comp)
+/*
+void set_color_depth(unsigned int dev, unsigned int comp)
 {
-    unsigned int vga_bpp = 0, gfx_bpp = 0;
-    unsigned int r,g,b,p;
-    
-    r = comp << 8;
-    g = comp << 4;
-    b = comp;
-    p = 0;
-    switch(r+g+b)
-    {
-  	case 6: p = 2 << 12; break;
-  	case 15: p = 1 << 12; break;
-  	case 30: p = 2 << 12; break;
-    }
-    
-    comp = p|r|g|b;
+  unsigned int vga_bpp = 0, gfx_bpp = 0;
+  unsigned int r,g,b,p;
+  
+  r = comp << 8;
+  g = comp << 4;
+  b = comp;
+  p = 0;
+  switch(r+g+b)
+  {
+	case 6: p = 2 << 12; break;
+	case 15: p = 1 << 12; break;
+	case 30: p = 2 << 12; break;
+  }
+  
+  comp = p|r|g|b;
 
-		REG32(FRAMEBUF_COLOR_COMP) = comp;
-    gfx_wait(1);
-		REG32(GFX_COLOR_COMP) = comp;
+	REG32(FRAMEBUF_COLOR_COMP) = comp;
+  gfx_wait(1);
+	REG32(GFX_COLOR_COMP) = comp;
 }
-
+*/
 void gfx_vga_set_videomode(unsigned int width, unsigned int height, unsigned int cd)
 {
 /*
@@ -236,28 +243,28 @@ void gfx_vga_set_videomode(unsigned int width, unsigned int height, unsigned int
     else // Default mode
         Set640x480_60();
 */
-    gfx_set_color_depth(cd);
+//    set_color_depth(7,cd);
 }
 
 struct gfx_surface gfx_init_surface(unsigned int width, unsigned int height)
 {
-    struct gfx_surface surface;
-    surface.addr = memory_base;
-    surface.w = width;
-    surface.h = height;
-    memory_base += (width << 1) * height; // TODO: Only true for 16 bit surfaces!
-    return (surface);
+  struct gfx_surface surface;
+  surface.addr = memory_base;
+  surface.w = width;
+  surface.h = height;
+  memory_base += (width << 1) * height; // TODO: Only true for 16 bit surfaces!
+  return (surface);
 }
 
 void gfx_bind_rendertarget(struct gfx_surface *surface)
 {
-    target_surface = surface;
-    gfx_wait(3);
-    REG32(GFX_TARGET_BASE) = surface->addr;
-    REG32(GFX_TARGET_SIZE_X) = surface->w;
-    REG32(GFX_TARGET_SIZE_Y) = surface->h;
-    // Clear clip rect
-    gfx_cliprect(0,0,surface->w,surface->h);
+  target_surface = surface;
+  gfx_wait(3);
+  REG32(GFX_TARGET_BASE) = surface->addr;
+  REG32(GFX_TARGET_SIZE_X) = surface->w;
+  REG32(GFX_TARGET_SIZE_Y) = surface->h;
+  // Clear clip rect
+  gfx_cliprect(0,0,surface->w,surface->h);
 }
 
 void gfx_enable_zbuffer(unsigned int enable)

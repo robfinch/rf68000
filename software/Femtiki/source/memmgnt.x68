@@ -589,7 +589,171 @@ AddOSPT:
 .done
 	movem.l (sp)+,d2/d3/d4/a1
 	rts
-		
+
+n4kPages equ 16
+ppMemRet equ 20
+
+AllocOSPage:
+	movem.l d1/d2/a1,-(sp)
+	move.l MemExch,-(sp)
+	move.l pRunTSS,d1
+	add.l #TSS_Msg,d1
+	move.l d1,-(sp)
+	bsr _WaitMsg		; trap
+	add.l #8,sp
+	tst.l d1
+	bne.s .exit
+	move.l n4kPages(sp),d1
+	tst.l d1
+	bne.s 0000
+	move.l #E_Arg,d0
+	bra.s .exit
+.0000
+	cmp.l _nPagesFree,d1
+	bhs.s .0001
+	move.l #E_NoMem,d0
+	bra.s .exit
+.0001
+	move.l n4kPages,d2
+	clr.l d1
+	bsr FindRun
+	tst.l d1
+	bne.s .0002
+	
+	bsr AddOSPT
+	tst.l d1
+	beq.s .0001
+	bra.s .exit
+.0002
+	bsr AddRun
+	move.l ppMemRet(sp),a1
+	move.l d1,(a1)
+	clr.l d0
+.exit
+	move.l d0,-(sp)
+	move.l MemExch,-(sp)
+	move.l #$FFFFFFF1,-(sp)
+	move.l #$FFFFFFF1,-(sp)
+	bsr _SendMsg
+	add.l #12,sp
+	move.l (sp),d0
+	movem.l (sp)+,d1/d2/a1
+	rts
+	
+AllocPage:
+	movem.l d1/d2/a1,-(sp)
+	move.l MemExch,-(sp)
+	move.l pRunTSS,d1
+	add.l #TSS_Msg,d1
+	move.l d1,-(sp)
+	bsr _WaitMsg		; trap
+	add.l #8,sp
+	tst.l d1
+	bne.s .exit
+	move.l n4kPages(sp),d1
+	tst.l d1
+	bne.s 0000
+	move.l #E_Arg,d0
+	bra.s .exit
+.0000
+	cmp.l _nPagesFree,d1
+	bhs.s .0001
+	move.l #E_NoMem,d0
+	bra.s .exit
+.0001
+	move.l n4kPages,d2
+	clr.l d1
+	bsr FindRun
+	tst.l d1
+	bne.s .0002
+	
+	bsr AddUserPT
+	tst.l d1
+	beq.s .0001
+	bra.s .exit
+.0002
+	bsr AddRun
+	move.l ppMemRet(sp),a1
+	move.l d1,(a1)
+	clr.l d0
+.exit
+	move.l d0,-(sp)
+	move.l MemExch,-(sp)
+	move.l #$FFFFFFF1,-(sp)
+	move.l #$FFFFFFF1,-(sp)
+	bsr _SendMsg
+	add.l #12,sp
+	move.l (sp),d0
+	movem.l (sp)+,d1/d2/a1
+	rts
+
+pMem equ 28
+dcbMem equ 32
+pJobNum equ 36
+ppAliasRet equ 40 
+
+_AliasMem:
+	movem.l d1/d2/d3/d5/a1/a2,-(sp)
+	bsr GetCrntJobNum
+	move.l pJobNum(sp),d2
+	cmp.l d1,d2
+	bne.s .begin
+	clr.l d0
+	bra .done
+.begin
+.0000
+	move.l pMem(sp),d2
+	and.l #$3FFF,d2			; mod 16384
+	move.l dcbMem(sp),d1
+	add.l d2,d1
+	move.l dcbMem(sp),a2
+	add.l (a2),d1
+	moveq #14,d5
+	lsr.l d5,d1
+	addq.l #1,d1
+	move.l d1,d3
+	bsr GetCrntJobNum
+	cmp.l #1,d1
+	beq.s .0011
+	move.l #1,d1			; No, user memory
+	bra.s .0001
+.0011
+	clr.l d1
+.0001
+	move.l d3,d2
+	bsr FindRun
+	
+	tst.l d1
+	bne. .0004
+	
+	bsr GetCrntJobNum
+	cmp.l #1,d1
+	beq.s .0003
+	bsr AddUserPT
+	bra.s .0003
+.0002
+	bsr AddOSPT
+.0003
+	clr.l d1
+	beq.s .0000
+	bra.s .exit
+.0004
+	move.l d1,a2
+	move.l pMem(sp),a1
+	move.l pJobNum(sp),d4
+	bsr AddAliasRun
+	
+	move.l pMem(sp),d1
+	and.l #$3FFF,d1
+	add.l d1,a2
+	move.l ppAliasRet(sp),a1
+	move.l a2,(a1)
+	clr.l d0
+.exit
+	movem.l (sp)+,d1/d2/d3/d5/a1/a2
+	rts
+
+	
 	
 	global _nPagesFree
 	global _oMemMax
@@ -598,5 +762,7 @@ AddOSPT:
 	global MarkPage
 	global UnMarkPage
 	global LinToPhy
+	global _AliasMem
+
 
 		

@@ -144,7 +144,7 @@ setup_gfxaccel:
 	move.l d0,gfxaccel_dcb+DCB_OUTBUFPTR2
 	move.l #$00400000,gfxaccel_dcb+DCB_INBUFSIZE
 	move.l #$00400000,gfxaccel_dcb+DCB_OUTBUFSIZE
-	move.l #$00002AAA,GFXACCEL+GFX_COLOR_COMP
+	move.l #$00008888,GFXACCEL+GFX_COLOR_COMP
 	lea.l gfxaccel_dcb+DCB_MAGIC,a1
 	jsr DisplayString
 	jsr CRLF
@@ -200,14 +200,13 @@ gfxaccel_set_dispbuf:
 gfxaccel_set_dimen:
 	move.l d1,-(a7)
 	move.l d1,d0
-	moveq #6,d1
+	moveq #5,d1
 	bsr gfxaccel_wait					; wait for an open slot
 	move.l d0,d1
 	move.l d1,GFXACCEL+GFX_TARGET_SIZE_X	; render target x dimension
 	move.l d1,GFXACCEL+GFX_TARGET_X1
-	move.l d2,d1
-	move.l d1,GFXACCEL+GFX_TARGET_SIZE_Y	; render target y dimension
-	move.l d1,GFXACCEL+GFX_TARGET_Y1
+	move.l d2,GFXACCEL+GFX_TARGET_SIZE_Y	; render target y dimension
+	move.l d2,GFXACCEL+GFX_TARGET_Y1
 	move.l (a7)+,d1
 	moveq #E_Ok,d0
 	rts
@@ -232,14 +231,15 @@ gfxaccel_clear:
 	andi.w #$3ff,d4					; extract pixels per strip
 	ext.l d4
 	add.l d4,d2							; round number of pixels on screen up a strip
-	move.l d2,d1
-	move.l d4,d2
+	move.l d2,d1						; d1 = total pixels
+	lsr.l #5,d1							; pixel count/burst length
+	move.l d4,d2						; d2 = pixels per strip
 	bsr div32								; number might be too big for divu
 	move.l d1,d0						; d0 = number of strips to set
 	move.l GFXACCEL+GFX_COLOR0,d4
 	move.l GFXACCEL+GFX_TARGET_BASE,d1
 	move.l d1,a0
-	move.l #0,$7FFFFFF8			; set burst length zero
+	move.l #$3F000000,$7FFFFFF8			; set burst length 64 (double causes overlap)
 	bra.s .loop
 .loop2:
 	swap d0
@@ -248,7 +248,7 @@ gfxaccel_clear:
 	bsr rbo
 	move.l d1,$7FFFFFF4			; set destination address
 	move.l d4,$7FFFFFFC			; write value (color) to use and trigger write op
-	lea 32(a0),a0						; advance pointer
+	lea 1024(a0),a0					; advance pointer 32 bytes * 32 strips
 	dbra d0,.loop
 	swap d0
 	dbra d0,.loop2
@@ -258,7 +258,7 @@ gfxaccel_clear:
 
 
 gfxaccel_set_color_depth:
-	move.l d0,d1
+	move.l d1,d0
 	moveq #2,d1
 	bsr gfxaccel_wait					; wait for an open slot
 	move.l d0,GFXACCEL+GFX_COLOR_COMP
@@ -276,8 +276,7 @@ gfxaccel_set_color:
 	move.l d1,d3
 	moveq #2,d1
 	bsr gfxaccel_wait					; wait for an open slot
-	move.l d3,d1
-	move.l d1,GFXACCEL+GFX_COLOR0
+	move.l d3,GFXACCEL+GFX_COLOR0
 	movem.l (a7)+,d1/d3
 	moveq #E_Ok,d0
 	rts
@@ -287,12 +286,9 @@ gfxaccel_set_color123:
 	move.l d1,d4
 	moveq #4,d1
 	bsr gfxaccel_wait					; wait for an open slot
-	move.l d4,d1
-	move.l d1,GFXACCEL+GFX_COLOR0
-	move.l d2,d1
-	move.l d1,GFXACCEL+GFX_COLOR1
-	move.l d3,d1
-	move.l d1,GFXACCEL+GFX_COLOR2
+	move.l d4,GFXACCEL+GFX_COLOR0
+	move.l d2,GFXACCEL+GFX_COLOR1
+	move.l d3,GFXACCEL+GFX_COLOR2
 	movem.l (a7)+,d1/d4
 	moveq #E_Ok,d0
 	rts
@@ -300,38 +296,29 @@ gfxaccel_set_color123:
 gfxaccel_clip_rect:
 	movem.l d1/d5,-(a7)
 	move.l d1,d5
-	moveq #6,d1
+	moveq #5,d1
 	bsr gfxaccel_wait					; wait for an open slot
-	move.l d5,d1
-	move.l d1,GFXACCEL+GFX_CLIP_PIXEL0_X
-	move.l d2,d1
-	move.l d1,GFXACCEL+GFX_CLIP_PIXEL0_Y
-	move.l d3,d1
-	move.l d1,GFXACCEL+GFX_CLIP_PIXEL1_X
-	move.l d4,d1
-	move.l d1,GFXACCEL+GFX_CLIP_PIXEL1_Y
+	move.l d5,GFXACCEL+GFX_CLIP_PIXEL0_X
+	move.l d2,GFXACCEL+GFX_CLIP_PIXEL0_Y
+	move.l d3,GFXACCEL+GFX_CLIP_PIXEL1_X
+	move.l d4,GFXACCEL+GFX_CLIP_PIXEL1_Y
 	movem.l (a7)+,d1/d5
 	moveq #E_Ok,d0
 	rts
 
+; Assumes the point number is valid
+;
 ; Parameters:
-;		d2.b = active point to set (0 to 2)
+;		d2.l = active point to set (0 to 2)
 ;
 gfxaccel_set_active_point:
-	cmpi.b #3,d2
-	bhs.s .0001
-	ext.w d2
-	ext.l d2
-	swap d2													; point number in bits 16,17
+	swap d2													; move point number to bits 16,17
 	move.l gfxaccel_ctrl,d1
 	andi.l #$FFF8FFFF,d1						; clear point number bits
 	or.l d2,d1											; set the point number bits
+	move.l d1,gfxaccel_ctrl
 	ori.l #$00040000,d1							; set active point+forward point bit
-	move.l d1,gfxaccel_ctrl
 	move.l d1,GFXACCEL+GFX_CTRL
-	andi.l #$FFFDFFFF,d1						; clear forward point bit
-	move.l d1,gfxaccel_ctrl
-.0001
 	rts
 
 ; Graphics accelerator expects that co-ordinates are in 16.16 format.
@@ -344,12 +331,12 @@ gfxaccel_set_active_point:
 gfxaccel_plot_point:
 	movem.l d1/d5,-(a7)
 	move.l d1,d5
-	moveq #5,d1
+	moveq #6,d1
 	bsr gfxaccel_wait								; wait for an open slot
 	move.l d5,GFXACCEL+GFX_DEST_PIXEL_X
 	move.l d2,GFXACCEL+GFX_DEST_PIXEL_Y
 	move.l d3,GFXACCEL+GFX_DEST_PIXEL_Z
-	move.w #0,d2										; point 0
+	moveq #0,d2											; point 0
 	bsr gfxaccel_set_active_point
 	move.l gfxaccel_ctrl,d1
 	ori.l #$00000080,d1							; point write, bit will clear automatically
@@ -374,12 +361,12 @@ gfxaccel_draw_line:
 	move.l d6,GFXACCEL+GFX_DEST_PIXEL_X
 	move.l d2,GFXACCEL+GFX_DEST_PIXEL_Y
 	move.l d3,GFXACCEL+GFX_DEST_PIXEL_Z
-	move.w #0,d2										; point 0
+	moveq #0,d2											; point 0
 	bsr gfxaccel_set_active_point
 	move.l d4,GFXACCEL+GFX_DEST_PIXEL_X
 	move.l d5,GFXACCEL+GFX_DEST_PIXEL_Y
 	move.l d0,GFXACCEL+GFX_DEST_PIXEL_Z
-	move.w #1,d2										; point 1
+	moveq #1,d2											; point 1
 	bsr gfxaccel_set_active_point
 	move.l gfxaccel_ctrl,d1					; get the control reg
 	ori.l #$00000200,d1							; trigger draw line
@@ -397,24 +384,24 @@ gfxaccel_draw_line:
 ;		d4	- y1 pos
 
 gfxaccel_draw_rectangle:
-	movem.l d1/d2/d5,-(a7)
-	move.l d1,d5
-	moveq #8,d1
+	movem.l d1/d2/d6,-(a7)
+	move.l d1,d6
+	moveq #9,d1
 	bsr gfxaccel_wait								; wait for an open slot
-	move.l d5,GFXACCEL+GFX_DEST_PIXEL_X
+	move.l d6,GFXACCEL+GFX_DEST_PIXEL_X
 	move.l d2,GFXACCEL+GFX_DEST_PIXEL_Y
-	clr.l GFXACCEL+GFX_DEST_PIXEL_Z
-	move.w #0,d2										; point 0
+	move.l d3,GFXACCEL+GFX_DEST_PIXEL_Z
+	moveq #0,d2											; point 0
 	bsr gfxaccel_set_active_point
-	move.l d3,GFXACCEL+GFX_DEST_PIXEL_X
-	move.l d4,GFXACCEL+GFX_DEST_PIXEL_Y
-	clr.l GFXACCEL+GFX_DEST_PIXEL_Z
-	move.w #1,d2										; point 1
+	move.l d4,GFXACCEL+GFX_DEST_PIXEL_X
+	move.l d5,GFXACCEL+GFX_DEST_PIXEL_Y
+	move.l d0,GFXACCEL+GFX_DEST_PIXEL_Z
+	moveq #1,d2											; point 1
 	bsr gfxaccel_set_active_point
 	move.l gfxaccel_ctrl,d1					; get the control reg
 	ori.l #$00000100,d1							; trigger draw rectangle
 	move.l d1,GFXACCEL+GFX_CTRL
-	movem.l (a7)+,d1/d2/d5
+	movem.l (a7)+,d1/d2/d6
 	moveq #E_Ok,d0
 	rts
 
@@ -439,17 +426,17 @@ gfxaccel_draw_triangle:
 	move.l d7,GFXACCEL+GFX_DEST_PIXEL_X
 	move.l d2,GFXACCEL+GFX_DEST_PIXEL_Y
 	move.l d3,GFXACCEL+GFX_DEST_PIXEL_Z
-	move.w #0,d2										; point 0
+	moveq #0,d2											; point 0
 	bsr gfxaccel_set_active_point
 	move.l d4,GFXACCEL+GFX_DEST_PIXEL_X
 	move.l d5,GFXACCEL+GFX_DEST_PIXEL_Y
 	move.l d0,GFXACCEL+GFX_DEST_PIXEL_Z
-	move.w #1,d2										; point 1
+	moveq #1,d2											; point 1
 	bsr gfxaccel_set_active_point
 	move.l a1,GFXACCEL+GFX_DEST_PIXEL_X
 	move.l a2,GFXACCEL+GFX_DEST_PIXEL_Y
 	move.l a3,GFXACCEL+GFX_DEST_PIXEL_Z
-	move.w #2,d2										; point 2
+	moveq #2,d2											; point 2
 	bsr gfxaccel_set_active_point
 	move.l gfxaccel_ctrl,d1					; get the control reg
 	ori.l #$00000400,d1							; trigger draw triangle
@@ -466,17 +453,17 @@ gfxaccel_draw_curve:
 	move.l d7,GFXACCEL+GFX_DEST_PIXEL_X
 	move.l d2,GFXACCEL+GFX_DEST_PIXEL_Y
 	clr.l GFXACCEL+GFX_DEST_PIXEL_Z
-	move.w #0,d2										; point 0
+	moveq #0,d2											; point 0
 	bsr gfxaccel_set_active_point
 	move.l d3,GFXACCEL+GFX_DEST_PIXEL_X
 	move.l d4,GFXACCEL+GFX_DEST_PIXEL_Y
 	clr.l GFXACCEL+GFX_DEST_PIXEL_Z
-	move.w #1,d2										; point 1
+	moveq #1,d2											; point 1
 	bsr gfxaccel_set_active_point
 	move.l d5,GFXACCEL+GFX_DEST_PIXEL_X
 	move.l d0,GFXACCEL+GFX_DEST_PIXEL_Y
 	clr.l GFXACCEL+GFX_DEST_PIXEL_Z
-	move.w #2,d2										; point 2
+	moveq #2,d2											; point 2
 	bsr gfxaccel_set_active_point
 	move.l gfxaccel_ctrl,d1					; get the control reg
 	ori.l #$00001C00,d1							; trigger draw curve+triangle+interp
@@ -498,7 +485,7 @@ gfxaccel_wait:
 	move.l GFXACCEL+GFX_STATUS,d1
 	btst.l #0,d1			; first check busy bit
 	bne.s .0001
-	swap d1
+	swap d1						; que count is in bits 16 to 31
 	ext.l d1
 	move.l d3,d2
 	add.l d1,d2

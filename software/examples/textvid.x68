@@ -75,11 +75,23 @@ TEXTVID_CMDTBL:
 	TBLE textvid_get_inpos
 	TBLE textvid_get_outpos
 	TBLE textvid_get_outptr
+	TBLE textvid_stub
+	TBLE textvid_stub
+	TBLE textvid_stub
+	TBLE textvid_stub
+	TBLE textvid_stub
+	TBLE textvid_stub				; 30
+	TBLE textvid_stub
+	TBLE textvid_stub
+	TBLE textvid_stub
+	TBLE textvid_stub
+	TBLE textvid_stub
+	TBLE textvid_get_inptr
 
 	code
 	even
 textvid_cmdproc:
-	cmpi.b #25,d6
+	cmpi.b #37,d6
 	bhs.s .0001
 	movem.l d6/a0,-(a7)
 	ext.w d6
@@ -171,7 +183,26 @@ textvid_stat:
 
 	align 2
 textvid_getchar:
-	bsr FromScreen
+	movem.l d2/a0,-(sp)
+	move.l textvid_dcb+DCB_INBUFPTR,a0
+	move.l textvid_dcb+DCB_INPOSX,d0
+	move.l textvid_dcb+DCB_INPOSY,d1
+	move.l textvid_dcb+DCB_INDIMX,d2
+	mulu d1,d2
+	add.l d0,d2
+	if (SCREEN_FORMAT==1)
+		lsl.l #2,d2
+		move.l (a0,d2.l),d1
+	else
+		lsl.l #3,d2
+		move.l 4(a0,d2.l),d1
+	endif
+	rol.w #8,d1			; swap byte order
+	swap d1
+	rol.w #8,d1
+	andi.l #$0FF,d1
+	bsr IncInputPos
+	movem.l (sp)+,d2/a0
 	moveq #E_Ok,d0
 	rts
 
@@ -203,6 +234,7 @@ textvid_set_outpos:
 	move.l d1,textvid_dcb+DCB_OUTPOSX
 	move.l d2,textvid_dcb+DCB_OUTPOSY
 	move.l d3,textvid_dcb+DCB_OUTPOSZ
+	bsr SyncCursor
 	move.l #E_Ok,d0
 	rts
 
@@ -228,6 +260,24 @@ textvid_get_outptr:
 		lsl.l #3,d1
 	endif
 	add.l textvid_dcb+DCB_OUTBUFPTR,d1
+	move.l (a7)+,d2
+	move.l #E_Ok,d0
+	rts
+
+	align 2
+textvid_get_inptr:
+	move.l d2,-(a7)
+	move.l textvid_dcb+DCB_INPOSX,d1
+	move.l textvid_dcb+DCB_INPOSY,d0
+	move.l textvid_dcb+DCB_INDIMX,d2
+	mulu d2,d0
+	add.l d0,d1
+	if (SCREEN_FORMAT==1)
+		lsl.l #2,d1
+	else
+		lsl.l #3,d1
+	endif
+	add.l textvid_dcb+DCB_INBUFPTR,d1
 	move.l (a7)+,d2
 	move.l #E_Ok,d0
 	rts
@@ -399,7 +449,7 @@ CalcScreenLoc:
 textvid_putchar:
 	movem.l	d1/d2/d3,-(a7)
 	movec	coreno,d2
-	cmpi.b #2,d2
+	cmpi.l #2,d2
 ;	bne.s		.0001
 ;	bsr			SerialPutChar
 .0001:
@@ -579,7 +629,27 @@ IncCursorRow:
 	move.l d0,textvid_dcb+DCB_OUTPOSY		; in case CursorRow is way over
 	subq.l #1,textvid_dcb+DCB_OUTPOSY
 	bsr	ScrollUp
-icc1:
+	bsr SyncCursor
+icc1
+	rts
+
+IncInputPos:
+	move.l d0,-(sp)
+	addq.l #1,textvid_dcb+DCB_INPOSX
+	move.l textvid_dcb+DCB_INDIMX,d0
+	cmp.l	textvid_dcb+DCB_INPOSX,d0
+	bhs.s	icc2
+	clr.l textvid_dcb+DCB_INPOSX
+IncInputRow:
+	addq.l #1,textvid_dcb+DCB_INPOSY
+	move.l textvid_dcb+DCB_INDIMY,d0
+	cmp.l textvid_dcb+DCB_INPOSY,d0
+	bhi.s	icc2
+	move.l textvid_dcb+DCB_INDIMY,d0
+	move.l d0,textvid_dcb+DCB_INPOSY		; in case CursorRow is way over
+	subq.l #1,textvid_dcb+DCB_INPOSY
+icc2
+	move.l (sp)+,d0
 	rts
 
 ;------------------------------------------------------------------------------
@@ -689,7 +759,7 @@ HomeCursor:
 	clr.l textvid_dcb+DCB_OUTPOSX
 	clr.l textvid_dcb+DCB_OUTPOSY
 	clr.l textvid_dcb+DCB_OUTPOSZ
-	; fall through
+	bra SyncCursor
 
 ;------------------------------------------------------------------------------
 ; SyncCursor:
@@ -707,10 +777,10 @@ HomeCursor:
 
 	align 2
 SyncCursor:
-	move.l #$FFFFFFFD,leds
 	movem.l	d0/d1/d2,-(a7)
-	movec	coreno,d0
-	cmp.b	IOFocus,d0
+	movec.l	coreno,d0
+;	cmp.l	IOFocus,d0
+	cmp.l #2,d0
 	bne.s .0001
 	move.l textvid_dcb+DCB_OUTPOSX,d0
 	move.l textvid_dcb+DCB_OUTPOSY,d1
@@ -720,7 +790,7 @@ SyncCursor:
 	rol.w	#8,d2					; swap byte order
 	swap d2
 	rol.w #8,d2
-	move.l d2,TEXTREG+$24
+	move.l d2,TEXTREG+TEXTREG_CURSOR_POS
 .0001:	
 	movem.l	(a7)+,d0/d1/d2
 	rts

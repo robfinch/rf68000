@@ -144,6 +144,24 @@ _GetChar:
 	beq .0001
 	rts
 
+_get_char:
+	movem.l d6/d7,-(sp)
+	move.l 12(sp),d7
+	moveq #DEV_GETCHAR,d6
+	trap #0
+	movem.l (sp)+,d6/d7
+	move.l d1,d0
+	rts
+
+_put_char:
+	movem.l d1/d6/d7,-(sp)
+	move.l 16(sp),d7
+	move.l 20(sp),d1
+	moveq #DEV_PUTCHAR,d6
+	trap #0
+	movem.l (sp)+,d1/d6/d7
+	rts
+
 _GetCharNonBlocking:
 .0001
 	moveq #5,d0
@@ -316,6 +334,31 @@ _get_output_pos:
 	movem.l (sp)+,d1/d2/d3/d6/d7/a0
 	rts
 	
+_get_input_pos:
+	movem.l d1/d2/d3/d6/d7/a0,-(sp)
+	move.l 28(sp),d7
+	moveq #DEV_GET_INPOS,d6
+	trap #0
+	move.l 32(sp),a0
+	move.l d1,(a0)
+	move.l 36(sp),a0
+	move.l d2,(a0)
+	move.l 40(sp),a0
+	move.l d3,(a0)
+	movem.l (sp)+,d1/d2/d3/d6/d7/a0
+	rts
+	
+_set_input_pos:
+	movem.l d1/d2/d3/d6/d7,-(sp)
+	move.l 24(sp),d7
+	moveq #DEV_SET_INPOS,d6
+	move.l 28(sp),d1
+	move.l 32(sp),d2
+	move.l 36(sp),d3
+	trap #0
+	movem.l (sp)+,d1/d2/d3/d6/d7
+	rts
+	
 
 	global _OutputChar
 	global _OutputCRLF
@@ -333,6 +376,10 @@ _get_output_pos:
 	global _CvtStringToDecflt
 	global _GetCharNonBlocking
 	global _get_output_pos
+	global _get_input_pos
+	global _set_input_pos
+	global _get_char
+	global _put_char
 
 	global _DumpStack
 	global _set_color_depth
