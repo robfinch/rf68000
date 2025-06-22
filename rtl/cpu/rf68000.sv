@@ -474,8 +474,9 @@ typedef enum logic [7:0] {
 	
 	FETCH_IMM64,
 	FETCH_IMM64b,
-	FETCH_IMM64c
-
+	FETCH_IMM64c,
+	
+	WAIT_NACK
 } state_t;
 
 typedef enum logic [4:0] {
@@ -605,6 +606,8 @@ wire [31:0] a6o;
 wire [31:0] spo;
 wire [31:0] flagso;
 wire [31:0] pco;
+reg [15:0] pid_stack [0:15];
+reg [3:0] pid_sp;
 reg cf,vf,nf,zf,xf,sf,tf;
 reg [2:0] im;
 reg [2:0] ccr57;
@@ -818,12 +821,14 @@ reg [31:0] dfc;		// 001
 reg [31:0] apc;
 reg [7:0] cpl;
 reg [31:0] tr;
+reg [15:0] cpid;
+wire [15:0] npid = pid_stack[pid_sp+4'd1];
 reg [31:0] tcba;
 reg [31:0] mmus, ios, iops;
 reg [31:0] canary;
 assign mmus_o = adr_o[31:20] == mmus[31:20];
 assign iops_o = adr_o[31:16] == iops[31:16];
-assign ios_o  = adr_o[31:24] == ios [31:24];
+assign ios_o  = adr_o[31:24] == ios [31:24] || adr_o[31:28]==4'hD;
 integer n;
 
 wire [16:0] lfsr_o;
@@ -1503,6 +1508,10 @@ end
 
 always_ff @(posedge clk_i)
 if (rst_i) begin
+	pc <= 32'h1000;
+	pid_sp <= 4'd0;
+	for (n = 0; n < 16; n = n + 1)
+		pid_stack[n] <= 16'd1;
 	em <= 1'b0;
 	lock_o <= 1'b0;
 	cyc_o <= 1'b0;
@@ -4616,7 +4625,7 @@ FETCH_BRDISPa:
 `endif			
 				pc <= pc + {{16{d[15]}},d[15:0]};
 		end
-		ret();
+		goto(WAIT_NACK);
 	end
 
 // Fetch 8 bit immediate
@@ -4646,7 +4655,7 @@ FETCH_IMM8:
 FETCH_IMM8a:
 	begin
 		pc <= pc + 32'd2;
-		ret();
+		goto(WAIT_NACK);
 	end
 
 // Fetch 16 bit immediate
@@ -4676,7 +4685,7 @@ FETCH_IMM16:
 FETCH_IMM16a:
 	begin
 		pc <= pc + 32'd2;
-		ret();
+		goto(WAIT_NACK);
 	end
 
 // Fetch 32 bit immediate
@@ -4709,7 +4718,7 @@ FETCH_IMM32:
      	else
       	s[15:0] <= dat_i[31:16];
 `endif      
-		  goto(FETCH_IMM32a);
+		  call(WAIT_NACK,FETCH_IMM32a);
 		end
 		else begin
 `ifdef BIG_ENDIAN
@@ -4757,7 +4766,7 @@ FETCH_IMM32a:
 FETCH_IMM32b:
 	begin
 		pc <= pc + 32'd4;
-		ret();
+		goto(WAIT_NACK);
 	end
 	
 FETCH_IMM64:
@@ -4837,7 +4846,7 @@ FETCH_D32:
 `else
       disp[15:0] <= dat_i[31:16];
 `endif        
-  		goto (FETCH_D32a);
+			call (WAIT_NACK,FETCH_D32a);
 		end
 		else begin
 	    cyc_o <= `LOW;
@@ -4872,7 +4881,7 @@ FETCH_D32b:
 	begin
 		pc <= pc + 4'd4;
 		ea <= ea + disp;
-		ret();
+		goto(WAIT_NACK);
 	end
 
 // Fetch 16 bit displacement
@@ -4899,7 +4908,7 @@ FETCH_D16a:
 	begin
 		pc <= pc + 32'd2;
 		ea <= ea + disp;
-		ret();
+		goto(WAIT_NACK);
 	end
 
 // Fetch index word
@@ -4932,7 +4941,7 @@ FETCH_NDXa:
 			ea <= ea + rfob + disp;
 		else
 			ea <= ea + {{16{rfob[15]}},rfob[15:0]} + disp;
-		ret();
+		goto(WAIT_NACK);
 	end
 
 FETCH_BYTE:
@@ -4973,7 +4982,7 @@ FETCH_BYTE:
       2'b11:  s <= {{24{dat_i[31]}},dat_i[31:24]};
       endcase
 		end
-		ret();
+		goto(WAIT_NACK);
 	end
 
 // Fetch byte, but hold onto bus
@@ -5016,7 +5025,7 @@ LFETCH_BYTE:
       2'b11:  s <= {{24{dat_i[31]}},dat_i[31:24]};
       endcase
     end
-		ret();
+		goto(WAIT_NACK);
 	end
 
 FETCH_WORD:
@@ -5050,7 +5059,7 @@ FETCH_WORD:
 		else
 		  s <= ea[1] ? {{16{dat_i[31]}},dat_i[31:16]} : {{16{dat_i[15]}},dat_i[15:0]};
 `endif		  
-		ret();
+		goto(WAIT_NACK);
 	end
 
 FETCH_LWORD:
@@ -5099,7 +5108,7 @@ FETCH_LWORD:
       else
         s <= dat_i;
 `endif            
-      ret();
+			goto(WAIT_NACK);
     end
 	end
 FETCH_LWORDa:
@@ -5124,8 +5133,11 @@ FETCH_LWORDa:
 		else
 			s[31:16] <= dat_i[15:0];
 `endif			
-		ret();
+		goto(WAIT_NACK);
 	end
+WAIT_NACK:
+	if (!ack_i)
+		ret();
 
 FETCH_OCTA:
 	call (FETCH_LWORD,FETCH_OCTA1);
@@ -5159,7 +5171,7 @@ FETCH_OCTA2:
 			fpd[63:32] <= d;
 `endif
 		ea <= ea - 4'd4;
-		ret();
+		goto(WAIT_NACK);
 	end
 
 FETCH_HEXI1:
@@ -5210,7 +5222,7 @@ FETCH_HEXI4:
 			fpd[95:64] <= d;
 `endif
 		ea <= ea - 4'd8;			
-		ret();
+		goto(WAIT_NACK);
 	end
 
 STORE_OCTA:
@@ -5235,7 +5247,7 @@ STORE_OCTA1:
 STORE_OCTA2:
 	begin
 		ea <= ea - 4'd4;
-		ret();
+		goto(WAIT_NACK);
 	end
 
 STORE_HEXI1:
@@ -5270,7 +5282,7 @@ STORE_HEXI3:
 STORE_HEXI4:
 	begin
 		ea <= ea - 4'd8;
-		ret();
+		goto(WAIT_NACK);
 	end
 
 
@@ -5300,7 +5312,7 @@ STORE_BYTE:
 		stb_o <= 1'b0;
 		we_o <= 1'b0;
 		sel_o <= 4'b0;
-		ret();
+		goto(WAIT_NACK);
 	end
 
 // Store byte and unlock
@@ -5331,7 +5343,7 @@ USTORE_BYTE:
 		stb_o <= 1'b0;
 		we_o <= 1'b0;
 		sel_o <= 2'b00;
-		ret();
+		goto(WAIT_NACK);
 	end
 
 STORE_WORD:
@@ -5360,7 +5372,7 @@ STORE_WORD:
 		stb_o <= 1'b0;
 		we_o <= 1'b0;
 		sel_o <= 2'b00;
-		ret();
+		goto(WAIT_NACK);
 	end
 STORE_LWORD:
 	if (!cyc_o) begin
@@ -5395,7 +5407,7 @@ STORE_LWORD:
       stb_o <= 1'b0;
       we_o <= 1'b0;
       sel_o <= 4'b00;
-      ret();
+			goto(WAIT_NACK);
 		end
 	end
 STORE_LWORDa:
@@ -5410,7 +5422,7 @@ STORE_LWORDa:
 		stb_o <= 1'b0;
 		we_o <= 1'b0;
 		sel_o <= 4'b0000;
-		ret();
+		goto(WAIT_NACK);
 	end
 
 //----------------------------------------------------
@@ -5418,6 +5430,7 @@ STORE_LWORDa:
 RESET:
   begin
     pc <= `RESET_VECTOR;
+    adr_o <= 32'h0;
     push(IFETCH);
     goto(TRAP);
 	end
@@ -5527,6 +5540,8 @@ TRAP3:
 			usp <= sp;
 			sp <= ssp;
 		end
+		pid_stack[pid_sp-4'd1] <= cpid;
+		pid_sp <= pid_sp - 4'd1;
 `ifdef SUPPORT_010
 		if (is_bus_err | is_adr_err)
 			goto (TRAP20);
@@ -5826,13 +5841,18 @@ RTE3:
 		sp <= sp + 4'd2;
 		if (!rtr)
 			call (FETCH_WORD,RTE4);
-		else
+		else begin
+			pid <= pid_stack[pid_sp];
+			pid_sp <= pid_sp + 4'd1;
 			ret();
+		end
 `else
 		if (!rtr && !sf) begin
 			ssp <= sp;
 			sp <= usp;
 		end		
+		cpid <= pid_stack[pid_sp];
+		pid_sp <= pid_sp + 4'd1;
 		ret();
 `endif		
 	end
@@ -5851,6 +5871,8 @@ RTE4:
 				ssp <= sp;
 				sp <= usp;	// switch back to user stack
 			end
+			pid <= pid_stack[pid_sp];
+			pid_sp <= pid_sp + 4'd1;
 			ret();
 		end
 	end
@@ -5900,6 +5922,8 @@ RTE11:
 			ssp <= sp;
 			sp <= usp;	// switch back to user stack
 		end
+		pid <= pid_stack[pid_sp];
+		pid_sp <= pid_sp + 4'd1;
 		ret();
 	end
 `endif
@@ -6616,6 +6640,7 @@ MOVERn2Rc2:
 	12'h014:	begin mmus <= rfoRnn; ret(); end
 	12'h015:	begin ios <= rfoRnn; ret(); end
 	12'h016:	begin iops <= rfoRnn; ret(); end
+	12'h017:	begin cpid <= rfoRnn[15:0]; ret(); end
 	12'h020:	begin canary <= rfoRnn; ret(); end
 	12'h800:	begin usp <= rfoRnn; ret(); end
 	12'h801:	begin vbr <= rfoRnn; ret(); end
@@ -6656,6 +6681,8 @@ MOVERc2Rn:
 	12'h014:  begin resL <= mmus; Rt <= imm[15:12]; rfwrL <= 1'b1; ret(); end
 	12'h015:  begin resL <= ios; Rt <= imm[15:12]; rfwrL <= 1'b1; ret(); end
 	12'h016:  begin resL <= iops; Rt <= imm[15:12]; rfwrL <= 1'b1; ret(); end
+	12'h017:  begin resL <= {16'h0,cpid}; Rt <= imm[15:12]; rfwrL <= 1'b1; ret(); end
+	12'h018:  begin resL <= {16'h0,npid}; Rt <= imm[15:12]; rfwrL <= 1'b1; ret(); end
 	12'h020:  begin resL <= canary; Rt <= imm[15:12]; rfwrL <= 1'b1; ret(); end
 	12'h800:	begin resL <= usp; Rt <= imm[15:12]; rfwrL <= 1'b1; ret(); end
 	12'h801:	begin resL <= vbr; Rt <= imm[15:12]; rfwrL <= 1'b1; ret(); end
