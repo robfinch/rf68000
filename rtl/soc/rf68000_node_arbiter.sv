@@ -108,7 +108,7 @@ else begin
 	endcase
 	case(state)
 	ST_IDLE:
-		if (nic_cyc && (w1==2'b00 || w1==2'b01)) begin
+		if (nic_cyc && nic_stb && (w1==2'b00 || w1==2'b01)) begin
 			w1 <= 2'b01;
 			if (nic_adr[31:20]=={8'hFF,id[3:0]}) begin
 				ram_adr <= nic_adr;
@@ -120,7 +120,7 @@ else begin
 			else
 				nic_ack <= 1'b1;
 		end
-		else if (cpu_cyc && (w1==2'b00 || w1==2'b10)) begin
+		else if (cpu_cyc && cpu_stb && (w1==2'b00 || w1==2'b10)) begin
 			w1 <= 2'b10;
 			if (cpu_adr[31:18]==14'h0) begin
 				state <= cpu_we ? ST_RD2 : ST_RD1;
@@ -211,8 +211,10 @@ else begin
 		end
 	ST_ACK:
 		begin
-			cpu_dati <= ram_dato;
-			nic_dati <= ram_dato;
+			if (ram_en) begin
+				cpu_dati <= ram_dato;
+				nic_dati <= ram_dato;
+			end
 			ram_en <= FALSE;
 			if ((nic_ack & nic_cyc & nic_stb) || (cpu_ack & cpu_cyc & cpu_stb))
 				;
