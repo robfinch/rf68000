@@ -146,7 +146,7 @@ always_comb
 
 reg s1_cyc;
 always_comb
-	s1_cyc = s1_cyc_i && (s1_adr_i[31:24]==8'hFD && s1_adr_i[23:16]!=8'h20) || (s1_adr_i[31:28]==4'hD);
+	s1_cyc = s1_cyc_i && ((s1_adr_i[31:24]==8'hFD && s1_adr_i[23:16]!=8'h20) || (s1_adr_i[31:28]==4'hD));
 
 reg cop_cs0;
 reg cop_cs1;
@@ -262,7 +262,7 @@ IDLE:
     	cs6_o <= s1_cs6;
     	cs7_o <= s1_cs7;
       m_cyc_o <= 1'b1;
-      m_stb_o <= 1'b1;
+      m_stb_o <= s1_stb_i;
 	    m_we_o <= s1_we_i;
       m_sel_o <= s1_sel_i;
 	    m_adr_o <= s1_adr_i;
