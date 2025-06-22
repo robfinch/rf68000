@@ -1242,19 +1242,23 @@ chk_exception:
 ; -----------------------------------------------------------------------------
 
 Delay3s:
-	move.l	#3000000,d0		; this should take a few seconds to loop
-	lea			leds,a0				; a0 = address of LED output register
-	bra			dly3s1				; branch to the loop
+	movec.l coreno,d2
+	move.l #3000000,d0		; this should take a few seconds to loop
+	lea	leds,a0						; a0 = address of LED output register
+	bra	dly3s1						; branch to the loop
 dly3s2:	
-	swap		d0						; loop is larger than 16-bits
+	swap d0								; loop is larger than 16-bits
 dly3s1:
-	move.l	d0,d1					; the counter cycles fast, so use upper bits for display
-	rol.l		#8,d1					; could use swap here, but lets test rol
-	rol.l		#8,d1
-	move.b	d1,(a0)				; set the LEDs
-	dbra		d0,dly3s1			; decrement and branch back
-	swap		d0
-	dbra		d0,dly3s2
+	move.l d0,d1					; the counter cycles fast, so use upper bits for display
+	rol.l #8,d1						; could use swap here, but lets test rol
+	rol.l #8,d1
+	cmpi.b #2,d2
+	bne.s .0001
+	move.b d1,(a0)				; set the LEDs only for core #2
+.0001	
+	dbra d0,dly3s1				; decrement and branch back
+	swap d0
+	dbra d0,dly3s2
 	rts
 
 Delay3s2:
