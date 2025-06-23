@@ -21,6 +21,7 @@ KBD_CMDADDR macro arg1
 	dc.b ((\1-KBD_CMDTBL)>>2)
 endm
 
+	align 2
 KBD_CMDTBL:
 	KBD_CMDADDR keybd_init				; 0
 	KBD_CMDADDR keybd_stat
@@ -403,7 +404,7 @@ GetKey:
 	move.l d0,-(a7)						; push d0
 	move.l IOFocus,d1					; Check if the core has the IO focus
 	movec.l	coreno,d0
-	cmp.l	#2,d0	;,d1
+	cmp.l	d0,d1
 	bne.s	.0004								; go return no key available, if not in focus
 	bsr	KeybdGetCharNoWait		; get a character
 	tst.l	d1									; was a key available?

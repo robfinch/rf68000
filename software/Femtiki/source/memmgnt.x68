@@ -829,7 +829,7 @@ _AliasMem:
 ;	dcbAliasBytes is the size of the original memory aliased
 ;
 ; Parameters:
-;		d1 = AliasJobNum	EQU [EBP+12]
+;		d1 = AliasProcessNum	EQU [EBP+12]
 ;		d2 = dcbAliasBytes	EQU [EBP+16]
 ;		d3 = pAliasMem 		EQU [EBP+20]
 ; Returns:
@@ -977,6 +977,8 @@ _DeAllocPage:
 
 ;=============================================================================
 ; QueryMemPages --
+; Assumes this routine is called by the OS and hence does not need to 
+; translate the desintation pPhyRet address.
 ;
 ; Procedureal Interface :
 ;
@@ -993,13 +995,7 @@ _QueryPages:
 	movem.l d1/d2/a1,-(sp)
 	move.l d1,a1
 	move.l _nPagesFree,d1
-	; Should use PID of caller to map address
-	move.w sr,d2
-	ori.w #$2700,sr							; mask interrupts
-	move.l MMU+$2110,MMU+$2100	; set PID to stacked PID
 	move.l d1,(a1)
-	move.l #1,MMU+$2100					; reset system PID
-	move.w d2,sr								; restore interrupts
 	move.l (sp)+,d1/d2/a1
 	move.l #E_Ok,d0
 	rts
@@ -1010,6 +1006,8 @@ _QueryPages:
 ;==============================================================================
 ;
 ; GetPhyAdd -- This returns the phyical address for a linear address
+; Assumes this routine is called by the OS and hence does not need to 
+; translate the desintation pPhyRet address.
 ;
 ;
 ; Procedureal Interface :
@@ -1031,20 +1029,14 @@ _GetPhyAdd:
 	movem.l d1/d2/a1,-(sp)
 	bsr LinToPhy
 	move.l d3,a1
-	; Should use PID of caller to map address
-	move.w sr,d2
-	ori.w #$2700,sr							; mask interrupts
-	move.l MMU+$2110,MMU+$2100	; set PID to stacked PID
 	move.l d1,(a1)
-	move.l #1,MMU+$2100					; reset system PID
-	move.w d2,sr								; restore interrupts
 	moveq #E_Ok,d0
 	movem.l (sp)+,d1/d2/a1
 	rts
 .argerr:
 	moveq #E_Arg,d0
 	rts
-	
+
 	global _nPagesFree
 	global _oMemMax
 	global rgPAM

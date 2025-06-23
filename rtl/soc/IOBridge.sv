@@ -249,7 +249,6 @@ WAIT_ACK:
   	end
   	*/
 		if (m_ack_i) begin
-			tClearBus();
 			s_ack <= 1'b1;
 			// Easier for debug, on a write respond with data written.
 			/*

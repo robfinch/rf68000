@@ -1478,15 +1478,15 @@ ila_0 uila1 (
 	.probe1(unode1.cyc1),//umpmc1.req_fifoo.req.cyc), // input wire [0:0]  probe1 
 	.probe2(unode1.ack1),//umpmc1.req_fifoo.req.we), // input wire [0:0]  probe2
 	.probe3(unode1.we1),
-	.probe4(cs_gfx),
+	.probe4(uuart.cs),
 	.probe5(cs_scr),
 	.probe6(kbd_ack),
 	.probe7(kbd_irq),
-	.probe8(dati),
+	.probe8(uuart.dat_o),
 	.probe9(mem_rd_data_valid),
 	.probe10(cs_dram),
 //	.probe11({unode1.ram1_we[3:0],cpu_if.req.cmd}),
-	.probe11(unode1.ucpu1.dat_i),
+	.probe11(uuart.rx_do),
 /*
 	.probe11({
 		br1_stall,

@@ -90,6 +90,14 @@
 ;
 ;-------------------------------------------------------------------------------
 ;
+; macro to reverse byte order
+
+macRbo macro arg1
+	rol.w #8,\1
+	swap \1
+	rol.w #8,\1
+endm
+
 HAS_MMU equ 0
 NCORES equ 4
 TEXTCOL equ 60
@@ -178,7 +186,7 @@ RAND_MW		EQU	$FDFF401C
 keybd			EQU	$FDFF8000
 KEYBD			EQU	$FDFF8000
 leds			EQU	$FDFFC000
-ACIA			EQU	$FDFE0100
+ACIA			EQU	$FDFE0000
 I2C2 			equ $FDFE4000
 IO_BITMAP	EQU $FDE00000
 FRAMEBUF	EQU	$FD208000
@@ -235,7 +243,7 @@ endm
 
 	data
 	; 0
-	dc.l		$00040FFC
+	dc.l		$00047FFC
 	dc.l		start
 	dc.l		bus_err
 	dc.l		addr_err
@@ -456,16 +464,20 @@ start:
 	endif
 ;	move.l $4000000C,d0
 	move.b #2,leds
-	movec coreno,d0							; set initial value of thread register
+.stp	
+	movec.l coreno,d0							; set initial value of thread register
+;	cmpi.b #2,d0
+;	bne .stp
+	move.b d0,leds
 	swap d0											; coreno in high eight bits
 	lsl.l #8,d0
 	movec d0,tr
 	; Prepare local variable storage
 	move.w #767,d0						; 768 longs to clear
-	lea	$40000,a0							; non shared local memory address
-.0111:
-	clr.l	(a0)+								; clear the memory area
-	dbra d0,.0111
+;	lea	$40000,a0							; non shared local memory address
+;.0111:
+;	clr.l	(a0)+								; clear the memory area
+;	dbra d0,.0111
 	move.b #5,leds
 	move.b #1,InputDevice			; select keyboard input
 	move.b #2,OutputDevice		; select text screen output
@@ -653,9 +665,21 @@ scan_for_dev:
 	moveq #14,d0					; DisplayString
 	lea msgFound(pc),a1
 	trap #15
+	move.l $80(a0),d1
+	macRbo d1
+	move.l d1,numwka+12
+	move.l $84(a0),d1
+	macRbo d1
+	move.l d1,numwka+8
+	move.l $88(a0),d1
+	macRbo d1
+	move.l d1,numwka+4
+	move.l $8C(a0),d1
+	macRbo d1
+	move.l d1,numwka
 	moveq #1,d0						; DisplayStringLimited
-	moveq #12,d1					; max 12 chars
-	lea $80(a0),a1
+	moveq #16,d1					; max 16 chars
+	lea numwka,a1
 	trap #15
 	lea msgAt(pc),a1
 	moveq #14,d0
@@ -663,7 +687,7 @@ scan_for_dev:
 	move.l a0,d1
 	bsr DisplayTetra
 	bsr CRLF
-	bra.s .0003
+	bra .0003
 
 msgScanning
 	dc.b "Scanning for devices...",0
@@ -1242,23 +1266,19 @@ chk_exception:
 ; -----------------------------------------------------------------------------
 
 Delay3s:
-	movec.l coreno,d2
-	move.l #3000000,d0		; this should take a few seconds to loop
-	lea	leds,a0						; a0 = address of LED output register
-	bra	dly3s1						; branch to the loop
+	move.l	#3000000,d0		; this should take a few seconds to loop
+	lea			leds,a0				; a0 = address of LED output register
+	bra			dly3s1				; branch to the loop
 dly3s2:	
-	swap d0								; loop is larger than 16-bits
+	swap		d0						; loop is larger than 16-bits
 dly3s1:
-	move.l d0,d1					; the counter cycles fast, so use upper bits for display
-	rol.l #8,d1						; could use swap here, but lets test rol
-	rol.l #8,d1
-	cmpi.b #2,d2
-	bne.s .0001
-	move.b d1,(a0)				; set the LEDs only for core #2
-.0001	
-	dbra d0,dly3s1				; decrement and branch back
-	swap d0
-	dbra d0,dly3s2
+	move.l	d0,d1					; the counter cycles fast, so use upper bits for display
+	rol.l		#8,d1					; could use swap here, but lets test rol
+	rol.l		#8,d1
+	move.b	d1,(a0)				; set the LEDs
+	dbra		d0,dly3s1			; decrement and branch back
+	swap		d0
+	dbra		d0,dly3s2
 	rts
 
 Delay3s2:
@@ -3274,6 +3294,7 @@ rand_triangle:
 	bsr RandGetNum
 	andi.l #$0FFFF,d1
 	mulu #VIDEO_X,d1
+	move.l #$400,a4			; triangle draw
 	moveq #7,d7
 	moveq #DEV_DRAW_TRIANGLE,d6
 	trap #0
@@ -3326,6 +3347,7 @@ rand_curve:
 	andi.l #$0FFFF,d1
 	mulu #VIDEO_X,d1
 	moveq #7,d7
+	move.l #$0C00,a4						; curve draw
 	moveq #DEV_DRAW_CURVE,d6
 	move.l (sp)+,d7
 	bsr wait1ms

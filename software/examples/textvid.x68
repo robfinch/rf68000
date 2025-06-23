@@ -323,7 +323,7 @@ textvid_get_dimen:
 
 	align 2
 textvid_clear:
-	move.l #$FFFFFFFF,leds
+;	move.l #$FFFFFFFF,leds
 	movem.l	d1/d2/d3/d4/a0,-(a7)
 	movec	coreno,d0
 	swap d0	
@@ -779,8 +779,8 @@ HomeCursor:
 SyncCursor:
 	movem.l	d0/d1/d2,-(a7)
 	movec.l	coreno,d0
-;	cmp.l	IOFocus,d0
-	cmp.l #2,d0
+	cmp.l	IOFocus,d0
+;	cmp.l #2,d0
 	bne.s .0001
 	move.l textvid_dcb+DCB_OUTPOSX,d0
 	move.l textvid_dcb+DCB_OUTPOSY,d1

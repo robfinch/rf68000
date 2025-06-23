@@ -18,6 +18,7 @@ MEMORY {
 
 PHDRS {
 	bios_hdr PT_LOAD AT (0x00000000);
+	bios_data PT_LOAD AT (0x00020000);
 	bios_code PT_LOAD AT (0x00021000);
 	bios_rodata PT_LOAD AT (0x00030000);
 	bios_bss PT_LOAD AT (0x00020800);

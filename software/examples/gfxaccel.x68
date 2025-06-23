@@ -417,6 +417,7 @@ gfxaccel_draw_rectangle:
 ;		a1	- x2
 ;		a2	- y2
 ;		a3	- z2
+;		a4 = $400 to draw triangle, +$800 for curve, +$1000 for interpolate, $2000 for inside
 
 gfxaccel_draw_triangle:
 	movem.l d1/d2/d7,-(a7)
@@ -439,7 +440,8 @@ gfxaccel_draw_triangle:
 	moveq #2,d2											; point 2
 	bsr gfxaccel_set_active_point
 	move.l gfxaccel_ctrl,d1					; get the control reg
-	ori.l #$00000400,d1							; trigger draw triangle
+	move.l a4,d2
+	or.l d2,d1											; trigger draw triangle
 	move.l d1,GFXACCEL+GFX_CTRL
 	movem.l (a7)+,d1/d2/d7
 	moveq #E_Ok,d0
@@ -448,25 +450,26 @@ gfxaccel_draw_triangle:
 gfxaccel_draw_curve:
 	movem.l d1/d2/d7,-(a7)
 	move.l d1,d7
-	moveq #11,d1
+	moveq #13,d1
 	bsr gfxaccel_wait								; wait for an open slot
 	move.l d7,GFXACCEL+GFX_DEST_PIXEL_X
 	move.l d2,GFXACCEL+GFX_DEST_PIXEL_Y
-	clr.l GFXACCEL+GFX_DEST_PIXEL_Z
+	move.l d3,GFXACCEL+GFX_DEST_PIXEL_Z
 	moveq #0,d2											; point 0
 	bsr gfxaccel_set_active_point
-	move.l d3,GFXACCEL+GFX_DEST_PIXEL_X
-	move.l d4,GFXACCEL+GFX_DEST_PIXEL_Y
-	clr.l GFXACCEL+GFX_DEST_PIXEL_Z
+	move.l d4,GFXACCEL+GFX_DEST_PIXEL_X
+	move.l d5,GFXACCEL+GFX_DEST_PIXEL_Y
+	move.l d0,GFXACCEL+GFX_DEST_PIXEL_Z
 	moveq #1,d2											; point 1
 	bsr gfxaccel_set_active_point
-	move.l d5,GFXACCEL+GFX_DEST_PIXEL_X
-	move.l d0,GFXACCEL+GFX_DEST_PIXEL_Y
-	clr.l GFXACCEL+GFX_DEST_PIXEL_Z
+	move.l a1,GFXACCEL+GFX_DEST_PIXEL_X
+	move.l a2,GFXACCEL+GFX_DEST_PIXEL_Y
+	move.l a3,GFXACCEL+GFX_DEST_PIXEL_Z
 	moveq #2,d2											; point 2
 	bsr gfxaccel_set_active_point
 	move.l gfxaccel_ctrl,d1					; get the control reg
-	ori.l #$00001C00,d1							; trigger draw curve+triangle+interp
+	move.l a4,d2
+	or.l d2,d1											; trigger draw curve+triangle+interp $1C00
 	move.l d1,GFXACCEL+GFX_CTRL
 	movem.l (a7)+,d1/d2/d7
 	moveq #E_Ok,d0

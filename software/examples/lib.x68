@@ -1,7 +1,9 @@
 	include "..\Femtiki\device.x68"
 	bss
+_InputDevice:
+	ds.b 1
 _OutputDevice:
-	ds.b 0
+	ds.b 1
 _FpStrBuf:
 	ds.b	60
 
@@ -145,21 +147,21 @@ _GetChar:
 	rts
 
 _get_char:
-	movem.l d6/d7,-(sp)
-	move.l 12(sp),d7
+	movem.l d1/d6/d7,-(sp)
+	move.l 16(sp),d7
 	moveq #DEV_GETCHAR,d6
 	trap #0
-	movem.l (sp)+,d6/d7
 	move.l d1,d0
+	movem.l (sp)+,d1/d6/d7
 	rts
 
 _put_char:
-	movem.l d1/d6/d7,-(sp)
-	move.l 16(sp),d7
-	move.l 20(sp),d1
+	movem.l d0/d1/d6/d7,-(sp)
+	move.l 20(sp),d7
+	move.l 24(sp),d1
 	moveq #DEV_PUTCHAR,d6
 	trap #0
-	movem.l (sp)+,d1/d6/d7
+	movem.l (sp)+,d0/d1/d6/d7
 	rts
 
 _GetCharNonBlocking:
@@ -364,6 +366,7 @@ _set_input_pos:
 	global _OutputCRLF
 	global _OutputFloat
 	global _OutputDevice
+	global _InputDevice
 	global _OutputTetra
 	global _OutputWyde
 	global _OutputByte

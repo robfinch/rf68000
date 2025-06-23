@@ -35,6 +35,7 @@ extern void draw_line(unsigned int dev, unsigned int x0, unsigned int y0, unsign
 extern double CvtStringToDecflt(char* s);
 extern void DumpStack();
 extern char OutputDevice;
+extern char InputDevice;
 extern void OutputChar(int ch);
 extern void OutputCRLF();
 extern void OutputFloat(double);
@@ -44,11 +45,18 @@ extern void OutputWyde(unsigned int);
 extern int coreno;
 extern int CheckForCtrlC();
 extern int GetChar();
+extern int get_char(int dev);
+extern int put_char(int dev, int ch);
+extern int get_output_pos(int dev, int*x, int*y, int*z);
+extern int set_input_pos(int dev, int x, int y, int z);
 
 static char RTCBuf[96];
 
 void bootrom()
 {
+	InputDevice = 1;
+	OutputDevice = 2;
+	OutputString("Bootrom\r\n");
 	shell();
 }
 
@@ -424,13 +432,13 @@ void prompt()
 	OutputString("\r\n$");
 }
 
-void shell()
+int shell()
 {
 	int ch, posx,posy,posz;
 	int n, cmd_num;
 
 /*	set_sp(0x47FF0); */
-	OutputString("Monitor v0.1 \r\n");
+	OutputString("Monitor v0.1 \r\n\r\n");
 	while(1) {
 /*		set_sp(0x47FF0); */
 		prompt();
@@ -484,4 +492,5 @@ void shell()
 			}
 		}
 	}
+	return (0);
 }

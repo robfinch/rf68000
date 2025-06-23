@@ -35,10 +35,10 @@
 // ============================================================================
 
 module rf68851(rst_i, clk_i,
-	cfc_i, ccyc_i, cstb_i, cack_o, cerr_o, cvpa_o,
+	cfc_i, ccyc_i, cstb_i, cack_o, cerr_o, cvpa_o, cios_i,
 	cwe_i, csel_i, cadr_i, cdat_i, cdat_o,
 	mfc_o, mcyc_o, mstb_o, mack_i, merr_i, mvpa_i, mwe_o, msel_o, madr_o,
-	mdat_o, mdat_i, page_fault_o);
+	mdat_o, mdat_i, mios_o, page_fault_o);
 input rst_i;
 input clk_i;
 input [2:0] cfc_i;
@@ -52,6 +52,7 @@ input [3:0] csel_i;
 input [31:0] cadr_i;
 output reg [31:0] cdat_i;
 input [31:0] cdat_o;
+input cios_i;
 output reg [2:0] mfc_o;
 output reg mcyc_o;
 output reg mstb_o;
@@ -63,6 +64,7 @@ output reg [3:0] msel_o;
 output reg [31:0] madr_o;
 output reg [31:0] mdat_o;
 input [31:0] mdat_i;
+output reg mios_o;
 output reg page_fault_o;
 
 parameter PTE_PRESENT = 13;
@@ -95,11 +97,13 @@ reg cyc_i,stb_i,we_i;
 reg [3:0] sel_i;
 reg [31:0] adr_i;
 reg [31:0] dat_o;
+reg ios_i;
 reg mack_id,merr_id,mvpa_id;
 reg [31:0] mdat_id;
 reg work_cyc,work_stb,work_we;
 reg [3:0] work_sel;
 reg [31:0] work_adr;
+reg ack1d;
 reg cs_mmu;
 reg ack1,ack2;
 reg cs_root_ptr;
@@ -140,8 +144,9 @@ typedef enum logic [3:0]
 reg [9:0] mmu_state;
 
 // Detect kernel address space
+// First 256MB or highest 1GB
 always_comb
-	kernel_as = cadr_i[31:24]==8'h00;
+	kernel_as = cadr_i[31:28]==4'h0 || cadr_i[31:30]==2'b11 || cfc_i[2];
 
 always_comb
 	cs_mmu = cadr_i[31:16]==16'hFD07 && ccyc_i && cstb_i;
@@ -166,6 +171,10 @@ always_ff @(posedge clk_i)
 always_ff @(posedge clk_i)
 	root_ptro <= root_ptr[adri_r];
 
+wire pe_wr, pe_rd, ne_mcyc;
+edge_det ued1 (.rst(rst_i), .clk(clk_i), .ce(1'b1), .i(cs_mmu &  cwe_i), .pe(pe_wr), .ne(), .ee());
+edge_det ued2 (.rst(rst_i), .clk(clk_i), .ce(1'b1), .i(cs_mmu & ~cwe_i), .pe(pe_rd), .ne(), .ee());
+
 always_ff @(posedge clk_i)
 if (rst_i) begin
 	pid <= 11'd0;
@@ -175,33 +184,35 @@ if (cs_mmu & cwe_i)
 	casez(cadr_i[13:2])
 	12'b100000??????:	
 		mmu_en[cadr_i[7:2]] <= cdat_o;
-	12'b000001000000:	
+	12'b100001000000:	
 		pid <= cdat_o[10:0];
 	default:	;
 	endcase
 end
 
 
-always_comb
-if (cs_mmu)
+always_ff @(posedge clk_i)
+if (cs_mmu & ~cwe_i)
 	casez(adri_r[13:2])
-	12'b0???????????:	cdat_i = root_ptro;
+	12'b0???????????:	cdat_i <= root_ptro;
 	12'b100000??????:	
 		begin
-			cdat_i = mmu_en[adri_r[7:2]];
+			cdat_i <= mmu_en[adri_r[7:2]];
 		end
 	12'b100001000000:
 		begin
-			cdat_i = 32'd0;
-			cdat_i[10:0] = pid;
+			cdat_i <= 32'd0;
+			cdat_i[10:0] <= pid;
 		end
 	12'b100001000001:
-		cdat_i = page_fault_addr;
-	default:	cdat_i = 32'd0;
+		cdat_i <= page_fault_addr;
+	default:	cdat_i <= 32'd0;
 	endcase
 else
-	cdat_i = mdat_i;
+	cdat_i <= mdat_i;
 
+always_ff @(posedge clk_i)
+	ack1d <= cs_mmu ? ack1 : mack_i;
 
 always_comb
 begin
@@ -252,11 +263,12 @@ begin
 end
 
 always_ff @(posedge clk_i) fc_i <= cfc_i;
-always_ff @(posedge clk_i) cyc_i <= ccyc_i;// & atc_hit_r;
-always_ff @(posedge clk_i) stb_i <= cstb_i;// & atc_hit_r;
+always_ff @(posedge clk_i) cyc_i <= ccyc_i & atc_hit_r;
+always_ff @(posedge clk_i) stb_i <= cstb_i & atc_hit_r;
 always_ff @(posedge clk_i) we_i <= cwe_i;
 always_ff @(posedge clk_i) sel_i <= csel_i;
 always_ff @(posedge clk_i) dat_o <= cdat_o;
+always_ff @(posedge clk_i) ios_i <= cios_i;
 
 always_comb
 if (mmu_access) begin
@@ -275,13 +287,14 @@ begin
 	mfc_o = cfc_i;
 	mcyc_o = ccyc_i & atc_hit_r;
 	mstb_o = cstb_i & atc_hit_r;
-	cack_o = cs_mmu ? ack1 : mack_i;
+	cack_o = ack1d;
 	cerr_o = mmu_act ? atc_err|merr_i : merr_i;
 	cvpa_o = mvpa_i;
 	mwe_o = cwe_i;
 	msel_o = csel_i;
 	madr_o = cadr_i;
 	mdat_o = cdat_o;
+	mios_o = cios_i;
 end
 
 always_ff @(posedge clk_i)
