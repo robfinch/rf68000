@@ -14,8 +14,8 @@ sys_stacks			EQU	$DF0000
 
 FemtikiVars			EQU	$00100200
 PAMLastAllocate2	EQU		$00100218
-RunningAID		EQU		$00100220
-RunningTCB			EQU		$00100224
+RunningAppID	EQU		$00100220
+RunningTCB		EQU		$00100224
 ACBPtrs				EQU		$00100228
 MidStackBottoms	EQU		$00100264
 FemtikiInited	EQU		$00100284
@@ -45,9 +45,11 @@ FreeMSG				EQU		$00100310
 FreeMBX				EQU		$00100314
 TimeoutList		EQU		$00100318
 QueueCycle    EQU   $0010031C
-readyQ				EQU		$00100320
-readyQTail		EQU		$00100340
+readyQ				EQU		$00100320		; 32 bytes per queue per core, 2 cores for now
+readyQEnd			EQU		$00100360
 FemtikiVars_end	EQU	$00100400
+_SysAcb				EQU		$00118000
+_PAM					EQU		$0011E000
 
 ;gc_stack		rmb		512
 ;gc_pc				fcdw		0
