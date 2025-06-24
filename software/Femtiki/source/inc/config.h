@@ -10,4 +10,8 @@
 #define NR_DCB	32
 #define READYQ_DEPTH	256
 
+#define KEYBD_SEMA	3
+#define OSSEMA			8
+#define IOFSEMA			9
+
 #endif

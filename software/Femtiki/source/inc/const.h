@@ -5,6 +5,7 @@
 #define FALSE       0
 
 #define null        (void *)0
+#define NULL				(void *)0
 #define MAX_UINT    0xFFFFFFFF
 #define MAX_INT		0x7FFFFFFF
 #define TS_NONE     0

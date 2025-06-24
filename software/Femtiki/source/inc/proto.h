@@ -30,7 +30,9 @@
 ACB *GetACBPtr();                   // get the ACB pointer of the running task
 ACB *GetRunningACBPtr();
 hACB GetAppHandle();
+extern hTCB GetRunningTCB();
 extern TCB *GetRunningTCBPtr();
+extern unsigned long get_tick();
 
 void FMTK_Reschedule();
 int FMTK_SendMsg(hMBX hMbx, int d1, int d2, int d3);
@@ -114,5 +116,7 @@ extern int *mmu_MapCardMemory();
 extern void DBGDisplayChar(char);
 extern void DBGDisplayString(char *);
 extern void DBGDisplayStringCRLF(char *);
+
+extern long* LinearToPhysical(short int pid, long* linadr);
 
 #endif

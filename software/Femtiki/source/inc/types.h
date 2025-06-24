@@ -102,7 +102,7 @@ typedef struct _tagHeap {
 typedef struct tagMSG {
 	unsigned short int link;
 	unsigned short int retadr;    // return address
-	unsigned short int tgtadr;    // target address
+	unsigned short int dstadr;    // target address
 	unsigned short int type;
 	unsigned long d1;            // payload data 1
 	unsigned long d2;            // payload data 2
@@ -175,7 +175,7 @@ typedef struct _tagTCB {
 	int vl;
 	int cr0;
 	hTCB acbnext;
-	hTCB next;
+	hTCB next
 	hTCB prev;
 	hTCB mbq_next;
 	hTCB mbq_prev;
