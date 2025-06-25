@@ -41,6 +41,15 @@
 #include "inc\glo.h"
 //#include "TCB.h"
 
+extern long __interrupt FMTK_Dispatch(
+	__reg("d7") long,
+	__reg("d0") long,
+	__reg("d1") long,
+	__reg("d2") long,
+	__reg("d3") long,
+	__reg("d4") long
+);
+extern void FMTK_TimerIRQLaunchpad(unsigned long);
 extern int GetRand(register int stream);
 extern int shell();
 MEMORY memoryList[NR_MEMORY];
@@ -102,7 +111,7 @@ void DisplayIRQLive() =
 	"\tlsl.l #2,d0\r\n"
 	"\tadd.l #$FD0000DC,d0\r\n"
 	"\tmove.l d0,a0\r\n"
-	"\tadd.l#1 (a0)\r\n"
+	"\tadd.l #1,(a0)\r\n"
 	"\tmovem.l (sp)+,d0/a0"
 ;
 
@@ -113,9 +122,9 @@ ACB *SafeGetACBPtr(register int n)
   return (ACBPtrs[n]);
 }
 
-ACB *GetACBPtr(register int n)
+ACB *GetACBPtr(int n)
 {
-  return (ACBPtrs[n]);
+  return (ACBPtrs[n-1]);
 }
 
 hACB GetAppHandle()
@@ -127,6 +136,15 @@ ACB *GetRunningACBPtr()
 {
 	return (GetACBPtr(GetAppHandle()));
 }
+
+ACB* ACBHandleToPointer(hACB h)
+{
+	return (ACBPtrs[h-1]);
+}
+
+int GetRunningPID() =
+"\tmovec.l cpid,d0\r\n"
+;
 
 // ----------------------------------------------------------------------------
 // Get the current interrupt mask level.
@@ -342,7 +360,7 @@ void FMTK_TimerIRQ(unsigned long* sp)
 		sp2 = (char *)sp;						// two bytes were stored for the SR.
 		sp2 -= 2;										// So, the pointer needs to back up two
 		sp = (unsigned long*)sp2;		// bytes.
-		*sp2 = t->exceptionHandler;	// Now copy exception handler address to stack
+		*sp2 = (unsigned long)t->exceptionHandler;	// Now copy exception handler address to stack
 	}
 	t->startTick = GetTick();
 	if (ot != t)
@@ -371,7 +389,7 @@ void IdleThread()
    }
 }
 
-long FMTK_ExceptionHandler(__reg("d0") long val, __reg("d1") long typ))
+long FMTK_ExceptionHandler(__reg("d0") long val, __reg("d1") long typ)
 {
 	if (typ==515) {
 		puts("Default exception handler: CTRL-C pressed.\r\n");
@@ -382,14 +400,14 @@ long FMTK_ExceptionHandler(__reg("d0") long val, __reg("d1") long typ))
 // ----------------------------------------------------------------------------
 // ----------------------------------------------------------------------------
 
-int FMTK_KillTask(register int threadno)
+int FMTK_KillTask(register int taskno)
 {
   hTCB ht, pht;
   hACB hApp;
   int nn;
   ACB *j;
 
-  ht = threadno;
+  ht = taskno-1;
   if (LockSysSemaphore(-1)) {
     RemoveFromReadyList(ht);
     RemoveFromTimeoutList(ht);
@@ -401,14 +419,14 @@ int FMTK_KillTask(register int threadno)
     // remove task from job's task list
     hApp = tcbs[ht].hApp;
     j = GetACBPtr(hApp);
-    ht = j->thrd;
-    if (ht==threadno)
-    	j->thrd = tcbs[ht].acbnext;
+    ht = j->task;
+    if (ht==taskno)
+    	j->task = tcbs[ht].acbnext;
     else {
     	while (ht > 0) {
     		pht = ht;
-    		ht = tcbs[ht].acbnext;
-    		if (ht==threadno) {
+    		ht = tcbs[ht].acbnext - 1;
+    		if (ht==taskno-1) {
     			tcbs[pht].acbnext = tcbs[ht].acbnext;
     			break;
     		}
@@ -417,7 +435,7 @@ int FMTK_KillTask(register int threadno)
 		tcbs[ht].acbnext = 0;
     // If the job no longer has any threads associated with it, it is 
     // finished.
-    if (j->thrd == 0) {
+    if (j->task == 0) {
     	j->magic = 0;
     	mmu_FreeMap(hApp);
     }
@@ -446,7 +464,7 @@ int FMTK_ExitTask()
 //			or negative number error code
 // ----------------------------------------------------------------------------
 
-int FMTK_StartTask(
+long FMTK_StartTask(
 	__reg("d0") unsigned short int* StartAddr,
 	__reg("d1") long stacksize,
 	__reg("d2") unsigned long* pStack,
@@ -460,6 +478,8 @@ int FMTK_StartTask(
   unsigned long affinity;
 	hACB hApp;
 	unsigned char priority;
+	short int *sp2;
+	unsigned long int* sp;
 
 	// These fields extracted from a single parameter as there can be only
 	// five register values passed to the function.	
@@ -479,21 +499,34 @@ int FMTK_StartTask(
 	else {
 		return (E_Busy);
 	}
-  t = &tcbs[ht];
+  t = &tcbs[ht-1];
   t->affinity = affinity;
   t->priority = priority;
   t->hApp = hApp;
   // Insert into the job's list of tasks.
-  tcbs[ht].acbnext = ACBPtrs[hApp]->thrd;
-  ACBPtrs[hApp]->thrd = ht;
+  tcbs[ht-1].acbnext = hApp;
+  ACBPtrs[hApp]->task = ht;
   t->regs[1] = parm;
-  t->regs[28] = FMTK_ExitThread;
-  t->regs[TCB_USP] = (unsigned long)pStack + stacksize - 2048;
-  t->bios_stack = (unsigned long)pStack + stacksize - 8;
-  t->sys_stack = (unsigned long)pStack + stacksize - 1024;
-  t->regs[TCB_SSP] = (unsigned long)pStack + stacksize - 1024;
-  t->epc = StartAddr;
-  t->cr0 = 0x140000000L;				// enable data cache and branch predictor
+  t->regs[15] = (unsigned long)pStack + stacksize - 2048;	// Set USP
+  t->bios_stack = (unsigned long*)pStack + stacksize - 8;
+  t->sys_stack = (unsigned long*)pStack + stacksize - 1024;
+  // Put ExitTask address on top of stack, when the task is finished then
+  // this address will be returned to.
+  pStack[stacksize - 2048 - 4] = (unsigned long)FMTK_ExitTask;
+  // Setup system stack image to look as if a syscall were performed.
+  sp = &pStack[stacksize - 1024 - 4 - 18*4];
+  t->ssp = (unsigned long)sp;
+	sp[0] = (unsigned long)pStack + stacksize - 2048;	// USP
+	sp[1] = parm;				// d0 gets parameter
+  for (nn = 2; nn < 16; nn = nn + 1)
+  	sp[nn] = 0;
+  sp2 = (short int*)&sp[16];
+  *sp2 = 0x700;	// status register
+  sp2++;
+  sp = (unsigned long *)sp2;
+  *sp = (unsigned long)StartAddr;
+  sp[1] = (unsigned long)FMTK_ExitTask;
+
   t->startTick = GetTick();
   t->endTick = GetTick();
   t->ticks = 0;
@@ -571,7 +604,7 @@ void SetVector(__reg("d0") unsigned long num, __reg("d1") unsigned long addr) =
 // Initialize FMTK global variables.
 // ----------------------------------------------------------------------------
 
-void FMTK_Initialize()
+long FMTK_Initialize()
 {
 	int nn,jj;
 	int lev;
@@ -579,8 +612,8 @@ void FMTK_Initialize()
 //    firstcall
   {
   	lev = SetImLevel(7);									// Do not allow interrupts
-    SetVector(30,FMTK_TimerIRQLaunchpad);	// Auto level 6
-  	SetVector(33,FMTK_Dispatch);					// TRAP #1
+    SetVector(30,(unsigned long)FMTK_TimerIRQLaunchpad);	// Auto level 6
+  	SetVector(33,(unsigned long)FMTK_Dispatch);					// TRAP #1
 
   	reschedFlag = 0;
   	IRQFlag = 0;
@@ -650,5 +683,6 @@ void FMTK_Initialize()
     SetupDevices();
   	SetImLevelHelper(lev);								// Restore interrupts
   }
+  return (0);
 }
 

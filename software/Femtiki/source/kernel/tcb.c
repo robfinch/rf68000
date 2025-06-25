@@ -36,11 +36,11 @@
 //                                                                          
 // ============================================================================
 //
-#include "..\inc\config.h"
-#include "..\inc\const.h"
-#include "..\inc\types.h"
-#include "..\inc\proto.h"
-#include "..\inc\glo.h"
+#include "inc\config.h"
+#include "inc\const.h"
+#include "inc\types.h"
+#include "inc\proto.h"
+#include "inc\glo.h"
 //#include "..\inc\TCB.h"
 
 extern int hasUltraHighPriorityTasks;
@@ -48,6 +48,15 @@ extern void prtdbl(double);
 
 extern hTCB FreeTCB;
 extern TCB* tcbs;
+
+hTCB GetRunningTCB() =
+"\tmovec.l cpid,d0\r\n"
+;
+
+TCB* GetRunningTCBPtr()
+{
+	return (&tcbs[GetRunningPID()-1]);
+}
 
 TCB* TCBHandleToPointer(short int hTCB handle)
 {

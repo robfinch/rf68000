@@ -1,8 +1,8 @@
-#include "..\inc\types.h"
-#include "..\inc\const.h"
-#include "..\inc\config.h"
-#include "..\inc\proto.h"
-#include "..\inc\glo.h"
+#include "inc\types.h"
+#include "inc\const.h"
+#include "inc\config.h"
+#include "inc\proto.h"
+#include "inc\glo.h"
 
 static MSG* MSGHandleToPointer(hMSG h)
 {

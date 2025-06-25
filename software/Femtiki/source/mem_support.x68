@@ -34,17 +34,15 @@
 ;
 ; ============================================================================
 
-.set MMU_PFA,0xFFF40000
-.set MMU_PTBR,0xFFF40028
-.set MMU_VADR,0xFFF40040
-.set MMU_PADR,0xFFF40050
-.set MMU_PADRV,0xFFF40060
+E_NoMem	equ 33
+LOG_PGSZ	equ	14
 
-	.bss
+	bss
 _lastSearchedPAMWord:
-	.space 4
+	ds.l	1
 
-	.text
+	code
+	even
 ; ------------------------------------------------------------------------------
 ; Clear a page of memory
 ;
@@ -93,9 +91,9 @@ _FindFreePage:
 	lea 4(a0),a0						; move to next set of bits
 	cmp.l a1,a0							; did we loop all the way around to the start?
 	beq.s .0006							; if yes, no memory available
-	cmpi.l #_PAMEnd,a0			; hit end of PAM?
+	cmp.l #_PAMEnd,a0				; hit end of PAM?
 	blo.s .0002							; nope, continue search
-	move.l #PAM,a0					; load with start of PAM
+	move.l #_PAM,a0					; load with start of PAM
 	bra.s .0002							; continue search
 .0006
 	movem.l (sp)+,a0				; reached end of PAM with no pages available
@@ -130,17 +128,7 @@ _FindFreePage:
 
 
 ; ------------------------------------------------------------------------------
-; Gets the address for the page table entry given the virtual address. Sends a
-; request for the address to the MMU, then spins waiting for a response.
-; Usually the MMU would respond within a few clock cycles, if it is a valid
-; address. If it is an invalid address, then a page fault may occur and that
-; could take a lot more clocks to process. There are timeouts on both locking
-; the MMU semaphore and spinning waiting for a response. If a timeout occurs
-; then a -1 is returned.
-;
-; Side Effects:
-; 	Calling this routine may cause a page fault if the address cannot be
-;	translated.
+; Gets the physical address for given the virtual address.
 ;
 ; Parameters:
 ;		a0 = virtual address to translate
@@ -149,162 +137,194 @@ _FindFreePage:
 ; ------------------------------------------------------------------------------
 
 _GetPageTableEntryAddress:
-	push %br1
-	push %a1
-	move %a1,%a0
+	movem.l d1,-(sp)
 	move.l #-1,d1
 	bsr LockMMUSemaphore
 	tst.l d1
 	bne .0001
 .0003:
+	movem.l (sp)+,d1
 	move.l #-1,d0
 	rts
 .0001:
-	loadi %a0,200000
-	store %a1,MMU_VADR
-.0002:
-	addi %a0,%a0,-1
-	beq %cr0,.0004
-	load. %a1,MMU_PADRV
-	beq %cr0,.0002
-	load. %a0,MMU_PADR
-	macUnlockMMUSemaphore
-	pop %a1
-	pop %br1
-	blr
-.0004:
-	macUnlockMMUSemaphore
-	b .0003
-
-.if 0
-; Walks the page table. Currently assumes a two-level page table.
-; Incomplete - needs to include the base/bound registers.
-_GetPageTableEntryAddress:
-	enter 7,0
-.0001:
-	bl GetRunningACBPointer							# a0 = pointer to ACB
-	load %a0,ACBPageTableAddress[%a0]		# a0 = pointer to page table
-	srli %s2,%a0,25											# a2 = index into root page table
-	andi %s2,%s2,11'h7ff								# '
-	loada %s6,[%a0+%s2*4]								# a6 = PTE address
-	load. %s3,[%s6]											# Get the PTP
-	bgt %cr0,.0002											# check if valid bit set (bit 31)
-.0003:
-	extz %s4,%s3,61,63									# Extract PTP/PTE type bits
-	cmpi %cr0,%s4,2											# Is it a PTP?
-	bne %cr0,.0006											# If not, error
-	# Type 2 PTE = PTP
-	extz %s4,%s3,0,43										# Extract PPN
-	slli %s4,%s4,LOG_PGSZ								# Turn into an address
-	extz %s2,%a0,14,24									# extract vadr bits 14 to 24
-	slli %s2,%s2,3											# convert index to page offset
-	or %s2,%s2,%s4											# a2 = pointer to entry now
-	load %s3,[%s2]											# Load the PTE
-	move %s6,%s2												# a6 = PTE address
-	extz %s4,%s3,61,63									# Extract PTP/PTE type bits
-	cmpi %cr0,%s4,2											# Is it a PTE?
-	bge %cr0,.0006											# If not then error
-	# Type 0 or 1 PTE
-	move %a0,%a6
-	exit 7,0
-	# invalid PTE? Assign a page.
-.0002:
-	bl _FindFreePage									# allocate a page of memory
-	cmpi %cr0,%a0,0				# if page could not be allocated, return NULL pointer
-	peq %cr0,.0005
-	bl _ClearPage
-	# set the PTP to point to the page
-	srli %a0,%a0,LOG_PGSZ
-	ori %a3,%a0,0xC0000000	# set valid bit, and type 2 page
-	store %a3,[%a6]				# update the page table
-	b .0001
-.0005:
-	loadi %a0,0
-	pop %a1-%a6
-	blr
-.endif
-
-# ------------------------------------------------------------------------------
-# Page fault handler. Triggered when there is no translation for a virtual
-# address. Allocates a page of memory an puts an entry in the page table for it.
-# If the PTP was invalid, then a page is allocated for the page table it points
-# to and the PTP entry updated in the page table.
-#
-# Side Effects:
-#		Page table is updated.
-# Modifies:
-#		none
-# Parameters:
-#		none - it is an ISR
-# Returns:
-#		none - it is an ISR
-# ------------------------------------------------------------------------------
-
-_PageFaultHandlerISR:	
-	push %br1
-	push %a0-%t0				# push %a0 to a7, t0
-	# search the PMT for a free page
-	loadi %a0,-1
-	bl LockPMTSemaphore
-	bl _FindFreePage
-	pne %cr0,.0001
-	# Here there are no more free pages
-	macUnlockPMTSemaphore
-	# Here a free page was found
-.0001:
-	macUnlockPMTSemaphore
-	bl _ClearPage
-	# Should add the base address of the memory from the region table
-	loadi %a5,8					# maximum numober of levels of page tables (limits looping)
-	load %a1,MMU_PTBR		# a1 = address of page table
-	load %t0,MMU_PFA			# t0 = fault address (virtual address), clear page fault
-	srli %a2,%t0,26				# a2 = index into root page table
-	loada %a6,[%a1+%a2*4]	# a6 = PTE address
-	load. %a3,[%a6]				# Get the PTE
-	bgt %cr0,.0002				# check valid bit (bit 31)
-.0003:
-	srli %a4,%a3,29				# Extra PTE type bits
-	andi %a4,%a4,3
-	cmpi %cr0,%a4,2
-	bne %cr0,.0002
-.0004:
-	andi %a4,%a3,0x1FFFFFFF	# Extract PPN
-	slli %a4,%a4,LOG_PGSZ		# Turn into an address
-	srli %a2,%t0,14					# extract vadr bits 14 to 25
-	andi %a2,%a2,0xFFF				# convert to index into page
-	slli %a2,%a2,2						# convert index to page offset
-	or %a6,%a2,%a4						# %a6 = pointer to entry now
-	loadi %a0,-1
-	bl LockPMTSemaphore
-	load. %a3,[%a6]					# Get the PTE
-	blt %cr0,.0006					# Check PTE was invalid, if not something is wrong
-	# set the PTE to point to the page
-	srli %a0,%a0,LOG_PGSZ
-	andi %a0,%a0,0x1FFF		# Keep only low order bits of page number
-	ori %a0,%a0,0x8000E000	# set valid bit, and type 0 page, user, rwx=7
-	store %a0,[%a6]				# update the page table
-	macUnlockPMTSemaphore
-	pop %a0-%t0
-	pop %br1
-	rfi
-	# Here the PTP was invalid, so allocate a new page table and set PTP
-.0002:
-	loadi %a0,-1
-	bl LockPMTSemaphore
-	bl _FindFreePage
-	macUnlockPMTSemaphore
-	cmp %cr0,%a0,0
-	peq %cr0,.0005
-	bl _ClearPage
-	# set the PTP to point to the page
-	srl %a0,%a0,LOG_PGSZ
-	or %a3,%a0,0xC0000000	# set valid bit, and type 2 page
-	store %a3,[%a6]				# update the page table
-	b .0004
-.0006:
-	macUnlockPMTSemaphore
-	# Here there was no memory available
-.0005:
-	pop %a0-%t0
-	pop %br1
-	rfi
+	bsr _GetRunningACBPtr
+;	move.l
+;.0002:
+;	addi %a0,%a0,-1
+;	beq %cr0,.0004
+;	load. %a1,MMU_PADRV
+;	beq %cr0,.0002
+;	load. %a0,MMU_PADR
+;	macUnlockMMUSemaphore
+;	pop %a1
+;	pop %br1
+;	blr
+;.0004:
+;	macUnlockMMUSemaphore
+;	b .0003
+;
+;.if 0
+;; Walks the page table. Currently assumes a two-level page table.
+;; Incomplete - needs to include the base/bound registers.
+;_GetPageTableEntryAddress:
+;	enter 7,0
+;.0001:
+;	bl GetRunningACBPointer							# a0 = pointer to ACB
+;	load %a0,ACBPageTableAddress[%a0]		# a0 = pointer to page table
+;	srli %s2,%a0,25											# a2 = index into root page table
+;	andi %s2,%s2,11'h7ff								# '
+;	loada %s6,[%a0+%s2*4]								# a6 = PTE address
+;	load. %s3,[%s6]											# Get the PTP
+;	bgt %cr0,.0002											# check if valid bit set (bit 31)
+;.0003:
+;	extz %s4,%s3,61,63									# Extract PTP/PTE type bits
+;	cmpi %cr0,%s4,2											# Is it a PTP?
+;	bne %cr0,.0006											# If not, error
+;	# Type 2 PTE = PTP
+;	extz %s4,%s3,0,43										# Extract PPN
+;	slli %s4,%s4,LOG_PGSZ								# Turn into an address
+;	extz %s2,%a0,14,24									# extract vadr bits 14 to 24
+;	slli %s2,%s2,3											# convert index to page offset
+;	or %s2,%s2,%s4											# a2 = pointer to entry now
+;	load %s3,[%s2]											# Load the PTE
+; 	move %s6,%s2												# a6 = PTE address
+;	extz %s4,%s3,61,63									# Extract PTP/PTE type bits
+;	cmpi %cr0,%s4,2											# Is it a PTE?
+;	bge %cr0,.0006											# If not then error
+;	# Type 0 or 1 PTE
+;	move %a0,%a6
+;	exit 7,0
+;	# invalid PTE? Assign a page.
+;.0002:
+;	bl _FindFreePage									# allocate a page of memory
+;	cmpi %cr0,%a0,0				# if page could not be allocated, return NULL pointer
+;	peq %cr0,.0005
+;	bl _ClearPage
+;	# set the PTP to point to the page
+;	srli %a0,%a0,LOG_PGSZ
+;	ori %a3,%a0,0xC0000000	# set valid bit, and type 2 page
+;	store %a3,[%a6]				# update the page table
+;	b .0001
+;.0005:
+;	loadi %a0,0
+;	pop %a1-%a6
+;	blr
+;.endif
+;
+;# ------------------------------------------------------------------------------
+;# Page fault handler. Triggered when there is no translation for a virtual
+;# address. Allocates a page of memory an puts an entry in the page table for it.
+;# If the PTP was invalid, then a page is allocated for the page table it points
+;# to and the PTP entry updated in the page table.
+;#
+;# Side Effects:
+;#		Page table is updated.
+;# Modifies:
+;#		none
+;# Parameters:
+; #		none - it is an ISR
+;# Returns:
+;#		none - it is an ISR
+;# ------------------------------------------------------------------------------
+;
+;_PageFaultHandlerISR:	
+;	push %br1
+;	push %a0-%t0				# push %a0 to a7, t0
+;	# search the PMT for a free page
+;	loadi %a0,-1
+;	bl LockPMTSemaphore
+;	bl _FindFreePage
+;	pne %cr0,.0001
+;	# Here there are no more free pages
+;	macUnlockPMTSemaphore
+;	# Here a free page was found
+;.0001:
+;	macUnlockPMTSemaphore
+;	bl _ClearPage
+;	# Should add the base address of the memory from the region table
+;	loadi %a5,8					# maximum numober of levels of page tables (limits looping)
+;	load %a1,MMU_PTBR		# a1 = address of page table
+;	load %t0,MMU_PFA			# t0 = fault address (virtual address), clear page fault
+;	srli %a2,%t0,26				# a2 = index into root page table
+;	loada %a6,[%a1+%a2*4]	# a6 = PTE address
+;	load. %a3,[%a6]				# Get the PTE
+;	bgt %cr0,.0002				# check valid bit (bit 31)
+;.0003:
+;	srli %a4,%a3,29				# Extra PTE type bits
+;	andi %a4,%a4,3
+;	cmpi %cr0,%a4,2
+;	bne %cr0,.0002
+;.0004:
+;	andi %a4,%a3,0x1FFFFFFF	# Extract PPN
+;	slli %a4,%a4,LOG_PGSZ		# Turn into an address
+; 	srli %a2,%t0,14					# extract vadr bits 14 to 25
+;	andi %a2,%a2,0xFFF				# convert to index into page
+;	slli %a2,%a2,2						# convert index to page offset
+;	or %a6,%a2,%a4						# %a6 = pointer to entry now
+;	loadi %a0,-1
+;	bl LockPMTSemaphore
+;	load. %a3,[%a6]					# Get the PTE
+;	blt %cr0,.0006					# Check PTE was invalid, if not something is wrong
+;	# set the PTE to point to the page
+;	srli %a0,%a0,LOG_PGSZ
+;	andi %a0,%a0,0x1FFF		# Keep only low order bits of page number
+;	ori %a0,%a0,0x8000E000	# set valid bit, and type 0 page, user, rwx=7
+;	store %a0,[%a6]				# update the page table
+;	macUnlockPMTSemaphore
+;	pop %a0-%t0
+;	pop %br1
+;	rfi
+;	# Here the PTP was invalid, so allocate a new page table and set PTP
+;.0002:
+;	loadi %a0,-1
+;	bl LockPMTSemaphore
+;	bl _FindFreePage
+;	macUnlockPMTSemaphore
+;	cmp %cr0,%a0,0
+;	peq %cr0,.0005
+;	bl _ClearPage
+;	# set the PTP to point to the page
+;	srl %a0,%a0,LOG_PGSZ
+;	or %a3,%a0,0xC0000000	# set valid bit, and type 2 page
+;	store %a3,[%a6]				# update the page table
+;	b .0004
+;.0006:
+;	macUnlockPMTSemaphore
+;	# Here there was no memory available
+;.0005:
+; 	pop %a0-%t0
+;	pop %br1
+;	rfi
+;
+;
+;
+;
+;
+;
+;
+;
+;
+;
+;
+;
+;
+;
+;
+;
+;
+;
+;
+;
+;
+;
+;
+;
+;
+;
+;
+;
+;
+;
+;
+;
+	global _FindFreePage

@@ -1,13 +1,22 @@
+	section dram
+_tcbs
+	ds.b	4096*256
+_tcbs_end
+_message
+	ds.b	8192*32
+_message_end
+_mailbox
+	ds.b	8192*12
+_mailbox_end
+_acbs
+	ds.b	32*16384
+_acbs_end
 
+	global _tcbs
+	global _message
+	global _mailbox
+	
 PAMShareCounts	EQU	$20000000	; one byte for each physical page of memory
-tcbs						EQU	$20010000	; 4095*256 = 1MB
-tcbs_end				EQU	$20020000
-messages				EQU	$20020000	; 32*8192 (680*16=21760 messages)
-messages_end		EQU	$20060000
-mailboxes				EQU	$20060000
-mailboxes_end		EQU	$20078000	;	12*8192 (816*12=9792 mailboxes)
-acbs						EQU	$20080000	; 32*2*8192 =512kB
-acbs_end				EQU	$20100000
 
 
 sys_stacks			EQU	$DF0000
@@ -15,16 +24,10 @@ sys_stacks			EQU	$DF0000
 FemtikiVars			EQU	$00100200
 PAMLastAllocate2	EQU		$00100218
 RunningAppID	EQU		$00100220
-RunningTCB		EQU		$00100224
-ACBPtrs				EQU		$00100228
 MidStackBottoms	EQU		$00100264
 FemtikiInited	EQU		$00100284
-missed_ticks	EQU		$00100288
 IOFocusList		EQU		$0010028C
-IOFocusID			EQU		$001002AC
 iof_switch		EQU		$001002AD
-nMessage			EQU		$001002AE
-nMailbox			EQU		$001002B0
 hKeybdMbx			EQU		$001002BA
 hFocusSwitchMbx		EQU		$001002BC
 BIOS_RespMbx	EQU		$001002BE
@@ -39,17 +42,71 @@ mmu_entries		EQU		$00100300
 freelist			EQU		$00100302
 hSearchMap		EQU		$00100304
 OSActive			EQU		$00100305
-FreeACB				EQU		$00100308
-FreeTCB				EQU		$0010030C
-FreeMSG				EQU		$00100310
-FreeMBX				EQU		$00100314
-TimeoutList		EQU		$00100318
 QueueCycle    EQU   $0010031C
-readyQ				EQU		$00100320		; 32 bytes per queue per core, 2 cores for now
-readyQEnd			EQU		$00100360
 FemtikiVars_end	EQU	$00100400
-_SysAcb				EQU		$00118000
-_PAM					EQU		$0011E000
+
+	section gvars
+_sys_pages_available
+	ds.l	1
+_nMsgBlk
+	ds.l	1
+_nMessage
+	ds.l	1
+_nMailbox
+	ds.l	1
+_ACBPtrs
+	ds.l	64
+_RunningTCB
+	ds.w	1
+_IOFocusID
+	ds.l	1
+_FreeTCB
+_freeTCB
+	ds.w	1
+_FreeACB
+	ds.w	1
+_FreeMSG
+_freeMSG
+	ds.w	1
+_FreeMBX
+_freeMBX
+	ds.w	1
+_missed_ticks
+	ds.l	1
+_TimeoutList
+	ds.l	1
+_readyQ
+	ds.w	32
+_readyQEnd
+
+_SysAcb
+	ds.b	16384
+_PAM
+	ds.l	2048
+_PAMEnd
+
+_FemtikiVars_end
+
+	global _sys_pages_available
+	global _nMsgBlk
+	global _nMailbox
+	global _RunningTCB
+	global _IOFocusID
+	global _FreeTCB
+	global _freeTCB
+	global _FreeACB
+	global _FreeMSG
+	global _freeMSG
+	global _FreeMBX
+	global _freeMBX
+	global _missed_ticks
+	global _TimeoutList
+	global _readyQ
+	global _SysACB
+	global _PAM
+	global _PAMEnd
+
+
 
 ;gc_stack		rmb		512
 ;gc_pc				fcdw		0

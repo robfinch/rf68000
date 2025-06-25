@@ -20,6 +20,9 @@ LLX = vlink
 
 
 ASMS = \
+	femtiki_vars.x68 \
+	lib.x68 \
+	mem_support.x68 \
 	memmgnt3.asm \
 	kernel\tcb.asm \
 	kernel\msg.asm \
@@ -27,6 +30,9 @@ ASMS = \
 	femtiki.asm
 
 OUT = \
+	femtiki_vars.o \
+	lib.o \
+	mem_support.o \
 	memmgnt3.o \
 	kernel\tcb.o \
 	kernel\msg.o \
@@ -40,8 +46,12 @@ LIB:
 	del Femtiki.c
 	copy *.c + kernel\*.c Femtiki.c
 	$(CCX) $(CFLAGS) Femtiki.c
+	$(AAX) $(AFLAGS) kernel\Femtiki_vars.x68 -L Femtiki_vars.lst -o Femtiki_vars.o
+	$(AAX) $(AFLAGS) mem_support.x68 -L mem_support.lst -o mem_support.o
+	$(AAX) $(AFLAGS) _lmath.s -L _lmath.lst -o _lmath.o
+	$(AAX) $(AFLAGS) lib.x68 -L lib.lst -o lib.o
 	$(AAX) $(AFLAGS) Femtiki.asm -L Femtiki.lst -o Femtiki.o
-	$(LLX) -T Femtiki.cmd -bsrec37 Femtiki.o -o Femtiki.s37
+	$(LLX) -T Femtiki.cmd -bsrec37 Femtiki_vars.o _lmath.o lib.o mem_support.o Femtiki.o -o Femtiki.s37
 
          
 FEMTIKI:	$(OUT)
@@ -50,6 +60,9 @@ FEMTIKI:	$(OUT)
 .c.o:
 	$(CCX) $(CFLAGS) $<
 	$(AAX) $(AFLAGS) $*.asm -L $*.lst -o $*.o
+
+.x68.o:
+	$(AAX) $(AFLAGS) $*.x68 -L $*.lst -o $*.o
 	
 clean:
 	del *.o
