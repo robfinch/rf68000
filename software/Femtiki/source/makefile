@@ -20,13 +20,17 @@ LLX = vlink
 
 
 ASMS = \
+	memmgnt3.asm \
 	kernel\tcb.asm \
 	kernel\msg.asm \
+	kernel\femtiki.asm \
 	femtiki.asm
 
 OUT = \
+	memmgnt3.o \
 	kernel\tcb.o \
 	kernel\msg.o \
+	kernel\femtiki.o \
 	femtiki.o
 
 all:	$(OUT)

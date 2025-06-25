@@ -21,6 +21,12 @@
 //                                                                          
 // ============================================================================
 //
+#include "inc/config.h"
+#include "inc/const.h"
+//#include "../inc/errno.h"
+#include "inc/types.h"
+#include "inc/proto.h"
+
 #define NPAGES	65536-2048		// 2048 OS pages
 #define CARD_MEMORY		0xFFCE0000
 #define IPT_MMU				0xFFDCD000
@@ -31,7 +37,7 @@
 
 extern char *os_brk;
 
-extern unsigned int lastSearchedPAMWord;
+extern unsigned long* lastSearchedPAMWord;
 extern int errno;
 extern char *osmem;
 extern int highest_data_word;
@@ -47,6 +53,7 @@ void puthexnum(int num, int wid, int ul, char padchar);
 void putnum(int num, int wid, int sepchar, int padchar);
 extern void DBGHideCursor(int hide);
 extern void* memsetT(void* ptr, long c, size_t n);
+extern char* memset(char* ptr, long c, size_t n);
 extern char* FindFreePage();
 extern PTE* GetPageTableEntryAddress(unsigned long virtadr);
 void *pt_alloc(int amt, int acr);
@@ -141,19 +148,19 @@ PTE* AllocPageTable()
 //		pointer to page table entry, NULL if no memory available.
 // ----------------------------------------------------------------------------
 
-PTE* GetPageTableEntryAddress(char* linear, int alloc)
+PTE* GetPageTableEntryAddress(hACB hAcb, char* linear, int alloc)
 {
 	ACB* pAcb;	
-	PDE* pde;
-	PTE* pte;
+	unsigned long* pde;
+	unsigned long* pte;
 	unsigned int ndx;
 	unsigned long iLinear;
 	unsigned long pta;
-	char* page;
+	unsigned long page;
 	
 	iLinear = (unsigned long)linear;
-	pAcb = GetRunningACBPointer();	
-	pde = (PDE*)&pAcb->pd;
+	pAcb = ACBHandleToPointer(hAcb);
+	pde = (unsigned long*)&pAcb->pd;
 	ndx = iLinear >> 26;
 	pta = (unsigned long)&pde[ndx];
 	if (pta==0xffffffffUL) {
@@ -166,40 +173,41 @@ PTE* GetPageTableEntryAddress(char* linear, int alloc)
 			// Mark all pages with special constant for empty page.
 			memset((char *)pte,-1,16384);
 			pta |= 0x7;	// user read-write-execute
-			pde[ndx] = (PDE*)pta;
+			pde[ndx] = pta;
 		}
 		else
 			return (NULL);
 	}
 	pta &= 0xFFFFC000UL;
-	pte = (PTE*)pta;
+	pte = (unsigned long*)pta;
 	ndx = (iLinear >> 14) & 0xfff;
 	pte = &pte[ndx];
 	if ((unsigned long)pte == 0xffffffffUL) {
 		if (alloc) {
-			page = FindFreePage();
-			if (page==NULL)
+			page = (unsigned long)FindFreePage();
+			if (page==0)
 				return (NULL);
 			page |= 0x2007;	// page present + user read-write-execute
-			*pte = (PTE*)page;
+			*pte = page;
 		}
 		else
 			return (NULL);
 	}
-	return (pte);
+	return ((PTE*)pte);
 }
 
 // ----------------------------------------------------------------------------
 // Translate a linear address to a physical one.
 // ----------------------------------------------------------------------------
 
-char* LinearToPhysical(char* linear)
+char* LinearToPhysical(hACB hAcb, char* linear)
 {
 	PTE* pte;
 	unsigned long iLinear;
 	unsigned long phys;
+	unsigned long ndx;
 	
-	pte = GetPageTableEntryAddress(linear,1);
+	pte = GetPageTableEntryAddress(hAcb, linear,1);
 	if (pte == NULL)
 		return (NULL);
 	phys = (unsigned long)pte;
@@ -246,9 +254,10 @@ void *pt_alloc(int amt, int acr)
 	int npages;
 	int nn;
 	char* page;
-	PTE* pte;
+	unsigned long* pte;
 	unsigned long en;
 	ACB* pacb;
+	hACB hAcb;
 	char* brk;
 
 	acr &= 7;
@@ -262,21 +271,22 @@ void *pt_alloc(int amt, int acr)
 	brk = NULL;
 	if (npages < sys_pages_available) {
 		sys_pages_available -= npages;
-		pacb = GetRunningACBPointer();
+		pacb = GetRunningACBPtr();
+		hAcb = GetRunningACB();
 		brk = pacb->brk;
 		pacb->brk += amt;
 		for (nn = 0; nn < npages-1; nn++) {
-			pte = GetPageTableEntryAddress(brk+(nn << 14),1);
-			en = (unsigned long)*pte;
+			pte = GetPageTableEntryAddress(hAcb,brk+(nn << 14),1);
+			en = (unsigned long)pte;
 			en &= 0xffffc000UL;
 			en |= 0x2000 | acr;	// 0x2000 = page present bit
-			*pte = (PTE*)en;
+			*pte = en;
 		}
-		pte = GetPageTableEntryAddress(brk+(nn << 14),1);
-		en = (unsigned long)*pte;
+		pte = GetPageTableEntryAddress(hAcb,brk+(nn << 14),1);
+		en = (unsigned long)pte;
 		en &= 0xffffc000UL;
 		en |= 0x2800 | acr;	// 0x2800 = page present bit, plus last page
-		*pte = (PTE*)en;
+		*pte = en;
 	}
 //	p |= (asid << 52);
 	DBGDisplayChar('E');
@@ -300,22 +310,24 @@ char *pt_free(char *vadr)
 	int count;	// prevent looping forever
 	int vpageno;
 	int last_page;
-	PTE* pe;
-	PTE pte;
+	unsigned long* pe;
+	unsigned long pte;
+	hACB h;
 
 	count = 0;
 	do {
 		vpageno = ((unsigned long)vadr >> 14) & 0xffff;
+		h = GetRunningACB();
 		while (LockMMUSemaphore(-1)==0);
 		last_page = 0;
-		if (pe = (PTE*)GetPageTableEntryAddress(vadr,0)) {
+		if (pe = (unsigned long*)GetPageTableEntryAddress(h,vadr,0)) {
 			pte = *pe;
-			last_page = ((unsigned long)pte & 0x800) != 0;
+			last_page = (pte & 0x800) != 0;
 			while (LockPMTSemaphore(-1)==0);
 			if (PageManagementTable[vpageno].share_count != 0) {
 				PageManagementTable[vpageno].share_count--;
 				if (PageManagementTable[vpageno].share_count==0) {
-					pte = (PTE)0xffffffffUL;
+					pte = 0xffffffffUL;
 					*pe = pte;
 				}
 			}
@@ -337,9 +349,10 @@ char *pt_free(char *vadr)
 void *sbrk(long size)
 {
 	char *p, *q, *r;
-	PTE* pte;
+	unsigned long pte;
 	ACB* pAcb;
-	PTE* pe;
+	hACB h;
+	unsigned long* pe;
 
 	p = 0;
 	size = round16k(size);
@@ -349,7 +362,8 @@ void *sbrk(long size)
 			errno = E_NoMem;
 		return (p);
 	}
-	pAcb = GetRunningACBPointer();
+	h = GetRunningACB();
+	pAcb = GetRunningACBPtr();
 	if (size < 0) {
 		size = -size;
 		if (size > (unsigned long)pAcb->brk) {
@@ -361,18 +375,18 @@ void *sbrk(long size)
 			q = pt_free(q);
 		pAcb->brk = r;
 		// Mark the last page
-		if (r > 0) {
+		if (r > (char*)0) {
 			while (LockMMUSemaphore(-1)==0);
-			pe = GetPageTableEntryAddress(r,0);
+			pe = (unsigned long*)GetPageTableEntryAddress(h,r,0);
 			pte = *pe;
-			pte &= (PTE*)0xfffff7ffUL;
-			pte |= (PTE*)0x00000800UL;
+			pte &= 0xfffff7ffUL;
+			pte |= 0x00000800UL;
 			*pe = pte;
 			UnlockMMUSemaphore();
 		}
 	}
 	else {	// size==0
-		p = ptcb->brk;
+		p = pAcb->brk;
 	}
 	return (p);
 }

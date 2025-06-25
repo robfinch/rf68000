@@ -4,8 +4,8 @@ extern memsetT(long *, long, long);
 // The text screen memory can only handle half-word transfers, hence the use
 // of memsetH, memcpyH.
 //#define DBGScreen	(__int32 *)0xFFD00000
-#define TEXTVIDEO_REG	(unsigned long*)0xFD080000
-#define DBGScreen	(unsigned long*)0xFD000000
+#define TEXTVIDEO_REG	((unsigned long*)0xFD080000)
+#define DBGScreen	((unsigned long*)0xFD000000)
 #define DBGCOLS		64
 #define DBGROWS		32
 
@@ -49,7 +49,7 @@ static void DBGSetVideoReg(int regno, unsigned long val)
 
 static unsigned long DBGGetVideoReg(int regno)
 {
-	return (rob(TEXTVIDEO_REG[regno]));
+	return (rbo(TEXTVIDEO_REG[regno]));
 }
 
 void DBGSetCursorPos(unsigned long pos)
@@ -61,7 +61,7 @@ void DBGUpdateCursorPos()
 {
 	unsigned long pos;
 
-	pos = DBGGetScreenLoc();
+	pos = (unsigned long)DBGGetScreenLoc();
 	pos += DBGCursorRow * DBGCOLS + DBGCursorCol;
   DBGSetCursorPos(pos);
 }

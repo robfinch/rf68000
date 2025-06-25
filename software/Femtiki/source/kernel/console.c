@@ -4,8 +4,8 @@ extern memsetT(long *, long, long);
 // The text screen memory can only handle half-word transfers, hence the use
 // of memsetH, memcpyH.
 //#define DBGScreen	(__int32 *)0xFFD00000
-#define TEXTVIDEO_REG	(unsigned long*)0xFD080000
-#define DBGScreen	(unsigned long*)0xFD000000
+#define TEXTVIDEO_REG	((unsigned long*)0xFD080000)
+#define DBGScreen	((unsigned long*)0xFD000000)
 #define DBGCOLS		64
 #define DBGROWS		32
 
@@ -17,7 +17,8 @@ extern void DispChar(register char ch);
 extern void puthexnum(int num, int wid, int ul, char padchar);
 extern void out32(unsigned long* port, unsigned long val);
 extern int get_coreno();
-
+extern unsigned long rbo(unsigned long);
+/*
 unsigned long rbo(unsigned long i)
 {
 	long o;
@@ -25,6 +26,7 @@ unsigned long rbo(unsigned long i)
 	o = (i >> 24) | ((i & 0xff0000) >> 8) | ((i & 0xff00) << 8) | ((i & 0xff) << 24);
 	return (o);
 }
+*/
 
 unsigned long *GetScreenLocation()
 {

@@ -11,34 +11,57 @@
 // proto.h
 // Function prototypes.
 //
-// This source file is free software: you can redistribute it and/or modify 
-// it under the terms of the GNU Lesser General Public License as published 
-// by the Free Software Foundation, either version 3 of the License, or     
-// (at your option) any later version.                                      
-//                                                                          
-// This source file is distributed in the hope that it will be useful,      
-// but WITHOUT ANY WARRANTY; without even the implied warranty of           
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the            
-// GNU General Public License for more details.                             
-//                                                                          
-// You should have received a copy of the GNU General Public License        
-// along with this program.  If not, see <http://www.gnu.org/licenses/>.    
+// BSD 3-Clause License
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
+//
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
+//
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //                                                                          
 // ============================================================================
 //
 // ACB functions
 ACB *GetACBPtr();                   // get the ACB pointer of the running task
-ACB *GetRunningACBPtr();
-hACB GetAppHandle();
+extern ACB *GetRunningACBPtr();
+extern hACB GetRunningACB();
+extern hACB GetAppHandle();
 extern hTCB GetRunningTCB();
 extern TCB *GetRunningTCBPtr();
+extern hACB ACBPointerToHandle(ACB* ptr);
+extern ACB* ACBHandleToPointer(hACB h);
+extern TCB* TCBHandleToPointer(hTCB h);
+extern hTCB TCBPointerToHandle(TCB* p);
 extern unsigned long get_tick();
 
 void FMTK_Reschedule();
-int FMTK_SendMsg(hMBX hMbx, int d1, int d2, int d3);
-int FMTK_WaitMsg(hMBX hMbx, int *d1, int *d2, int *d3, int timelimit);
-int FMTK_StartThread(unsigned short *pCode, int stacksize, int *pStack, char *pCmd, int info);
-int FMTK_StartApp(AppStartupRec *rec);
+long FMTK_Initialize();
+long FMTK_Sleep(__reg("d0") long);
+long FMTK_SendMsg(__reg("d0") long hMbx, __reg("d1") long d1, __reg("d2") long d2, __reg("d3") long d3);
+long FMTK_WaitMsg(__reg("d0") long hMbx, __reg("d0") long d1, __reg("d0") long d2, __reg("d0") long d3, __reg("d4") long timelimit);
+long FMTK_StartTask(__reg("d0") long pCode, __reg("d1") long stacksize, __reg("d2") long pStack, __reg("d3") long pCmd, __reg("d4") long info);
+long FMTK_ExitTask();
+long FMTK_KillTask(__reg("d0") long);
+long FMTK_SetTaskPriority(__reg("d0") long hTCB, __reg("d1") long pri);
+long FMTK_StartApp(__reg("d0") long rec);
 void RequestIOFocus(ACB *);
 
 int chkTCB(TCB *p);
@@ -61,26 +84,11 @@ void outc(unsigned int, int);
 void outh(unsigned int, int);
 void outw(unsigned int, int);
 int LockSemaphore(int *sema, int retries);
-inline void UnlockSemaphore(long *sema)
-{
-	*sema = 0;
-}
+void UnlockSemaphore(long *sema);
 
-int LockSysSemaphore(int retries);
-int LockIOFSemaphore(int retries);
-int LockKbdSemaphore(int retries);
-inline void UnlockIOFSemaphore()
-{
-}
-
-inline void UnlockKbdSemaphore()
-{
-}
-
-
-inline int GetImLevel()
-{
-}
+long LockSysSemaphore(long retries);
+long LockIOFSemaphore(long retries);
+long LockKbdSemaphore(long retries);
 
 // Restoring the interrupt level does not have a ramp, because the level is
 // being set back to enable interrupts, from a disabled state. Following the

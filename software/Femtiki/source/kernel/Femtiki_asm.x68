@@ -1,5 +1,19 @@
 	code
 	even
+
+macLockSemaphore macro wh,tm
+	moveq #37,d0					; lock semaphore
+	moveq #\1,d1
+	move.l #\2,d2
+	trap #15
+endm
+
+macUnlockSemaphore macro wh
+	moveq #38,d0
+	moveq #\1,d1
+	trap #15
+endm
+
 ;------------------------------------------------------------------------------
 ; Initialize the Femtiki OS.
 ;------------------------------------------------------------------------------
@@ -16,45 +30,76 @@ FemtikiInitIRQ:
 	rts
 
 ;------------------------------------------------------------------------------
-; Operating system call dispatcher.
-; On entry, the task state has been saved including the system stack pointer,
-; in the task control block.
+; Operating system call dispatcher. On entry the register set is saved.
+;
+; All rescheduling of tasks (task switching) is handled by the TimerIRQ() or
+; RescheduleIRQ() functions. Calling a system function does not directly 
+; change tasks so there's no reason to save/restore many of the control
+; registers that need to be saved and restored by a task switch.
+;
+; Parameters to the system function are passed in registers d0 to d4.
 ;------------------------------------------------------------------------------
 
-OSCallTable
-	dc.w		0
+macOSCallAddr macro arg1
+	dc.w (\arg1-OSCallTable)
+endm
+
+OSCallTable:
+	macOSCallAddr	FMTK_Initialize
+	macOSCallAddr	FMTK_StartTask
+	macOSCallAddr	FMTK_ExitTask
+	macOSCallAddr	FMTK_KillTask
+	macOSCallAddr	FMTK_SetTaskPriority
+	macOSCallAddr	FMTK_Sleep
+	macOSCallAddr	FMTK_WaitMsg
+	macOSCallAddr	FMTK_SendMsg
+	macOSCallAddr	FMTK_PeekMsg
+	macOSCallAddr	FMTK_CheckMsg
+	macOSCallAddr	FMTK_AllocMbx
+	macOSCallAddr	FMTK_FreeMbx
+
 
 	even
-CallOS:
-	move.l	a0,-(a7)
-	move.l	RunningTCB,a0
-	movem.l d0-d7/a0-a6,TCBRegs(a0)
-	move.l	(a7)+,a1
-	move.l	a1,32(a0)
-	movec		usp,a1
-	move.l	a1,TCBUSP(a0)
-	move.w	(a7)+,d0					; pop the status register
-	move.w	d0,TCBSR(a0)			; save in TCB
-	move.l	(a7)+,a1					; pop the program counter
-	lea	2(a1),a1							; increment past inline callno argument
-	move.l	a1,TCBPC(a0)			; save PC in TCB
-	move.l	a7,TCBSSP(a0)			; finally save SSP
-	move.w	-2(a1),d0					; d0 = call number
-	lsl.w		#2,d0							; make into table index
-	lea			OSCallTable,a1
-	move.l	(a1,d0.w),a1
-	jsr			(a1)							; call the OS function
-	; Restore the thread context and return
-	move.l	RunningTCB,a0
-	move.l	TCBSSP,a7
-	move.l	TCBPC(a0),-(a7)		; setup the PC and the SR on the stack
-	move.w	TCBSR(a0),-(a7)		; prep for RTE
-	move.l	TCBUSP,d0					; restore user stack pointer
-	movec		d0,usp
-	movem.l	TCBRegs(a0),d0/d1/d2/d3/d4/d5/d6/d7
-	movem.l TCBRegs+40(a0),a1/a2/a3/a4/a5/a6
-	move.l	TCBRegs+32(a0),a0
+_FMTK_Dispatch:
+	movem.l d1-d7/a0-a6,-(sp)
+	ext.w d7
+	lsl.w #1,d7
+	lea OSCallTable,a0
+	move.w (a0,d7.w),d7
+	ext.l
+	add.l d7,a0
+	; Lock the system semaphore, trashes d0 to d2
+	movem.l d0-d2,-(sp)
+	macLockSemphore OSSEMA,100000
+	tst.l d0
+	beq.s .0001							; lock achieved?
+	movem.l (sp)+,d0-d2			; get back d0 to d2
+	jsr (a0)								; call the system  routine
+	move.l d0,-(sp)
+	macUnlockSysSemaphore OSSEMA
+	move.l (sp)+,d0					; get back d0
+	movem.l (sp)+,d1-d7/a0-a6
 	rte
+.0001
+	add.l #12,sp
+	moveq #E_Busy,d0
+	movem.l (sp)+,d1-d7/a0-a6
+	rte
+
+	global _FMTK_Dispatch
+
+_FMTK_TimerIRQLaunchpad:
+	movem.l d0-d7/a0-a6,-(sp)		; save all regs
+	move.l usp,d0								; including usp
+	move.l d0,-(sp)							; supply pointer to save area to IRQ routine
+	move.l sp,d0
+	bsr _FMTK_TimerIRQ					; call the IRQ routine
+	move.l (sp)+,d0							; restore usp
+	move.l d0,usp
+	movem.l (sp)+,d0-d7/a0-a6		; and the rest of the registers
+	rte
+
+	global _FMTK_TimerIRQLaunchpad
 
 ;------------------------------------------------------------------------------
 ; Get a pointer to the currently running TCB.

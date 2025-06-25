@@ -82,4 +82,17 @@ enum {
 #define MMU_RD	2
 #define MMU_EX	1
 
+#define OS_INIT	0
+#define OS_START_TASK	1
+#define OS_EXIT_TASK 2
+#define OS_KILL_TASK 3
+#define OS_SET_TASK_PRIORITY	4
+#define OS_SLEEP 5
+#define OS_WAITMSG 6
+#define OS_SENDMSG 7
+#define OS_PEEKMSG 8
+#define OS_CHECKMSG 9
+#define OS_ALLOC_MBX 10
+#define OS_FREE_MBX 11
+
 #endif

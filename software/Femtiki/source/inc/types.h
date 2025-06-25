@@ -169,13 +169,14 @@ struct tagMBX;
 
 typedef struct _tagTCB {
     // exception storage area
-	int regs[17];
-	int fpregs[8];
+	unsigned long regs[17];
+	unsigned long ssp;
+	double fpregs[8];
 	int epc;
 	int vl;
 	int cr0;
 	hTCB acbnext;
-	hTCB next
+	hTCB next;
 	hTCB prev;
 	hTCB mbq_next;
 	hTCB mbq_prev;
@@ -222,7 +223,7 @@ typedef struct tagALARM {
 	uint BaseTimeout;
 	uint timeout;
 	uint repeat;
-	byte resv[8];		// padding to 64 bytes
+	char resv[8];		// padding to 64 bytes
 } ALARM;
 
 typedef struct tagAppStartupRec {

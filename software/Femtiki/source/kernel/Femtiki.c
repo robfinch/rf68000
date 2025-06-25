@@ -6,27 +6,40 @@
 //       ||
 //
 //
-// This source file is free software: you can redistribute it and/or modify 
-// it under the terms of the GNU Lesser General Public License as published 
-// by the Free Software Foundation, either version 3 of the License, or     
-// (at your option) any later version.                                      
-//                                                                          
-// This source file is distributed in the hope that it will be useful,      
-// but WITHOUT ANY WARRANTY; without even the implied warranty of           
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the            
-// GNU General Public License for more details.                             
-//                                                                          
-// You should have received a copy of the GNU General Public License        
-// along with this program.  If not, see <http://www.gnu.org/licenses/>.    
+// BSD 3-Clause License
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
+//
+// 1. Redistributions of source code must retain the above copyright notice, this
+//    list of conditions and the following disclaimer.
+//
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+//    this list of conditions and the following disclaimer in the documentation
+//    and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its
+//    contributors may be used to endorse or promote products derived from
+//    this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //                                                                          
 // ============================================================================
 //
-#include "config.h"
-#include "const.h"
-#include "types.h"
-#include "proto.h"
-#include "glo.h"
-#include "TCB.h"
+#include "inc\config.h"
+#include "inc\const.h"
+#include "inc\types.h"
+#include "inc\proto.h"
+#include "inc\glo.h"
+//#include "TCB.h"
 
 extern int GetRand(register int stream);
 extern int shell();
@@ -159,51 +172,16 @@ int SetImLevel(register int level)
 	return(x);
 }
 
-// ----------------------------------------------------------------------------
-// Semaphore lock/unlock code.
-// Ultimately calls a BIOS routine to access the semaphoric memory which is
-// set in an atomic fashion.
-// ----------------------------------------------------------------------------
-
-int LockSysSemaphore(int retries)
-{
-	return(LockSemaphore(OSSEMA,retries));
-}
-
-void UnlockSysSemaphore()
-{
-	UnlockSemaphore(OSSEMA);
-}
-
-int LockIOFSemaphore(register int retries)
-{
-	return(LockSemaphore(IOFSEMA,retries));
-}
-
-void UnlockIOFSemaphore()
-{
-	UnlockSemaphore(IOFSEMA);
-}
-
-int LockKbdSemaphore(register int retries)
-{
-	return(LockSemaphore(KEYBD_SEMA,retries));
-}
-
-void UnlockKbdSemaphore()
-{
-	UnlockSemaphore(KEYBD_SEMA);
-}
-
 unsigned long GetSP() = "\tmove.l sp,d0\r\n";
 void SetSP(__reg("d0") unsigned long sp) = "\tmove.l d0,sp";
 
 // ----------------------------------------------------------------------------
-// Restore the thread's context.
+// Restore the task's context.
 //
 // The registers were stored on the task's IRQ stack when the timer ISR was
 // entered. They will automatically be restored from the IRQ stack when the
-// the ISR exits. 
+// the ISR exits. The only thing required is to account for the other info
+// related to the context.
 // ----------------------------------------------------------------------------
 
 void SwapContext(register TCB *octx, register TCB *nctx)
@@ -278,46 +256,6 @@ static hTCB SelectTaskToRun()
 }
 
 // ----------------------------------------------------------------------------
-// All rescheduling of tasks (task switching) is handled by the TimerIRQ() or
-// RescheduleIRQ() functions. Calling a system function does not directly 
-// change tasks so there's no reason to save/restore many of the control
-// registers that need to be saved and restored by a task switch.
-//
-// Parameters to the system function are passed in registers d0 to d4.
-// ----------------------------------------------------------------------------
-
-long __interrupt FMTK_SystemCall(
-__reg("d7") long callno,
-__reg("d0") long arg1,
-__reg("d1") long arg2,
-__reg("d2") long arg3,
-__reg("d3") long arg4,
-__reg("d4") long arg5,
-)
-{
-	if (LockSysSemaphore(100000)) {
-		switch(callno) {
-		case OS_INIT:				return (FMTK_Initialize());
-		case OS_START_TASK:	return (FMTK_StartTask(arg1, arg2, arg3, arg4,arg5));
-		case OS_EXIT_TASK:	return (FMTK_ExitTask());
-		case OS_KILL_TASK:	return (FMTK_KillTask(arg1));
-		case OS_SET_TASK_PRIORITY:	return (FMTK_SetTaskPriority(arg1, arg2));
-		case OS_SLEEP:			return (FMTK_Sleep(arg1));
-		case OS_WAITMSG:		return (FMTK_WaitMsg(arg1,arg2,arg3,arg4,arg5));
-		case OS_SENDMSG:		return (FMTK_SendMsg(arg1,arg2,arg3,arg4));
-		case OS_PEEKMSG:		return (FMTK_PeekMsg(arg1,arg2,arg3,arg4));
-		case OS_CHECKKMSG:	return (FMTK_CheckMsg(arg1,arg2,arg3,arg4,arg5));
-		case OS_ALLOC_MBX:	return (FMTK_AllocMbx(arg1));
-		case OS_FREE_MBX:		return (FMTK_FreeMbx(arg1));
-		default:
-			return (E_BadCallno);
-		}
-	}
-	else return (E_Busy);
-}
-
-
-// ----------------------------------------------------------------------------
 // FMTK primitives need to re-schedule threads in a couple of places.
 // ----------------------------------------------------------------------------
 
@@ -338,9 +276,10 @@ void FMTK_Reschedule()
 // basically has a fixed latency when priority #0 is present.
 // ----------------------------------------------------------------------------
 
-void __interrupt FMTK_SchedulerIRQ()
+void FMTK_TimerIRQ(unsigned long* sp)
 {
   TCB *t, *ot, *tol;
+  char* sp2;
 
 	ot = t = GetRunningTCBPtr();
 	t->endTick = GetTick();
@@ -395,11 +334,15 @@ void __interrupt FMTK_SchedulerIRQ()
 	t = GetRunningTCBPtr();
 	if (t->exception) {
 		// Dig into the stack here to set registers
-		t->regs[29] = t->regs[28];   // set link register to catch handler
-		t->epc = t->regs[28];        // and the PC register
-		t->regs[TCB_D1] = t->exception;    // d1 = exception value
-		t->exception = 0;
-		t->regs[TCB_D2] = 45;        // d2 = exception type
+		sp[2] = t->exception;				// d1 = exception value
+		sp[3] = 45;									// d2 = exception type
+		// The CPU stores a word instead of an lword for the status register.
+		// This shifts the placement of the return PC value by two bytes.
+		sp = &sp[17];								// PC would be here except that only
+		sp2 = (char *)sp;						// two bytes were stored for the SR.
+		sp2 -= 2;										// So, the pointer needs to back up two
+		sp = (unsigned long*)sp2;		// bytes.
+		*sp2 = t->exceptionHandler;	// Now copy exception handler address to stack
 	}
 	t->startTick = GetTick();
 	if (ot != t)
@@ -418,32 +361,22 @@ j1:  goto j1;
 void IdleThread()
 {
    int ii;
-   int *screen = (int *)0xFFFFFFFFFFD00000L;
+   unsigned long *screen = (unsigned long *)0xFFD00000L;
 
-//     try {
-j1:  ;
-   forever {
-     try {
-       ii++;
-       if (getCPU()==0) {
-         screen[57] = 0xFFFF000F0000L|ii;
-			 }
-     }
-     catch(static __exception ex=0) {
-       if (ex&0xFFFFFFFFFFFFFFFFL==515) {
-         printf("IdleTask: CTRL-C pressed.\r\n");
-       }
-       else
-         throw ex;
-     }
+   while(1) {
+     ii++;
+     if (get_coreno()==0) {
+       screen[57] = 0x000F0000L|ii;
+		 }
    }
-/*
-     }
-     catch (static __exception ex1=0) {
-         printf("IdleTask: exception %d.\r\n", ex1);
-         goto j1;
-     }
-*/
+}
+
+long FMTK_ExceptionHandler(__reg("d0") long val, __reg("d1") long typ))
+{
+	if (typ==515) {
+		puts("Default exception handler: CTRL-C pressed.\r\n");
+		FMTK_ExitTask();
+	}
 }
 
 // ----------------------------------------------------------------------------
@@ -565,6 +498,7 @@ int FMTK_StartTask(
   t->endTick = GetTick();
   t->ticks = 0;
   t->exception = 0;
+  t->exceptionHandler = FMTK_ExceptionHandler;
   if (LockSysSemaphore(100000)) {
       InsertIntoReadyList(ht);
       UnlockSysSemaphore();
@@ -625,6 +559,14 @@ int FMTK_SetTaskPriority(__reg("d0") hTCB ht, __reg("d1") int priority)
   return (E_Ok);
 }
 
+void SetVector(__reg("d0") unsigned long num, __reg("d1") unsigned long addr) = 
+	"\tmovem.l d0/a0,-(sp)\r\n"
+	"\tlsl.l #2,d0\r\n"
+	"\tmove.l d0,a0"
+	"\tmove.l d1,(a0)\r\n"
+	"\tmovem.l (sp)+,d0/a0\r\n"
+;
+
 // ----------------------------------------------------------------------------
 // Initialize FMTK global variables.
 // ----------------------------------------------------------------------------
@@ -632,9 +574,14 @@ int FMTK_SetTaskPriority(__reg("d0") hTCB ht, __reg("d1") int priority)
 void FMTK_Initialize()
 {
 	int nn,jj;
+	int lev;
 
 //    firstcall
   {
+  	lev = SetImLevel(7);									// Do not allow interrupts
+    SetVector(30,FMTK_TimerIRQLaunchpad);	// Auto level 6
+  	SetVector(33,FMTK_Dispatch);					// TRAP #1
+
   	reschedFlag = 0;
   	IRQFlag = 0;
     hasUltraHighPriorityTasks = 0;
@@ -701,6 +648,7 @@ void FMTK_Initialize()
 		hFocusSwitchMbx = 0;
   	FMTK_Inited = 0x12345678;
     SetupDevices();
+  	SetImLevelHelper(lev);								// Restore interrupts
   }
 }
 
