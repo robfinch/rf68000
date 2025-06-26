@@ -34,12 +34,17 @@
 ;
 ; ============================================================================
 
+	include "inc\config.x68"
+
 E_NoMem	equ 33
-LOG_PGSZ	equ	14
 
 	bss
 _lastSearchedPAMWord:
 	ds.l	1
+_ACBList
+	ds.l	1
+
+	global _lastSearchedPAMWord
 
 	code
 	even
@@ -56,7 +61,7 @@ _ClearPage:
 	movem.l a1/a2,-(sp)
 	move.l a0,a1
 	move.l a0,a2
-	add.l #PGSIZE,a2
+	add.l #PAGESZ,a2
 .0001:
 	clr.l (a1)
 	lea 4(a1),a1
@@ -83,7 +88,6 @@ _FindFreePage:
 	movem.l a1-a4,-(sp)
 	move.l _lastSearchedPAMWord,a0
 	move.l a0,a1
-	move.l #MEMSZ,d1
 	; search the PAM 32-bits at a time for a free page
 .0002:
 	cmpi.l #$FFFFFFFF,(a0)	; find a set of bits with an unallocated page
@@ -112,16 +116,18 @@ _FindFreePage:
 	; Here there was a page available
 .0003:
 	move.l a0,_lastSearchedPAMWord
-	sub.l #PAM,a0						; a0 = tetra index into PAM
+	sub.l #_PAM,a0					; a0 = tetra index into PAM
 	move.l a0,d1
 	lsl.l #5,d1							; 32 bits per entry
 	add.l d1,d0							;	add in bit number, d0 = page number
-	mulu #PMTSIZE,d0				; page number times size of PMT entry
+	move.l d0,d1						; d1 = page number
+	mulu #PMTESIZE,d0				; page number times size of PMT entry
 	add.l #_PMT,d0					; add in PMT base address
 	move.l d0,a0
 	move.w #1,4(a0)					; set share count to 1
 	move.w #7,(a0)					; set acr = user, rwx
 	sub.l #_PMT,d0
+	move.l d1,d0						; d0 = page number
 	moveq #LOG_PGSZ,d1
 	lsl.l d1,d0							; convert page number to address
 	rts
@@ -139,7 +145,7 @@ _FindFreePage:
 _GetPageTableEntryAddress:
 	movem.l d1,-(sp)
 	move.l #-1,d1
-	bsr LockMMUSemaphore
+	bsr _LockMMUSemaphore
 	tst.l d1
 	bne .0001
 .0003:
@@ -325,6 +331,29 @@ _GetPageTableEntryAddress:
 ;
 ;
 ;
+; Parameters:
+;		none
+;	Returns:
+;		d0 = ACB handle
 ;
-;
+_FindFreeACB:
+	move.l d1,-(sp)
+	clr.l d1
+	move.l _ACBList,d0
+.0002
+	bset.l d1,d0
+	beq.s .0001
+	addq #1,d1
+	cmpi.b #32,d1
+	blo.s .0002
+	move.l (sp)+,d1
+	clr.l d0
+	rts
+.0001
+	move.l d0,_ACBList
+	move.l d1,d0
+	addq.l #1,d0
+	move.l (sp)+,d1
+	rts
+
 	global _FindFreePage

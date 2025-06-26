@@ -21,6 +21,8 @@
 //                                                                          
 // ============================================================================
 //
+#include <stdio.h>
+#include <string.h>
 #include "inc/config.h"
 #include "inc/const.h"
 //#include "../inc/errno.h"
@@ -33,13 +35,11 @@
 #define IPT
 #define MMU	0xFDC00000
 
-#define NULL    (void *)0
-
 extern char *os_brk;
 
 extern unsigned long* lastSearchedPAMWord;
 extern int errno;
-extern char *osmem;
+char *osmem;
 extern int highest_data_word;
 extern short int mmu_freelist;		// head of list of free pages
 extern int syspages;
@@ -55,12 +55,12 @@ extern void DBGHideCursor(int hide);
 extern void* memsetT(void* ptr, long c, size_t n);
 extern char* memset(char* ptr, long c, size_t n);
 extern char* FindFreePage();
-extern PTE* GetPageTableEntryAddress(unsigned long virtadr);
+PTE* GetPageTableEntryAddress(hACB ha, char* virtadr, int alloc);
 void *pt_alloc(int amt, int acr);
 
 //unsigned __int32 *mmu_entries;
 extern unsigned long PAM[(NPAGES+1)/32];
-extern PMTE PageManagementTable[NPAGES];
+extern PMTE PMT[NPAGES];
 extern unsigned long* page_table;
 extern char *brks[512];
 extern unsigned long pebble[512];
@@ -237,7 +237,7 @@ void init_memory_management()
 	lastSearchedPAMWord = PAM;
   
   // Allocate 16MB to the OS, 8MB OS, 8MB video frame buffer
-  osmem = (char *)pt_alloc(16777216,7);
+  osmem = (char *)mem_alloc(1, 16777216,7);
   // Allocate video frame buffer
   pACB = GetRunningACBPtr();
 //  pACB-> = pt_alloc(8388607,7);
@@ -248,9 +248,8 @@ void init_memory_management()
 // Alloc enough pages to fill the requested amount.
 // ----------------------------------------------------------------------------
 
-void *pt_alloc(int amt, int acr)
+void *mem_alloc(hACB hAcb, int amt, int acr)
 {
-	PageDirectory* p;
 	int npages;
 	int nn;
 	char* page;
@@ -261,7 +260,6 @@ void *pt_alloc(int amt, int acr)
 	char* brk;
 
 	acr &= 7;
-	p = (char *)-1;
 	DBGDisplayChar('B');
 	amt = round16k(amt);
 	npages = amt >> 14;
@@ -271,18 +269,17 @@ void *pt_alloc(int amt, int acr)
 	brk = NULL;
 	if (npages < sys_pages_available) {
 		sys_pages_available -= npages;
-		pacb = GetRunningACBPtr();
-		hAcb = GetRunningACB();
+		pacb = ACBHandleToPointer(hAcb);
 		brk = pacb->brk;
 		pacb->brk += amt;
 		for (nn = 0; nn < npages-1; nn++) {
-			pte = GetPageTableEntryAddress(hAcb,brk+(nn << 14),1);
+			pte = (unsigned long*)GetPageTableEntryAddress(hAcb,brk+(nn << 14),1);
 			en = (unsigned long)pte;
 			en &= 0xffffc000UL;
 			en |= 0x2000 | acr;	// 0x2000 = page present bit
 			*pte = en;
 		}
-		pte = GetPageTableEntryAddress(hAcb,brk+(nn << 14),1);
+		pte = (unsigned long*)GetPageTableEntryAddress(hAcb,brk+(nn << 14),1);
 		en = (unsigned long)pte;
 		en &= 0xffffc000UL;
 		en |= 0x2800 | acr;	// 0x2800 = page present bit, plus last page
@@ -304,7 +301,7 @@ void *pt_alloc(int amt, int acr)
 //		vadr - virtual address of memory to free
 // ----------------------------------------------------------------------------
 
-char *pt_free(char *vadr)
+char *mem_free(hACB h, char *vadr)
 {
 	int n;
 	int count;	// prevent looping forever
@@ -317,16 +314,15 @@ char *pt_free(char *vadr)
 	count = 0;
 	do {
 		vpageno = ((unsigned long)vadr >> 14) & 0xffff;
-		h = GetRunningACB();
 		while (LockMMUSemaphore(-1)==0);
 		last_page = 0;
 		if (pe = (unsigned long*)GetPageTableEntryAddress(h,vadr,0)) {
 			pte = *pe;
 			last_page = (pte & 0x800) != 0;
 			while (LockPMTSemaphore(-1)==0);
-			if (PageManagementTable[vpageno].share_count != 0) {
-				PageManagementTable[vpageno].share_count--;
-				if (PageManagementTable[vpageno].share_count==0) {
+			if (PMT[vpageno].share_count != 0) {
+				PMT[vpageno].share_count--;
+				if (PMT[vpageno].share_count==0) {
 					pte = 0xffffffffUL;
 					*pe = pte;
 				}
@@ -356,23 +352,23 @@ void *sbrk(long size)
 
 	p = 0;
 	size = round16k(size);
+	h = GetRunningACB();
 	if (size > 0) {
-		p = pt_alloc(size,7);
+		p = mem_alloc(h,size,7);
 		if (p==NULL)
 			errno = E_NoMem;
 		return (p);
 	}
-	h = GetRunningACB();
 	pAcb = GetRunningACBPtr();
 	if (size < 0) {
 		size = -size;
 		if (size > (unsigned long)pAcb->brk) {
 			errno = E_NoMem;
-			return (-1);
+			return ((void*)-1);
 		}
 		r = p = pAcb->brk - size;
 		for(q = p; q < pAcb->brk;)
-			q = pt_free(q);
+			q = mem_free(h,q);
 		pAcb->brk = r;
 		// Mark the last page
 		if (r > (char*)0) {

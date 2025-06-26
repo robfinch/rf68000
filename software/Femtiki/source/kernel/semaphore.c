@@ -34,3 +34,25 @@ void UnlockKbdSemaphore()
 	UnlockSemaphore(KEYBD_SEMA);
 }
 
+int LockMMUSemaphore(register int retries)
+{
+	return(LockSemaphore(MEMORY_SEMA,retries));
+}
+
+void UnlockMMUSemaphore()
+{
+	UnlockSemaphore(MEMORY_SEMA);
+}
+
+int LockPMTSemaphore(register int retries)
+{
+	return(LockSemaphore(PMT_SEMA,retries));
+}
+
+void UnlockPMTSemaphore()
+{
+	UnlockSemaphore(PMT_SEMA);
+}
+
+
+

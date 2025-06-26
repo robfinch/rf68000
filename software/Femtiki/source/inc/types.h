@@ -112,19 +112,17 @@ typedef struct tagMSG {
 // Application control block
 typedef struct _tagACB
 {
+	unsigned long magic;			// "ACB "
+	char* pEnv;
 	// Text mode display buffer, 8kB
-	unsigned long virtVideoMem[2048];
+	unsigned long* pVirtVidMem;
+	// Card memory for garbage collection.
+	unsigned long* pCard;
+
+	short int* pCode;
+
 	// 256 bytes
 	PageDirectory pd;
-	// 4x64 bits = 256 bits, which indicates which L1 card to scan
-	// resolves the pointer address to a 65k memory block
-	unsigned int L2cards[4];
-	// A pointer cannot be within the first 65kB of the virtual
-	// address space. So storage for the heap can't begin before
-	// page 8.
-	unsigned int L1cards[252];	// 256*64=16384 bits (2048 bytes)
-	unsigned int magic;			// ACB ACB 
-	int regset;
 	char* brk;
 	char* pData;
 	int pDataSize;
@@ -137,32 +135,31 @@ typedef struct _tagACB
 	char gc_markingQueFull;
 	char gc_markingQueEmpty;
 	char gc_overflow;
-	short int* pCode;
 	struct _tagObject *objectList;
 	struct _tagObject *garbage_list;
 	HEAP Heap;
-    struct _tagACB *iof_next;
-    struct _tagACB *iof_prev;
-    char UserName[32];
-    char path[256];
-    char exitRunFile[256];
-    char commandLine[256];
-    unsigned long *pVidMem;
-    unsigned char VideoRows;
-    unsigned char VideoCols;
-    unsigned char CursorRow;
-    unsigned char CursorCol;
-    unsigned long NormAttr;
-    short int KeyState1;
-    short int KeyState2;
-    short int KeybdWaitFlag;
-    short int KeybdHead;
-    short int KeybdTail;
-    unsigned short int KeybdBuffer[32];
-    hACB number;
-    hACB next;
-    hTCB task;
-    int *templates[256];
+  struct _tagACB *iof_next;
+  struct _tagACB *iof_prev;
+  char UserName[32];
+  char path[256];
+  char exitRunFile[256];
+  char commandLine[256];
+  unsigned long *pVidMem;
+  unsigned char VideoRows;
+  unsigned char VideoCols;
+  unsigned char CursorRow;
+  unsigned char CursorCol;
+  unsigned long NormAttr;
+  short int KeyState1;
+  short int KeyState2;
+  short int KeybdWaitFlag;
+  short int KeybdHead;
+  short int KeybdTail;
+  unsigned short int KeybdBuffer[32];
+  hACB number;
+  hACB next;
+  hTCB task;
+  int *templates[256];
 } ACB;
 
 struct tagMBX;
@@ -175,7 +172,7 @@ typedef struct _tagTCB {
 	int epc;
 	int vl;
 	int cr0;
-	hTCB acbnext;
+	hTCB acbnext;				// task list associated with app
 	hTCB next;
 	hTCB prev;
 	hTCB mbq_next;
@@ -239,6 +236,7 @@ typedef struct tagAppStartupRec {
 	unsigned short int* pCode;
 	unsigned long* pData;
 	unsigned long* pUIData;
+	char hasGarbageCollector;
 } AppStartupRec;
 
 #endif

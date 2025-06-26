@@ -1,4 +1,6 @@
 	section dram
+_PMT
+	ds.b	65536*16
 _tcbs
 	ds.b	4096*256
 _tcbs_end
@@ -9,9 +11,8 @@ _mailbox
 	ds.b	8192*12
 _mailbox_end
 _acbs
-	ds.b	32*16384
+	ds.b	32*32768
 _acbs_end
-
 	global _tcbs
 	global _message
 	global _mailbox
@@ -88,6 +89,7 @@ _PAMEnd
 _FemtikiVars_end
 
 	global _sys_pages_available
+	global _ACBPtrs
 	global _nMsgBlk
 	global _nMailbox
 	global _RunningTCB
@@ -103,6 +105,7 @@ _FemtikiVars_end
 	global _TimeoutList
 	global _readyQ
 	global _SysACB
+	global _PMT
 	global _PAM
 	global _PAMEnd
 

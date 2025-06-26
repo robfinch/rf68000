@@ -57,6 +57,7 @@ OSCallTable:
 	macOSCallAddr	FMTK_CheckMsg
 	macOSCallAddr	FMTK_AllocMbx
 	macOSCallAddr	FMTK_FreeMbx
+	macOSCallAddr	FMTK_StartApp
 
 
 	even

@@ -5,7 +5,7 @@
 #define FALSE       0
 
 #define null        (void *)0
-#define NULL				(void *)0
+//#define NULL				(void *)0
 #define MAX_UINT    0xFFFFFFFF
 #define MAX_INT		0x7FFFFFFF
 #define TS_NONE     0
@@ -35,6 +35,7 @@ enum {
      E_BadMapno,
      E_BadMbx,
      E_QueFull,
+     // 10
      E_NoThread,
      E_NotAlloc,
      E_NoMsg,
@@ -45,6 +46,7 @@ enum {
      E_DCBInUse,
 	 E_Busy,
 	 E_BadPageno,
+	 	// 20
 	 E_PagesizeMismatch,
 
      //; Device driver errors
@@ -59,6 +61,7 @@ enum {
      // resource errors
      E_NoMoreMbx,// =	0x40,
      E_NoMoreMsgBlks,
+     // 30
      E_NoMoreAlarmBlks,
      E_NoMoreACBs,
      E_NoMoreTCBs,
@@ -94,5 +97,9 @@ enum {
 #define OS_CHECKMSG 9
 #define OS_ALLOC_MBX 10
 #define OS_FREE_MBX 11
+#define OS_START_APP	12
+
+#define MEMORY_SEMA	6
+#define PMT_SEMA 10
 
 #endif

@@ -1,5 +1,3 @@
-extern memsetW(int *, int, int);
-extern memsetT(long *, long, long);
 
 // The text screen memory can only handle half-word transfers, hence the use
 // of memsetH, memcpyH.
@@ -52,6 +50,19 @@ static void SetVideoReg(int regno, unsigned long val)
 	TEXTVIDEO_REG[regno] = rbo(val);
 }
 
+void UpdateCursorPos()
+{
+	ACB *j;
+	int pos;
+
+	j = GetACBPtr();
+//    if (j == IOFocusNdx) {
+  pos = (j->CursorRow * j->VideoCols + j->CursorCol) +
+  	(get_coreno() * j->VideoCols * j->VideoRows);
+	SetVideoReg(11,pos);
+//    }
+}
+
 void SetCursorPos(int row, int col)
 {
 	ACB *j;
@@ -89,19 +100,6 @@ int GetTextRows()
 	return GetACBPtr()->VideoRows;
 }
 
-void UpdateCursorPos()
-{
-	ACB *j;
-	int pos;
-
-	j = GetACBPtr();
-//    if (j == IOFocusNdx) {
-  pos = (j->CursorRow * j->VideoCols + j->CursorCol) +
-  	(get_coreno() * j->VideoCols * j->VideoRows);
-	SetVideoReg(11,pos);
-//    }
-}
-
 void HomeCursor()
 {
 	ACB *j;
@@ -112,7 +110,7 @@ void HomeCursor()
 	UpdateCursorPos();
 }
 
-int *CalcScreenLocation()
+unsigned long* CalcScreenLocation()
 {
   ACB *j;
   int pos;
@@ -126,9 +124,14 @@ int *CalcScreenLocation()
   return GetScreenLocation()+pos;
 }
 
+unsigned long AsciiToScreen(unsigned long ch)
+{
+	return (ch);
+}
+
 void ClearScreen()
 {
-	int *p;
+	unsigned long* p;
 	int nn;
 	int mx;
 	ACB *j;
@@ -151,7 +154,7 @@ void ClearBmpScreen()
 
 void BlankLine(int row)
 {
-	int *p;
+	unsigned long* p;
 	int nn;
 	int mx;
 	ACB *j;
@@ -167,7 +170,7 @@ void BlankLine(int row)
 
 void VBScrollUp()
 {
-	int *scrn = GetScreenLocation();
+	unsigned long* scrn = GetScreenLocation();
 	int nn;
 	int count;
   ACB *j;
@@ -211,7 +214,7 @@ void IncrementCursorPos()
 
 void DisplayChar(char ch)
 {
-   int *p;
+   unsigned long* p;
    int nn;
    ACB *j;
 

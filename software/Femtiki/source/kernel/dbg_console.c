@@ -1,3 +1,7 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
 extern memsetW(int *, int, int);
 extern memsetT(long *, long, long);
 
@@ -12,7 +16,7 @@ extern memsetT(long *, long, long);
 extern int IOFocusNdx;
 extern __int8 DBGCursorCol;
 extern __int8 DBGCursorRow;
-extern int DBGAttr;
+unsigned long DBGAttr;
 extern void puthexnum(int num, int wid, int ul, char padchar);
 extern void out32(unsigned long* port, unsigned long val);
 extern int get_coreno();

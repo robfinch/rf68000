@@ -505,7 +505,7 @@ long FMTK_PeekMsg (
 	__reg("d3") long *d3
 )
 {
-  return (CheckMsg(hMbx, d1, d2, d3, 0));
+  return (FMTK_CheckMsg(hMbx, d1, d2, d3, 0));
 }
 
 /* ---------------------------------------------------------------

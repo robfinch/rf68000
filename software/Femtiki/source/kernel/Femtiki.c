@@ -132,6 +132,11 @@ hACB GetAppHandle()
 	return (GetRunningTCBPtr()->hApp);
 }
 
+hACB GetRunningACB()
+{
+	return (GetAppHandle());
+}
+
 ACB *GetRunningACBPtr()
 {
 	return (GetACBPtr(GetAppHandle()));
@@ -467,15 +472,14 @@ int FMTK_ExitTask()
 long FMTK_StartTask(
 	__reg("d0") unsigned short int* StartAddr,
 	__reg("d1") long stacksize,
-	__reg("d2") unsigned long* pStack,
-	__reg("d3") long parm,
-	__reg("d4") long info
+	__reg("d2") long parm,
+	__reg("d3") long info,
+	__reg("d4") unsigned long affinity
 )
 {
   hTCB ht;
   TCB *t;
   int nn;
-  unsigned long affinity;
 	hACB hApp;
 	unsigned char priority;
 	short int *sp2;
@@ -483,17 +487,16 @@ long FMTK_StartTask(
 
 	// These fields extracted from a single parameter as there can be only
 	// five register values passed to the function.	
-  affinity = info & 0xffffffffL;
-	hApp = (info >> 32) & 0xffffL;
-	priority = (info >> 48) & 0xff;
+	hApp = info & 0xffL;
+	priority = (info >> 8) & 0xff;
 
   if (LockSysSemaphore(100000)) {
-    ht = freeTCB;
-    if (ht < 0 || ht >= NR_TCB) {
+    ht = FreeTCB;
+    if (ht <= 0 || ht > NR_TCB) {
       UnlockSysSemaphore();
     	return (E_NoMoreTCBs);
     }
-    freeTCB = tcbs[ht].next;
+    FreeTCB = tcbs[ht-1].next;
     UnlockSysSemaphore();
   }
 	else {
@@ -507,16 +510,19 @@ long FMTK_StartTask(
   tcbs[ht-1].acbnext = hApp;
   ACBPtrs[hApp]->task = ht;
   t->regs[1] = parm;
-  t->regs[15] = (unsigned long)pStack + stacksize - 2048;	// Set USP
-  t->bios_stack = (unsigned long*)pStack + stacksize - 8;
-  t->sys_stack = (unsigned long*)pStack + stacksize - 1024;
+  // Allocate stacks
+  t->stack = (unsigned long*)mem_alloc(ht,stacksize,6);
+  // The following stacks are in the system address space
+  t->bios_stack = (unsigned long*)mem_alloc(1,1024,6);
+  t->sys_stack = (unsigned long*)mem_alloc(1,1024,6);
   // Put ExitTask address on top of stack, when the task is finished then
   // this address will be returned to.
-  pStack[stacksize - 2048 - 4] = (unsigned long)FMTK_ExitTask;
+  t->stack[stacksize - 4] = (unsigned long)FMTK_ExitTask;
+  t->regs[15] = (unsigned long)t->stack + stacksize - 4;	// Set USP
   // Setup system stack image to look as if a syscall were performed.
-  sp = &pStack[stacksize - 1024 - 4 - 18*4];
+  sp = &t->sys_stack[1024 - 4 - 18*4];
   t->ssp = (unsigned long)sp;
-	sp[0] = (unsigned long)pStack + stacksize - 2048;	// USP
+	sp[0] = (unsigned long)t->stack + stacksize - 4;	// USP
 	sp[1] = parm;				// d0 gets parameter
   for (nn = 2; nn < 16; nn = nn + 1)
   	sp[nn] = 0;

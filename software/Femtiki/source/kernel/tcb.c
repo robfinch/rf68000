@@ -119,6 +119,17 @@ int fnFreeTCB(hTCB h)
 	return (E_Ok);
 }
 
+void TCBSetStatusBit(hTCB h, int bits)
+{
+	TCB* p;
+	
+	if (h <= 0 || h > NR_TCB)
+		return;
+	p = TCBHandleToPointer(h);
+	if (p)
+		p->status |= bits;
+}
+
 // ----------------------------------------------------------------------------
 // These routines called only from within the timer ISR.
 // ----------------------------------------------------------------------------
@@ -222,7 +233,7 @@ int InsertIntoTimeoutList(register hTCB ht, register int to)
 		q->next = ht;
 	else
 		TimeoutList = ht;
-	TCBSetStatusBit(t, TS_TIMEOUT);
+	TCBSetStatusBit(ht, TS_TIMEOUT);
 	return (E_Ok);
 };
 
