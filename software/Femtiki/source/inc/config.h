@@ -2,7 +2,7 @@
 #define CONFIG_H
 
 #define NR_MAPS	2048
-#define NR_ACB  64
+#define NR_ACB  32
 #define NR_TCB  1024
 #define NR_MBX  1024
 #define NR_MSG  16384

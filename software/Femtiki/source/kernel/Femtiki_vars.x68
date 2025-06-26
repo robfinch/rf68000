@@ -80,6 +80,9 @@ _readyQ
 	ds.w	32
 _readyQEnd
 
+_hasUltraHighPriorityTasks
+	ds.b	1
+	align 2
 _SysAcb
 	ds.b	16384
 _PAM
@@ -108,7 +111,7 @@ _FemtikiVars_end
 	global _PMT
 	global _PAM
 	global _PAMEnd
-
+	global _hasUltraHighPriorityTasks
 
 
 ;gc_stack		rmb		512

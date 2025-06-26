@@ -41,6 +41,8 @@
 #include "inc\glo.h"
 //#include "TCB.h"
 
+extern hTCB FreeTCB;
+
 extern long __interrupt FMTK_Dispatch(
 	__reg("d7") long,
 	__reg("d0") long,
@@ -148,7 +150,11 @@ ACB* ACBHandleToPointer(hACB h)
 }
 
 int GetRunningPID() =
-"\tmovec.l cpid,d0\r\n"
+	"\tmovec.l cpid,d0\r\n"
+;
+
+int getCPU() = 
+	"\tmovec coreno,d0\r\n"
 ;
 
 // ----------------------------------------------------------------------------

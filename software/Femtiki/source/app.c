@@ -36,6 +36,7 @@
 //
 #include <string.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include "inc/config.h"
 #include "inc/const.h"
 #include "inc/types.h"
@@ -63,13 +64,13 @@ long FMTK_StartApp(AppStartupRec *asr, hACB hParent)
 	int mapno, omapno;
 	int ret;
 	ACB *pACB, *pParentACB;
-	__int32 *pScrn;
+	int32_t *pScrn;
 	int *pStack;
 	int ncpages, ndpages, nhpages, nspages, nn, nCardPages;
 	int page;
 	int *p;
-	__int16 *pCode;
-	int *pData;
+	uint16_t *pCode;
+	char *pData;
 	int ndx;
 	int info;
 	hACB h;
@@ -78,7 +79,7 @@ long FMTK_StartApp(AppStartupRec *asr, hACB hParent)
 	if (h == 0)
 		return (E_NoMoreACBs);
 	// Allocate memory for the ACB
-	pACB = mem_alloc(1,sizeof(ACB),14);
+	pACB = (ACB*)mem_alloc(1,sizeof(ACB),14);
 	if (pACB==NULL)
 		goto err1;
 	memset(pACB,0,sizeof(ACB));
@@ -86,7 +87,7 @@ long FMTK_StartApp(AppStartupRec *asr, hACB hParent)
 	// Keep track of the physical address of the ACB
 	ACBPtrs[h] = pACB;
 	// Allocate memory for environment area
-	pACB->pEnv = mem_alloc(h,16384,6);
+	pACB->pEnv = (char*)mem_alloc(h,16384,6);
 	if (pACB->pEnv==NULL)
 		goto err1;
 	pParentACB = ACBHandleToPointer(hParent);
@@ -94,7 +95,7 @@ long FMTK_StartApp(AppStartupRec *asr, hACB hParent)
 		memcpy(pACB->pEnv, pParentACB->pEnv, 16384);
 	
 	// Allocate memory for virtual video
-	pACB->pVirtVidMem = mem_alloc(h,8192,6);
+	pACB->pVirtVidMem = (uint32_t*)mem_alloc(h,8192,6);
 	if (pACB->pVirtVidMem == NULL)
 		goto err1;
 	pACB->magic = ACB_MAGIC;
@@ -109,13 +110,7 @@ long FMTK_StartApp(AppStartupRec *asr, hACB hParent)
 	}
 	//pACB->CardMemory = MapCardMemory();
 	nCardPages = 2;	// +1 for ACB
-	// Pointer type indicator memory is sixteen pages, 1008 to 1023
-	for (nn = 0; nn < 16; nn++) {
-		page = mmu_Alloc8kPage();
-		p = (int *)(page << 13);
-		mmu_SetMapEntry(p,MMU_RW|0x8,nn+1008);
-	}
-	mmu_SetMapEntry(p,MMU_RW|0x10,nn+1008);
+
 	pACB->pVidMem = pACB->pVirtVidMem;
 	pACB->VideoRows = 32;
 	pACB->VideoCols = 64;
@@ -124,7 +119,7 @@ long FMTK_StartApp(AppStartupRec *asr, hACB hParent)
 	pACB->NormAttr = 0x87fc0000;
 
 	// Allocate storage space for code and copy
-	pCode = mem_alloc(h,asr->codesize+16383,5);
+	pCode = (uint16_t*)mem_alloc(h,asr->codesize+16383,5);
 	if (pCode==NULL)
 		goto err1;
 	memcpy(pCode,&asr->pCode,asr->codesize);
@@ -132,20 +127,12 @@ long FMTK_StartApp(AppStartupRec *asr, hACB hParent)
 
 	// Allocate storage space for initialized data
 	// and copy from start-up record
-	pData = mem_alloc(h,asr->datasize+8191,6);
+	pData = (char*)mem_alloc(h,asr->datasize+8191,6);
 	if (pData==NULL)
 		goto err1;
 	memcpy(pData,&asr->pData,asr->datasize);
 	pACB->pData = pData;
 
-	// Allocate storage space for heap
-	nhpages = (asr->heapsize+16383) >> 14;
-	
-	for (nn = 0; nn < nhpages; nn++)	{
-		page = mmu_Alloc8kPage();
-		p = (int *)(page << 13);
-		mmu_SetMapEntry(p,MMU_EX|0x8,nn+ndpages+ncpages+nCardPages);
-	}
 	/*
 	pACB->Heap->pHeap = (MBLK *)((1+ndpages+ncpages) << 13);
 	pACB->Heap->size = (((asr->heapsize + 8191) >> 13) << 13);
@@ -154,8 +141,8 @@ long FMTK_StartApp(AppStartupRec *asr, hACB hParent)
 	*/
 	//pACB->Heap.addr = (MBLK *)((ndpages+ncpages+nCardPages) << 13)
 	//		| 0xFFFFF00000000000L;
-	CreateHeap((void *)((1+ndpages+ncpages) << 14) | 0xFFFFF00000000000L,
-		(((asr->heapsize + 16383) >> 14) << 14));
+	//CreateHeap((void *)((1+ndpages+ncpages) << 14) | 0xFFFFF00000000000L,
+	//	(((asr->heapsize + 16383) >> 14) << 14));
 	//InitHeap(pACB->Heap->pHeap, nhpages << 13);
 
 	// Start the startup thread

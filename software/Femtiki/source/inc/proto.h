@@ -44,7 +44,9 @@ ACB *GetACBPtr();                   // get the ACB pointer of the running task
 extern ACB *GetRunningACBPtr();
 extern hACB GetRunningACB();
 extern hACB GetAppHandle();
-extern hTCB GetRunningTCB();
+hTCB GetRunningTCB() =
+	"\tmovec.l cpid,d0\r\n"
+;
 extern TCB *GetRunningTCBPtr();
 extern hACB ACBPointerToHandle(ACB* ptr);
 extern ACB* ACBHandleToPointer(hACB h);
@@ -83,12 +85,20 @@ void outb(unsigned int, int);
 void outc(unsigned int, int);
 void outh(unsigned int, int);
 void outw(unsigned int, int);
-int LockSemaphore(int *sema, int retries);
-void UnlockSemaphore(long *sema);
+int LockSemaphore(long sema, int retries);
+void UnlockSemaphore(long sema);
 
 long LockSysSemaphore(long retries);
 long LockIOFSemaphore(long retries);
 long LockKbdSemaphore(long retries);
+long LockMMUSemaphore(long retries);
+long LockPMTSemaphore(long retries);
+
+void UnlockSysSemaphore();
+void UnlockIOFSemaphore();
+void UnlockKbdSemaphore();
+void UnlockMMUSemaphore();
+void UnlockPMTSemaphore();
 
 // Restoring the interrupt level does not have a ramp, because the level is
 // being set back to enable interrupts, from a disabled state. Following the
@@ -108,23 +118,15 @@ inline void LEDS(int val)
 {
 }
 
-extern int mmu_Alloc8kPage();
-extern void mmu_Free8kPage(int pg);
-extern int mmu_Alloc512kPage();
-extern void mmu_Free512kPage(int pg);
-extern void mmu_SetAccessKey(int mapno);
-extern int mmu_SetOperateKey(int mapno);
-extern void *mmu_alloc(int amt, int acr);
-extern void mmu_free(void *pmem);
-extern void mmu_SetMapEntry(void *physptr, int acr, int entryno);
-extern int mmu_AllocateMap();
-extern void mmu_FreeMap(int mapno);
-extern int *mmu_MapCardMemory();
+extern hACB FindFreeACB();
+extern void* mem_alloc(hACB,unsigned long sz,int acr);
+extern void mem_free(hACB,void *p);
 
+extern void OutputChar(char);
 extern void DBGDisplayChar(char);
 extern void DBGDisplayString(char *);
 extern void DBGDisplayStringCRLF(char *);
 
-extern long* LinearToPhysical(short int pid, long* linadr);
+extern char* LinearToPhysical(hACB appid, char* linadr);
 
 #endif

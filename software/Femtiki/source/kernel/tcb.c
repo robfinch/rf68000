@@ -130,6 +130,17 @@ void TCBSetStatusBit(hTCB h, int bits)
 		p->status |= bits;
 }
 
+void TCBClearStatusBit(hTCB h, int bits)
+{
+	TCB* p;
+	
+	if (h <= 0 || h > NR_TCB)
+		return;
+	p = TCBHandleToPointer(h);
+	if (p)
+		p->status &= ~bits;
+}
+
 // ----------------------------------------------------------------------------
 // These routines called only from within the timer ISR.
 // ----------------------------------------------------------------------------
@@ -189,7 +200,7 @@ int RemoveFromReadyList(register hTCB ht)
 	t->next = -1;
 	t->prev = -1;
 	// clear all the status bits
-	TCBClearStatusBit(t, -1);
+	TCBClearStatusBit(ht, -1);
 	return (E_Ok);
 }
 
@@ -260,7 +271,7 @@ int RemoveFromTimeoutList(hTCB ht)
 		prv->next = t->next;
 	}
 	// clear all the status bits
-	TCBClearStatusBit(t, -1);
+	TCBClearStatusBit(ht, -1);
   t->next = -1;
   t->prev = -1;
   return (E_Ok);

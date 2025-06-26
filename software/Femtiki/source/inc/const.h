@@ -1,5 +1,6 @@
 #ifndef CONST_H
 #define CONST_H
+#include <stdint.h>
 
 #define TRUE        1
 #define FALSE       0
@@ -102,4 +103,111 @@ enum {
 #define MEMORY_SEMA	6
 #define PMT_SEMA 10
 
+/*
+; the following constant is used to scramble device handles. The device handle
+; (address) is rotated 16 bits then xor'd with this value.
+*/
+
+#define DEV_HMASH	0x56791123
+
+#define DEV_INIT equ 0
+#define DEV_STAT equ 1
+#define DEV_PUTCHAR equ 2
+#define DEV_PUTBUF equ 3
+#define DEV_GETCHAR equ 4
+#define DEV_GETBUF equ 5
+#define DEV_SET_INPOS equ 6
+#define DEV_SET_OUTPOS equ 7
+#define DEV_GETCHAR_DIRECT equ 8
+#define DEV_PEEKCHAR equ 9
+#define DEV_PEEKCHAR_DIRECT equ 10
+#define DEV_PUTCHAR_DIRECT equ 11
+#define DEV_CLEAR equ 12
+#define DEV_SWAPBUF equ 13
+#define DEV_SETBUF1 equ 14
+#define DEV_SETBUF2 equ 15
+#define DEV_GETBUF1 equ 16
+#define DEV_GETBUF2 equ 17
+#define DEV_WRITEAT equ 18
+#define DEV_SETUNIT equ 19
+#define DEV_GET_DIMEN equ 20
+#define DEV_GET_COLOR equ 21
+#define DEV_GET_INPOS equ 22
+#define DEV_GET_OUTPOS equ 23
+#define DEV_GET_OUTPTR equ 24
+#define DEV_SET_COLOR equ 25
+#define DEV_SET_COLOR123 equ 26
+#define DEV_PLOT_POINT equ 27
+#define DEV_DRAW_LINE equ 28
+#define DEV_DRAW_TRIANGLE equ 29
+#define DEV_DRAW_RECTANGLE equ 30
+#define DEV_DRAW_CURVE equ 31
+#define DEV_SET_DIMEN equ 32
+#define DEV_SET_COLOR_DEPTH equ 33
+#define DEV_SET_DESTBUF equ 34
+#define DEV_SET_DISPBUF equ 35
+#define DEV_GET_INPTR equ 36
+
+typedef struct _tagDCB
+{
+	uint32_t magic;					// 'DCB '
+	uint8_t name[12];				// eleven chars + NULL
+	int32_t (*cmdproc)();
+	int32_t inpos_x;
+	int32_t inpos_y;
+	int32_t inpos_z;
+	int32_t outpos_x;
+	int32_t outpos_y;
+	int32_t outpos_z;
+	uint32_t inbufptr;
+	uint32_t outbufptr;
+	uint32_t inbuf_size;
+	uint32_t outbuf_size;
+	uint32_t indim_x;
+	uint32_t indim_y;
+	uint32_t indim_z;
+	uint32_t outdim_x;
+	uint32_t outdim_y;
+	uint32_t outdim_z;
+	uint32_t bk_color;
+	uint32_t fg_color;
+	uint32_t opcode;
+	int32_t lasterc;
+	uint32_t inbufptr2;
+	uint32_t outbufptr2;
+	uint32_t inbuf_size2;
+	uint32_t outbuf_size2;
+	int32_t unit;
+} DCB;
+
+/*
+;Standard Devices are:
+
+;#		Device					Standard name
+
+;0		NULL device 			NUL		(OS built-in)
+;1		Keyboard (sequential)	KBD		(OS built-in, ReadOnly)
+;2		Video (sequential)		VID		(OS built-in, WriteOnly)
+;3		Printer (parallel 1)	LPT		(OS built-in)
+;4		Printer (parallel 2)	LPT2	(OS built-in)
+;5		RS-232 1				COM1	(OS built-in)
+;6		RS-232 2				COM2	(OS built-in)
+;7		RS-232 3				COM3	(OS built-in)
+;8		RS-232 4				COM4	(OS built-in)
+;9
+;10		Floppy					FD0 	(OS built-in)
+;11		Floppy					FD1 	(OS built-in)
+;12		Hard disk				HD0 	(OS built-in)
+;13		Hard disk				HD1 	(OS built-in)
+;14
+;15
+;16
+;17
+;18
+;19
+;20
+;21
+;22
+;23
+*/
 #endif

@@ -256,7 +256,6 @@ void *mem_alloc(hACB hAcb, int amt, int acr)
 	unsigned long* pte;
 	unsigned long en;
 	ACB* pacb;
-	hACB hAcb;
 	char* brk;
 
 	acr &= 7;
@@ -309,7 +308,6 @@ char *mem_free(hACB h, char *vadr)
 	int last_page;
 	unsigned long* pe;
 	unsigned long pte;
-	hACB h;
 
 	count = 0;
 	do {

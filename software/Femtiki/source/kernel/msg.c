@@ -12,6 +12,14 @@ static MSG* MSGHandleToPointer(hMSG h)
 	return (msg);
 }
 
+static void MoveUser(__reg("a0") char*addr, __reg("d1") long dat) =
+	"\tmovem.l d0/d1/a0,-(sp)\r\n"
+	"\tmoveq #1,d0\r\n"
+	"\tmovec d0,dfc\r\n"
+	"\tmoves.l d1,(a0)\r\n"
+	"\tmovem.l (sp)+,d0/d1/a0\r\n"
+;
+
 /* ---------------------------------------------------------------
 	Description:
 		Copy a message.
@@ -419,15 +427,12 @@ long FMTK_WaitMsg(
   }
   // Return message right away if there is one available.
   if (msg) {
-		d1 = LinearToPhysical(GetRunningPID(), d1);
-		d2 = LinearToPhysical(GetRunningPID(), d2);
-		d3 = LinearToPhysical(GetRunningPID(), d3);
 		if (d1)
-			*d1 = msg->d1;
+			MoveUser((char*)d1, msg->d1);
 		if (d2)
-			*d2 = msg->d2;
+			MoveUser((char*)d2, msg->d2);
 		if (d3)
-			*d3 = msg->d3;
+			MoveUser((char*)d3, msg->d3);
    	if (LockSysSemaphore(-1)) {
    		FreeMsg(msg);
 	    UnlockSysSemaphore();
@@ -480,15 +485,12 @@ long FMTK_WaitMsg(
 	rt->msg.type = MT_NONE;
 	rt->msg.dstadr = 0;
 	rt->msg.retadr = 0;
-	d1 = LinearToPhysical(GetRunningPID(), d1);
-	d2 = LinearToPhysical(GetRunningPID(), d2);
-	d3 = LinearToPhysical(GetRunningPID(), d3);
 	if (d1)
-		*d1 = rt->msg.d1;
+		MoveUser((char*)d1, rt->msg.d1);
 	if (d2)
-		*d2 = rt->msg.d2;
+		MoveUser((char*)d2, rt->msg.d2);
 	if (d3)
-		*d3 = rt->msg.d3;
+		MoveUser((char*)d3, rt->msg.d3);
 	return (E_Ok);
 }
 
@@ -545,15 +547,12 @@ long FMTK_CheckMsg (
   }
 	if (msg == null)
 		return (E_NoMsg);
-	d1 = LinearToPhysical(GetRunningPID(), d1);
-	d2 = LinearToPhysical(GetRunningPID(), d2);
-	d3 = LinearToPhysical(GetRunningPID(), d3);
 	if (d1)
-		*d1 = msg->d1;
+		MoveUser((char*)d1, msg->d1);
 	if (d2)
-		*d2 = msg->d2;
+		MoveUser((char*)d2, msg->d2);
 	if (d3)
-		*d3 = msg->d3;
+		MoveUser((char*)d3, msg->d3);
 	if (qrmv) {
    	if (LockSysSemaphore(-1)) {
    		FreeMsg(msg);
