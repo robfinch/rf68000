@@ -1,11 +1,11 @@
 ENTRY (_bootrom)
 
 MEMORY {
-	BIOS_DATA : ORIGIN = 0x00020000, LENGTH = 2k
+	BIOS_DATA : ORIGIN = 0x00000000, LENGTH = 3k
 }
 
 MEMORY {
-	BIOS_CODE : ORIGIN = 0x00021000, LENGTH = 60k
+	BIOS_CODE : ORIGIN = 0x00001000, LENGTH = 188k
 }
 
 MEMORY {
@@ -13,7 +13,11 @@ MEMORY {
 }
 
 MEMORY {
-	BIOS_BSS : ORIGIN = 0x000020800, LENGTH = 2k
+	BIOS_BSS : ORIGIN = 0x000031000, LENGTH = 4k
+}
+
+MEMORY {
+	LOCAL_RAM : ORIGIN = 0x00040000, LENGTH = 32K
 }
 
 MEMORY {
@@ -26,24 +30,25 @@ MEMORY {
 
 PHDRS {
 	bios_hdr PT_LOAD AT (0x00000000);
-	bios_data PT_LOAD AT (0x00020000);
-	bios_code PT_LOAD AT (0x00021000);
+	bios_data PT_LOAD AT (0x00000000);
+	bios_code PT_LOAD AT (0x00001000);
 	bios_rodata PT_LOAD AT (0x00030000);
-	bios_bss PT_LOAD AT (0x00020800);
+	local_ram PT_LOAD AT (0x00040000);
+	bios_bss PT_LOAD AT (0x00031000);
 	shared_data PT_LOAD AT (0x00100000);
 	dram PT_LOAD AT (0x41000000);
 }
 
 SECTIONS {
 	data: {
-		. = 0x00020000;
+		. = 0x00000000;
 		_start_data = .;
 		*(data);
 		. = ALIGN(2);
 		_end_data = .;
 	} >BIOS_DATA
 	code: {
-		. = 0x00021000;
+		. = 0x00001000;
 		*(code);
 		. = ALIGN(2);
 		_etext = .;
@@ -55,20 +60,27 @@ SECTIONS {
 		. = ALIGN(2);
 		_end_rodata = .;
 	} >BIOS_RODATA
-	bss: {
-		. = 0x00020800
+	bss(NOLOAD): {
+		. = 0x00031000
 		_start_bss = .;
 		*(bss);
 		. = ALIGN(2);
 		_end_bss = .;
 	} >BIOS_BSS
-	gvars: {
+	local_ram(NOLOAD): {
+		. = 0x00040000;
+		_start_local_ram = .;
+		*(local_ram);
+		. = ALIGN(2);
+		_end_local_ram = .;
+	} >LOCAL_RAM
+	gvars(NOLOAD): {
 		. = 0x00100000;
 		_start_gvars = .;
 		*(gvars);
 		_end_gvars = .;
 	} >SHARED_DATA
-	dram: {
+	dram(NOLOAD): {
 		. = 0x41000000;
 		_start_dram = .;
 		*(dram);

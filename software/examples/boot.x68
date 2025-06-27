@@ -303,61 +303,61 @@ irq_list_tbl:
 
 ; BIOS variables which must be local (not shared) to each core
 
-CursorRow	equ		$40000
-CursorCol	equ		$40001
-TextPos		equ		$40002
-TextCurpos	equ	$40002
-TextScr			equ	$40004
-S19StartAddress	equ	$40008
+;CursorRow	equ		$40000
+;CursorCol	equ		$40001
+;TextPos		equ		$40002
+;TextCurpos	equ	$40002
+;TextScr			equ	$40004
+;S19StartAddress	equ	$40008
 ;KeybdEcho		equ	$4000C
 ;KeybdWaitFlag	equ	$4000D
-CmdBuf			equ $40040
-CmdBufEnd		equ	$40080
-fgColor			equ	$40084
-bkColor			equ	$40088
-TextRows		equ	$4008C
-TextCols		equ	$4008D
-_fpTextIncr	equ $40094
-_canary			equ $40098
-tickcnt			equ $4009C
-IRQFlag			equ $400A0
-InputDevice	equ $400A4
-OutputDevice	equ $400A8
-Regsave			equ	$40100
+;CmdBuf			equ $40040
+;CmdBufEnd		equ	$40080
+;fgColor			equ	$40084
+;bkColor			equ	$40088
+;TextRows		equ	$4008C
+;TextCols		equ	$4008D
+;_fpTextIncr	equ $40094
+;_canary			equ $40098
+;tickcnt			equ $4009C
+;IRQFlag			equ $400A0
+;InputDevice	equ $400A4
+;OutputDevice	equ $400A8
+;Regsave			equ	$40100
 numBreakpoints	equ		8
-BreakpointFlag	equ		$40200
-NumSetBreakpoints	equ	$40202	; to $40203
-Breakpoints			equ		$40220	; to $40240
-BreakpointWords	equ		$40280	; to $402A0
-fpBuf       equ $402C0
+;BreakpointFlag	equ		$40200
+;NumSetBreakpoints	equ	$40202	; to $40203
+;Breakpoints			equ		$40220	; to $40240
+;BreakpointWords	equ		$40280	; to $402A0
+;fpBuf       equ $402C0
 ;RunningTCB  equ $40300
-_exp equ $40500
-_digit equ $40504
-_width equ $40508
-_E equ $4050C
-_digits_before_decpt equ $40510
-_precision equ $40514
-_fpBuf equ $40520	; to $40560
-_fpWork equ $40600
-_dasmbuf	equ	$40800
-OFFSET equ $40880
-pen_color equ $40890
-gr_x equ $40894
-gr_y equ $40898
-gr_width equ $4089C
-gr_height equ $408A0
-gr_bitmap_screen equ $408A4
-gr_raster_op equ $408A8
-gr_double_buffer equ $408AC
-gr_bitmap_buffer equ $408B0
-sys_switches equ $408B8
-gfxaccel_ctrl equ $408C0
-m_z equ $408D0
-m_w equ $408D4
-next_m_z equ $408D8
-next_m_w equ $408DC
-TimeBuf equ $408E0
-numwka equ $40980
+;_exp equ $40500
+;_digit equ $40504
+;_width equ $40508
+;_E equ $4050C
+;_digits_before_decpt equ $40510
+;_precision equ $40514
+;_fpBuf equ $40520	; to $40560
+;_fpWork equ $40600
+;_dasmbuf	equ	$40800
+;OFFSET equ $40880
+;pen_color equ $40890
+;gr_x equ $40894
+;gr_y equ $40898
+;gr_width equ $4089C
+;gr_height equ $408A0
+;gr_bitmap_screen equ $408A4
+;gr_raster_op equ $408A8
+;gr_double_buffer equ $408AC
+;gr_bitmap_buffer equ $408B0
+;sys_switches equ $408B8
+;gfxaccel_ctrl equ $408C0
+;m_z equ $408D0
+;m_w equ $408D4
+;next_m_z equ $408D8
+;next_m_w equ $408DC
+;TimeBuf equ $408E0
+;numwka equ $40980
 EightPixels equ $40100000	; to $40200020
 
 ;null_dcb equ $0040A00		; 0
@@ -369,14 +369,12 @@ EightPixels equ $40100000	; to $40200020
 ;gfxaccel_dcb equ framebuf_dcb+DCB_SIZE	; 7
 ;rtc_dcb equ gfxaccel_dcb+DCB_SIZE		; 8
 
-spi_buff equ $0042000
-
-TimerStack	equ	$41BFC
+;spi_buff equ $0042000
 
 ; Keyboard buffer is in shared memory
-scratch_ram	equ $00100000
-IOFocus			equ	$00100000
-memend			equ $00100004
+;scratch_ram	equ $00100000
+;IOFocus			equ	$00100000
+;memend			equ $00100004
 ;KeybdLEDs		equ	$0010000E
 ;_KeyState1	equ	$0010000F
 ;_KeyState2	equ	$00100010
@@ -387,17 +385,17 @@ memend			equ $00100004
 ;_Keybd_tick	equ $0010001C
 ;_KeybdBuf		equ	$00100020
 ;_KeybdOBuf	equ	$00100080
-S19Checksum	equ	$00100150
-SerTailRcv	equ	$00100160
-SerHeadRcv	equ	$00100162
-SerRcvXon		equ	$00100164
-SerRcvXoff	equ	$00100165
-SerTailXmit	equ	$00100166
-SerHeadXmit	equ	$00100168
-SerXmitXoff	equ	$0010016A
-SerRcvBuf		equ	$00101000
-SerXmitBuf	equ	$00102000
-RTCBuf			equ $00100200	; to $0010023F
+;S19Checksum	equ	$00100150
+;SerTailRcv	equ	$00100160
+;SerHeadRcv	equ	$00100162
+;SerRcvXon		equ	$00100164
+;SerRcvXoff	equ	$00100165
+;SerTailXmit	equ	$00100166
+;SerHeadXmit	equ	$00100168
+;SerXmitXoff	equ	$0010016A
+;SerRcvBuf		equ	$00101000
+;SerXmitBuf	equ	$00102000
+;RTCBuf			equ $00100200	; to $0010023F
 
 	code
 	align		2
