@@ -59,7 +59,7 @@ long FMTK_Initialize();
 long FMTK_Sleep(__reg("d0") long);
 long FMTK_SendMsg(__reg("d0") long hMbx, __reg("d1") long d1, __reg("d2") long d2, __reg("d3") long d3);
 long FMTK_WaitMsg(__reg("d0") long hMbx, __reg("d0") long d1, __reg("d0") long d2, __reg("d0") long d3, __reg("d4") long timelimit);
-long FMTK_StartTask(__reg("d0") long pCode, __reg("d1") long stacksize, __reg("d2") long pStack, __reg("d3") long pCmd, __reg("d4") long info);
+long FMTK_StartTask(__reg("d0") short int* pCode, __reg("d1") long stacksize, __reg("d2") char* pCmd, __reg("d3") long info, __reg("d4") unsigned long affinity);
 long FMTK_ExitTask();
 long FMTK_KillTask(__reg("d0") long);
 long FMTK_SetTaskPriority(__reg("d0") long hTCB, __reg("d1") long pri);

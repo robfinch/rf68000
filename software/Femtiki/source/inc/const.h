@@ -51,7 +51,7 @@ enum {
 	 E_PagesizeMismatch,
 
      //; Device driver errors
-     E_BadDevNum,// =	0x20,
+     E_BadDevNum = 0x20,
      E_NoDev,
      E_BadDevOp,
      E_ReadError,
@@ -60,7 +60,7 @@ enum {
      E_TooManyBlocks,
 
      // resource errors
-     E_NoMoreMbx,// =	0x40,
+     E_NoMoreMbx = 0x40,
      E_NoMoreMsgBlks,
      // 30
      E_NoMoreAlarmBlks,

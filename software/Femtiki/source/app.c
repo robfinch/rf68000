@@ -72,7 +72,7 @@ long FMTK_StartApp(AppStartupRec *asr, hACB hParent)
 	uint16_t *pCode;
 	char *pData;
 	int ndx;
-	int info;
+	long info;
 	hACB h;
 
 	h = FindFreeACB();
@@ -147,10 +147,10 @@ long FMTK_StartApp(AppStartupRec *asr, hACB hParent)
 
 	// Start the startup thread
 	info = ((asr->priority & 0xff) << 8) | (h  & 0xff);
-	FMTK_StartThread(
+	FMTK_StartTask(
 		pCode,			// start address
 		nspages << 14,
-		&pACB->commandLine,	// parameter
+		&pACB->commandLine[0],	// parameter
 		info,
 		asr->affinity
 	);

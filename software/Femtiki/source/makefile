@@ -23,6 +23,7 @@ LLX = vlink
 
 ASMS = \
 	femtiki_vars.x68 \
+	kernel\femtiki_asm.x68 \
 	lib.x68 \
 	putnum.asm \
 	mem_support.x68 \
@@ -34,6 +35,7 @@ ASMS = \
 
 OUT = \
 	femtiki_vars.o \
+	kernel\femtiki_asm.o \
 	lib.o \
 	putnum.o \
 	mem_support.o \
@@ -51,15 +53,19 @@ LIB:
 	copy *.c + kernel\*.c Femtiki.c
 	$(CCX) $(CFLAGS) Femtiki.c
 	$(AAX) $(AFLAGS) kernel\Femtiki_vars.x68 -L Femtiki_vars.lst -o Femtiki_vars.o
+	$(AAX) $(AFLAGS) kernel\Femtiki_asm.x68 -L kernel\Femtiki_asm.lst -o kernel\Femtiki_asm.o
 	$(AAX) $(AFLAGS) mem_support.x68 -L mem_support.lst -o mem_support.o
 	$(AAX) $(AFLAGS) _lmath.s -L _lmath.lst -o _lmath.o
 	del crt.o
 	del lib.o
+	del femtiki_asm.o
 	copy ..\..\crt\source\lib.o lib.o
 	copy ..\..\crt\source\crt.o crt.o
+	copy kernel\femtiki_asm.o femtiki_asm.o
 	$(AAX) $(AFLAGS) Femtiki.asm -L Femtiki.lst -o Femtiki.o
 	$(LLX) -T Femtiki.cmd -bsrec37 Femtiki_vars.o errno.o ctype.o localeco.o \
-		signal.o stdlib.o stdio.o string.o _lmath.o crt.o lib.o mem_support.o Femtiki.o -o Femtiki.s37
+		signal.o stdlib.o stdio.o string.o _lmath.o crt.o lib.o mem_support.o \
+		femtiki_asm.o Femtiki.o -o Femtiki.s37
 
          
 FEMTIKI:	$(OUT)

@@ -50,7 +50,11 @@ extern hTCB FreeTCB;
 extern TCB* tcbs;
 
 hTCB GetRunningTCB() =
-"\tmovec.l cpid,d0\r\n"
+	"\tmovec.l cpid,d0\r\n"
+;
+
+void SetRunningTCB(__reg("d0") hTCB h) =
+	"\tmovec.l d0,cpid\r\n"
 ;
 
 TCB* GetRunningTCBPtr()
@@ -73,6 +77,15 @@ hTCB TCBPointerToHandle(TCB* ptr)
 		return (0);	
 	h = ptr - &tcbs[0];
 	return (h+1);	
+}
+
+void SetRunningTCBPtr(TCB* p)
+{
+	hTCB h;
+	
+	h = TCBPointerToHandle(p);	
+	if (h > 0 && h <= NR_TCB)
+		SetRunningTCB(h);
 }
 
 static hTCB iAllocTCB()
@@ -145,7 +158,7 @@ void TCBClearStatusBit(hTCB h, int bits)
 // These routines called only from within the timer ISR.
 // ----------------------------------------------------------------------------
 
-int InsertIntoReadyList(register hTCB ht)
+int TCBInsertIntoReadyQueue(register hTCB ht)
 {
 	hTCB hq;
 	TCB *p, *q;
@@ -177,7 +190,7 @@ int InsertIntoReadyList(register hTCB ht)
 // ----------------------------------------------------------------------------
 // ----------------------------------------------------------------------------
 
-int RemoveFromReadyList(register hTCB ht)
+int TCBRemoveFromReadyQueue(register hTCB ht)
 {
 	TCB *t,* p, *q;
 
@@ -208,7 +221,7 @@ int RemoveFromReadyList(register hTCB ht)
 // ----------------------------------------------------------------------------
 // ----------------------------------------------------------------------------
 
-int InsertIntoTimeoutList(register hTCB ht, register int to)
+int TCBInsertIntoTimeoutList(register hTCB ht, register int to)
 {
 	TCB *p, *q, *t;
 
@@ -251,7 +264,7 @@ int InsertIntoTimeoutList(register hTCB ht, register int to)
 // ----------------------------------------------------------------------------
 // ----------------------------------------------------------------------------
 
-int RemoveFromTimeoutList(hTCB ht)
+int TCBRemoveFromTimeoutList(hTCB ht)
 {
   TCB *t,* nxt, *prv;
   
@@ -281,7 +294,7 @@ int RemoveFromTimeoutList(hTCB ht)
 // Pop the top entry from the timeout list.
 // ----------------------------------------------------------------------------
 
-hTCB PopTimeoutList()
+hTCB TCBPopTimeoutList()
 {
   TCB *p;
   hTCB h;
@@ -328,7 +341,7 @@ void DumpTaskList()
 				if (p->next <= 0 || p->next > NR_TCB)
 					break;
 				p = TCBHandleToPointer(p->next);
-				if (getcharNoWait()==3)
+				if (CheckForCtrlC())
 					goto j1;
 				kk = kk + 1;
 			} while (p != q && kk < 10);
@@ -340,7 +353,7 @@ void DumpTaskList()
 		p = TCBHandleToPointer(h);
 		printf("%3d %3d  %02X  %04X %04X %04X %08X %08X\r\n", p->affinity, p->priority, p->status, (int)j, p->prev, p->next, p->timeout, p->ticks);
 		h = p->next;
-		if (getcharNoWait()==3)
+		if (CheckForCtrlC())
 			goto j1;
 	}
 j1:  ;

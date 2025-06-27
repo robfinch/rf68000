@@ -76,8 +76,7 @@ extern int nMailbox;
 extern hACB freeACB;
 extern hMSG freeMSG;
 extern hMBX freeMBX;
-extern ACB *IOFocusNdx;
-extern int IOFocusTbl[4];
+extern hACB IOFocus;
 extern int iof_switch;
 extern char hasUltraHighPriorityTasks;
 extern int missed_ticks;
@@ -204,6 +203,10 @@ int SetImLevel(register int level)
 unsigned long GetSP() = "\tmove.l sp,d0\r\n";
 void SetSP(__reg("d0") unsigned long sp) = "\tmove.l d0,sp";
 
+void SetMMUAppid(__reg("d0") hACB h) =
+	"\tmove.l d0,$FDC02100\r\n"
+;
+
 // ----------------------------------------------------------------------------
 // Restore the task's context.
 //
@@ -218,8 +221,7 @@ void SwapContext(register TCB *octx, register TCB *nctx)
 	ACB* q;
 
 	// Set the app's page directory in the MMU 
-	q = GetACBPtr(nctx->hApp);
-	SetMMUAppPD(q->pd);
+	SetMMUAppid(nctx->hApp);
 	octx->ssp = GetSP();
 	SetSP(nctx->ssp);
 }
@@ -338,7 +340,7 @@ void FMTK_TimerIRQ(unsigned long* sp)
 				while (TimeoutList > 0 && TimeoutList <= NR_TCB) {
 					tol = TCBHandleToPointer(TimeoutList);
 					if (tol->timeout <= 0)
-						InsertIntoReadyList(PopTimeoutList());
+						TCBInsertIntoReadyQueue(TCBPopTimeoutList());
 					else {
 						tol->timeout = tol->timeout - missed_ticks - 1;
 						missed_ticks = 0;
@@ -420,8 +422,8 @@ int FMTK_KillTask(register int taskno)
 
   ht = taskno-1;
   if (LockSysSemaphore(-1)) {
-    RemoveFromReadyList(ht);
-    RemoveFromTimeoutList(ht);
+    TCBRemoveFromReadyQueue(ht);
+    TCBRemoveFromTimeoutList(ht);
     for (nn = 0; nn < 4; nn++)
       if (tcbs[ht].hMailboxes[nn] >= 0 && tcbs[ht].hMailboxes[nn] < NR_MBX) {
         FMTK_FreeMbx(tcbs[ht].hMailboxes[nn]);
@@ -448,7 +450,7 @@ int FMTK_KillTask(register int taskno)
     // finished.
     if (j->task == 0) {
     	j->magic = 0;
-    	mmu_FreeMap(hApp);
+    	FreeACB(hApp);
     }
     UnlockSysSemaphore();
   }
@@ -460,7 +462,7 @@ int FMTK_KillTask(register int taskno)
 
 int FMTK_ExitTask()
 {
-  KillTask(GetRunningTCB());
+  FMTK_KillTask(GetRunningTCB());
 	// The thread should not return from this reschedule because it's been
 	// killed.
 	while(1) {
@@ -545,7 +547,7 @@ long FMTK_StartTask(
   t->exception = 0;
   t->exceptionHandler = FMTK_ExceptionHandler;
   if (LockSysSemaphore(100000)) {
-      InsertIntoReadyList(ht);
+      TCBInsertIntoReadyQueue(ht);
       UnlockSysSemaphore();
   }
 	else {
@@ -567,8 +569,7 @@ int FMTK_Sleep(__reg("d0") unsigned long timeout)
 		tick1 = GetTick();
     if (LockSysSemaphore(100000)) {
       ht = GetRunningTCB();
-      RemoveFromReadyList(ht);
-      InsertIntoTimeoutList(ht, timeout);
+      TCBInsertIntoTimeoutList(ht, timeout);
       UnlockSysSemaphore();
 			FMTK_Reschedule();
       break;
@@ -593,9 +594,9 @@ int FMTK_SetTaskPriority(__reg("d0") hTCB ht, __reg("d1") int priority)
   if (LockSysSemaphore(-1)) {
     t = &tcbs[ht];
     if (t->status & (TS_RUNNING | TS_READY)) {
-      RemoveFromReadyList(ht);
+      TCBRemoveFromReadyQueue(ht);
       t->priority = priority;
-      InsertIntoReadyList(ht);
+      TCBInsertIntoReadyQueue(ht);
     }
     else
       t->priority = priority;
@@ -632,8 +633,7 @@ long FMTK_Initialize()
     hasUltraHighPriorityTasks = 0;
     missed_ticks = 0;
 
-    IOFocusTbl[0] = 0;
-    IOFocusNdx = null;
+    IOFocus = 2;
     iof_switch = 0;
     hSearchApp = 0;
     hFreeApp = -1;

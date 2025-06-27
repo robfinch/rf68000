@@ -47,6 +47,8 @@ QueueCycle    EQU   $0010031C
 FemtikiVars_end	EQU	$00100400
 
 	section gvars
+_FMTK_Inited
+	ds.l	1
 _sys_pages_available
 	ds.l	1
 _nMsgBlk
@@ -55,11 +57,13 @@ _nMessage
 	ds.l	1
 _nMailbox
 	ds.l	1
+_ACBList
+	ds.l	1
 _ACBPtrs
 	ds.l	64
 _RunningTCB
 	ds.w	1
-_IOFocusID
+_IOFocus
 	ds.l	1
 _FreeTCB
 _freeTCB
@@ -91,12 +95,14 @@ _PAMEnd
 
 _FemtikiVars_end
 
+	global _FMTK_Inited
 	global _sys_pages_available
+	global _ACBList
 	global _ACBPtrs
 	global _nMsgBlk
 	global _nMailbox
 	global _RunningTCB
-	global _IOFocusID
+	global _IOFocus
 	global _FreeTCB
 	global _freeTCB
 	global _FreeACB

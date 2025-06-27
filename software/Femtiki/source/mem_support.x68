@@ -357,3 +357,4 @@ _FindFreeACB:
 	rts
 
 	global _FindFreePage
+	global _FindFreeACB

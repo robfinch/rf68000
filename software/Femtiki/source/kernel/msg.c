@@ -222,7 +222,7 @@ static long DequeThreadFromMbx(MBX *mbx, TCB **thrd)
 	// remove from timeout list
 	// adjust succeeding thread timeout if present
 	if ((*thrd)->status & TS_TIMEOUT)
-		RemoveFromTimeoutList(((*thrd)-tcbs)+1);
+		TCBRemoveFromTimeoutList(((*thrd)-tcbs)+1);
 
 	(*thrd)->mbq_prev = (*thrd)->mbq_next = 0;
 	(*thrd)->hWaitMbx = 0;	// no longer waiting at mailbox
@@ -300,8 +300,8 @@ long FMTK_FreeMbx(__reg("d0") hMBX hMbx)
 				break;
 			thrd->msg.type = MT_NONE;
 			if (thrd->status & TS_TIMEOUT)
-				RemoveFromTimeoutList((thrd-tcbs)+1);
-			InsertIntoReadyList((thrd-tcbs)+1);
+				TCBRemoveFromTimeoutList((thrd-tcbs)+1);
+			TCBInsertIntoReadyQueue((thrd-tcbs)+1);
 		}
 		mbx->link = freeMBX;
 		freeMBX = mbx-mailbox;
@@ -385,8 +385,8 @@ long FMTK_SendMsg(
 		CopyMsg(&thrd->msg,msg);
     FreeMsg(msg);
   	if (thrd->status & TS_TIMEOUT)
-  		RemoveFromTimeoutList(thrd-tcbs);
-  	InsertIntoReadyList(thrd-tcbs);
+  		TCBRemoveFromTimeoutList(thrd-tcbs);
+  	TCBInsertIntoReadyQueue(thrd-tcbs);
     UnlockSysSemaphore();
   }
 	return (E_Ok);
@@ -444,7 +444,7 @@ long FMTK_WaitMsg(
 	//-------------------------
 	if (LockSysSemaphore(-1)) {
 		thrd = GetRunningTCBPtr();
-		RemoveFromReadyList(thrd-tcbs);
+		TCBRemoveFromReadyQueue(thrd-tcbs);
     UnlockSysSemaphore();
   }
 	thrd->status |= TS_WAITMSG;
@@ -470,7 +470,7 @@ long FMTK_WaitMsg(
 	if (timelimit) {
         //asm { ; Waitmsg here; }
     	if (LockSysSemaphore(-1)) {
-    	    InsertIntoTimeoutList(thrd-tcbs, timelimit);
+    	    TCBInsertIntoTimeoutList(thrd-tcbs, timelimit);
     	    UnlockSysSemaphore();
         }
     }
