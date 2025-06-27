@@ -34,6 +34,13 @@
 ;                                                                          
 ; ============================================================================
 
+;	include "..\Femtiki\source\inc\const.x68"
+;	include "..\Femtiki\source\inc\device.x68"
+
+	extrn DisplayString
+
+null_dcb	equ _DeviceTable+160*0
+
 ;------------------------------------------------------------------------------
 ;------------------------------------------------------------------------------
 ; Setup the NULL device
@@ -58,7 +65,8 @@ null_init:
 null_ret:
 	rts
 
+_null_cmdproc:
 null_cmdproc:
 	moveq #E_Ok,d0
 	rts
-
+	global _null_cmdproc

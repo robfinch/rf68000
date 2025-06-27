@@ -15,40 +15,85 @@
 ;
 ;==============================================================================
 
+;	include "..\inc\const.x68"
+;	include "..\inc\device.x68"
+
+keybd_dcb	equ _DeviceTable+160*1
+	
 KEYBD_DCB	equ keybd_dcb
 
 KBD_CMDADDR macro arg1
-	dc.b ((\1-KBD_CMDTBL)>>2)
+	dc.w (\1-KBD_CMDTBL)
 endm
 
 	align 2
 KBD_CMDTBL:
-	KBD_CMDADDR keybd_init				; 0
-	KBD_CMDADDR keybd_stat
-	KBD_CMDADDR keybd_stub
-	KBD_CMDADDR keybd_putbuf
-	KBD_CMDADDR keybd_getchar
-	KBD_CMDADDR keybd_getbuf
-	KBD_CMDADDR keybd_set_inpos
-	KBD_CMDADDR keybd_set_outpos
-	KBD_CMDADDR keybd_stub
-	KBD_CMDADDR keybd_stub
-	; 10
-	KBD_CMDADDR keybd_stub
-	KBD_CMDADDR keybd_putchar_direct
-	KBD_CMDADDR keybd_clear
-	
+	KBD_CMDADDR keybd_nop					; 0
+	KBD_CMDADDR keybd_setup				; 1
+	KBD_CMDADDR keybd_init				; 2
+	KBD_CMDADDR keybd_stat				; 3
+	KBD_CMDADDR keybd_stub				; 4 media check
+	KBD_CMDADDR keybd_stub				; 5 reserved
+	KBD_CMDADDR keybd_nop					; 6 open
+	KBD_CMDADDR keybd_nop					; 7 close
+	KBD_CMDADDR keybd_getchar			; 8
+	KBD_CMDADDR keybd_stub				; 9 peek char
+	KBD_CMDADDR keybd_stub				; 10 get char direct
+	KBD_CMDADDR keybd_stub				; 11 peek char direct
+	KBD_CMDADDR keybd_nop					; 12 input status
+	KBD_CMDADDR keybd_putchar_direct	; 13 put char
+	KBD_CMDADDR keybd_stub				; 14 reserved
+	KBD_CMDADDR keybd_stub				; 15 set position
+	KBD_CMDADDR keybd_getbuf			; 16 read block
+	KBD_CMDADDR keybd_putbuf			; 17 write block
+	KBD_CMDADDR keybd_stub				; 18 verify block
+	KBD_CMDADDR keybd_stub				; 19 output status
+	KBD_CMDADDR keybd_stub				; 20 flush input
+	KBD_CMDADDR keybd_stub				; 21 flush output
+	KBD_CMDADDR keybd_stub				; 22 IRQ
+	KBD_CMDADDR keybd_is_removeable	; 23 is removeable
+	KBD_CMDADDR keybd_stub				; 24 IOCTRL read
+	KBD_CMDADDR keybd_stub				; 25 IOCTRL write
+	KBD_CMDADDR keybd_stub				; 26 output until busy
+	KBD_CMDADDR keybd_stub				; 27 shutdown
+	KBD_CMDADDR keybd_clear				; 28 clear
+	KBD_CMDADDR keybd_stub				; 29 swap buf
+	KBD_CMDADDR keybd_stub				; 30 setbuf 1
+	KBD_CMDADDR keybd_stub				; 31 setbuf 2
+	KBD_CMDADDR keybd_stub				; 32 getbuf 1
+	KBD_CMDADDR keybd_stub				; 33 getbuf 2
+	KBD_CMDADDR keybd_stub				; 34 get dimensions
+	KBD_CMDADDR keybd_stub				; 35 get color
+	KBD_CMDADDR keybd_stub				; 36 get position
+	KBD_CMDADDR keybd_stub				; 37 set color
+	KBD_CMDADDR keybd_stub				; 38 set color 123
+	KBD_CMDADDR keybd_stub				; 39 reserved
+	KBD_CMDADDR keybd_stub				; 40 plot point
+	KBD_CMDADDR keybd_stub				; 41 draw line
+	KBD_CMDADDR keybd_stub				; 42 draw triangle
+	KBD_CMDADDR keybd_stub				; 43 draw rectangle
+	KBD_CMDADDR keybd_stub				; 44 draw cxurve
+	KBD_CMDADDR keybd_stub				; 45 set dimensions
+	KBD_CMDADDR keybd_stub				; 46 set color depth
+	KBD_CMDADDR keybd_stub				; 47 set destination buffer
+	KBD_CMDADDR keybd_stub				; 48 set display buffer
+	KBD_CMDADDR keybd_stub				; 49 get input position
+	KBD_CMDADDR keybd_set_inpos		; 50 set input position
+	KBD_CMDADDR keybd_stub				; 51 get output position
+	KBD_CMDADDR keybd_set_outpos	; 52 set output position
+	KBD_CMDADDR keybd_stub				; 53 get input pointer
+	KBD_CMDADDR keybd_stub				; 54 get output pointer
 
+_keybd_cmdproc:
 keybd_cmdproc:
-	cmpi.b #12,d6
+	cmpi.b #55,d6
 	bhs.s .0001
 	movem.l d6/a0,-(a7)
 	ext.w d6
+	lsl.l #1,d6
 	lea KBD_CMDTBL(pc),a0
-	move.b (a0,d6.w),d6
-	ext.w d6
+	move.w (a0,d6.w),d6
 	ext.l d6
-	lsl.l #2,d6
 	add.l d6,a0
 	jsr (a0)
 	movem.l (a7)+,d6/a0
@@ -57,11 +102,14 @@ keybd_cmdproc:
 	moveq #E_NotSupported,d0
 	rts
 
+	global _keybd_cmdproc
+
 ;------------------------------------------------------------------------------
 ; Setup the Keyboard device
 ;------------------------------------------------------------------------------
 	align 2
 setup_keybd:
+keybd_setup:
 keybd_init:
 	movem.l d0/a1,-(a7)
 	moveq #32,d0
@@ -95,6 +143,17 @@ keybd_stat:
 	rts
 
 	align 2
+keybd_nop:
+	moveq #E_Ok,d0
+	rts
+
+	align 2
+keybd_is_removeable:
+	moveq #0,d1
+	moveq #E_Ok,d0
+	rts
+
+	align 2
 keybd_clear:
 	clr.b _KeybdHead
 	clr.b _KeybdTail
@@ -119,10 +178,31 @@ keybd_getchar:
 	align 2
 keybd_stub:
 keybd_putbuf:
-keybd_getbuf:
 keybd_set_inpos:
 keybd_set_outpos:
 	moveq #E_NotSupported,d0
+	rts
+
+; Parameters
+;		d1 = pointer to buffer to place character in (must be non-NULL)
+;		d2 = number of characters to get (must be 1)
+
+keybd_getbuf:
+	tst.l d1
+	beq.s .argerr
+	cmpi.l #1,d2
+	bhi.s .argerr
+	movem.l d1/a0,-(sp)
+	move.l d1,a0					; a0 = pointer to buffer
+	bsr GetKey						; d1 = character
+	moveq #1,d0						; user data = 1
+	movec d0,dfc					; user data function code
+	moves.b d1,(a0)				; move using user data space
+	movem.l (sp)+,d1/a0
+	moveq #E_Ok,d0
+	rts
+.argerr:
+	moveq #E_Arg,d0
 	rts
 
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -217,10 +297,10 @@ KeybdInit:
 kbdi0002:
 	bsr			Wait10ms
 	clr.b		KEYBD+1				; clear receive register (write $00 to status reg)
-	bsr net_delay
+	jsr net_delay
 	moveq		#-1,d1				; send reset code to keyboard
 	move.b	d1,KEYBD+1		; write $FF to status reg to clear TX state
-	bsr net_delay
+	jsr net_delay
 	bsr			KeybdSendByte	; now write ($FF) to transmit register for reset
 	bsr			KeybdWaitTx		; wait until no longer busy
 	tst.l		d1
@@ -239,7 +319,7 @@ kbdi0002:
 .config:
 	move.w	#$F0,d1			; send scan code select
 	move.b	d1,leds
-	bsr net_delay
+	jsr net_delay
 	bsr			KeybdSendByte
 	bsr			KeybdWaitTx
 	tst.l		d1
@@ -253,7 +333,7 @@ kbdiTryAgain:
 	dbra		d3,kbdi0002
 .keybdErr:
 	lea			msgBadKeybd,a1
-	bsr			DisplayStringCRLF
+	jsr			DisplayStringCRLF
 	bra			ledxit
 kbdi0004:
 	moveq		#2,d1			; select scan code set #2
@@ -278,7 +358,7 @@ ledxit:
 	rts
 kbdiXmitBusy:
 	lea			msgXmitBusy,a1
-	bsr			DisplayStringCRLF
+	jsr			DisplayStringCRLF
 	movem.l	(a7)+,d0/d1/d3/a1
 	rts
 	
@@ -441,7 +521,9 @@ CheckForCtrlC:
 	move.l d1,-(a7)
 	bsr	KeybdGetCharNoWait
 	cmpi.b #CTRLC,d1
-	beq	Monitor
+	bne .0001
+	jmp	Monitor
+.0001
 	move.l (a7)+,d1
 	rts
 
@@ -458,10 +540,10 @@ KeybdGetCharWait:
 KeybdGetChar:
 	movem.l	d0/d2/d3/a0,-(a7)
 .0003:
-	movec	coreno,d0
-	swap d0
 	moveq	#KEYBD_SEMA,d1
-	bsr	LockSemaphore
+	moveq #37,d0						; Lock semaphore
+	move.l #100000,d2				; wait this long
+	trap #15
 	move.b	_KeybdCnt,d2		; get count of buffered scan codes
 	beq.s		.0015						;
 	move.b	_KeybdHead,d2		; d2 = buffer head
@@ -474,20 +556,18 @@ KeybdGetChar:
 	move.b	d2,_KeybdHead
 	subi.b	#1,_KeybdCnt		; decrement count of scan codes in buffer
 	exg			d1,d2						; save scancode value in d2
-	movec		coreno,d0
-	swap		d0
-	moveq		#KEYBD_SEMA,d1
-	bsr			UnlockSemaphore
+	moveq	#KEYBD_SEMA,d1
+	moveq #38,d0						; unlock semaphore
+	trap #15
 	exg			d2,d1						; restore scancode value
 	bra			.0001						; go process scan code
 .0014:
 	bsr		_KeybdGetStatus		; check keyboard status for key available
 	bmi		.0006							; yes, go process
 .0015:
-	movec		coreno,d0
-	swap		d0
-	moveq		#KEYBD_SEMA,d1
-	bsr			UnlockSemaphore
+	moveq	#KEYBD_SEMA,d1
+	moveq #38,d0						; unlock semaphore
+	trap #15
 	tst.b		KeybdWaitFlag			; are we willing to wait for a key ?
 	bmi			.0003							; yes, branch back
 	movem.l	(a7)+,d0/d2/d3/a0
@@ -687,16 +767,16 @@ Wait300ms:
 
 KeybdIRQ:
 	move.w #$2600,sr					; disable lower interrupts
-	movem.l	d0/d1/a0,-(a7)
+	movem.l	d0/d1/d2/a0,-(a7)
 	eori.l #-1,$FD000000
 	moveq	#0,d1								; check if keyboard IRQ
 	move.b KEYBD+1,d1					; get status reg
 	tst.b	d1
 	bpl	.0001									; branch if not keyboard
-	movec	coreno,d0
-	swap d0
 	moveq	#KEYBD_SEMA,d1
-	bsr LockSemaphore
+	moveq #37,d0							; lock semaphore
+	move.l #100,d2
+	trap #15
 	move.b KEYBD,d1						; get scan code
 	clr.b KEYBD+1							; clear status register (clears IRQ AND scancode)
 	btst #1,_KeyState2				; Is Alt down?
@@ -709,7 +789,7 @@ KeybdIRQ:
 ;	blo.s .0002
 	movec tick,d0							; update tick of last ALT-Tab
 	move.l d0,_Keybd_tick
-	bsr	rotate_iofocus
+	jsr	rotate_iofocus
 	clr.b	_KeybdHead					; clear keyboard buffer
 	clr.b	_KeybdTail
 	clr.b	_KeybdCnt
@@ -735,12 +815,11 @@ KeybdIRQ:
 	move.b d0,_KeybdTail			; update tail index
 	addi.b #1,_KeybdCnt				; increment buffer count
 .0002
-	movec	coreno,d0
-	swap d0
 	moveq	#KEYBD_SEMA,d1
-	bsr	UnlockSemaphore
+	moveq #38,d0							; unlock semaphore
+	trap #15
 .0001
-	movem.l	(a7)+,d0/d1/a0		; return
+	movem.l	(a7)+,d0/d1/d2/a0		; return
 	rte
 
 ;--------------------------------------------------------------------------

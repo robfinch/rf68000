@@ -58,7 +58,7 @@ ramtest1:
   tst.w	d1
   bne.s rmtst1
   bsr DisplayAddr
-  bsr CheckForCtrlC
+  jsr CheckForCtrlC
 rmtst1:
   cmpa.l #$7FFFFFC0,a0
   blo.s ramtest1
@@ -82,7 +82,7 @@ ramtest2
   tst.w	d1
   bne.s	rmtst2
   bsr	DisplayAddr
-	bsr CheckForCtrlC
+	jsr CheckForCtrlC
 rmtst2
   cmp.l d3,d5
   bne.s rmtst3
@@ -101,7 +101,7 @@ rmtst3
 	bsr DisplaySpace
 	move.l d5,d1
 	bsr DisplayTetra
-	bsr CheckForCtrlC
+	jsr CheckForCtrlC
 	bra ramtest2
 ramtest3
 	rts

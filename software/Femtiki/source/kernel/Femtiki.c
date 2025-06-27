@@ -636,7 +636,7 @@ long FMTK_Initialize()
     IOFocus = 2;
     iof_switch = 0;
     hSearchApp = 0;
-    hFreeApp = -1;
+    hFreeApp = 0;
 
 		SetRunningTCBPtr(0);
     im_save = 7;

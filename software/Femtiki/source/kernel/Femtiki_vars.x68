@@ -28,11 +28,9 @@ RunningAppID	EQU		$00100220
 MidStackBottoms	EQU		$00100264
 FemtikiInited	EQU		$00100284
 IOFocusList		EQU		$0010028C
-iof_switch		EQU		$001002AD
 hKeybdMbx			EQU		$001002BA
 hFocusSwitchMbx		EQU		$001002BC
 BIOS_RespMbx	EQU		$001002BE
-hasUltraHighPriorityTasks	EQU		$001002C0
 im_save				EQU		$001002C2
 sp_tmp				EQU		$001002C4
 startQNdx			EQU		$001002C6
@@ -57,6 +55,11 @@ _nMessage
 	ds.l	1
 _nMailbox
 	ds.l	1
+_DeviceTable
+	ds.b	6144
+_hDevMailbox
+	ds.w	64
+
 _ACBList
 	ds.l	1
 _ACBPtrs
@@ -86,6 +89,35 @@ _readyQEnd
 
 _hasUltraHighPriorityTasks
 	ds.b	1
+_iof_switch
+	ds.b	1
+
+KeybdLEDs
+	ds.b	1
+_KeyState1
+	ds.b	1
+_KeyState2
+	ds.b	1
+_KeybdHead
+	ds.b	1
+_KeybdTail
+	ds.b	1
+_KeybdCnt
+	ds.b	1
+KeybdEcho
+	ds.b	1
+KeybdWaitFlag
+	ds.b	1
+	align 2
+KeybdID
+	ds.l	1
+_Keybd_tick
+	ds.l	1
+_KeybdBuf
+	ds.b	32
+_KeybdOBuf
+	ds.b	32
+
 	align 2
 _SysAcb
 	ds.b	16384
@@ -101,6 +133,8 @@ _FemtikiVars_end
 	global _ACBPtrs
 	global _nMsgBlk
 	global _nMailbox
+	global _DeviceTable
+	global _hDevMailbox
 	global _RunningTCB
 	global _IOFocus
 	global _FreeTCB
@@ -118,6 +152,20 @@ _FemtikiVars_end
 	global _PAM
 	global _PAMEnd
 	global _hasUltraHighPriorityTasks
+
+	global KeybdLEDs
+	global _KeyState1
+	global _KeyState2
+	global _KeybdHead
+	global _KeybdTail
+	global _Keybdnt
+	global KeybdID	
+	global _Keybd_tick
+	global _KeybdBuf
+	global _KeybdOBuf
+	global _KeybdCnt
+	global KeybdEcho
+	global KeybdWaitFlag
 
 
 ;gc_stack		rmb		512

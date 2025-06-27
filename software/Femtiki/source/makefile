@@ -56,16 +56,23 @@ LIB:
 	$(AAX) $(AFLAGS) kernel\Femtiki_asm.x68 -L kernel\Femtiki_asm.lst -o kernel\Femtiki_asm.o
 	$(AAX) $(AFLAGS) mem_support.x68 -L mem_support.lst -o mem_support.o
 	$(AAX) $(AFLAGS) _lmath.s -L _lmath.lst -o _lmath.o
+#	$(AAX) $(AFLAGS) drivers\null.x68 -L drivers\null.lst -o drivers\null.o
+#	$(AAX) $(AFLAGS) drivers\keybd.x68 -L drivers\keybd.lst -o drivers\keybd.o
+#	$(AAX) $(AFLAGS) drivers\textvid.x68 -L drivers\textvid.lst -o drivers\textvid.o
+#	$(AAX) $(AFLAGS) drivers\framebuf.x68 -L drivers\framebuf.lst -o drivers\framebuf.o
+#	$(AAX) $(AFLAGS) drivers\gfxaccel.x68 -L drivers\gfxaccel.lst -o drivers\gfxaccel.o
+#	$(AAX) $(AFLAGS) drivers\serial.x68 -L drivers\serial.lst -o drivers\serial.o
 	del crt.o
 	del lib.o
 	del femtiki_asm.o
+	copy drivers\*.o . /Y
 	copy ..\..\crt\source\lib.o lib.o
 	copy ..\..\crt\source\crt.o crt.o
 	copy kernel\femtiki_asm.o femtiki_asm.o
 	$(AAX) $(AFLAGS) Femtiki.asm -L Femtiki.lst -o Femtiki.o
 	$(LLX) -T Femtiki.cmd -bsrec37 Femtiki_vars.o errno.o ctype.o localeco.o \
 		signal.o stdlib.o stdio.o string.o _lmath.o crt.o lib.o mem_support.o \
-		femtiki_asm.o Femtiki.o -o Femtiki.s37
+		femtiki_asm.o ..\..\examples\boot.o Femtiki.o -o Femtiki.s37
 
          
 FEMTIKI:	$(OUT)

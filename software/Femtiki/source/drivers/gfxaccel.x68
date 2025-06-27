@@ -34,9 +34,17 @@
 ;                                                                          
 ; ============================================================================
 
+;	include "..\inc\const.x68"
+;	include "..\inc\config.x68"
+;	include "..\inc\device.x68"
+
+gfxaccel_dcb	equ _DeviceTable+160*7
+
 GFXACCEL_CMDTBL_ADDR macro arg1
 	dc.w ((\1-GFXACCEL_CMDTBL))
 endm
+
+GFXACCEL	equ	$FD210000
 
 GFX_CTRL		equ	$100
 GFX_STATUS	equ $104
@@ -67,48 +75,71 @@ GFX_PPS equ $1D4
 ;------------------------------------------------------------------------------
 	align 2
 GFXACCEL_CMDTBL:
-	GFXACCEL_CMDTBL_ADDR gfxaccel_init				; 0
-	GFXACCEL_CMDTBL_ADDR gfxaccel_stat
-	GFXACCEL_CMDTBL_ADDR gfxaccel_putchar
-	GFXACCEL_CMDTBL_ADDR gfxaccel_putbuf
-	GFXACCEL_CMDTBL_ADDR gfxaccel_getchar
-	GFXACCEL_CMDTBL_ADDR gfxaccel_getbuf
-	GFXACCEL_CMDTBL_ADDR gfxaccel_set_inpos
-	GFXACCEL_CMDTBL_ADDR gfxaccel_set_outpos
-	GFXACCEL_CMDTBL_ADDR gfxaccel_stub
-	GFXACCEL_CMDTBL_ADDR gfxaccel_stub
-	GFXACCEL_CMDTBL_ADDR gfxaccel_stub				; 10
-	GFXACCEL_CMDTBL_ADDR gfxaccel_stub
-	GFXACCEL_CMDTBL_ADDR gfxaccel_clear
-	GFXACCEL_CMDTBL_ADDR gfxaccel_swapbuf
-	GFXACCEL_CMDTBL_ADDR gfxaccel_setbuf1
-	GFXACCEL_CMDTBL_ADDR gfxaccel_setbuf2
-	GFXACCEL_CMDTBL_ADDR gfxaccel_getbuf1
-	GFXACCEL_CMDTBL_ADDR gfxaccel_getbuf2
-	GFXACCEL_CMDTBL_ADDR gfxaccel_writeat
-	GFXACCEL_CMDTBL_ADDR gfxaccel_set_unit
-	GFXACCEL_CMDTBL_ADDR gfxaccel_get_dimen	; 20
-	GFXACCEL_CMDTBL_ADDR gfxaccel_get_color
-	GFXACCEL_CMDTBL_ADDR gfxaccel_get_inpos
-	GFXACCEL_CMDTBL_ADDR gfxaccel_get_outpos
-	GFXACCEL_CMDTBL_ADDR gfxaccel_get_outptr
-	GFXACCEL_CMDTBL_ADDR gfxaccel_set_color
-	GFXACCEL_CMDTBL_ADDR gfxaccel_set_color123
+;	GFXACCEL_CMDTBL_ADDR gfxaccel_writeat
+	GFXACCEL_CMDTBL_ADDR gfxaccel_stub					; 0 NOP
+	GFXACCEL_CMDTBL_ADDR gfxaccel_setup				; 1
+	GFXACCEL_CMDTBL_ADDR gfxaccel_init					; 2
+	GFXACCEL_CMDTBL_ADDR gfxaccel_stat					; 3
+	GFXACCEL_CMDTBL_ADDR gfxaccel_stub					; 4 media check
+	GFXACCEL_CMDTBL_ADDR gfxaccel_stub					; 5 reserved
+	GFXACCEL_CMDTBL_ADDR gfxaccel_stub					; 6 open
+	GFXACCEL_CMDTBL_ADDR gfxaccel_stub					; 7 close
+	GFXACCEL_CMDTBL_ADDR gfxaccel_getchar				; 8 get char
+	GFXACCEL_CMDTBL_ADDR gfxaccel_stub					; 9 peek char
+	GFXACCEL_CMDTBL_ADDR gfxaccel_stub					; 10 get char direct
+	GFXACCEL_CMDTBL_ADDR gfxaccel_stub					; 11 peek char direct
+	GFXACCEL_CMDTBL_ADDR gfxaccel_stub					; 12 input status
+	GFXACCEL_CMDTBL_ADDR gfxaccel_putchar			; 13 putchar
+	GFXACCEL_CMDTBL_ADDR gfxaccel_stub					; 14 reserved
+	GFXACCEL_CMDTBL_ADDR gfxaccel_stub					; 15 set position
+	GFXACCEL_CMDTBL_ADDR gfxaccel_getbuf			  ; 16 read block
+	GFXACCEL_CMDTBL_ADDR gfxaccel_putbuf				; 17 write block
+	GFXACCEL_CMDTBL_ADDR gfxaccel_stub					; 18 verify block
+	GFXACCEL_CMDTBL_ADDR gfxaccel_stub					; 19 output status
+	GFXACCEL_CMDTBL_ADDR gfxaccel_stub					; 20 flush input
+	GFXACCEL_CMDTBL_ADDR gfxaccel_stub					; 21 flush output
+	GFXACCEL_CMDTBL_ADDR gfxaccel_stub					; 22 IRQ
+	GFXACCEL_CMDTBL_ADDR gfxaccel_is_removeable	; 23 is removeable
+	GFXACCEL_CMDTBL_ADDR gfxaccel_stub					; 24 IOCTRL read
+	GFXACCEL_CMDTBL_ADDR gfxaccel_stub					; 25 IOCTRL write
+	GFXACCEL_CMDTBL_ADDR gfxaccel_stub					; 26 output until busy
+	GFXACCEL_CMDTBL_ADDR gfxaccel_stub					; 27 shutdown
+	GFXACCEL_CMDTBL_ADDR gfxaccel_clear					; 28 clear
+	GFXACCEL_CMDTBL_ADDR gfxaccel_swapbuf				; 29 swap buf
+	GFXACCEL_CMDTBL_ADDR gfxaccel_setbuf1				; 30 setbuf 1
+	GFXACCEL_CMDTBL_ADDR gfxaccel_setbuf2				; 31 setbuf 2
+	GFXACCEL_CMDTBL_ADDR gfxaccel_getbuf1				; 32 getbuf 1
+	GFXACCEL_CMDTBL_ADDR gfxaccel_getbuf2				; 33 getbuf 2
+	GFXACCEL_CMDTBL_ADDR gfxaccel_get_dimen		; 34 get dimensions
+	GFXACCEL_CMDTBL_ADDR gfxaccel_get_color		; 35 get color
+	GFXACCEL_CMDTBL_ADDR gfxaccel_stub					; 36 get position
+	GFXACCEL_CMDTBL_ADDR gfxaccel_set_color		; 37 set color
+	GFXACCEL_CMDTBL_ADDR gfxaccel_set_color123	; 38 set color 123
+	GFXACCEL_CMDTBL_ADDR gfxaccel_stub					; 39 reserved
 	GFXACCEL_CMDTBL_ADDR gfxaccel_plot_point
 	GFXACCEL_CMDTBL_ADDR gfxaccel_draw_line
 	GFXACCEL_CMDTBL_ADDR gfxaccel_draw_triangle
 	GFXACCEL_CMDTBL_ADDR gfxaccel_draw_rectangle	;30
 	GFXACCEL_CMDTBL_ADDR gfxaccel_draw_curve
-	GFXACCEL_CMDTBL_ADDR gfxaccel_set_dimen
-	GFXACCEL_CMDTBL_ADDR gfxaccel_set_color_depth
-	GFXACCEL_CMDTBL_ADDR gfxaccel_set_destbuf
-	GFXACCEL_CMDTBL_ADDR gfxaccel_set_dispbuf
+	GFXACCEL_CMDTBL_ADDR gfxaccel_set_dimen			; 45 set dimensions
+	GFXACCEL_CMDTBL_ADDR gfxaccel_set_color_depth	; 46 set color depth
+	GFXACCEL_CMDTBL_ADDR gfxaccel_set_destbuf		; 47 set destination buffer
+	GFXACCEL_CMDTBL_ADDR gfxaccel_set_dispbuf		; 48 set display buffer
+	GFXACCEL_CMDTBL_ADDR gfxaccel_get_inpos	  ; 49 get input position
+	GFXACCEL_CMDTBL_ADDR gfxaccel_set_inpos		; 50 set input position
+	GFXACCEL_CMDTBL_ADDR gfxaccel_get_outpos		; 51 get output position
+	GFXACCEL_CMDTBL_ADDR gfxaccel_set_outpos		; 52 set output position
+	GFXACCEL_CMDTBL_ADDR gfxaccel_stub		; 53 get input pointer
+	GFXACCEL_CMDTBL_ADDR gfxaccel_get_outptr		; 54 get output pointer
+	GFXACCEL_CMDTBL_ADDR gfxaccel_set_unit			; 55 set unit
+
 
 	code
 	even
 
+_gfxaccel_cmdproc:
 gfxaccel_cmdproc:
-	cmpi.b #36,d6
+	cmpi.b #56,d6
 	bhs.s .0001
 	movem.l d6/a0,-(a7)
 	ext.w d6
@@ -124,8 +155,10 @@ gfxaccel_cmdproc:
 .0001:
 	moveq #E_NotSupported,d0
 	rts
+	global _gfxaccel_cmdproc
 
 setup_gfxaccel:
+gfxaccel_setup:
 	movem.l d0/a0/a1,-(a7)
 	moveq #32,d0
 	lea.l gfxaccel_dcb,a0
@@ -172,6 +205,11 @@ gfxaccel_init:
 
 gfxaccel_stat:
 	move.l GFXACCEL+GFX_STATUS,d1
+	moveq #E_Ok,d0
+	rts
+
+gfxaccel_is_removeable:
+	moveq #0,d1
 	moveq #E_Ok,d0
 	rts
 

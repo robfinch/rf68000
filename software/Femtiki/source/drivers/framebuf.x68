@@ -34,6 +34,12 @@
 ;                                                                          
 ; ============================================================================
 
+;	include "..\inc\const.x68"
+;	include "..\inc\config.x68"
+;	include "..\inc\device.x68"
+
+framebuf_dcb	equ _DeviceTable+160*6
+
 FB_CTA macro arg1
 	dc.w ((\1-FRAMEBUF_CMDTBL)>>2)
 endm
@@ -58,47 +64,70 @@ FRAMEBUF_PPS equ 22*8
 	even
 	align 2
 FRAMEBUF_CMDTBL:
-	FB_CTA framebuf_init				; 0
-	FB_CTA framebuf_stat
-	FB_CTA framebuf_putchar
-	FB_CTA framebuf_putbuf
-	FB_CTA framebuf_getchar
-	FB_CTA framebuf_getbuf
-	FB_CTA framebuf_set_inpos
-	FB_CTA framebuf_set_outpos
-	FB_CTA framebuf_stub
-	FB_CTA framebuf_stub
-	FB_CTA framebuf_stub				; 10
-	FB_CTA framebuf_stub
-	FB_CTA framebuf_clear
-	FB_CTA framebuf_swapbuf
-	FB_CTA framebuf_setbuf1
-	FB_CTA framebuf_setbuf2
-	FB_CTA framebuf_getbuf1
-	FB_CTA framebuf_getbuf2
-	FB_CTA framebuf_writeat
-	FB_CTA framebuf_set_unit
-	FB_CTA framebuf_get_dimen	; 20
-	FB_CTA framebuf_get_color
-	FB_CTA framebuf_stub
-	FB_CTA framebuf_stub
-	FB_CTA framebuf_stub
-	FB_CTA framebuf_stub
-	FB_CTA framebuf_stub
-	FB_CTA framebuf_stub
-	FB_CTA framebuf_stub
-	FB_CTA framebuf_stub
-	FB_CTA framebuf_stub			; 30
-	FB_CTA framebuf_stub
-	FB_CTA framebuf_set_dimen
-	FB_CTA framebuf_set_color_depth
-	FB_CTA framebuf_set_destbuf
-	FB_CTA framebuf_set_dispbuf
+;	FB_CTA framebuf_writeat
+
+	FB_CTA framebuf_stub					; 0 NOP
+	FB_CTA framebuf_setup				; 1
+	FB_CTA framebuf_init					; 2
+	FB_CTA framebuf_stat					; 3
+	FB_CTA framebuf_stub					; 4 media check
+	FB_CTA framebuf_stub					; 5 reserved
+	FB_CTA framebuf_stub					; 6 open
+	FB_CTA framebuf_stub					; 7 close
+	FB_CTA framebuf_getchar				; 8 get char
+	FB_CTA framebuf_stub					; 9 peek char
+	FB_CTA framebuf_stub					; 10 get char direct
+	FB_CTA framebuf_stub					; 11 peek char direct
+	FB_CTA framebuf_stub					; 12 input status
+	FB_CTA framebuf_putchar				; 13 putchar
+	FB_CTA framebuf_stub					; 14 reserved
+	FB_CTA framebuf_stub					; 15 set position
+	FB_CTA framebuf_getbuf			  ; 16 read block
+	FB_CTA framebuf_putbuf				; 17 write block
+	FB_CTA framebuf_stub					; 18 verify block
+	FB_CTA framebuf_stub					; 19 output status
+	FB_CTA framebuf_stub					; 20 flush input
+	FB_CTA framebuf_stub					; 21 flush output
+	FB_CTA framebuf_stub					; 22 IRQ
+	FB_CTA framebuf_is_removeable	; 23 is removeable
+	FB_CTA framebuf_stub					; 24 IOCTRL read
+	FB_CTA framebuf_stub					; 25 IOCTRL write
+	FB_CTA framebuf_stub					; 26 output until busy
+	FB_CTA framebuf_stub					; 27 shutdown
+	FB_CTA framebuf_clear					; 28 clear
+	FB_CTA framebuf_swapbuf				; 29 swap buf
+	FB_CTA framebuf_setbuf1				; 30 setbuf 1
+	FB_CTA framebuf_setbuf2				; 31 setbuf 2
+	FB_CTA framebuf_getbuf1				; 32 getbuf 1
+	FB_CTA framebuf_getbuf2				; 33 getbuf 2
+	FB_CTA framebuf_get_dimen		; 34 get dimensions
+	FB_CTA framebuf_get_color		; 35 get color
+	FB_CTA framebuf_stub					; 36 get position
+	FB_CTA framebuf_stub					; 37 set color
+	FB_CTA framebuf_stub					; 38 set color 123
+	FB_CTA framebuf_stub					; 39 reserved
+	FB_CTA framebuf_stub					; 40 plot point
+	FB_CTA framebuf_stub					; 41 draw line
+	FB_CTA framebuf_stub					; 42 draw triangle
+	FB_CTA framebuf_stub					; 43 draw rectangle
+	FB_CTA framebuf_stub					; 44 draw curve
+	FB_CTA framebuf_set_dimen			; 45 set dimensions
+	FB_CTA framebuf_set_color_depth	; 46 set color depth
+	FB_CTA framebuf_set_destbuf		; 47 set destination buffer
+	FB_CTA framebuf_set_dispbuf		; 48 set display buffer
+	FB_CTA framebuf_stub	  ; 49 get input position
+	FB_CTA framebuf_set_inpos		; 50 set input position
+	FB_CTA framebuf_stub		; 51 get output position
+	FB_CTA framebuf_set_outpos		; 52 set output position
+	FB_CTA framebuf_stub		; 53 get input pointer
+	FB_CTA framebuf_stub		; 54 get output pointer
+	FB_CTA framebuf_set_unit			; 55 set unit
 
 	code
 	even
+_framebuf_cmdproc:
 framebuf_cmdproc:
-	cmpi.b #36,d6
+	cmpi.b #56,d6
 	bhs.s .0001
 	movem.l d6/a0,-(a7)
 	ext.w d6
@@ -113,11 +142,13 @@ framebuf_cmdproc:
 	movem.l (a7)+,d6/a0
 	rts
 .0001:
-	moveq #E_Func,d0
+	moveq #E_NotSupported,d0
 	rts
+	global _framebuf_cmdproc
 
 	align 2
 setup_framebuf:
+framebuf_setup:
 	movem.l d0/a0/a1,-(a7)
 	moveq #32,d0
 	lea.l framebuf_dcb,a0
@@ -170,6 +201,12 @@ framebuf_stat:
 framebuf_putchar:
 framebuf_getchar:
 framebuf_set_destbuf:
+	rts
+
+	align 2
+framebuf_is_removeable:
+	moveq #0,d1
+	moveq #E_Ok,d0
 	rts
 
 	align 2

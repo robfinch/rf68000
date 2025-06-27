@@ -98,13 +98,7 @@ macRbo macro arg1
 	rol.w #8,\1
 endm
 
-HAS_MMU equ 0
 NCORES equ 4
-TEXTCOL equ 60
-TEXTROW	equ	32
-VIDEO_X equ 800
-VIDEO_Y equ 600
-VIDEO_Z	equ	256
 
 CTRLC	EQU		$03
 CTRLH	EQU		$08
@@ -118,29 +112,11 @@ XOFF	EQU		$13
 EOT		EQU		$04
 BLANK EQU		$20
 
-SC_F12  EQU    $07
-SC_C    EQU    $21
-SC_T    EQU    $2C
-SC_Z    EQU    $1A
-SC_KEYUP	EQU		$F0
-SC_EXTEND   EQU		$E0
-SC_CTRL		EQU		$14
-SC_RSHIFT	EQU		$59
-SC_NUMLOCK	EQU		$77
-SC_SCROLLLOCK	EQU	$7E
-SC_CAPSLOCK		EQU	$58
-SC_ALT		EQU		$11
-SC_LSHIFT	EQU		$12
-SC_DEL		EQU		$71		; extend
-SC_LCTRL	EQU		$58
-SC_TAB      EQU		$0D
-
-	include "..\Femtiki\device.x68"
+	include "..\Femtiki\source\inc\device.x68"
 	include "..\Femtiki\FemtikiTop.x68"
 
 DDATA EQU $FFFFFFF0     ; DS.L    3
 HISPC EQU $FFFFFFFC     ; DS.L    1
-SCREEN_FORMAT = 1
 
 	if HAS_MMU
 TEXTREG		EQU	$1E3FF00	; virtual addresses
@@ -161,10 +137,7 @@ I2C_TXR 	equ 3
 I2C_CMD 	equ 4
 I2C_STAT 	equ 4
 PLIC			EQU	$1E90000
-MMU				EQU $FDC00000	; physical address
-leds			EQU	$1EFFF00	; virtual addresses
 keybd			EQU	$1EFFE00
-KEYBD			EQU	$1EFFE00
 RAND			EQU	$1EFFD00
 RAND_NUM	EQU	$1EFFD00
 RAND_STRM	EQU	$1EFFD04
@@ -173,10 +146,9 @@ RAND_MW		EQU	$1EFFD0C
 RST_REG		EQU	$1EFFC00
 IO_BITMAP	EQU $1F00000
 	else
-TEXTREG		equ	$FD080000
-TEXTREG_CURSOR_POS	equ $24
+;TEXTREG		equ	$FD080000
+;TEXTREG_CURSOR_POS	equ $24
 txtscreen	EQU	$FD000000
-MMU				EQU $FDC00000	; physical address
 RST_REG		EQU	$FDFF0000
 RAND			EQU	$FDFF4010
 RAND_NUM	EQU	$FDFF4010
@@ -184,13 +156,10 @@ RAND_STRM	EQU	$FDFF4014
 RAND_MZ		EQU $FDFF4018
 RAND_MW		EQU	$FDFF401C
 keybd			EQU	$FDFF8000
-KEYBD			EQU	$FDFF8000
-leds			EQU	$FDFFC000
-ACIA			EQU	$FDFE0000
+;ACIA			EQU	$FDFE0000
 I2C2 			equ $FDFE4000
 IO_BITMAP	EQU $FDE00000
-FRAMEBUF	EQU	$FD208000
-GFXACCEL	equ	$FD210000
+;GFXACCEL	equ	$FD210000
 PSG				EQU $FD240000
 I2C1 			equ $FD250000
 ADAU1761 	equ $FD254000
@@ -200,11 +169,11 @@ SPI_MASTER2	equ $FD284000
 COPPER		equ $FD288000
 semamem		equ	$FD300000
 
-ACIA_RX		equ	0
-ACIA_TX		equ	0
-ACIA_STAT	equ	4
-ACIA_CMD	equ	8
-ACIA_CTRL	equ	12
+;ACIA_RX		equ	0
+;ACIA_TX		equ	0
+;ACIA_STAT	equ	4
+;ACIA_CMD	equ	8
+;ACIA_CTRL	equ	12
 I2C_PREL 	equ 0
 I2C_PREH 	equ 1
 I2C_CTRL 	equ 2
@@ -214,14 +183,6 @@ I2C_CMD 	equ 4
 I2C_STAT 	equ 4
 
 	endif
-
-SERIAL_SEMA	EQU	2
-KEYBD_SEMA	EQU	3
-RAND_SEMA		EQU	4
-SCREEN_SEMA	EQU	5
-MEMORY_SEMA EQU 6
-TCB_SEMA 		EQU	7
-FMTK_SEMA		EQU	8
 
 macIRQ_proc	macro arg1
 	dc.l IRQ_proc\1
@@ -348,8 +309,8 @@ TextPos		equ		$40002
 TextCurpos	equ	$40002
 TextScr			equ	$40004
 S19StartAddress	equ	$40008
-KeybdEcho		equ	$4000C
-KeybdWaitFlag	equ	$4000D
+;KeybdEcho		equ	$4000C
+;KeybdWaitFlag	equ	$4000D
 CmdBuf			equ $40040
 CmdBufEnd		equ	$40080
 fgColor			equ	$40084
@@ -399,14 +360,14 @@ TimeBuf equ $408E0
 numwka equ $40980
 EightPixels equ $40100000	; to $40200020
 
-null_dcb equ $0040A00		; 0
-keybd_dcb equ null_dcb+DCB_SIZE	; 1
-textvid_dcb equ keybd_dcb+DCB_SIZE	; 2
-err_dcb equ textvid_dcb+DCB_SIZE		; 3
-serial_dcb equ err_dcb+DCB_SIZE*2		; 5
-framebuf_dcb equ serial_dcb+DCB_SIZE	; 6
-gfxaccel_dcb equ framebuf_dcb+DCB_SIZE	; 7
-rtc_dcb equ gfxaccel_dcb+DCB_SIZE		; 8
+;null_dcb equ $0040A00		; 0
+;keybd_dcb equ null_dcb+DCB_SIZE	; 1
+;textvid_dcb equ keybd_dcb+DCB_SIZE	; 2
+;err_dcb equ textvid_dcb+DCB_SIZE		; 3
+;serial_dcb equ err_dcb+DCB_SIZE*2		; 5
+;framebuf_dcb equ serial_dcb+DCB_SIZE	; 6
+;gfxaccel_dcb equ framebuf_dcb+DCB_SIZE	; 7
+;rtc_dcb equ gfxaccel_dcb+DCB_SIZE		; 8
 
 spi_buff equ $0042000
 
@@ -416,16 +377,16 @@ TimerStack	equ	$41BFC
 scratch_ram	equ $00100000
 IOFocus			equ	$00100000
 memend			equ $00100004
-KeybdLEDs		equ	$0010000E
-_KeyState1	equ	$0010000F
-_KeyState2	equ	$00100010
-_KeybdHead	equ	$00100011
-_KeybdTail	equ	$00100012
-_KeybdCnt		equ	$00100013
-KeybdID			equ	$00100018
-_Keybd_tick	equ $0010001C
-_KeybdBuf		equ	$00100020
-_KeybdOBuf	equ	$00100080
+;KeybdLEDs		equ	$0010000E
+;_KeyState1	equ	$0010000F
+;_KeyState2	equ	$00100010
+;_KeybdHead	equ	$00100011
+;_KeybdTail	equ	$00100012
+;_KeybdCnt		equ	$00100013
+;KeybdID			equ	$00100018
+;_Keybd_tick	equ $0010001C
+;_KeybdBuf		equ	$00100020
+;_KeybdOBuf	equ	$00100080
 S19Checksum	equ	$00100150
 SerTailRcv	equ	$00100160
 SerHeadRcv	equ	$00100162
@@ -437,7 +398,6 @@ SerXmitXoff	equ	$0010016A
 SerRcvBuf		equ	$00101000
 SerXmitBuf	equ	$00102000
 RTCBuf			equ $00100200	; to $0010023F
-_PAM				equ $0011E000
 
 	code
 	align		2
@@ -481,21 +441,21 @@ start:
 	move.b #5,leds
 	move.b #1,InputDevice			; select keyboard input
 	move.b #2,OutputDevice		; select text screen output
-	bsr setup_textvid
+	jsr setup_textvid
 	bsr test_scratchpad_ram
 	move.b #3,leds
-	bsr setup_null
+	jsr setup_null
 	move.b #4,leds
-	bsr setup_keybd
+	jsr setup_keybd
 	move.b #6,leds
-	bsr setup_serial
+	jsr setup_serial
 	move.b #7,leds
 	movec.l	coreno,d0					; get core number
 	cmpi.b #2,d0
 	bne	start_other
-	bsr setup_framebuf
+	jsr setup_framebuf
 	move.b #8,leds
-	bsr setup_gfxaccel
+	jsr setup_gfxaccel
 	move.b #9,leds
 	clr.l sys_switches
 	lea I2C2,a6
@@ -527,9 +487,9 @@ start:
 ;	trap #0
 ;	bsr	textvid_clear
 
-	bsr	_KeybdInit
+	jsr	_KeybdInit
 ;	bsr	InitIRQ
-	bsr	SerialInit
+	jsr	SerialInit
 ;	bsr init_i2c
 ;	bsr rtc_read
 
@@ -708,7 +668,7 @@ msgDeviceCount
 ;==============================================================================
 
 T15DTAddr macro arg1
-	dc.w ((\1-T15DispatchTable)>>1)
+	dc.l (\1-T15DispatchTable)
 endm
 
 	align	2
@@ -827,10 +787,8 @@ TRAP15:
 	movem.l	d0/a0,-(a7)
 	lea T15DispatchTable(pc),a0
 	ext.w d0
-	lsl.w #1,d0
-	move.w (a0,d0.w),d0
-	ext.l d0
-	lsl.l #1,d0
+	lsl.w #2,d0
+	move.l (a0,d0.w),d0
 	add.l d0,a0
 	jsr (a0)
 	movem.l (a7)+,d0/a0
@@ -867,7 +825,7 @@ T15ReadScreenChar:
 	movem.l (sp)+,d2/d3/a0
 	rts
 
-	
+
 ;------------------------------------------------------------------------------
 ; Initialize the MMU to allow thread #0 access to IO
 ;------------------------------------------------------------------------------
@@ -913,13 +871,14 @@ InitMMU:
 ; Device drivers
 ;------------------------------------------------------------------------------
 
-	include "null.x68"
-	include "keybd.x68"
-	include "textvid.x68"
+	include "..\Femtiki\source\kernel\Femtiki_vars.x68"
+	include "..\Femtiki\source\drivers\null.x68"
+	include "..\Femtiki\source\drivers\keybd.x68"
+	include "..\Femtiki\source\drivers\textvid.x68"
 	include "err.x68"
-	include "serial.x68"
-	include "framebuf.x68"
-	include "gfxaccel.x68"
+	include "..\Femtiki\source\drivers\serial.x68"
+	include "..\Femtiki\source\drivers\framebuf.x68"
+	include "..\Femtiki\source\drivers\gfxaccel.x68"
 	include "audio.x68"
 
 ;------------------------------------------------------------------------------
@@ -1164,19 +1123,24 @@ InitSemaphores:
 ; Parameters:
 ;		d0 = key
 ;		d1 = semaphore number
+;		d2 = retry count
+;	Returns:
+;		d0 = -1 for success, 0 if failed
 ; -----------------------------------------------------------------------------
 
 LockSemaphore:
-	rts
-	movem.l	d1/a0,-(a7)			; save registers
-	lea			semamem,a0			; point to semaphore memory lock area
-	andi.w	#255,d1					; make d1 word value
-	lsl.w		#2,d1						; align to memory
+	movem.l	d1/d2/a0,-(a7)	; save registers
+	lea	semamem,a0					; point to semaphore memory lock area
+	andi.w #255,d1					; make d1 word value
+	lsl.w	#2,d1							; align to memory
 .0001
-	move.l	d0,(a0,d1.w)		; try and write the semaphore
-	cmp.l		(a0,d1.w),d0		; did it lock?
-	bne.s		.0001						; no, try again
-	movem.l	(a7)+,a0/d1			; restore regs
+	move.l d0,(a0,d1.w)			; try and write the semaphore
+	cmp.l (a0,d1.w),d0			; did it lock?
+	dbeq d2,.0001						; no, try again
+	seq d0									; d0
+	ext.w d0
+	ext.l d0
+	movem.l	(a7)+,a0/d1/d2	; restore regs
 	rts
 	
 ; -----------------------------------------------------------------------------
@@ -1188,10 +1152,10 @@ LockSemaphore:
 
 ForceUnlockSemaphore:
 	movem.l	d1/a0,-(a7)				; save registers
-	lea			semamem+$3000,a0	; point to semaphore memory read/write area
-	andi.w	#255,d1						; make d1 word value
-	lsl.w		#2,d1							; align to memory
-	clr.l		(a0,d1.w)					; write zero to unlock
+	lea	semamem+$3000,a0			; point to semaphore memory read/write area
+	andi.w #255,d1						; make d1 word value
+	lsl.w	#2,d1								; align to memory
+	clr.l	(a0,d1.w)						; write zero to unlock
 	movem.l	(a7)+,a0/d1				; restore regs
 	rts
 
@@ -1210,16 +1174,17 @@ ForceUnlockSemaphore:
 UnlockSemaphore:
 	bra ForceUnlockSemaphore
 	movem.l	d1/a0,-(a7)				; save registers
-	lea			semamem+$1000,a0	; point to semaphore memory unlock area
-	andi.w	#255,d1						; make d1 word value
-	lsl.w		#2,d1							; align to memory
-	move.l	d0,(a0,d1.w)			; write matching value to unlock
+	lea	semamem+$1000,a0			; point to semaphore memory unlock area
+	andi.w #255,d1						; make d1 word value
+	lsl.w	#2,d1								; align to memory
+	move.l d0,(a0,d1.w)				; write matching value to unlock
 	movem.l	(a7)+,a0/d1				; restore regs
 	rts
 
 ; -----------------------------------------------------------------------------
 ; Parameters:
 ;		d1 = semaphore to lock / unlock
+;		d2 = timeout for lock
 ; -----------------------------------------------------------------------------
 
 T15LockSemaphore:	
@@ -1781,7 +1746,7 @@ DrawToXY:
 	move.l d5,a0		; a0 = error = dx + dy
 	adda.l d6,a0
 .loop:
-	bsr CheckForCtrlC
+	jsr CheckForCtrlC
 	bsr plot				; plot(x0,y0)
 	move.l a0,a1
 	adda.l a1,a1		; a1 = error *2
@@ -1821,7 +1786,7 @@ DrawHorizTo:
 	neg.l d5					; switch to decrement
 .0001:
 	moveq #6,d7
-	moveq #DEV_WRITEAT,d6
+;	moveq #DEV_WRITEAT,d6
 	trap #0
 	cmp.l d1,d3
 	beq.s .0002
@@ -2144,7 +2109,7 @@ PromptLn:
 ;
 Prompt3:
 	move.l #2,IOFocus					; Set the IO focus in global memory
-	bsr	GetKey
+	jsr	GetKey
 	cmpi.w #-1,d1
 	beq.s	Prompt3
 	cmpi.b #CR,d1
@@ -2362,7 +2327,8 @@ cmdCore:
 	bra			Monitor
 
 cmdFMTK:
-	bsr FemtikiInit
+	moveq #0,d7							; Femtiki Initialize
+	trap #1
 	bra Monitor
 
 cmdTestFP:
@@ -2578,7 +2544,7 @@ GetCmdLine:
 		bsr		OutputChar
 		lea		CmdBuf,a0
 .0001:
-		bsr		GetKey
+		jsr		GetKey
 		cmp.b	#CTRLH,d0
 		beq.s	.0003
 		cmp.b	#CTRLX,d0
@@ -2715,7 +2681,7 @@ cmdFillB:
 	move.w a1,d2
 	tst.w d2
 	bne.s .0001
-	bsr	CheckForCtrlC
+	jsr	CheckForCtrlC
 .0001:	
 	cmpi.b #'R',d5
 	bne.s .0003
@@ -2748,7 +2714,7 @@ cmdFillW:
 	move.w a1,d2
 	tst.w d2
 	bne.s .0001
-	bsr	CheckForCtrlC
+	jsr	CheckForCtrlC
 .0001:	
 	cmpi.b #'R',d5
 	bne.s .0003
@@ -2781,7 +2747,7 @@ cmdFillL:
 	move.w a1,d2
 	tst.w d2
 	bne.s .0001
-	bsr	CheckForCtrlC
+	jsr	CheckForCtrlC
 .0001:	
 	cmpi.b #'R',d5
 	bne.s .0003
@@ -3150,7 +3116,7 @@ rand_lines:
 .0001:
 .0006:
 	move.l d5,-(sp)
-	bsr CheckForCtrlC
+	jsr CheckForCtrlC
 	moveq #7,d7
 	moveq #DEV_SET_COLOR,d6
 	bsr RandGetNum
@@ -3191,7 +3157,7 @@ rand_rect:
 .0003:
 .0006:
 	move.l d5,-(sp)
-	bsr CheckForCtrlC
+	jsr CheckForCtrlC
 	moveq #7,d7
 	moveq #DEV_SET_COLOR,d6
 	bsr RandGetNum
@@ -3231,7 +3197,7 @@ rand_rect2:
 	move.l #10000,d5
 .0003:
 .0006:
-	bsr CheckForCtrlC
+	jsr CheckForCtrlC
 	bsr RandGetNum
 	bsr gfxaccel_set_color
 	bsr RandGetNum
@@ -3254,7 +3220,7 @@ rand_triangle:
 	move.l #30000,d7
 .0006
 	move.l d7,-(sp)
-	bsr CheckForCtrlC
+	jsr CheckForCtrlC
 	moveq #7,d7
 	moveq #DEV_SET_COLOR,d6
 	bsr RandGetNum
@@ -3307,7 +3273,7 @@ rand_curve:
 	move.l #10000,d7
 .0006:
 	move.l d7,-(sp)
-	bsr CheckForCtrlC
+	jsr CheckForCtrlC
 	moveq #DEV_SET_COLOR,d6
 	bsr RandGetNum
 	trap #0
@@ -3490,7 +3456,7 @@ dspmem1:
 	dbra d2,.0002
 	move.b #34,d1
 	bsr	OutputChar
-	bsr	CheckForCtrlC
+	jsr	CheckForCtrlC
 	bra	CRLF
 
 ;------------------------------------------------------------------------------
@@ -3560,10 +3526,10 @@ cmdTestSerialReceive:
 	beq			.0003
 	bsr			OutputChar
 .0001:	
-	bsr			CheckForCtrlC
+	jsr			CheckForCtrlC
 	bra			.0002
 .0003:
-	bsr			_KeybdInit
+	jsr			_KeybdInit
 	bra			Monitor
 
 ;------------------------------------------------------------------------------
@@ -3853,7 +3819,7 @@ init_spi:
 	move.b #SPI_INIT_SD,SPI_TRANS_TYPE_REG(a1)
 	move.b #1,SPI_TRANS_CTRL_REG(a1)
 .0001
-	bsr CheckForCtrlC
+	jsr CheckForCtrlC
 	btst #0,SPI_TRANS_STS_REG(a1)	
 	bne.s .0001
 .0004
@@ -3880,7 +3846,7 @@ spi_send_byte:
 	move.l d1,a1
 	macUnhmash d1
 .0001
-	bsr CheckForCtrlC
+	jsr CheckForCtrlC
 	btst #0,SPI_TRANS_STS_REG
 	bne.s .0001
 	move.b d2,SPI_DIRECT_ACCESS_DATA_REG(a1)
@@ -3972,7 +3938,7 @@ spi_read_block:
 	move.b #SPI_RW_READ_SD_BLOCK,SPI_TRANS_TYPE_REG(a1)	; set read transaction
 	move.b #1,SPI_TRANS_CTRL_REG(a1)	; start transaction
 .0002
-	bsr CheckForCtrlC
+	jsr CheckForCtrlC
 	btst.b #0,SPI_TRANS_STS_REG(a1)		; wait for transaction not busy
 	bne.s .0002
 	move.b SPI_TRANS_ERR_REG(a1),d0
@@ -4014,7 +3980,7 @@ spi_write_block:
 	move.b #SPI_RW_WRITE_SD_BLOCK,SPI_TRANS_TYPE_REG(a1)	; set write transaction
 	move.b #1,SPI_TRANS_CTRL_REG(a1)	; start transaction
 .0002
-	bsr CheckForCtrlC
+	jsr CheckForCtrlC
 	btst.b #0,SPI_TRANS_STS_REG(a1)		; wait for transaction not busy
 	bne.s .0002
 	move.b SPI_TRANS_ERR_REG(a1),d0
@@ -4135,7 +4101,7 @@ i2c_disable:
 
 i2c_wait_tip:
 .0001
-	bsr CheckForCtrlC				
+	jsr CheckForCtrlC				
 	btst #1,I2C_STAT(a6)			; wait for tip to clear
 	bne.s	.0001
 	rts
@@ -4193,7 +4159,7 @@ i2c_xmit1:
 
 i2c_wait_rx_nack:
 .0001						
-	bsr CheckForCtrlC
+	jsr CheckForCtrlC
 	btst #7,I2C_STAT(a6)		; wait for RXack = 0
 	bne.s	.0001
 	rts
@@ -5047,3 +5013,8 @@ FREL30:
 	include "dcode68k.x68"
  	include "games/asteroids/asteroids 1_0.x68"
 	include "games/plants/plants.x68"
+
+	global Delay3s
+	global DisplayString
+	global DisplayStringCRLF
+	global CRLF

@@ -39,9 +39,9 @@ BIOS:
 #	vlink -T rom_bios.cmd -brawbin1 fibonacci.o -o fibonacci.bin
 #	vlink -T rom_bios.cmd -brawbin1 LEDTest.o -o LEDTest.bin
 #	vlink -T rom_bios.cmd -brawbin1 cputest.o -o cputest.bin
-	vlink -T rom_bios.cmd -bsrec37 boot.o -o boot.s37
+	vlink -T ..\Femtiki\source\Femtiki.cmd -bsrec37 boot.o -o boot.s37
 	vlink -T bios.cmd -bsrec37 TestFp.o lib.o -o TestFp.s37
-	vlink -T rom_bios.cmd -brawbin1 boot.o -o boot.bin
+	vlink -T ..\Femtiki\source\Femtiki.cmd -brawbin1 boot.o -o boot.bin
 	vlink -T bios.cmd -bsrec37 bootrom.o lib.o gfx.o -o bootrom.s37
 #	vlink -T rom_bios.cmd -brawbin1 add.o -o add.bin
 #	bin2ver fibonacci.bin 128

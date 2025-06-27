@@ -12,5 +12,13 @@ NR_MSG		EQU		21842		; number of messages available
 NR_MBX		EQU		9792
 PMTESIZE	EQU		16
 
+SCREEN_FORMAT equ 1
+HAS_MMU equ 0
+TEXTCOL equ 64
+TEXTROW equ 32
+VIDEO_X	equ 800
+VIDEO_Y	equ 600
+VIDEO_Z	equ	256
+
 
 

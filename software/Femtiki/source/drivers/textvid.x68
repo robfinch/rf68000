@@ -34,6 +34,15 @@
 ;                                                                          
 ; ============================================================================
 
+;	include "..\inc\const.x68"
+;	include "..\inc\config.x68"
+;	include "..\inc\device.x68"
+
+TEXTREG		equ	$FD080000
+TEXTREG_CURSOR_POS	equ $24
+
+textvid_dcb	equ _DeviceTable+160*2
+
 ;------------------------------------------------------------------------------
 ;------------------------------------------------------------------------------
 ; Setup the text video device
@@ -50,48 +59,67 @@ endm
 
 	align 2
 TEXTVID_CMDTBL:
-	TBLE textvid_init					; 0
-	TBLE textvid_stat
-	TBLE textvid_putchar
-	TBLE textvid_putbuf
-	TBLE textvid_getchar
-	TBLE textvid_getbuf
-	TBLE textvid_set_inpos
-	TBLE textvid_set_outpos
-	TBLE textvid_stub
-	TBLE textvid_stub
-	TBLE textvid_stub				; 10
-	TBLE textvid_stub
-	TBLE textvid_clear
-	TBLE textvid_stub
-	TBLE textvid_stub
-	TBLE textvid_stub
-	TBLE textvid_getbuf1
-	TBLE textvid_stub
-	TBLE textvid_stub
-	TBLE textvid_set_unit
-	TBLE textvid_get_dimen	; 20
-	TBLE textvid_get_color
-	TBLE textvid_get_inpos
-	TBLE textvid_get_outpos
-	TBLE textvid_get_outptr
-	TBLE textvid_stub
-	TBLE textvid_stub
-	TBLE textvid_stub
-	TBLE textvid_stub
-	TBLE textvid_stub
-	TBLE textvid_stub				; 30
-	TBLE textvid_stub
-	TBLE textvid_stub
-	TBLE textvid_stub
-	TBLE textvid_stub
-	TBLE textvid_stub
-	TBLE textvid_get_inptr
+	TBLE textvid_stub					; 0 NOP
+	TBLE textvid_setup				; 1
+	TBLE textvid_init					; 2
+	TBLE textvid_stat					; 3
+	TBLE textvid_stub					; 4 media check
+	TBLE textvid_stub					; 5 reserved
+	TBLE textvid_stub					; 6 open
+	TBLE textvid_stub					; 7 close
+	TBLE textvid_getchar			; 8 get char
+	TBLE textvid_stub					; 9 peek char
+	TBLE textvid_stub					; 10 get char direct
+	TBLE textvid_stub					; 11 peek char direct
+	TBLE textvid_stub					; 12 input status
+	TBLE textvid_putchar			; 13 putchar
+	TBLE textvid_stub					; 14 reserved
+	TBLE textvid_stub					; 15 set position
+	TBLE textvid_getbuf			  ; 16 read block
+	TBLE textvid_putbuf				; 17 write block
+	TBLE textvid_stub					; 18 verify block
+	TBLE textvid_stub					; 19 output status
+	TBLE textvid_stub					; 20 flush input
+	TBLE textvid_stub					; 21 flush output
+	TBLE textvid_stub					; 22 IRQ
+	TBLE textvid_is_removeable	; 23 is removeable
+	TBLE textvid_stub					; 24 IOCTRL read
+	TBLE textvid_stub					; 25 IOCTRL write
+	TBLE textvid_stub					; 26 output until busy
+	TBLE textvid_stub					; 27 shutdown
+	TBLE textvid_clear				; 28 clear
+	TBLE textvid_stub					; 29 swap buf
+	TBLE textvid_stub					; 30 setbuf 1
+	TBLE textvid_stub					; 31 setbuf 2
+	TBLE textvid_getbuf1			; 32 getbuf 1
+	TBLE textvid_stub					; 33 getbuf 2
+	TBLE textvid_get_dimen		; 34 get dimensions
+	TBLE textvid_get_color		; 35 get color
+	TBLE textvid_stub					; 36 get position
+	TBLE textvid_stub					; 37 set color
+	TBLE textvid_stub					; 38 set color 123
+	TBLE textvid_stub					; 39 reserved
+	TBLE textvid_stub					; 40 plot point
+	TBLE textvid_stub					; 41 draw line
+	TBLE textvid_stub					; 42 draw triangle
+	TBLE textvid_stub					; 43 draw rectangle
+	TBLE textvid_stub					; 44 draw curve
+	TBLE textvid_stub					; 45 set dimensions
+	TBLE textvid_stub					; 46 set color depth
+	TBLE textvid_stub					; 47 set destination buffer
+	TBLE textvid_stub					; 48 set display buffer
+	TBLE textvid_get_inpos	  ; 49 get input position
+	TBLE textvid_set_inpos		; 50 set input position
+	TBLE textvid_get_outpos		; 51 get output position
+	TBLE textvid_set_outpos		; 52 set output position
+	TBLE textvid_get_inptr		; 53 get input pointer
+	TBLE textvid_get_outptr		; 54 get output pointer
 
 	code
 	even
+_textvid_cmdproc:
 textvid_cmdproc:
-	cmpi.b #37,d6
+	cmpi.b #55,d6
 	bhs.s .0001
 	movem.l d6/a0,-(a7)
 	ext.w d6
@@ -105,11 +133,13 @@ textvid_cmdproc:
 	movem.l (a7)+,d6/a0
 	rts
 .0001:
-	moveq #E_Func,d0
+	moveq #E_NotSupported,d0
 	rts
-
+	global _textvid_cmdproc
+	
 	align 2
 setup_textvid:
+textvid_setup:
 	movem.l d0/a0/a1,-(a7)
 	moveq #32,d0
 	lea.l textvid_dcb,a0
@@ -182,6 +212,12 @@ textvid_stat:
 	rts
 
 	align 2
+textvid_is_removeable:
+	moveq #0,d1
+	moveq #E_Ok,d0
+	rts
+
+	align 2
 textvid_getchar:
 	movem.l d2/a0,-(sp)
 	move.l textvid_dcb+DCB_INBUFPTR,a0
@@ -207,8 +243,6 @@ textvid_getchar:
 	rts
 
 	align 2
-textvid_putbuf:
-textvid_getbuf:
 textvid_stub:
 	moveq #E_NotSupported,d0
 	rts
@@ -440,7 +474,77 @@ CalcScreenLoc:
 	rts
 
 ;------------------------------------------------------------------------------
-; Display a character on the screen
+; This function will get any number of characters from the text display.
+; The text position will increment as characters are fetched.
+;
+;	Parameters:
+;		d1 = pointer to buffer
+;		d2 = count
+; Returns:
+;		d0 = E_Ok
+;		d1 = count
+;------------------------------------------------------------------------------
+
+	align 2
+textvid_getbuf:
+	tst.l d2
+	beq.s .0002
+	movem.l d3/a0,-(sp)
+	move.l d2,d3
+	moveq #1,d0
+	movec d0,dfc
+.0001
+	bsr textvid_getchar
+	moves.b d1,(a0)+
+	dbra d2,.0001
+	move.l d3,d1
+	move.l d3,d2
+	movem.l (sp)+,d3/a0
+	moveq #E_Ok,d0
+	rts
+.0002
+	moveq #0,d1
+	moveq #E_Ok,d0
+	rts
+
+;------------------------------------------------------------------------------
+; This function will put any number of characters to the text display. If
+; needed the screen scrolls. The text position will increment as characters
+; are displayed.
+;
+;	Parameters:
+;		d1 = pointer to buffer
+;		d2 = count
+; Returns:
+;		d0 = E_Ok
+;		d1 = count
+;------------------------------------------------------------------------------
+
+	align 2
+textvid_putbuf:
+	tst.l d2
+	beq.s .0002
+	movem.l d3/a0,-(sp)
+	move.l d2,d3
+	moveq #1,d0
+	movec d0,sfc
+.0001
+	moves.b (a0)+,d1
+	bsr textvid_putchar
+	dbra d2,.0001
+	move.l d3,d1
+	move.l d3,d2
+	movem.l (sp)+,d3/a0
+	moveq #E_Ok,d0
+	rts
+.0002
+	moveq #0,d1
+	moveq #E_Ok,d0
+	rts
+
+;------------------------------------------------------------------------------
+; Display a single character on the screen
+;
 ; Parameters:
 ; 	d1.b = char to display
 ;------------------------------------------------------------------------------

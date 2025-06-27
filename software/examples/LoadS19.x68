@@ -45,7 +45,7 @@ NextRec:
 	move.b #'.',d1				; progress display
 	bsr	OutputChar
 ProcessRec:
-	bsr CheckForCtrlC			; check for CTRL-C once per record
+	jsr CheckForCtrlC			; check for CTRL-C once per record
 	bsr	sGetChar
 	cmpi.b #CR,d1
 	beq.s	ProcessRec
@@ -210,7 +210,7 @@ sGetChar:
 	cmpi.w #-1,d1				; was there a char available?
 	bne.s	.0002
 	dbra d2,.0001				; no - try again
-	bsr CheckForCtrlC
+	jsr CheckForCtrlC
 	swap d2
 	dbra d2,.0004
 	movem.l	(a7)+,d0/d2

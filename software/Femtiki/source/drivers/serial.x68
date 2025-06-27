@@ -34,6 +34,19 @@
 ;                                                                          
 ; ============================================================================
 
+;	include "..\inc\const.x68"
+;	include "..\inc\config.x68"
+;	include "..\inc\device.x68"
+
+serial_dcb	equ _DeviceTable+160*5
+
+ACIA equ	$FDFE0000
+ACIA_RX		equ	0
+ACIA_TX		equ	0
+ACIA_STAT	equ	4
+ACIA_CMD	equ	8
+ACIA_CTRL	equ	12
+
 ;==============================================================================
 ; Serial I/O routines
 ;==============================================================================
@@ -41,18 +54,28 @@
 	code
 	align 2
 COM_CMDTBL:
+	dc.l serial_nop							; 0
+	dc.l serial_setup
 	dc.l serial_init
 	dc.l serial_stat
-	dc.l serial_putchar
-	dc.l serial_putbuf
-	dc.l serial_getchar
-	dc.l serial_getbuf
-	dc.l serial_set_inpos
-	dc.l serial_set_outpos
-	dc.l serial_getchar_direct
-	dc.l serial_peek_char
-	dc.l serial_peek_char_direct
-	dc.l serial_putchar_direct
+	dc.l serial_stub						; 4 media check
+	dc.l serial_stub						; 5 reserved
+	dc.l serial_stub						; 6 open
+	dc.l serial_stub						; 7 close
+	dc.l serial_getchar					; 8
+	dc.l serial_peek_char				; 9
+	dc.l serial_getchar_direct	; 10
+	dc.l serial_peek_char_direct	; 11
+	dc.l serial_stub						; 12 input status
+	dc.l serial_putchar					; 13
+	dc.l serial_putchar_direct	; 14
+	dc.l serial_stub						; 15 set position
+	dc.l serial_getbuf					; 16 read block
+	dc.l serial_putbuf					; 17 write block
+	dc.l serial_stub						; 18 verify block
+	dc.l serial_stub						; 19 output status
+	dc.l serial_stub						; 20 flush input
+	dc.l serial_stub						; 21 flush output
 
 ;------------------------------------------------------------------------------
 ; Setup the console device
@@ -60,8 +83,9 @@ COM_CMDTBL:
 ;------------------------------------------------------------------------------
 	even
 
+_serial_cmdproc:
 serial_cmdproc:
-	cmpi.b #12,d6
+	cmpi.b #22,d6
 	bhs.s .0001
 	movem.l d6/a0,-(a7)
 	ext.w d6
@@ -72,11 +96,13 @@ serial_cmdproc:
 	movem.l (a7)+,d6/a0
 	rts
 .0001:
-	moveq #E_Func,d0
+	moveq #E_NotSupported,d0
 	rts
+	global _serial_cmdproc
 
 serial_init:
 setup_serial:
+serial_setup:
 	movem.l d0/a0/a1,-(a7)
 	moveq #31,d0
 	lea.l serial_dcb,a0
@@ -96,8 +122,13 @@ setup_serial:
 	movem.l (a7)+,d0/a0/a1
 	rts
 
+serial_nop:
 serial_stat:
 	moveq #E_Ok,d0
+	rts
+
+serial_stub:
+	moveq #E_NotSupported,d0
 	rts
 
 serial_putchar:
