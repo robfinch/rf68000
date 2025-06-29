@@ -1,6 +1,9 @@
-#include "inc/config.h"
-#include "inc/device.h"
-#include "inc/types.h"
+#include <stdio.h>
+#include <string.h>
+#include "../inc/config.h"
+#include "../inc/types.h"
+#include "../inc/device.h"
+#include "../inc/proto.h"
 
 // Standard Devices are:
 //
@@ -59,8 +62,8 @@ void SetupDevices()
 	int n;
 
   for (n = 0; n < 32; n++) {
-    FMTK_AllocMbx(&hDevMailbox[n*2]);
-    FMTK_AllocMbx(&hDevMailbox[n*2+1]);
+    FMTK_AllocMbx((long)&hDevMailbox[n*2]);
+    FMTK_AllocMbx((long)&hDevMailbox[n*2+1]);
     p = &DeviceTable[n];
     p->hMbxSend = hDevMailbox[n*2];
     p->hMbxRcv = hDevMailbox[n*2+1];
@@ -69,63 +72,63 @@ void SetupDevices()
 	p = &DeviceTable[0];
 	memset(p, 0, sizeof(DCB) * NR_DCB);
 
-	strncpy(p->name,"\x04NULL",12);
+	strncpy(p->name,"NULL",12);
 	p->type = DVT_Unit;
 	p->UnitSize = 0;
 	p->cmdproc = null_cmdproc;
 	
 	p = &DeviceTable[1];
-	strncpy(p->name,"\x03KBD",12);
+	strncpy(p->name,"KBD",12);
 	p->type = DVT_Unit;
 	p->UnitSize = 1;
 	p->cmdproc = keybd_cmdproc;
 
 	p = &DeviceTable[2];
-	strncpy(p->name,"\x07TEXTVID",12);
+	strncpy(p->name,"TEXTVID",12);
 	p->type = DVT_Unit;
 	p->UnitSize = 1;
 	p->cmdproc = textvid_cmdproc;
 
 	p = &DeviceTable[5];
-	strncpy(p->name,"\x04COM1",12);
+	strncpy(p->name,"COM1",12);
 	p->type = DVT_Unit;
 	p->UnitSize = 1;
 	p->cmdproc = serial_cmdproc;
 
 	p = &DeviceTable[6];
-	strncpy(p->name,"\x08FRAMEBUF",12);
+	strncpy(p->name,"FRAMEBUF",12);
 	p->type = DVT_Unit;
 	p->UnitSize = 1;
 	p->cmdproc = framebuf_cmdproc;
 
 	p = &DeviceTable[7];
-	strncpy(p->name,"\x08GFXACCEL",12);
+	strncpy(p->name,"GFXACCEL",12);
 	p->type = DVT_Unit;
 	p->UnitSize = 1;
 	p->cmdproc = gfxaccel_cmdproc;
 
 	p = &DeviceTable[9];
-	strncpy(p->name,"\x03PTI",12);
+	strncpy(p->name,"PTI",12);
 	p->type = DVT_Unit;
 	p->UnitSize = 1;
 
 	p = &DeviceTable[16];
-	strncpy(p->name,"\x05CARD1",12);
+	strncpy(p->name,"CARD1",12);
 	p->type = DVT_Block;
 	p->UnitSize = 1;
 
 	p = &DeviceTable[29];
-	strncpy(p->name,"\x03CON",12);
+	strncpy(p->name,"CON",12);
 	p->type = DVT_Unit;
 	p->UnitSize = 1;
 
 	p = &DeviceTable[30];
-	strncpy(p->name,"\x04PRNG",12);
+	strncpy(p->name,"PRNG",12);
 	p->type = DVT_Unit;
 	p->UnitSize = 1;
 
 	p = &DeviceTable[31];
-	strncpy(p->name,"\x03DBG",12);
+	strncpy(p->name,"DBG",12);
 	p->type = DVT_Unit;
 	p->UnitSize = 1;
 

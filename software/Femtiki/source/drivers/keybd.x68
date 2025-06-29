@@ -19,7 +19,49 @@
 ;	include "..\inc\device.x68"
 
 keybd_dcb	equ _DeviceTable+160*1
-	
+	section local_ram
+kbd_dimen_x
+	ds.b	1
+kbd_dimen_y
+	ds.b	1
+kbd_ibufsize
+	ds.b	1
+kbd_obufsize
+	ds.b	1
+kbd_ibufptr
+	ds.l	1
+kbd_obufptr
+	ds.l	1
+
+KeybdLEDs
+	ds.b	1
+_KeyState1
+	ds.b	1
+_KeyState2
+	ds.b	1
+_KeybdHead
+	ds.b	1
+_KeybdTail
+	ds.b	1
+_KeybdCnt
+	ds.b	1
+KeybdEcho
+	ds.b	1
+KeybdWaitFlag
+	ds.b	1
+	align 2
+KeybdID
+	ds.l	1
+_Keybd_tick
+	ds.l	1
+_KeybdBuf
+	ds.b	32
+_KeybdOBuf
+	ds.b	32
+
+	code
+	even
+
 KEYBD_DCB	equ keybd_dcb
 
 KBD_CMDADDR macro arg1
@@ -111,29 +153,28 @@ keybd_cmdproc:
 setup_keybd:
 keybd_setup:
 keybd_init:
-	movem.l d0/a1,-(a7)
-	moveq #32,d0
-	lea.l keybd_dcb,a0
+	movem.l d0/a0/a1,-(a7)
+	move.l d0,a0
+	move.l d0,a1
+	moveq #31,d0
 .0001:
-	clr.l (a0)+
+	clr.l (a1)+
 	dbra d0,.0001
-	move.l #$44434220,keybd_dcb+DCB_MAGIC				; 'DCB '
-	move.l #$4B424400,keybd_dcb+DCB_NAME				; 'KBD'
-	move.l #keybd_cmdproc,keybd_dcb+DCB_CMDPROC
-	move.l #_KeybdBuf,KEYBD_DCB+DCB_INBUFPTR
-	move.l #_KeybdOBuf,KEYBD_DCB+DCB_OUTBUFPTR
-	move.l #32,KEYBD_DCB+DCB_INBUFSIZE
-	move.l #32,KEYBD_DCB+DCB_OUTBUFSIZE
-	clr.b KEYBD_DCB+DCB_OUTDIMX		; set rows and columns
-	clr.b KEYBD_DCB+DCB_OUTDIMY
-	clr.b KEYBD_DCB+DCB_INDIMX		; set rows and columns
-	clr.b KEYBD_DCB+DCB_INDIMY
+	move.l #$44434220,DCB_MAGIC(a0)				; 'DCB '
+	move.l #$4B424400,DCB_NAME(a0)				; 'KBD'
+	move.l #keybd_cmdproc,DCB_CMDPROC(a0)
+	move.l #_KeybdBuf,kbd_ibufptr
+	move.l #_KeybdOBuf,kbd_obufptr
+	move.l #32,kbd_ibufsize
+	move.l #32,kbd_obufsize
+	clr.b kbd_dimen_x		; set rows and columns
+	clr.b kbd_dimen_y
 ;	bsr KeybdInit
 	bsr keybd_clear
 	moveq #13,d0									; DisplayStringCRLF function
-	lea.l KEYBD_DCB+DCB_MAGIC,a1
+	lea.l DCB_MAGIC(a0),a1
 	trap #15
-	movem.l (a7)+,d0/a1
+	movem.l (a7)+,d0/a0/a1
 	rts
 
 	align 2

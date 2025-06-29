@@ -1,12 +1,48 @@
-	include "..\..\Femtiki\const.x68"
-	include "..\..\Femtiki\device.x68"
+	include "..\..\Femtiki\source\inc\const.x68"
+	include "..\..\Femtiki\source\inc\device.x68"
 	bss
 _InputDevice:
-	ds.b 1
+	ds.l 1
 _OutputDevice:
-	ds.b 1
+	ds.l 1
 _FpStrBuf:
 	ds.b	60
+
+	align 2
+; Parameters
+;		d7 = device handle
+; Returns:
+;		d0 = device handle with unit, 0 if unsuccessful
+;
+__io_open:
+	move.l d6,-(sp)
+	moveq #DEV_OPEN,d6
+	trap #0
+	cmpi.l #E_Ok,d0
+	bne.s .0001
+	or.l d7,d0
+	move.l (sp)+,d6
+	rts
+.0001
+	move.l (sp)+,d6
+	moveq #-1,d0
+	rts
+	global __io_open
+
+__io_close:
+	move.l d6,-(sp)
+	moveq #DEV_CLOSE,d6
+	trap #0
+	cmpi.b #E_Ok,d0
+	bne.s .0001
+	move.l (sp)+,d6
+	moveq #0,d0
+	rts
+.0001
+	move.l (sp)+,d6
+	moveq #-1,d0
+	rts
+	global __io_close
 
 ;==============================================================================
 ; Output a character to the current output device.
@@ -24,7 +60,7 @@ OutputChar:
 	move.l 20(sp),d1
 	clr.l d7
 	clr.l d6
-	move.b _OutputDevice,d7		; d7 = output device
+	move.l _OutputDevice,d7		; d7 = output device
 	move.w #DEV_PUTCHAR,d6		; d6 = function
 	trap #0
 	movem.l (a7)+,d0/d1/d6/d7
@@ -198,7 +234,7 @@ _DumpStack:
 
 _clear:
 	movem.l d6/d7,-(sp)
-	moveq #7,d7
+	move.l #$70000,d7
 	moveq #DEV_CLEAR,d6
 	trap #0
 	movem.l (sp)+,d6/d7
@@ -415,7 +451,7 @@ _read:
 	move.l 20(sp),d7
 	move.l 24(sp),d1
 	move.l 28(sp),d2
-	moveq #DEV_GETBUF,d6
+	moveq #DEV_READ_BLOCK,d6
 	trap #0
 	tst.l d0
 	bne.s .0001									; Error?
@@ -437,7 +473,7 @@ _write:
 	move.l 20(sp),d7
 	move.l 24(sp),d1
 	move.l 28(sp),d2
-	moveq #DEV_PUTBUF,d6
+	moveq #DEV_WRITE_BLOCK,d6
 	trap #0
 	tst.l d0
 	bne.s .0001									; Error?

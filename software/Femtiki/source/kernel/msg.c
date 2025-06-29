@@ -1,8 +1,9 @@
-#include "inc\types.h"
-#include "inc\const.h"
-#include "inc\config.h"
-#include "inc\proto.h"
-#include "inc\glo.h"
+#include <stdio.h>
+#include "..\inc\types.h"
+#include "..\inc\const.h"
+#include "..\inc\config.h"
+#include "..\inc\proto.h"
+#include "..\inc\glo.h"
 
 static MSG* MSGHandleToPointer(hMSG h)
 {
@@ -274,7 +275,7 @@ long FMTK_AllocMbx(__reg("d0") hMBX *phMbx)
 	messages must be freed. Any queued threads must also be
 	dequeued. 
 --------------------------------------------------------------- */
-long FMTK_FreeMbx(__reg("d0") hMBX hMbx) 
+long FMTK_FreeMbx(__reg("d0") long hMbx) 
 {
 	MBX *mbx;
 	MSG *msg;
@@ -343,7 +344,7 @@ long SetMbxMsgQueStrategy(hMBX hMbx, int qStrategy, int qSize)
 		Send a message.
 --------------------------------------------------------------- */
 long FMTK_SendMsg(
-	__reg("d0") hMBX hMbx,
+	__reg("d0") long hMbx,
 	__reg("d1") long d1,
 	__reg("d2") long d2,
 	__reg("d3") long d3
@@ -393,17 +394,17 @@ long FMTK_SendMsg(
 }
 
 
-s/* ---------------------------------------------------------------
+/* ---------------------------------------------------------------
 	Description:
 		Wait for message. If timelimit is zero then the thread
 	will wait indefinately for a message.
 --------------------------------------------------------------- */
 
 long FMTK_WaitMsg(
-	__reg("d0") hMBX hMbx,
-	__reg("d1") long *d1,
-	__reg("d2") long *d2,
-	__reg("d3") long *d3,
+	__reg("d0") long hMbx,
+	__reg("d1") long d1,
+	__reg("d2") long d2,
+	__reg("d3") long d3,
 	__reg("d4") long timelimit
 )
 {
@@ -501,10 +502,10 @@ long FMTK_WaitMsg(
 // ----------------------------------------------------------------------------
 
 long FMTK_PeekMsg (
-	__reg("d0") hMBX hMbx,
-	__reg("d1") long *d1,
-	__reg("d2") long *d2,
-	__reg("d3") long *d3
+	__reg("d0") long hMbx,
+	__reg("d1") long d1,
+	__reg("d2") long d2,
+	__reg("d3") long d3
 )
 {
   return (FMTK_CheckMsg(hMbx, d1, d2, d3, 0));
@@ -519,10 +520,10 @@ long FMTK_PeekMsg (
 --------------------------------------------------------------- */
 
 long FMTK_CheckMsg (
-	__reg("d0") hMBX hMbx,
-	__reg("d1") long *d1,
-	__reg("d2") long *d2,
-	__reg("d3") long *d3,
+	__reg("d0") long hMbx,
+	__reg("d1") long d1,
+	__reg("d2") long d2,
+	__reg("d3") long d3,
 	__reg("d4") long qrmv
 )
 {

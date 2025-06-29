@@ -1134,7 +1134,7 @@ TEXTERR
 
 DRAWBUF:
 	bsr INT_EXPR
-	moveq #7,d7
+	move.l #$70000,d7
 	moveq #DEV_SET_DESTBUF,d6
 	move.l d0,d1
 	trap #0
@@ -1142,7 +1142,7 @@ DRAWBUF:
 
 DISPBUF:
 	bsr INT_EXPR
-	moveq #6,d7
+	move.l #$60000,d7
 	moveq #DEV_SET_DISPBUF,d6
 	move.l d0,d1
 	trap #0
@@ -1190,21 +1190,21 @@ COLOR1
 	bne.s .0002
 	move.w #$2222,d0
 .0002
-	moveq #7,d7
+	move.l #$70000,d7
 	moveq #DEV_SET_COLOR_DEPTH,d6
 	move.l d0,d1
 	trap #0
-	moveq #6,d7
+	move.l #$60000,d7
 	trap #0
 	bra FINISH
 
 COLOR2
 	bsr INT_EXPR
 	move.l d0,d1
-	moveq #7,d7						; graphics accelerator
+	move.l #$70000,d7						; graphics accelerator
 	moveq #DEV_SET_COLOR,d6
 	trap #0
-	moveq #6,d7						; frame buffer
+	move.l #$60000,d7						; frame buffer
 	trap #0
 	bra FINISH
 
@@ -1220,7 +1220,7 @@ POINT:
 	move.l (sp)+,d1
 	swap d1
 	swap d2
-	moveq #7,d7
+	move.l #$70000,d7
 	moveq #DEV_PLOT_POINT,d6
 	trap #0
 	bra FINISH
@@ -1251,7 +1251,7 @@ LINE:
 	swap d2
 	move.l (sp)+,d1	
 	swap d1
-	moveq #7,d7
+	move.l #$70000,d7
 	moveq #DEV_DRAW_LINE,d6
 	trap #0
 	bra FINISH
@@ -1288,7 +1288,7 @@ RECT:
 	swap d2
 	swap d3
 	swap d4
-	moveq #7,d7
+	move.l #$70000,d7
 	moveq #DEV_DRAW_RECTANGLE,d6
 	trap #0
 	bra FINISH
@@ -1326,7 +1326,7 @@ TRIANGLE:
 	swap d4
 	swap d5
 	swap d0
-	moveq #7,d7
+	move.l #$70000,d7
 	moveq #DEV_DRAW_TRIANGLE,d6
 	trap #0
 	bra FINISH
@@ -1378,7 +1378,7 @@ CURVE:
 	swap d4
 	swap d5
 	swap d0
-	moveq #7,d7
+	move.l #$70000,d7
 	moveq #DEV_DRAW_CURVE,d6
 	trap #0
 	bra FINISH

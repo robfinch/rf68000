@@ -1,3 +1,7 @@
+#include <stdio.h>
+#include <string.h>
+#include "..\inc\types.h"
+#include "..\inc\proto.h"
 
 // The text screen memory can only handle half-word transfers, hence the use
 // of memsetH, memcpyH.
@@ -14,7 +18,6 @@ extern int DBGAttr;
 extern void DispChar(register char ch);
 extern void puthexnum(int num, int wid, int ul, char padchar);
 extern void out32(unsigned long* port, unsigned long val);
-extern int get_coreno();
 extern unsigned long rbo(unsigned long);
 /*
 unsigned long rbo(unsigned long i)

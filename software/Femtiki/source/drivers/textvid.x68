@@ -32,6 +32,9 @@
 ; OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 ; OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ;                                                                          
+; Handle:
+;		d7.low word = tv_unit (screen number)
+;		d7.high word = device #
 ; ============================================================================
 
 ;	include "..\inc\const.x68"
@@ -41,8 +44,40 @@
 TEXTREG		equ	$FD080000
 TEXTREG_CURSOR_POS	equ $24
 
-textvid_dcb	equ _DeviceTable+160*2
+	section local_ram
+tv_inuse
+	ds.w	1
+	align 2
+tv_screen1	equ	*
+tv_dimen_x equ *-tv_screen1
+	ds.w	1
+tv_dimen_y equ *-tv_screen1
+	ds.w	1
+tv_fg_color equ *-tv_screen1
+	ds.l	1
+tv_bk_color equ *-tv_screen1
+	ds.l	1
+tv_bufptr equ *-tv_screen1
+	ds.l	1
+tv_bufsize equ *-tv_screen1
+	ds.l	1
+tv_outpos_x equ *-tv_screen1
+	ds.w	1
+tv_outpos_y equ *-tv_screen1
+	ds.w	1
+tv_inpos_x equ *-tv_screen1
+	ds.w	1
+tv_inpos_y equ *-tv_screen1
+	ds.w	1
+tv_unit equ *-tv_screen1
+	ds.b	1
 
+	rept 8
+	ds.b	32
+	endr
+
+	code
+	even
 ;------------------------------------------------------------------------------
 ;------------------------------------------------------------------------------
 ; Setup the text video device
@@ -65,8 +100,8 @@ TEXTVID_CMDTBL:
 	TBLE textvid_stat					; 3
 	TBLE textvid_stub					; 4 media check
 	TBLE textvid_stub					; 5 reserved
-	TBLE textvid_stub					; 6 open
-	TBLE textvid_stub					; 7 close
+	TBLE textvid_open					; 6 open
+	TBLE textvid_close				; 7 close
 	TBLE textvid_getchar			; 8 get char
 	TBLE textvid_stub					; 9 peek char
 	TBLE textvid_stub					; 10 get char direct
@@ -121,7 +156,7 @@ _textvid_cmdproc:
 textvid_cmdproc:
 	cmpi.b #55,d6
 	bhs.s .0001
-	movem.l d6/a0,-(a7)
+	movem.l d6/d7/a0/a3,-(a7)
 	ext.w d6
 	ext.l d6
 	lsl.w #1,d6
@@ -129,33 +164,40 @@ textvid_cmdproc:
 	move.w (a0,d6.w),d6
 	ext.l d6
 	add.l d6,a0
+	and.l #7,d7
+	lsl.l #5,d7											; size of variable set (32 bytes)
+	lea tv_screen1,a3
+	add.l d7,a3
 	jsr (a0)
-	movem.l (a7)+,d6/a0
+	movem.l (a7)+,d6/d7/a0/a3
 	rts
 .0001:
 	moveq #E_NotSupported,d0
 	rts
 	global _textvid_cmdproc
-	
+
 	align 2
 setup_textvid:
 textvid_setup:
 	movem.l d0/a0/a1,-(a7)
-	moveq #32,d0
-	lea.l textvid_dcb,a0
+	move.l d0,a0
+	move.l d0,a1
+	moveq #31,d0
 .0001:
-	clr.l (a0)+
+	clr.l (a1)+
 	dbra d0,.0001
-	move.l #$44434220,textvid_dcb+DCB_MAGIC				; 'DCB '
-	move.l #$54455854,textvid_dcb+DCB_NAME				; 'TEXTVID'
-	move.l #$56494400,textvid_dcb+DCB_NAME+4			;
-	move.l #textvid_cmdproc,textvid_dcb+DCB_CMDPROC
+	move.l #$44434220,DCB_MAGIC(a0)				; 'DCB '
+	move.l #$54455854,DCB_NAME(a0)				; 'TEXTVID'
+	move.l #$56494400,DCB_NAME+4(a0)			;
+	move.l #textvid_cmdproc,DCB_CMDPROC(a0)
+	clr.w tv_inuse
+	lea tv_screen1,a3
 	bsr textvid_init
 	jsr Delay3s
 	bsr textvid_clear
-	lea.l textvid_dcb+DCB_MAGIC,a1
-	jsr DisplayString
-	jsr CRLF
+	moveq #13,d0
+	lea.l DCB_MAGIC(a0),a1
+	trap #15
 	movem.l (a7)+,d0/a0/a1
 	rts
 
@@ -163,15 +205,11 @@ textvid_setup:
 textvid_init:
 	move.l d0,-(a7)
 	if (SCREEN_FORMAT==1)
-		move.l #$0000ff,fgColor		; set foreground / background color (white)
-		move.l #$000002,bkColor		; medium blue
-		move.l #$0000ff,textvid_dcb+DCB_FGCOLOR
-		move.l #$000002,textvid_dcb+DCB_BKCOLOR		; medium blue
+		move.l #$0000ff,tv_fg_color(a3)
+		move.l #$000002,tv_bk_color(a3)		; medium blue
 	else
-		move.l #$1fffff,fgColor		; set foreground / background color (white)
-		move.l #$00003f,bkColor		; medium blue
-		move.l #$1fffff,textvid_dcb+DCB_FGCOLOR		; set foreground / background color (white)
-		move.l #$00003f,textvid_dcb+DCB_BKCOLOR		; medium blue
+		move.l #$1fffff,tv_fg_color(a3)		; set foreground / background color (white)
+		move.l #$00003f,tv_bk_color(a3)		; medium blue
 	endif
 	movec.l	coreno,d0					; get core number (2 to 9)
 	subi.b #2,d0							; adjust (0 to 7)
@@ -185,24 +223,21 @@ textvid_init:
 	else
 		addi.l #$FD000000,d0
 	endif
-	move.l d0,textvid_dcb+DCB_INBUFPTR
-	move.l d0,textvid_dcb+DCB_OUTBUFPTR
-	move.l d0,TextScr
+	move.l d0,tv_bufptr(a3)
+;	move.l d0,TextScr
 	if (SCREEN_FORMAT==1)
-		move.l #TEXTROW*TEXTCOL*4,textvid_dcb+DCB_INBUFSIZE
-		move.l #TEXTROW*TEXTCOL*4,textvid_dcb+DCB_OUTBUFSIZE
+		move.l #TEXTROW*TEXTCOL*4,tv_bufsize(a3)
 	else
-		move.l #TEXTROW*TEXTCOL*8,textvid_dcb+DCB_INBUFSIZE
-		move.l #TEXTROW*TEXTCOL*8,textvid_dcb+DCB_OUTBUFSIZE
+		move.l #TEXTROW*TEXTCOL*8,tv_bufsize(a3)
 	endif
-	move.l #TEXTCOL,textvid_dcb+DCB_OUTDIMX	; set rows and columns
-	move.l #TEXTROW,textvid_dcb+DCB_OUTDIMY
-	move.l #TEXTCOL,textvid_dcb+DCB_INDIMX		; set rows and columns
-	move.l #TEXTROW,textvid_dcb+DCB_INDIMY
-	move.b #TEXTCOL,TextCols				; set rows and columns
-	move.b #TEXTROW,TextRows
-	clr.l textvid_dcb+DCB_OUTPOSX
-	clr.l textvid_dcb+DCB_OUTPOSY
+	move.w #TEXTCOL,tv_dimen_x(a3)			; set rows and columns
+	move.w #TEXTROW,tv_dimen_y(a3)
+;	move.b #TEXTCOL,TextCols				; set rows and columns
+;	move.b #TEXTROW,TextRows
+	clr.w tv_inpos_x(a3)
+	clr.w tv_inpos_y(a3)
+	clr.w tv_outpos_x(a3)
+	clr.w tv_outpos_y(a3)
 	move.l (a7)+,d0
 	rts
 
@@ -220,11 +255,12 @@ textvid_is_removeable:
 	align 2
 textvid_getchar:
 	movem.l d2/a0,-(sp)
-	move.l textvid_dcb+DCB_INBUFPTR,a0
-	move.l textvid_dcb+DCB_INPOSX,d0
-	move.l textvid_dcb+DCB_INPOSY,d1
-	move.l textvid_dcb+DCB_INDIMX,d2
+	move.w tv_bufptr(a3),a0
+	move.w tv_inpos_x(a3),d0
+	move.w tv_inpos_y(a3),d1
+	move.w tv_dimen_x(a3),d2
 	mulu d1,d2
+	ext.l d0
 	add.l d0,d2
 	if (SCREEN_FORMAT==1)
 		lsl.l #2,d2
@@ -249,51 +285,54 @@ textvid_stub:
 
 	align 2
 textvid_get_inpos:
-	move.l textvid_dcb+DCB_INPOSX,d1
-	move.l textvid_dcb+DCB_INPOSY,d2
-	move.l textvid_dcb+DCB_INPOSZ,d3
+	clr.l d1
+	clr.l d2
+	move.w tv_inpos_x(a3),d1
+	move.w tv_inpos_y(a3),d2
+	clr.l d3
 	move.l #E_Ok,d0
 	rts
 
 	align 2
 textvid_set_inpos:
-	move.l d1,textvid_dcb+DCB_INPOSX
-	move.l d2,textvid_dcb+DCB_INPOSY
-	move.l d3,textvid_dcb+DCB_INPOSZ
+	move.w d1,tv_inpos_x(a3)
+	move.w d2,tv_inpos_y(a3)
 	move.l #E_Ok,d0
 	rts
 
 	align 2
 textvid_set_outpos:
-	move.l d1,textvid_dcb+DCB_OUTPOSX
-	move.l d2,textvid_dcb+DCB_OUTPOSY
-	move.l d3,textvid_dcb+DCB_OUTPOSZ
+	move.w d1,tv_outpos_x(a3)
+	move.w d2,tv_outpos_y(a3)
 	bsr SyncCursor
 	move.l #E_Ok,d0
 	rts
 
 	align 2
 textvid_get_outpos:
-	move.l textvid_dcb+DCB_OUTPOSX,d1
-	move.l textvid_dcb+DCB_OUTPOSY,d2
-	move.l textvid_dcb+DCB_OUTPOSZ,d3
+	clr.l d1
+	clr.l d2
+	move.w tv_outpos_x(a3),d1
+	move.w tv_outpos_y(a3),d2
+	clr.l d3
 	move.l #E_Ok,d0
 	rts
 
 	align 2
 textvid_get_outptr:
 	move.l d2,-(a7)
-	move.l textvid_dcb+DCB_OUTPOSX,d1
-	move.l textvid_dcb+DCB_OUTPOSY,d0
-	move.l textvid_dcb+DCB_OUTDIMX,d2
+	move.w tv_outpos_x(a3),d1
+	move.w tv_outpos_y(a3),d0
+	move.w tv_dimen_x(a3),d2
 	mulu d2,d0
+	ext.l d1
 	add.l d0,d1
 	if (SCREEN_FORMAT==1)
 		lsl.l #2,d1
 	else
 		lsl.l #3,d1
 	endif
-	add.l textvid_dcb+DCB_OUTBUFPTR,d1
+	add.l tv_bufptr(a3),d1
 	move.l (a7)+,d2
 	move.l #E_Ok,d0
 	rts
@@ -301,38 +340,39 @@ textvid_get_outptr:
 	align 2
 textvid_get_inptr:
 	move.l d2,-(a7)
-	move.l textvid_dcb+DCB_INPOSX,d1
-	move.l textvid_dcb+DCB_INPOSY,d0
-	move.l textvid_dcb+DCB_INDIMX,d2
+	move.w tv_inpos_x(a3),d1
+	move.w tv_inpos_y(a3),d0
+	move.w tv_dimen_x(a3),d2
 	mulu d2,d0
+	ext.l d1
 	add.l d0,d1
 	if (SCREEN_FORMAT==1)
 		lsl.l #2,d1
 	else
 		lsl.l #3,d1
 	endif
-	add.l textvid_dcb+DCB_INBUFPTR,d1
+	add.l tv_bufptr(a3),d1
 	move.l (a7)+,d2
 	move.l #E_Ok,d0
 	rts
 
 	align 2
 textvid_get_color:
-	move.l textvid_dcb+DCB_FGCOLOR,d1
-	move.l textvid_dcb+DCB_BKCOLOR,d2
+	move.l tv_fg_color(a3),d1
+	move.l tv_bk_color(a3),d2
 	move.l #E_Ok,d0
 	rts
 
 	align 2
 textvid_getbuf1:
-	move.l textvid_dcb+DCB_OUTBUFPTR,d1
-	move.l textvid_dcb+DCB_OUTBUFSIZE,d2
+	move.l tv_bufptr(a3),d1
+	move.l tv_bufsize(a3),d2
 	move.l #E_Ok,d0
 	rts
 
 	align 2
 textvid_set_unit:
-	move.l d1,textvid_dcb+DCB_UNIT
+	move.b d1,tv_unit
 	move.l #E_Ok,d0
 	rts
 
@@ -340,15 +380,46 @@ textvid_set_unit:
 textvid_get_dimen:
 	cmpi.b #0,d0
 	bne.s .0001
-	move.l textvid_dcb+DCB_OUTDIMX,d1
-	move.l textvid_dcb+DCB_OUTDIMY,d2
-	move.l textvid_dcb+DCB_OUTDIMZ,d3
+	clr.l d1
+	clr.l d2
+	move.w tv_dimen_x(a3),d1
+	move.w tv_dimen_y(a3),d2
+	clr.l d3
 	move.l #E_Ok,d0
 	rts
 .0001:
-	move.l textvid_dcb+DCB_INDIMX,d1
-	move.l textvid_dcb+DCB_INDIMY,d2
-	move.l textvid_dcb+DCB_INDIMZ,d3
+	clr.l d1
+	clr.l d2
+	move.w tv_dimen_x(a3),d1
+	move.w tv_dimen_y(a3),d2
+	clr.l d3
+	move.l #E_Ok,d0
+	rts
+
+; Returns:
+;		d1 = tv_unit number
+;		d0 = E_Ok if available, otherwise E_NoDev
+
+textvid_open:
+	moveq #0,d1
+	move.w tv_inuse,d0
+.0002
+	bset.l d1,d0
+	beq.s .0001
+	addq.l #1,d1
+	cmpi.b #8,d1
+	blo.s .0002
+	moveq #E_NoDev,d0
+	rts
+.0001
+	move.w d0,tv_inuse
+	move.l #E_Ok,d0
+	rts
+
+textvid_close:
+	move.w tv_inuse,d0
+	bclr d1,d0
+	move.w d0,tv_inuse
 	move.l #E_Ok,d0
 	rts
 
@@ -363,8 +434,8 @@ textvid_clear:
 	swap d0	
 ;	moveq		#SCREEN_SEMA,d1
 ;	bsr			LockSemaphore
-	move.l textvid_dcb+DCB_OUTBUFPTR,d1
-	move.l textvid_dcb+DCB_OUTBUFSIZE,d2
+	move.l tv_bufptr(a3),d1
+	move.l tv_bufsize(a3),d2
 	move.l #$FEFEFEFE,leds
 	move.l d1,a0								; a0 = pointer to screen area
 	move.l d2,d4
@@ -373,8 +444,8 @@ textvid_clear:
 	else
 		lsr.l #3,d4									; number of cells to clear
 	endif
-	move.l textvid_dcb+DCB_FGCOLOR,d1
-	move.l textvid_dcb+DCB_BKCOLOR,d2
+	move.l tv_fg_color(a3),d1
+	move.l tv_bk_color(a3),d2
 	move.l #$FDFDFDFD,leds
 ;	bsr	get_screen_color				; get the color bits
 	if (SCREEN_FORMAT==1)
@@ -427,8 +498,8 @@ loop3:
 	align 2
 get_screen_color:
 	move.l d2,-(a7)
-	move.l textvid_dcb+DCB_FGCOLOR,d1
-	move.l textvid_dcb+DCB_BKCOLOR,d2
+	move.l tv_fg_color(a3),d1
+	move.l tv_bk_color(a3),d2
 	if (SCREEN_FORMAT==1)
 		lsl.l #8,d1							; foreground color in bits 8 to 15
 		andi.w #$ff,d2
@@ -458,17 +529,18 @@ get_screen_color:
 	align 2
 CalcScreenLoc:
 	movem.l d0/d1/d5,-(a7)
-	move.l textvid_dcb+DCB_OUTPOSX,d0
-	move.l textvid_dcb+DCB_OUTPOSY,d5
-	move.l textvid_dcb+DCB_OUTDIMX,d1
+	move.w tv_outpos_x(a3),d0
+	move.w tv_outpos_y(a3),d5
+	move.w tv_dimen_x(a3),d1
 	mulu d1,d5							; y * num cols
+	ext.l d5
 	add.l d5,d0							; plus x
 	if (SCREEN_FORMAT==1)
 		asl.l #2,d0							; 4 bytes per char
 	else
 		asl.l	#3,d0							; 8 bytes per char
 	endif
-	move.l textvid_dcb+DCB_OUTBUFPTR,a0
+	move.l tv_bufptr(a3),a0
 	add.l	d0,a0								; a0 = screen location
 	movem.l (a7)+,d0/d1/d5
 	rts
@@ -554,13 +626,14 @@ textvid_putchar:
 	movem.l	d1/d2/d3,-(a7)
 	movec	coreno,d2
 	cmpi.l #2,d2
+	move.b d2,leds
 ;	bne.s		.0001
 ;	bsr			SerialPutChar
 .0001:
 	andi.l #$ff,d1				; zero out upper bytes of d1
 	cmpi.b #13,d1				; carriage return ?
 	bne.s	dccr
-	clr.l	textvid_dcb+DCB_OUTPOSX	; just set cursor column to zero on a CR
+	clr.w	tv_outpos_x(a3)		; just set cursor column to zero on a CR
 dcx14:
 	bsr	SyncCursor				; set position in text controller
 dcx7:
@@ -570,44 +643,44 @@ dcx7:
 dccr:
 	cmpi.b #$91,d1			; cursor right ?
 	bne.s dcx6
-	move.l textvid_dcb+DCB_OUTDIMX,d2
-	subq.l #1,d2
-	sub.l	textvid_dcb+DCB_OUTPOSX,d2
+	move.w tv_dimen_x(a3),d2
+	subq.w #1,d2
+	sub.w	tv_outpos_x(a3),d2
 	beq.s	dcx7
-	addq.l #1,textvid_dcb+DCB_OUTPOSX
+	addq.w #1,tv_outpos_x(a3)
 	bra.s dcx14
 dcx6:
 	cmpi.b #$90,d1			; cursor up ?
 	bne.s	dcx8
-	tst.l textvid_dcb+DCB_OUTPOSY
+	tst.w tv_outpos_y(a3)
 	beq.s	dcx7
-	subq.l #1,textvid_dcb+DCB_OUTPOSY
+	subq.w #1,tv_outpos_y(a3)
 	bra.s	dcx14
 dcx8:
 	cmpi.b #$93,d1			; cursor left?
 	bne.s	dcx9
-	tst.l textvid_dcb+DCB_OUTPOSX
+	tst.w tv_outpos_x(a3)
 	beq.s	dcx7
-	subq.l #1,textvid_dcb+DCB_OUTPOSX
+	subq.w #1,tv_outpos_x(a3)
 	bra.s	dcx14
 dcx9:
 	cmpi.b #$92,d1			; cursor down ?
 	bne.s	dcx10
-	move.l textvid_dcb+DCB_OUTDIMY,d2
-	subq.l #1,d2
-	cmp.l	textvid_dcb+DCB_OUTPOSY,d2
+	move.w tv_dimen_y(a3),d2
+	subq.w #1,d2
+	cmp.w	tv_outpos_y(a3),d2
 	beq.s	dcx7
-	addq.l #1,textvid_dcb+DCB_OUTPOSY
+	addq.w #1,tv_outpos_y(a3)
 	bra.s	dcx14
 dcx10:
 	cmpi.b #$94,d1			; cursor home ?
 	bne.s	dcx11
-	tst.l	textvid_dcb+DCB_OUTPOSX
+	tst.w	tv_outpos_x(a3)
 	beq.s	dcx12
-	clr.l	textvid_dcb+DCB_OUTPOSX
+	clr.w	tv_outpos_x(a3)
 	bra	dcx14
 dcx12:
-	clr.l	textvid_dcb+DCB_OUTPOSY
+	clr.w	tv_outpos_y(a3)
 	bra	dcx14
 dcx11:
 	movem.l	a0,-(a7)
@@ -655,9 +728,9 @@ dcx4:
 	; CTRL-H: backspace
 	;---------------------------
 doBackspace:
-	tst.l	textvid_dcb+DCB_OUTPOSX		; if already at start of line
+	tst.w	tv_outpos_x(a3)				; if already at start of line
 	beq.s dcx4						; nothing to do
-	subq.l #1,textvid_dcb+DCB_OUTPOSX		; decrement column
+	subq.w #1,tv_outpos_x(a3)		; decrement column
 
 	;---------------------------
 	; Delete key
@@ -665,7 +738,7 @@ doBackspace:
 doDelete:
 	movem.l	d0/d1/a0,-(a7)	; save off screen location
 	bsr	CalcScreenLoc				; a0 = screen location
-	move.l textvid_dcb+DCB_OUTPOSX,d0
+	move.w tv_outpos_x(a3),d0
 .0001:
 	if (SCREEN_FORMAT==1)
 		move.l 4(a0),(a0)				; pull remaining characters on line over 1
@@ -675,8 +748,8 @@ doDelete:
 		move.l 12(a0),4(a0)
 		adda.l #8,a0
 	endif
-	addq.l #1,d0
-	cmp.l	textvid_dcb+DCB_OUTDIMX,d0
+	addq.w #1,d0
+	cmp.w	tv_dimen_x(a3),d0
 	blo.s	.0001
 	bsr	get_screen_color
 	if (SCREEN_FORMAT==1)
@@ -699,8 +772,8 @@ doDelete:
 	; CTRL-X: erase line
 	;---------------------------
 doCtrlX:
-	clr.l	textvid_dcb+DCB_OUTPOSX			; Reset cursor to start of line
-	move.l textvid_dcb+DCB_OUTDIMX,d0	; and display TextCols number of spaces
+	clr.w	tv_outpos_x(a3)			; Reset cursor to start of line
+	move.w tv_dimen_x(a3),d0	; and display TextCols number of spaces
 	ext.w	d0
 	ext.l	d0
 	move.b #' ',d1			; d1 = space char
@@ -711,7 +784,7 @@ doCtrlX:
 	bsr	textvid_putchar
 	subq #1,d0
 	bne.s	.0001
-	clr.l	textvid_dcb+DCB_OUTPOSX			; now really go back to start of line
+	clr.w	tv_outpos_x(a3)			; now really go back to start of line
 	bra	dcx16						; we're done
 
 ;------------------------------------------------------------------------------
@@ -719,19 +792,19 @@ doCtrlX:
 ;------------------------------------------------------------------------------
 
 IncCursorPos:
-	addq.l #1,textvid_dcb+DCB_OUTPOSX
-	move.l textvid_dcb+DCB_OUTDIMX,d0
-	cmp.l	textvid_dcb+DCB_OUTPOSX,d0
+	addq.w #1,tv_outpos_x(a3)
+	move.w tv_dimen_x(a3),d0
+	cmp.w	tv_outpos_x(a3),d0
 	bhs.s	icc1
-	clr.l textvid_dcb+DCB_OUTPOSX
+	clr.w tv_outpos_x(a3)
 IncCursorRow:
-	addq.l #1,textvid_dcb+DCB_OUTPOSY
-	move.l textvid_dcb+DCB_OUTDIMY,d0
-	cmp.l textvid_dcb+DCB_OUTPOSY,d0
+	addq.w #1,tv_outpos_y(a3)
+	move.w tv_dimen_y(a3),d0
+	cmp.w tv_outpos_y(a3),d0
 	bhi.s	icc1
-	move.l textvid_dcb+DCB_OUTDIMY,d0
-	move.l d0,textvid_dcb+DCB_OUTPOSY		; in case CursorRow is way over
-	subq.l #1,textvid_dcb+DCB_OUTPOSY
+	move.w tv_dimen_y(a3),d0
+	move.w d0,tv_outpos_y(a3)		; in case CursorRow is way over
+	subq.w #1,tv_outpos_y(a3)
 	bsr	ScrollUp
 	bsr SyncCursor
 icc1
@@ -739,19 +812,19 @@ icc1
 
 IncInputPos:
 	move.l d0,-(sp)
-	addq.l #1,textvid_dcb+DCB_INPOSX
-	move.l textvid_dcb+DCB_INDIMX,d0
-	cmp.l	textvid_dcb+DCB_INPOSX,d0
+	addq.w #1,tv_inpos_x(a3)
+	move.w tv_dimen_x(a3),d0
+	cmp.w	tv_inpos_x(a3),d0
 	bhs.s	icc2
-	clr.l textvid_dcb+DCB_INPOSX
+	clr.w tv_inpos_x(a3)
 IncInputRow:
-	addq.l #1,textvid_dcb+DCB_INPOSY
-	move.l textvid_dcb+DCB_INDIMY,d0
-	cmp.l textvid_dcb+DCB_INPOSY,d0
+	addq.w #1,tv_inpos_y(a3)
+	move.w tv_dimen_y(a3),d0
+	cmp.w tv_inpos_y(a3),d0
 	bhi.s	icc2
-	move.l textvid_dcb+DCB_INDIMY,d0
-	move.l d0,textvid_dcb+DCB_INPOSY		; in case CursorRow is way over
-	subq.l #1,textvid_dcb+DCB_INPOSY
+	move.w tv_dimen_y(a3),d0
+	move.w d0,tv_inpos_y(a3)		; in case CursorRow is way over
+	subq.w #1,tv_inpos_y(a3)
 icc2
 	move.l (sp)+,d0
 	rts
@@ -767,11 +840,12 @@ ScrollUp:
 	swap d0	
 	moveq	#SCREEN_SEMA,d1
 	bsr	LockSemaphore
-	move.l textvid_dcb+DCB_OUTBUFPTR,a0
+	move.l tv_bufptr(a3),a0
 	move.l a0,a5								; a5 = pointer to text screen
 .0003:								
-	move.l textvid_dcb+DCB_OUTDIMX,d0					; d0 = columns
-	move.l textvid_dcb+DCB_OUTDIMY,d1					; d1 = rows
+	move.w tv_dimen_x(a3),d0					; d0 = columns
+	move.w tv_dimen_y(a3),d1					; d1 = rows
+	ext.l d0
 	if (SCREEN_FORMAT==1)
 		asl.l	#2,d0								; make into cell index
 	else
@@ -783,7 +857,7 @@ ScrollUp:
 	else
 		lsr.l	#3,d0								; get back d0
 	endif
-	subq.l #1,d1									; number of rows-1
+	subq.w #1,d1									; number of rows-1
 	mulu d1,d0									; d0 = count of characters to move
 	if (SCREEN_FORMAT==1)
 	else
@@ -809,10 +883,10 @@ BlankLastLine:
 	swap d0	
 	moveq	#SCREEN_SEMA,d1
 	bsr	LockSemaphore
-	move.l textvid_dcb+DCB_OUTBUFPTR,a0
-	move.l textvid_dcb+DCB_OUTDIMX,d0					; d0 = columns
-	move.l textvid_dcb+DCB_OUTDIMY,d1					; d1 = rows
-	subq #1,d1									; last row = #rows-1
+	move.l tv_bufptr(a3),a0
+	move.w tv_dimen_x(a3),d0					; d0 = columns
+	move.w tv_dimen_y(a3),d1					; d1 = rows
+	subq.w #1,d1									; last row = #rows-1
 	mulu d1,d0									; d0 = index of last line
 	if (SCREEN_FORMAT==1)
 		lsl.l	#2,d0								; *4 bytes per char
@@ -820,13 +894,13 @@ BlankLastLine:
 		lsl.l	#3,d0								; *8 bytes per char
 	endif
 	lea	(a0,d0.l),a0						; point a0 to last row
-	move.l textvid_dcb+DCB_OUTDIMX,d2					; number of text cells to clear
-	subq.l #1,d2								; count must be one less than desired
+	move.w tv_dimen_x(a3),d2					; number of text cells to clear
+	subq.w #1,d2								; count must be one less than desired
 	bsr	get_screen_color				; d0,d1 = screen color
 	if (SCREEN_FORMAT==1)
-		move.w #32,d0
+		move.l #32,d0
 	else
-		move.w #32,d0								; set the character for display in low 16 bits
+		move.l #32,d0								; set the character for display in low 16 bits
 	endif
 	rol.w	#8,d0
 	swap d0
@@ -860,9 +934,8 @@ BlankLastLine:
 
 	align 2
 HomeCursor:
-	clr.l textvid_dcb+DCB_OUTPOSX
-	clr.l textvid_dcb+DCB_OUTPOSY
-	clr.l textvid_dcb+DCB_OUTPOSZ
+	clr.w tv_outpos_x(a3)
+	clr.w tv_outpos_y(a3)
 	bra SyncCursor
 
 ;------------------------------------------------------------------------------
@@ -886,10 +959,11 @@ SyncCursor:
 	cmp.l	IOFocus,d0
 ;	cmp.l #2,d0
 	bne.s .0001
-	move.l textvid_dcb+DCB_OUTPOSX,d0
-	move.l textvid_dcb+DCB_OUTPOSY,d1
-	move.l textvid_dcb+DCB_OUTDIMX,d2
+	move.w tv_outpos_x(a3),d0
+	move.w tv_outpos_y(a3),d1
+	move.w tv_dimen_x(a3),d2
 	mulu d1,d2
+	ext.l d0
 	add.l d0,d2
 	rol.w	#8,d2					; swap byte order
 	swap d2

@@ -24,11 +24,13 @@ LFLAGS = -bvobj-be
 ASMS =    inout.asm \
 					putnum.asm \
 					open.asm \
+					_time.c \
 					lib.x68
 
 OUT =     inout.o \
 					putnum.o \
 					open.o \
+					_time.o \
           lib.o
            
 LIB:

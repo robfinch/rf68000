@@ -437,15 +437,18 @@ start:
 ;	clr.l	(a0)+								; clear the memory area
 ;	dbra d0,.0111
 	move.b #5,leds
-	move.b #1,InputDevice			; select keyboard input
-	move.b #2,OutputDevice		; select text screen output
+	move.l #$10000,InputDevice			; select keyboard input
+	move.l #$20000,OutputDevice		; select text screen output
+	move.l #_DeviceTable+2*DCB_SIZE,d0
 	jsr setup_textvid
 	bsr test_scratchpad_ram
 	move.b #3,leds
 	jsr setup_null
 	move.b #4,leds
+	move.l #_DeviceTable+1*DCB_SIZE,d0
 	jsr setup_keybd
 	move.b #6,leds
+	move.l #_DeviceTable+5*DCB_SIZE,d0
 	jsr setup_serial
 	move.b #7,leds
 	movec.l	coreno,d0					; get core number
@@ -480,7 +483,7 @@ start:
 	bsr Delay3s
 	bsr AudioTestOff
 ;	bsr	Delay3s						; give devices time to reset
-;	moveq #2,d7					; device 2
+;	move.l #$20000,d7					; device 2
 ;	moveq #DEV_CLEAR,d6	; clear
 ;	trap #0
 ;	bsr	textvid_clear
@@ -523,7 +526,9 @@ start_other:
 	bsr			Delay3s2						; need time for system setup (io_bitmap etc.)
 	bsr			Delay3s2						; need time for system setup (io_bitmap etc.)
 	bsr			Delay3s2						; need time for system setup (io_bitmap etc.)
-	move.l #2,d7
+.0001
+	move.l #$20000,d7
+	bra.s .0001
 	move.l #DEV_CLEAR,d6
 	trap #0
 	movec		coreno,d1
@@ -869,7 +874,7 @@ InitMMU:
 ; Device drivers
 ;------------------------------------------------------------------------------
 
-	include "..\Femtiki\source\kernel\Femtiki_vars.x68"
+;	include "..\Femtiki\source\kernel\Femtiki_vars.x68"
 	include "..\Femtiki\source\drivers\null.x68"
 	include "..\Femtiki\source\drivers\keybd.x68"
 	include "..\Femtiki\source\drivers\textvid.x68"
@@ -1294,7 +1299,7 @@ set_graphics_mode:
 
 get_screen_address:
 	movem.l d0/d1/d2/d6/d7,-(a7)
-	moveq #2,d7
+	move.l #$20000,d7
 	moveq #DEV_GETBUF1,d6
 	trap #0
 	move.l d1,a0
@@ -1548,7 +1553,7 @@ T15GetWindowSize:
 ;------------------------------------------------------------------------------
 
 GRBufferToScreen:
-	move.l #6,d7						; framebuffer device
+	move.l #$60000,d7						; framebuffer device
 	move.l #DEV_SWAPBUF,d6	; swap buffers
 	trap #0
 	rts
@@ -1579,14 +1584,14 @@ GRBufferToScreen:
 TestBitmap:
 ;	move.w #$0700,pen_color		; dark blue
 	move.w #$0700,framebuf_dcb+DCB_BKCOLOR
-	move.l #6,d7
+	move.l #$60000,d7
 	move.l #DEV_CLEAR,d6
 	trap #0
 ;	bsr clear_bitmap_screen4
 	moveq #94,d0							; page flip (display blank screen)
 	trap #15
 	move.w #$007c,pen_color		; red pen
-	moveq #6,d7
+	move.l #$60000,d7
 	moveq #DEV_SET_OUTPOS,d6
 	moveq #0,d1
 	moveq #1,d2
@@ -1775,7 +1780,7 @@ DrawToXY:
 
 DrawHorizTo:
 	movem.l d1/d2/d5,-(a7)
-	moveq #6,d7
+	move.l #$60000,d7
 	moveq #DEV_GET_OUTPOS,d6
 	trap #0
 	move.l #1,d5			; assume increment
@@ -1783,18 +1788,18 @@ DrawHorizTo:
 	bhi.s .0001
 	neg.l d5					; switch to decrement
 .0001:
-	moveq #6,d7
+	move.l #$60000,d7
 ;	moveq #DEV_WRITEAT,d6
 	trap #0
 	cmp.l d1,d3
 	beq.s .0002
 	add.l d5,d1
-	moveq #6,d7
+	move.l #$60000,d7
 	moveq #DEV_SET_OUTPOS,d6
 	trap #0
 	bra.s .0001
 .0002:
-	moveq #6,d7
+	move.l #$60000,d7
 	moveq #DEV_SET_OUTPOS,d6	; update output position
 	trap #0
 	movem.l (a7)+,d1/d2/d5
@@ -1870,7 +1875,7 @@ T15Cursor:
 	cmpi.w #$FF00,d1					; clear screen request?
 	beq.s .0003
 	movem.l d2/d3/d6/d7,-(sp)
-	moveq #2,d7
+	move.l #$20000,d7
 	moveq #DEV_GET_OUTPOS,d6
 	moveq #0,d3
 	btst.l #0,d1
@@ -1886,7 +1891,7 @@ T15Cursor:
 	rts
 .0003
 	movem.l d0/d1/d2/d3/d6/d7,-(a7)
-	moveq #2,d7
+	move.l #$20000,d7
 	moveq #DEV_CLEAR,d6	; clear screen
 	trap #0
 	moveq #DEV_SET_OUTPOS,d6
@@ -1897,7 +1902,7 @@ T15Cursor:
 	movem.l (a7)+,d0/d1/d2/d3/d6/d7
 	rts
 .0002
-	moveq #2,d7
+	move.l #$20000,d7
 	moveq #DEV_SET_OUTPOS,d6
 	btst #16,d1
 	beq.s .0005
@@ -2118,7 +2123,7 @@ Prompt3:
 ; Process the screen line that the CR was keyed on
 
 Prompt1:
-	moveq #2,d7
+	move.l #$20000,d7
 	moveq #DEV_GET_OUTPOS,d6
 	trap #0
 ;	clr.b	CursorCol				; go back to the start of the line
@@ -2184,7 +2189,7 @@ cmdVideoMode:
 	cmpi.b #0,d1
 	bne.s .0001
 	bsr set_text_mode
-	move.l #2,d7
+	move.l #$20000,d7
 	move.l #DEV_CLEAR,d6
 	trap #0
 	bra Monitor
@@ -2901,42 +2906,42 @@ ExecuteCode:
 
 cmdGrDemo:
 	move.l #$00008888,d1		; 32 bpp
-	moveq #6,d7							; framebuf device
+	move.l #$60000,d7							; framebuf device
 	moveq #DEV_SET_COLOR_DEPTH,d6
 	trap #0
-	moveq #7,d7							; same for graphics accelerator device
+	move.l #$70000,d7							; same for graphics accelerator device
 	trap #0
 	move.l #$00110001,d1		; enable, scale 1 clocks/scanlines per pixel, page zero
 ;	move.l d1,FRAMEBUF+FRAMEBUF_CTRL
 	move.l #$0F000063,d1		; burst length of 100, interval of F00h
 	move.l d1,FRAMEBUF+FRAMEBUF_CTRL+4		
-	moveq #6,d7							; framebuf device
+	move.l #$60000,d7							; framebuf device
 	moveq #DEV_SET_DIMEN,d6
 	moveq #0,d0
 	move.l #VIDEO_X,d1
 	move.l #VIDEO_Y,d2
 	move.l #0,d3
 	trap #0
-	moveq #7,d7							; same for graphics accelerator device
+	move.l #$70000,d7							; same for graphics accelerator device
 	trap #0
-;	moveq #6,d7
+;	move.l #$60000,d7
 ;	moveq #2,d0							; set window dimensions
 ;	trap #0
 	; Set destination buffer #0
-	moveq #7,d7
+	move.l #$70000,d7
 	moveq #DEV_SET_DESTBUF,d6	; write to buffer 0
 	moveq #0,d1
 	trap #0
-	moveq #7,d7
+	move.l #$70000,d7
 	moveq #DEV_SET_COLOR,d6
 	moveq #0,d1
 	trap #0
 	; Clear the screen
-	moveq #7,d7
+	move.l #$70000,d7
 	moveq #DEV_CLEAR,d6
 	trap #0
 	; Now display the clear screen
-	moveq #6,d7
+	move.l #$60000,d7
 	moveq #DEV_SET_DISPBUF,d6
 	moveq #0,d1							; display buffer 0
 	trap #0
@@ -2965,7 +2970,7 @@ cmdGrDemo:
 ;	bra Monitor
 plot_rand_points:
 	move.l #$7F127F12,d1
-	moveq #7,d7
+	move.l #$70000,d7
 	moveq #DEV_SET_COLOR,d6
 	trap #0
 	move.l #10000,d5
@@ -2991,12 +2996,12 @@ plot_rand_points:
 
 ;clear_graphics_screen:
 ;	move.l #0,d1
-;	moveq #6,d7
+;	move.l #$60000,d7
 ;	moveq #DEV_SET_COLOR,d6		; set color in frame buffer
 ;	trap #0
-;	moveq #7,d7								; and in graphics accelerator
+;	move.l #$70000,d7								; and in graphics accelerator
 ;	trap #0
-;	moveq #6,d7								; clear frame buffer
+;	move.l #$60000,d7								; clear frame buffer
 ;	moveq #DEV_CLEAR,d6
 ;	trap #0
 ;	moveq #DEV_SWAPBUF,d6			; and display it
@@ -3074,7 +3079,7 @@ wait1ms:
 
 white_rect:
 	move.l #$FFFFFFFF,d1
-	moveq #7,d7
+	move.l #$70000,d7
 	moveq #DEV_SET_COLOR,d6
 	trap #0
 	move.l #100<<16,d1
@@ -3090,7 +3095,7 @@ white_rect:
 rand_points:
 	move.l #30000,d5
 .0004:
-	moveq #7,d7
+	move.l #$70000,d7
 	moveq #DEV_SET_COLOR,d6
 	bsr RandGetNum
 	trap #0
@@ -3102,7 +3107,7 @@ rand_points:
 	bsr RandGetNum
 	andi.l #$0FFFF,d1
 	mulu #VIDEO_X,d1
-	moveq #7,d7
+	move.l #$70000,d7
 	moveq #DEV_PLOT_POINT,d6
 	trap #0
 	bsr wait1ms
@@ -3115,7 +3120,7 @@ rand_lines:
 .0006:
 	move.l d5,-(sp)
 	jsr CheckForCtrlC
-	moveq #7,d7
+	move.l #$70000,d7
 	moveq #DEV_SET_COLOR,d6
 	bsr RandGetNum
 	trap #0
@@ -3142,7 +3147,7 @@ rand_lines:
 	bsr RandGetNum
 	andi.l #$0FFFF,d1
 	mulu #VIDEO_X,d1
-	moveq #7,d7
+	move.l #$70000,d7
 	moveq #DEV_DRAW_LINE,d6
 	trap #0
 	bsr wait1ms
@@ -3156,7 +3161,7 @@ rand_rect:
 .0006:
 	move.l d5,-(sp)
 	jsr CheckForCtrlC
-	moveq #7,d7
+	move.l #$70000,d7
 	moveq #DEV_SET_COLOR,d6
 	bsr RandGetNum
 	trap #0
@@ -3183,7 +3188,7 @@ rand_rect:
 	bsr RandGetNum
 	andi.l #$0FFFF,d1
 	mulu #VIDEO_X,d1
-	moveq #7,d7
+	move.l #$70000,d7
 	moveq #DEV_DRAW_RECTANGLE,d6
 	trap #0
 	bsr wait1ms
@@ -3219,7 +3224,7 @@ rand_triangle:
 .0006
 	move.l d7,-(sp)
 	jsr CheckForCtrlC
-	moveq #7,d7
+	move.l #$70000,d7
 	moveq #DEV_SET_COLOR,d6
 	bsr RandGetNum
 	trap #0
@@ -3259,7 +3264,7 @@ rand_triangle:
 	andi.l #$0FFFF,d1
 	mulu #VIDEO_X,d1
 	move.l #$400,a4			; triangle draw
-	moveq #7,d7
+	move.l #$70000,d7
 	moveq #DEV_DRAW_TRIANGLE,d6
 	trap #0
 	bsr wait1ms
@@ -3272,6 +3277,7 @@ rand_curve:
 .0006:
 	move.l d7,-(sp)
 	jsr CheckForCtrlC
+	move.l #$70000,d7
 	moveq #DEV_SET_COLOR,d6
 	bsr RandGetNum
 	trap #0
@@ -3310,7 +3316,7 @@ rand_curve:
 	bsr RandGetNum
 	andi.l #$0FFFF,d1
 	mulu #VIDEO_X,d1
-	moveq #7,d7
+	move.l #$70000,d7
 	move.l #$0C00,a4						; curve draw
 	moveq #DEV_DRAW_CURVE,d6
 	move.l (sp)+,d7
@@ -3751,7 +3757,7 @@ BouncingBalls:
 GraphicsDemo:
 	rts
 ClearScreen:
-	move.l #2,d7
+	move.l #$20000,d7
 	move.l #DEV_CLEAR,d6
 	trap #0
 	rts
@@ -4578,21 +4584,25 @@ T15FloatToString:
 
 ;==============================================================================
 ; Parameters:
-;		d7 = device number
+;		d7 = device handle, d7.high word = device number
 ;		d6 = function number
 ;		d0 to d5 = arguments
 ;==============================================================================
 
 io_trap:
-	cmpi.b #7,d7							; make sure legal device
-	bhi.s .0002
-	movem.l d7/a0,-(a7)
+	cmpi.l #$200000,d7							; make sure legal device
+	bhs.s .0002
+	move.l a0,-(sp)
+	move.l d7,-(sp)
+	swap d7
 	ext.w d7
 	mulu #DCB_SIZE,d7					; index to DCB
-	move.l #null_dcb,a0
+	lea _DeviceTable,a0
 	move.l DCB_CMDPROC(a0,d7.w),a0
+	move.l (sp),d7
 	jsr (a0)
-	movem.l (a7)+,d7/a0
+	move.l (sp)+,d7
+	move.l (sp)+,a0
 	rte
 .0002:
 	moveq #E_BadDevNum,d0
@@ -4611,7 +4621,7 @@ OutputChar:
 	movem.l d0/d6/d7,-(a7)
 	clr.l d7
 	clr.l d6
-	move.b OutputDevice,d7		; d7 = output device
+	move.l OutputDevice,d7		; d7 = output device
 	move.w #DEV_PUTCHAR,d6		; d6 = function
 	trap #0
 	movem.l (a7)+,d0/d6/d7

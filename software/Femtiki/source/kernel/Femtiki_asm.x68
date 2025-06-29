@@ -23,10 +23,10 @@ endm
 FemtikiInit:
 	moveq #1,d0
 	movec d0,tr
-	bsr TCBInit
-	clr.b QueueCycle
+;	bsr TCBInit
+;	clr.b QueueCycle
 FemtikiInitIRQ:
-	lea FemtikiTimerIRQ,a1						; Set timer IRQ vector to Femtiki
+	lea _FMTK_TimerIRQ,a1						; Set timer IRQ vector to Femtiki
 	movec vbr,a0
 	move.l a1,30*4(a0)								; vector #30
 	rts
@@ -43,7 +43,7 @@ FemtikiInitIRQ:
 ;------------------------------------------------------------------------------
 
 macOSCallAddr macro arg1
-	dc.w (\1-OSCallTable)
+	dc.l \1
 endm
 
 OSCallTable:
@@ -68,9 +68,7 @@ _FMTK_Dispatch:
 	ext.w d7
 	lsl.w #1,d7
 	lea OSCallTable,a0
-	move.w (a0,d7.w),d7
-	ext.l d7
-	add.l d7,a0
+	move.l (a0,d7.w),a0
 	; Lock the system semaphore, trashes d0 to d2
 	movem.l d0-d2,-(sp)
 	macLockSemaphore OSSEMA,100000
@@ -96,7 +94,7 @@ _FMTK_TimerIRQLaunchpad:
 	move.l usp,a0								; including usp
 	move.l a0,-(sp)							; supply pointer to save area to IRQ routine
 	move.l sp,d0
-	bsr _FMTK_TimerIRQ					; call the IRQ routine
+	jsr _FMTK_TimerIRQ					; call the IRQ routine
 	move.l (sp)+,a0							; restore usp
 	move.l a0,usp
 	movem.l (sp)+,d0-d7/a0-a6		; and the rest of the registers
@@ -114,7 +112,7 @@ _FMTK_TimerIRQLaunchpad:
 GetRunningTCBPointer:
 	movem.l d0/d1,-(a7)
 	movec tr,d0
-	bsr _TCBHandleToPointer
+	jsr _TCBHandleToPointer
 	andi.l #NR_TCB,d0			; limit to # tasks
 	movem.l (a7)+,d0/d1
 	rts
@@ -138,5 +136,5 @@ UpdateIRQLive:
 	addi.l #1,(a1)						; flashy colors
 	rts
 
-	include "semaphore_asm.x68"
+;	include "semaphore_asm.x68"
 

@@ -45,31 +45,6 @@ QueueCycle    EQU   $0010031C
 FemtikiVars_end	EQU	$00100400
 
 	section local_ram
-KeybdLEDs
-	ds.b	1
-_KeyState1
-	ds.b	1
-_KeyState2
-	ds.b	1
-_KeybdHead
-	ds.b	1
-_KeybdTail
-	ds.b	1
-_KeybdCnt
-	ds.b	1
-KeybdEcho
-	ds.b	1
-KeybdWaitFlag
-	ds.b	1
-	align 2
-KeybdID
-	ds.l	1
-_Keybd_tick
-	ds.l	1
-_KeybdBuf
-	ds.b	32
-_KeybdOBuf
-	ds.b	32
 _DeviceTable
 	ds.b	6144
 spi_buff
@@ -105,6 +80,7 @@ _fpTextIncr
 	ds.l	1
 _canary
 	ds.l	1
+_tickcnt
 tickcnt
 	ds.l	1
 IRQFlag
@@ -229,6 +205,17 @@ _readyQ
 	ds.w	32
 _readyQEnd
 
+_hSearchApp
+	ds.w	1
+_hFreeApp
+	ds.w	1
+_im_save
+	ds.l	1
+_hKeybdMbx
+	ds.w	1
+_hFocusSwitchMbx
+	ds.w	1
+
 _hasUltraHighPriorityTasks
 	ds.b	1
 _iof_switch
@@ -255,6 +242,8 @@ SerXmitBuf
 	ds.b	4096
 RTCBuf			
 	ds.b	256
+__C0environ
+	ds.l	1
 
 	align 2
 _SysAcb
@@ -285,6 +274,7 @@ _FemtikiVars_end
 	global _fpTextIncr
 	global _canary
 	global tickcnt
+	global _tickcnt
 	global IRQFlag
 	global InputDevice
 	global OutputDevice
@@ -350,28 +340,23 @@ _FemtikiVars_end
 	global SerXmitXoff
 	global SerRcvBuf
 	global SerXmitBuf
-	global RTCBuf			
+	global RTCBuf
+	global spi_buff			
 
 	global _SysACB
 	global _PMT
 	global _PAM
 	global _PAMEnd
 	global _hasUltraHighPriorityTasks
+	global _iof_switch
 
-	global KeybdLEDs
-	global _KeyState1
-	global _KeyState2
-	global _KeybdHead
-	global _KeybdTail
-	global _Keybdnt
-	global KeybdID	
-	global _Keybd_tick
-	global _KeybdBuf
-	global _KeybdOBuf
-	global _KeybdCnt
-	global KeybdEcho
-	global KeybdWaitFlag
+	global _hSearchApp
+	global _hFreeApp
+	global _im_save
+	global _hKeybdMbx
+	global _hFocusSwitchMbx
 
+	global __C0environ
 
 ;gc_stack		rmb		512
 ;gc_pc				fcdw		0

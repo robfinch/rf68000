@@ -36,18 +36,19 @@
 //                                                                          
 // ============================================================================
 //
-#include "inc\config.h"
-#include "inc\const.h"
-#include "inc\types.h"
-#include "inc\proto.h"
-#include "inc\glo.h"
+#include <stdio.h>
+#include "..\inc\config.h"
+#include "..\inc\const.h"
+#include "..\inc\types.h"
+#include "..\inc\proto.h"
+#include "..\inc\glo.h"
 //#include "..\inc\TCB.h"
 
-extern int hasUltraHighPriorityTasks;
+extern long hasUltraHighPriorityTasks;
 extern void prtdbl(double);
 
 extern hTCB FreeTCB;
-extern TCB* tcbs;
+extern TCB tcbs[];
 
 hTCB GetRunningTCB() =
 	"\tmovec.l cpid,d0\r\n"
@@ -59,10 +60,10 @@ void SetRunningTCB(__reg("d0") hTCB h) =
 
 TCB* GetRunningTCBPtr()
 {
-	return (&tcbs[GetRunningPID()-1]);
+	return (&tcbs[GetRunningAppid()-1]);
 }
 
-TCB* TCBHandleToPointer(short int hTCB handle)
+TCB* TCBHandleToPointer(hTCB handle)
 {
 	if (handle <= 0)
 		return (TCB*)0;
@@ -105,12 +106,14 @@ hTCB AllocTCB(hTCB* ph)
 {
 	hTCB h;
 
-	LockSysSemaphore();
-	h = iAllocTCB();
-	UnlockSysSemaphore();
-	if (ph)
-		*ph = h;
-	return (E_Ok);
+	if (LockSysSemaphore(100000)) {
+		h = iAllocTCB();
+		UnlockSysSemaphore();
+		if (ph)
+			*ph = h;
+		return (E_Ok);
+	}
+	return (E_Busy);
 }
 
 static void iFreeTCB(hTCB h)
@@ -126,10 +129,12 @@ static void iFreeTCB(hTCB h)
 
 int fnFreeTCB(hTCB h)
 {
-	LockSysSemaphore();
-	iFreeTCB(h);	
-	UnlockSysSemaphore();
-	return (E_Ok);
+	if (LockSysSemaphore(100000)) {
+		iFreeTCB(h);	
+		UnlockSysSemaphore();
+		return (E_Ok);
+	}
+	return (E_Busy);
 }
 
 void TCBSetStatusBit(hTCB h, int bits)
@@ -165,7 +170,7 @@ int TCBInsertIntoReadyQueue(register hTCB ht)
 
 //    __check(ht >=0 && ht < NR_TCB);
 	p = TCBHandleToPointer(ht);
-	if (p->priority > 31 || p->priority < 0)
+	if (p->priority > 31)
 		return (E_BadPriority);
 	if (p->priority > 28)
 	   hasUltraHighPriorityTasks |= (1 << p->priority);
@@ -198,7 +203,7 @@ int TCBRemoveFromReadyQueue(register hTCB ht)
 	t = TCBHandleToPointer(ht);
 	if (t == NULL)
 		return (E_Ok);
-	if (t->priority > 31 || t->priority < 0)
+	if (t->priority > 31)
 		return (E_BadPriority);
 	if (ht==readyQ[t->priority])
 		readyQ[t->priority] = t->next;
@@ -259,7 +264,7 @@ int TCBInsertIntoTimeoutList(register hTCB ht, register int to)
 		TimeoutList = ht;
 	TCBSetStatusBit(ht, TS_TIMEOUT);
 	return (E_Ok);
-};
+}
 
 // ----------------------------------------------------------------------------
 // ----------------------------------------------------------------------------

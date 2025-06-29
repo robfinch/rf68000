@@ -22,36 +22,26 @@ LLX = vlink
 
 
 ASMS = \
-	femtiki_vars.x68 \
-	kernel\femtiki_asm.x68 \
 	lib.x68 \
 	putnum.asm \
 	mem_support.x68 \
 	memmgnt3.asm \
-	kernel\tcb.asm \
-	kernel\msg.asm \
-	kernel\femtiki.asm \
 	femtiki.asm
 
 OUT = \
-	femtiki_vars.o \
-	kernel\femtiki_asm.o \
 	lib.o \
 	putnum.o \
 	mem_support.o \
 	memmgnt3.o \
-	kernel\tcb.o \
-	kernel\msg.o \
-	kernel\femtiki.o \
 	femtiki.o
 
 all:	$(OUT)
 	echo "made FEMTIKI"
   
 LIB:
-	del Femtiki.c
-	copy *.c + kernel\*.c Femtiki.c
-	$(CCX) $(CFLAGS) Femtiki.c
+	del Femtiki2.c
+	copy *.c Femtiki2.c
+	$(CCX) $(CFLAGS) Femtiki2.c
 	$(AAX) $(AFLAGS) kernel\Femtiki_vars.x68 -L Femtiki_vars.lst -o Femtiki_vars.o
 	$(AAX) $(AFLAGS) kernel\Femtiki_asm.x68 -L kernel\Femtiki_asm.lst -o kernel\Femtiki_asm.o
 	$(AAX) $(AFLAGS) mem_support.x68 -L mem_support.lst -o mem_support.o
@@ -66,13 +56,23 @@ LIB:
 	del lib.o
 	del femtiki_asm.o
 	copy drivers\*.o . /Y
-	copy ..\..\crt\source\lib.o lib.o
-	copy ..\..\crt\source\crt.o crt.o
-	copy kernel\femtiki_asm.o femtiki_asm.o
-	$(AAX) $(AFLAGS) Femtiki.asm -L Femtiki.lst -o Femtiki.o
-	$(LLX) -T Femtiki.cmd -bsrec37 Femtiki_vars.o errno.o ctype.o localeco.o \
-		signal.o stdlib.o stdio.o string.o _lmath.o crt.o lib.o mem_support.o \
-		femtiki_asm.o ..\..\examples\boot.o Femtiki.o -o Femtiki.s37
+#	copy ..\..\crt\source\lib.o lib.o
+#	copy ..\..\crt\source\crt.o crt.o
+	$(AAX) $(AFLAGS) Femtiki2.asm -L Femtiki2.lst -o Femtiki2.o
+	$(LLX) -T Femtiki.cmd -bsrec37 \
+		errno.o ctype.o localeco.o \
+		signal.o stdlib.o stdio.o string.o _lmath.o mem_support.o \
+		kernel\Femtiki_vars.o \
+		kernel\Femtiki_asm.o \
+		kernel\Femtiki_kern.o \
+		kernel\tcb.o \
+		kernel\msg.o \
+		kernel\semaphore.o \
+		kernel\console.o \
+		kernel\dbg_console.o \
+		kernel\SetupDevices.o \
+		..\..\examples\boot.o \
+		Femtiki2.o -o Femtiki.s37
 
          
 FEMTIKI:	$(OUT)

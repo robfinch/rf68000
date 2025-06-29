@@ -8,6 +8,8 @@ CXX = cc64
 CFLAGS2 = -c99 -ID:\cores2022\Thor\software\inc\ -O=31
 CFLAGS = -w -S -fno-exceptions
 
+LLX = vlink
+
 #
 
 BIOS:
@@ -39,21 +41,96 @@ BIOS:
 #	vlink -T rom_bios.cmd -brawbin1 fibonacci.o -o fibonacci.bin
 #	vlink -T rom_bios.cmd -brawbin1 LEDTest.o -o LEDTest.bin
 #	vlink -T rom_bios.cmd -brawbin1 cputest.o -o cputest.bin
-	vlink -T ..\Femtiki\source\Femtiki.cmd -bsrec37 boot.o -o boot.s37
-	vlink -T bios.cmd -bsrec37 TestFp.o lib.o -o TestFp.s37
-	vlink -T ..\Femtiki\source\Femtiki.cmd -brawbin1 boot.o -o boot.bin
+
+	$(LLX) -T ..\Femtiki\source\Femtiki.cmd -bsrec37 \
+		boot.o \
+		..\Femtiki\source\kernel\Femtiki_vars.o \
+		..\Femtiki\source\kernel\Femtiki_kern.o \
+		..\Femtiki\source\kernel\msg.o \
+		..\Femtiki\source\kernel\tcb.o \
+		..\Femtiki\source\kernel\dbg_console.o \
+		..\Femtiki\source\kernel\semaphore.o \
+		..\Femtiki\source\kernel\SetupDevices.o \
+		..\Femtiki\source\errno.o \
+		..\Femtiki\source\ctype.o \
+		..\Femtiki\source\localeco.o \
+		..\Femtiki\source\signal.o \
+		..\Femtiki\source\stdlib.o \
+		..\Femtiki\source\stdio.o \
+		..\Femtiki\source\string.o \
+		..\Femtiki\source\timelib.o \
+		..\Femtiki\source\xfloat.o \
+		..\Femtiki\source\xvalues.o \
+		..\Femtiki\source\xdtento.o \
+		..\Femtiki\source\xdunscal.o \
+		..\Femtiki\source\xldunsca.o \
+		..\Femtiki\source\xdscale.o \
+		..\Femtiki\source\xdnorm.o \
+		..\Femtiki\source\_lmath.o \
+		..\crt\source\crt.o \
+		..\crt\source\lib.o \
+		..\Femtiki\source\mem_support.o \
+		..\Femtiki\source\kernel\femtiki_asm.o \
+		..\Femtiki\source\Femtiki2.o -o Femtiki.s37
+
+	$(LLX) -T ..\Femtiki\source\Femtiki.cmd -brawbin1 \
+		boot.o \
+		..\Femtiki\source\kernel\Femtiki_vars.o \
+		..\Femtiki\source\kernel\Femtiki_kern.o \
+		..\Femtiki\source\kernel\msg.o \
+		..\Femtiki\source\kernel\tcb.o \
+		..\Femtiki\source\kernel\dbg_console.o \
+		..\Femtiki\source\kernel\semaphore.o \
+		..\Femtiki\source\kernel\SetupDevices.o \
+		..\Femtiki\source\errno.o \
+		..\Femtiki\source\ctype.o \
+		..\Femtiki\source\localeco.o \
+		..\Femtiki\source\signal.o \
+		..\Femtiki\source\stdlib.o \
+		..\Femtiki\source\stdio.o \
+		..\Femtiki\source\string.o \
+		..\Femtiki\source\timelib.o \
+		..\Femtiki\source\xfloat.o \
+		..\Femtiki\source\xvalues.o \
+		..\Femtiki\source\xdtento.o \
+		..\Femtiki\source\xdunscal.o \
+		..\Femtiki\source\xldunsca.o \
+		..\Femtiki\source\xdnorm.o \
+		..\Femtiki\source\xdscale.o \
+		..\Femtiki\source\_lmath.o \
+		..\crt\source\crt.o \
+		..\crt\source\lib.o \
+		..\Femtiki\source\mem_support.o \
+		..\Femtiki\source\kernel\femtiki_asm.o \
+		..\Femtiki\source\Femtiki2.o -o Femtiki.bin
+
+		bin2ver Femtiki.bin 32 m
+		copy rom.mem rom1.mem
+		copy rom.mem rom2.mem
+		copy rom.mem rom3.mem
+		copy rom.mem rom4.mem
+		copy rom.mem rom5.mem
+		copy rom.mem rom6.mem
+		copy rom.mem rom7.mem
+		copy rom.mem rom68k.mem
+
+#	vlink -T ..\Femtiki\source\Femtiki.cmd -bsrec37 boot.o -o boot.s37
+#	vlink -T bios.cmd -bsrec37 TestFp.o lib.o -o TestFp.s37
+	
+	
+#	vlink -T ..\Femtiki\source\Femtiki.cmd -brawbin1 boot.o ..\Femtiki\source\Femtiki.o -o boot.bin
 	vlink -T bios.cmd -bsrec37 bootrom.o lib.o gfx.o -o bootrom.s37
 #	vlink -T rom_bios.cmd -brawbin1 add.o -o add.bin
 #	bin2ver fibonacci.bin 128
 #	bin2ver LEDTest.bin 32 m
-	bin2ver boot.bin 32 m
-	copy rom.mem rom1.mem
-	copy rom.mem rom2.mem
-	copy rom.mem rom3.mem
-	copy rom.mem rom4.mem
-	copy rom.mem rom5.mem
-	copy rom.mem rom6.mem
-	copy rom.mem rom7.mem
+#	bin2ver boot.bin 32 m
+#	copy rom.mem rom1.mem
+#	copy rom.mem rom2.mem
+#	copy rom.mem rom3.mem
+#	copy rom.mem rom4.mem
+#	copy rom.mem rom5.mem
+#	copy rom.mem rom6.mem
+#	copy rom.mem rom7.mem
 #	bin2ver cputest.bin 32 m
 #	bin2ver add.bin 128
 
