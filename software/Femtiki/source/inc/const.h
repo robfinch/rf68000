@@ -20,10 +20,12 @@
 #define MQS_OLDEST       1
 #define MQS_NEWEST       2
 
-#define MBT_DATA         2
 // message types
 #define MT_NONE          0             // not a message
 #define MT_FREE          1
+#define MT_DATA          2
+#define MT_RQB					 3
+#define MT_RESP					 4
 
 enum {
      E_Ok = 0,
@@ -37,7 +39,7 @@ enum {
      E_BadMbx,
      E_QueFull,
      // 10
-     E_NoThread,
+     E_NoTask,
      E_NotAlloc,
      E_NoMsg,
      E_Timeout,
@@ -49,6 +51,8 @@ enum {
 	 E_BadPageno,
 	 	// 20
 	 E_PagesizeMismatch,
+	 E_Service,
+	 E_OwnerAbort,
 
      //; Device driver errors
      E_BadDevNum = 0x20,
@@ -67,7 +71,8 @@ enum {
      E_NoMoreACBs,
      E_NoMoreTCBs,
      E_NoMem,
-     E_TooManyTasks
+     E_TooManyTasks,
+     E_NoMoreRbqs
 };
 
 #define OBJ_MAGIC	(('O') | ('B' << 8) | ('J' << 16) | ('\0' << 24))
@@ -99,9 +104,22 @@ enum {
 #define OS_ALLOC_MBX 10
 #define OS_FREE_MBX 11
 #define OS_START_APP	12
+#define OS_REGISTER_SERVICE	13
+#define OS_UNREGISTER_SERVICE 14
+#define OS_GET_SERVICE_MBX 15
+#define OS_ALLOC_SYSTEM_PAGES 16
+#define OS_ALLOC_PAGES 17
 
+#define BIOS_SEMA		0
+#define SERIAL_SEMA	2
+#define KEYBD_SEMA	3
+#define RAND_SEMA		4
+#define SCREEN_SEMA	5
 #define MEMORY_SEMA	6
-#define PMT_SEMA 10
+#define TCB_SEMA 		7
+#define OSSEMA			8
+#define IOFSEMA			9
+#define PMT_SEMA 		10
 
 /*
 ; the following constant is used to scramble device handles. The device handle

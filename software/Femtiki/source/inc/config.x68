@@ -10,6 +10,8 @@ MEMSZ     EQU   65536   ; pages
 MBX_BLOCKPTR_BUFSZ  EQU   8 ; number of block pointer entries
 NR_MSG		EQU		21842		; number of messages available
 NR_MBX		EQU		9792
+NR_RBQ		equ		256
+NR_SERVICE	equ		64
 PMTESIZE	EQU		16
 
 SCREEN_FORMAT equ 1

@@ -6,6 +6,7 @@ typedef short int hTCB;
 typedef short int hACB;
 typedef short int hMBX;
 typedef short int hMSG;
+typedef short int hRBQ;
 
 #define PTE_PRESENT		13
 #define PTE_ALIAS			12
@@ -15,7 +16,14 @@ typedef short int hMSG;
 #define PTE_EXECUTE		0
 
 typedef struct _tagPTE {
-	unsigned int acr : 14;
+	unsigned int x : 1;
+	unsigned int w : 1;
+	unsigned int r : 1;
+	unsigned int s : 1;
+	unsigned int acr : 7;
+	unsigned int end_of_run : 1;
+	unsigned int alias : 1;
+	unsigned int present : 1;
 	unsigned int page : 18;
 } PTE;
 
@@ -100,7 +108,7 @@ typedef struct _tagHeap {
 } HEAP;
 
 typedef struct tagMSG {
-	unsigned short int link;
+	hMSG link;
 	unsigned short int retadr;    // return address
 	unsigned short int dstadr;    // target address
 	unsigned short int type;
@@ -108,6 +116,38 @@ typedef struct tagMSG {
 	unsigned long d2;            // payload data 2
 	unsigned long d3;            // payload data 3
 } MSG;
+
+#define MT_RQB	1
+
+typedef struct _tagRQB {
+	long magic;
+	hACB owner;
+	hRBQ next;
+	hMBX service_mbx;
+	hMBX response_mbx;
+	short int handle;
+	short int opcode;
+	unsigned long d1;
+	unsigned long d2;
+	unsigned long d3;
+	unsigned char *pData1;
+	unsigned long cbData1;
+	unsigned char *pData2;
+	unsigned long cbData2;
+	unsigned char *pData3;
+	unsigned long cbData3;
+	long pad[3];
+} RQB;	// 64 bytes
+/*
+npSend			EQU 34	;DB 0h			; Number of Send PbCbs
+npRecv			EQU 35	;DB 0h			; Number of Recv PbCbs
+
+*/
+
+typedef struct _tagService {
+	char name[62];
+	hMBX service_mbx;
+} service_t;
 
 // Application control block
 typedef struct _tagACB
@@ -135,6 +175,7 @@ typedef struct _tagACB
 	char gc_markingQueFull;
 	char gc_markingQueEmpty;
 	char gc_overflow;
+  char is_system;
 	struct _tagObject *objectList;
 	struct _tagObject *garbage_list;
 	HEAP Heap;

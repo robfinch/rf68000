@@ -142,18 +142,19 @@ _FindFreePage:
 ;		a0 = physical address (-1 if timeout)
 ; ------------------------------------------------------------------------------
 
-_GetPageTableEntryAddress:
-	movem.l d1,-(sp)
-	move.l #-1,d1
-	bsr _LockMMUSemaphore
-	tst.l d1
-	bne .0001
-.0003:
-	movem.l (sp)+,d1
-	move.l #-1,d0
-	rts
-.0001:
-	bsr _GetRunningACBPtr
+;_GetPageTableEntryAddress:
+;	movem.l d1,-(sp)
+;	move.l #-1,d1
+;	jsr _LockMMUSemaphore
+;	tst.l d1
+;	bne .0001
+;.0003:
+;	movem.l (sp)+,d1
+;	move.l #-1,d0
+;	rts
+;.0001:
+;	jsr _GetRunningACBPtr
+
 ;	move.l
 ;.0002:
 ;	addi %a0,%a0,-1

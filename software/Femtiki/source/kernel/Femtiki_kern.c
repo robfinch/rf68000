@@ -164,6 +164,16 @@ int getCPU() =
 	"\tmovec coreno,d0\r\n"
 ;
 
+int IsSystemApp(hACB h)
+{
+	ACB* a;
+	a = ACBHandleToPointer(h);
+	if (a)
+		return (a->is_system);
+	else 
+		return (0);
+}
+
 // ----------------------------------------------------------------------------
 // Get the current interrupt mask level.
 // ----------------------------------------------------------------------------
@@ -632,6 +642,7 @@ long FMTK_Initialize()
 {
 	int nn,jj;
 	int lev;
+	AppStartupRec asr;
 
 //    firstcall
   {
@@ -687,6 +698,25 @@ long FMTK_Initialize()
   	tcbs[NR_TCB-1].next = 0;
   	freeTCB = 2;
   	TimeoutList = 0;
+  	
+  	for (nn = 0; nn < NR_ACB; nn++) {
+  		memset(&acbs[nn],0,sizeof(ACB));
+  		acbs[nn].number = nn+1;
+  	}
+		asr.pagesize = 8;
+		asr.priority = 15;
+		asr.affinity = 2;
+		asr.codesize = 0;
+		asr.datasize = 0;
+		asr.uidatasize = 0;
+		asr.heapsize = 0;
+		asr.stacksize = 0;
+		asr.pCode = StartMon;
+		asr.pData = 0;
+		asr.pUIData = 0;
+		asr.hasGarbageCollector = 0;
+		FMTK_StartApp(&asr, 1);
+		acbs[0].is_system = 1;
 /*
     	InsertIntoReadyList(0);
     	InsertIntoReadyList(1);

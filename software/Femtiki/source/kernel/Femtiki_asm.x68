@@ -1,5 +1,11 @@
 	include "..\inc\const.x68"
 	include "..\inc\config.x68"
+
+	section local_ram
+	align 2
+_extFMTKCall
+	ds.w	1
+	global _extFMTKCall
 	code
 	even
 
@@ -60,6 +66,9 @@ OSCallTable:
 	macOSCallAddr	_FMTK_AllocMbx
 	macOSCallAddr	_FMTK_FreeMbx
 	macOSCallAddr	_FMTK_StartApp
+	macOSCallAddr	_FMTK_RegisterService
+	macOSCallAddr	_FMTK_UnregisterService
+	macOSCallAddr	_FMTK_GetServiceMbx
 
 
 	even
@@ -75,7 +84,9 @@ _FMTK_Dispatch:
 	tst.l d0
 	beq.s .0001							; lock achieved?
 	movem.l (sp)+,d0-d2			; get back d0 to d2
+	add.w #1,_extFMTKCall
 	jsr (a0)								; call the system  routine
+	sub.w #1,_extFMTKCall
 	move.l d0,-(sp)
 	macUnlockSemaphore OSSEMA
 	move.l (sp)+,d0					; get back d0
@@ -138,3 +149,18 @@ UpdateIRQLive:
 
 ;	include "semaphore_asm.x68"
 
+_space_strcpy:
+	clr.b (a0)								; NULL terminate
+	tst.w d0									; anything to copy?
+	beq.s .0003
+	subq.w #1,d0							; copy counter is one less
+	movem.l d0/d1/a0/a2,-(sp)
+.0002
+	moves.b (a1)+,d1
+	move.b d1,(a0)+
+	tst.b -1(a1)
+	dbeq d0,.0002
+	movem.l (sp)+,d0/d1/a0/a1
+.0003
+	rts
+	global _space_strcpy

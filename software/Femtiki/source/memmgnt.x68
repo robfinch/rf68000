@@ -337,6 +337,7 @@ LinToPhy:
 ;		d1.l = first linear address of run, 0 if none available
 ;		d2.l = number of pages needed (preserved)
 
+_FindRun:
 FindRun:
 	movem.l d2/d3/d4/d6/a0/a1/a2,-(sp)
 	move.l d1,d4								; d4 = search area 0=supervisor, 16+ = user
@@ -394,6 +395,7 @@ FindRun:
 .exit
 	movem.l (sp)+,d2/d3/d4/d6/a0/a1/a2
 	rts
+	global _FindRun
 
 	; $40000000 to $47FFFFFC reserved for system (128 MB)
 	;	$48000000 to $7FFFFFFC reserved for user (896 MB)

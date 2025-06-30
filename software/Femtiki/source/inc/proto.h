@@ -47,30 +47,43 @@ extern hACB GetAppHandle();
 hTCB GetRunningTCB() =
 	"\tmovec.l cpid,d0\r\n"
 ;
+extern hACB GetRunningAppid();
 extern TCB *GetRunningTCBPtr();
+extern void SetRunningTCBPtr(TCB *p);
 extern hACB ACBPointerToHandle(ACB* ptr);
 extern ACB* ACBHandleToPointer(hACB h);
 extern TCB* TCBHandleToPointer(hTCB h);
 extern hTCB TCBPointerToHandle(TCB* p);
 extern unsigned long get_tick();
+extern int IsSystemApp(hACB);
 
 void FMTK_Reschedule();
 long FMTK_Initialize();
 long FMTK_Sleep(__reg("d0") long);
 long FMTK_SendMsg(__reg("d0") long hMbx, __reg("d1") long d1, __reg("d2") long d2, __reg("d3") long d3);
-long FMTK_WaitMsg(__reg("d0") long hMbx, __reg("d0") long d1, __reg("d0") long d2, __reg("d0") long d3, __reg("d4") long timelimit);
-long FMTK_StartTask(__reg("d0") short int* pCode, __reg("d1") long stacksize, __reg("d2") char* pCmd, __reg("d3") long info, __reg("d4") unsigned long affinity);
+long FMTK_WaitMsg(__reg("d0") long hMbx, __reg("d1") long d1, __reg("d2") long d2, __reg("d3") long d3, __reg("d4") long timelimit);
+long FMTK_PeekMsg(__reg("d0") long hMbx, __reg("d1") long d1, __reg("d2") long d2, __reg("d3") long d3);
+long FMTK_CheckMsg(__reg("d0") long hMbx, __reg("d1") long d1, __reg("d2") long d2, __reg("d3") long d3, __reg("d4") long qrmv);
+long FMTK_StartTask(__reg("d0") long pCode, __reg("d1") long stacksize, __reg("d2") long pCmd, __reg("d3") long info, __reg("d4") long affinity);
 long FMTK_ExitTask();
 long FMTK_KillTask(__reg("d0") long);
+long FMTK_AllocMbx();
+long FMTK_FreeMbx(__reg("d0") long hMbx);
 long FMTK_SetTaskPriority(__reg("d0") long hTCB, __reg("d1") long pri);
 long FMTK_StartApp(__reg("d0") long rec);
+long FMTK_RegisterService(__reg("d0") long pName);
+long FMTK_UnregisterService(__reg("d0") long pName);
+long FMTK_GetServiceMbx(__reg("d0") long name);
+long FMTK_AllocSystemPages(__reg("d0") long numpage, __reg("d0") long ppAddr);
+long FMTK_AllocPages(__reg("d0") long numpage, __reg("d0") long ppAddr);
 void RequestIOFocus(ACB *);
 
 int chkTCB(TCB *p);
-int InsertIntoReadyList(hTCB ht);
-int RemoveFromReadyList(hTCB ht);
-int InsertIntoTimeoutList(hTCB ht, int to);
-int RemoveFromTimeoutList(hTCB ht);
+int TCBInsertIntoReadyQueue(hTCB ht);
+int TCBRemoveFromReadyQueue(hTCB ht);
+int TCBInsertIntoTimeoutList(hTCB ht, int to);
+int TCBRemoveFromTimeoutList(hTCB ht);
+hTCB TCBPopTimeoutList();
 void DumpTaskList();
 
 void SetBound48(TCB *ps, TCB *pe, int algn);
@@ -118,6 +131,7 @@ inline void LEDS(int val)
 {
 }
 
+extern void FreeACB(hACB);
 extern hACB FindFreeACB();
 extern void* mem_alloc(hACB,unsigned long sz,int acr);
 extern void mem_free(hACB,void *p);
@@ -128,5 +142,11 @@ extern void DBGDisplayString(char *);
 extern void DBGDisplayStringCRLF(char *);
 
 extern char* LinearToPhysical(hACB appid, char* linadr);
+
+extern long CheckForCtrlC();
+extern void panic(char*);
+extern void putstr(char*);
+extern long get_coreno();
+extern void SetupDevices();
 
 #endif

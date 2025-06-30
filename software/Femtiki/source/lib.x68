@@ -1,4 +1,5 @@
-	include "device.x68"
+	include "inc\const.x68"
+	include "inc\device.x68"
 	bss
 _InputDevice:
 	ds.b 1
@@ -376,7 +377,7 @@ _get_tick:
 ;	Returns:
 ;		d0 = -1 if successful, 0 otherwise
 
-_LockSempahore:
+_LockSemaphore:
 	movem.l d1/d2,-(sp)
 	move.l 12(sp),d1
 	move.l 14(sp),d2
@@ -396,6 +397,12 @@ _UnlockSemaphore:
 	moveq #38,d0
 	trap #15
 	movem.l (sp)+,d0/d1
+	rts
+	
+__exit:
+	move.l 4(sp),d0
+	moveq #OS_EXIT_TASK,d7
+	trap #1
 	rts
 
 	global _OutputChar
@@ -434,4 +441,7 @@ _UnlockSemaphore:
 	global _get_tick
 	global _LockSemaphore
 	global _UnlockSemaphore
+	
+	global __exit
+
 	

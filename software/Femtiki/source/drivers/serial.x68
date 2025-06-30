@@ -38,7 +38,31 @@
 ;	include "..\inc\config.x68"
 ;	include "..\inc\device.x68"
 
-serial_dcb	equ _DeviceTable+160*5
+	section gvars
+	align 2
+SerTailRcv
+	ds.w	1
+SerHeadRcv
+	ds.w	1
+SerRcvXon
+	ds.b	1
+SerRcvXoff
+	ds.b	1
+SerTailXmit
+	ds.w	1
+SerHeadXmit
+	ds.w	1
+SerXmitXoff
+	ds.l	1
+	align 12
+SerRcvBuf
+	ds.b	4096
+SerXmitBuf
+	ds.b	4096
+SerXmitBufsize
+	ds.w	1
+SerRcvBufsize
+	ds.w	1
 
 ACIA equ	$FDFE0000
 ACIA_RX		equ	0
@@ -104,21 +128,21 @@ serial_init:
 setup_serial:
 serial_setup:
 	movem.l d0/a0/a1,-(a7)
+	move.l d0,a0
+	move.l d0,a1
 	moveq #31,d0
-	lea.l serial_dcb,a0
 .0001:
 	clr.l (a0)+
 	dbra d0,.0001
-	move.l #$44434220,serial_dcb+DCB_MAGIC			; 'DCB'
-	move.l #$434F4D00,serial_dcb+DCB_NAME				; 'COM'
-	move.l #serial_cmdproc,serial_dcb+DCB_CMDPROC
-	move.l #SerRcvBuf,serial_dcb+DCB_INBUFPTR
-	move.l #SerXmitBuf,serial_dcb+DCB_OUTBUFPTR
-	move.l #4096,serial_dcb+DCB_INBUFSIZE
+	move.l #$44434220,DCB_MAGIC(a1)			; 'DCB'
+	move.l #$434F4D00,DCB_NAME(a1)				; 'COM'
+	move.l #serial_cmdproc,DCB_CMDPROC(a1)
+	move.w #4096,SerRcvBufsize
+	move.w #4096,SerXmitBufsize
 	bsr SerialInit
-	lea.l serial_dcb,a1
-	jsr DisplayString
-	jsr CRLF
+	moveq #13,d0
+	lea.l DCB_MAGIC(a1),a1
+	trap #15
 	movem.l (a7)+,d0/a0/a1
 	rts
 
@@ -344,7 +368,7 @@ SerialPeekCharDirect:
 
 SerialPutChar:
 .0004
-	tst.w serial_dcb+DCB_OUTBUFSIZE	; buffered output?
+	tst.w SerXmitBufsize	; buffered output?
 	beq.s SerialPutCharDirect
 	movem.l d0/d1/d2/a0,-(a7)
 	movec	coreno,d0
@@ -354,7 +378,7 @@ SerialPutChar:
 	move.w SerTailXmit,d0
 	move.w d0,d2
 	addi.w #1,d0
-	cmp.w serial_dcb+DCB_OUTBUFSIZE,d0
+	cmp.w SerXmitBufsize,d0
 	blo.s .0002
 	clr.w d0
 .0002
@@ -463,7 +487,7 @@ notRxInt
 	beq.s notTxInt
 	tst.b SerXmitXoff						; and allowed to send?
 	bne.s sirqXmitOff
-	tst.l serial_dcb+DCB_OUTBUFSIZE	; Is there a buffer being transmitted?
+	tst.w SerXmitBufsize				; Is there a buffer being transmitted?
 	beq.s notTxInt
 	move.w SerHeadXmit,d0
 	cmp.w SerTailXmit,d0
@@ -473,7 +497,7 @@ notRxInt
 	macRbo d1
 	move.l d1,ACIA+ACIA_TX			; transmit character
 	addi.w #1,SerHeadXmit				; advance head index
-	move.w serial_dcb+DCB_OUTBUFSIZE,d0
+	move.w SerXmitBufsize,d0
 	cmp.w SerHeadXmit,d0
 	bhi.s sirq0002
 	clr.w SerHeadXmit						; wrap around

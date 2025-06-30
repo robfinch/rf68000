@@ -10,12 +10,16 @@ _message_end
 _mailbox
 	ds.b	8192*12
 _mailbox_end
+_request_block
+	ds.b	256*64
+_request_block_end
 _acbs
 	ds.b	32*32768
 _acbs_end
 	global _tcbs
 	global _message
 	global _mailbox
+	global _request_block
 	
 PAMShareCounts	EQU	$20000000	; one byte for each physical page of memory
 
@@ -179,6 +183,8 @@ _nMailbox
 	ds.l	1
 _hDevMailbox
 	ds.w	64
+_nRequest
+	ds.l	1
 
 _ACBList
 	ds.l	1
@@ -197,6 +203,11 @@ _freeMSG
 _FreeMBX
 _freeMBX
 	ds.w	1
+_FreeRQB
+_freeRQB
+	ds.w	1
+_service
+	ds.b	64*64
 _missed_ticks
 	ds.l	1
 _TimeoutList
@@ -318,6 +329,7 @@ _FemtikiVars_end
 	global _ACBPtrs
 	global _nMsgBlk
 	global _nMailbox
+	global _nRequest
 	global _DeviceTable
 	global _hDevMailbox
 	global _RunningTCB
@@ -328,6 +340,8 @@ _FemtikiVars_end
 	global _freeMSG
 	global _FreeMBX
 	global _freeMBX
+	global _FreeRQB
+	global _freeRQB
 	global _missed_ticks
 	global _TimeoutList
 	global _readyQ

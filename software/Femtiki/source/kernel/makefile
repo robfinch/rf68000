@@ -26,6 +26,7 @@ SOURCES = \
 	femtiki_kern.c \
 	tcb.c \
 	msg.c \
+	request.c \
 	semaphore.c \
 	dbg_console.c \
 	console.c \
@@ -41,6 +42,7 @@ OUT = \
 	Femtiki_kern.o \
 	tcb.o \
 	msg.o \
+	request.o \
 	semaphore.o \
 	dbg_console.o \
 	console.o \
@@ -50,6 +52,7 @@ Femtiki1.o: $(OUT)
 	$(CCX) $(CFLAGS) femtiki_kern.c
 	$(CCX) $(CFLAGS) tcb.c
 	$(CCX) $(CFLAGS) msg.c
+	$(CCX) $(CFLAGS) request.c
 	$(CCX) $(CFLAGS) semaphore.c
 	$(CCX) $(CFLAGS) dbg_console.c
 	$(CCX) $(CFLAGS) console.c
@@ -63,7 +66,7 @@ Femtiki1.o: $(OUT)
 	$(AAX) $(AFLAGS) SetupDevices.asm -L SetupDevices.lst -o SetupDevices.o
 	$(AAX) $(AFLAGS) femtiki_vars.x68 -L femtiki_vars.lst -o femtiki_vars.o
 	$(AAX) $(AFLAGS) femtiki_asm.x68 -L femtiki_asm.lst -o femtiki_asm.o
-#	$(LLX) -bvobj-be femtiki_kern.o tcb.o msg.o semaphore.o dbg_console.o console.o SetupDevices.o \
+#	$(LLX) -bvobj-be femtiki_kern.o tcb.o msg.o request.o semaphore.o dbg_console.o console.o SetupDevices.o \
 #		femtiki_vars.o femtiki_asm.o -o Femtiki1.o	
 	
 all:	$(OUT)
