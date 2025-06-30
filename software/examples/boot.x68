@@ -163,7 +163,6 @@ IO_BITMAP	EQU $FDE00000
 PSG				EQU $FD240000
 I2C1 			equ $FD250000
 ADAU1761 	equ $FD254000
-PLIC			equ	$FD260000
 SPI_MASTER1	equ	$FD280000
 SPI_MASTER2	equ $FD284000
 COPPER		equ $FD288000
@@ -477,20 +476,21 @@ start:
 	bsr	InitRand
 	bsr RandGetNum
 	andi.l #$FFFFFF00,d1
-	move.l d1,_canary
-	movec d1,canary
-	bsr AudioTestOn
+;	move.l d1,_canary
+;	movec d1,canary
+;	bsr AudioTestOn
 	bsr Delay3s
-	bsr AudioTestOff
+;	bsr AudioTestOff
 ;	bsr	Delay3s						; give devices time to reset
 ;	move.l #$20000,d7					; device 2
 ;	moveq #DEV_CLEAR,d6	; clear
 ;	trap #0
 ;	bsr	textvid_clear
 
-	jsr	_KeybdInit
+;	jsr	_KeybdInit
 ;	bsr	InitIRQ
-	jsr	SerialInit
+;	move.l #_DeviceTable+5*DCB_SIZE,d0
+;	jsr	SerialInit
 ;	bsr init_i2c
 ;	bsr rtc_read
 
@@ -499,16 +499,20 @@ start:
 	lea	msg_start,a1
 	bsr	DisplayString
 ;	bsr	FemtikiInit
+	bsr Delay3s
 	movec	coreno,d0
 	swap d0
 	moveq	#1,d1
-	bsr	UnlockSemaphore	; allow another cpu access
-	moveq	#0,d1
-	bsr	UnlockSemaphore	; allow other cpus to proceed
+;	bsr	UnlockSemaphore	; allow another cpu access
+	moveq #37,d0				; Unlock semaphore
+	trap #15
+	moveq	#BIOS_SEMA,d1
+	trap #15
+;	bsr	UnlockSemaphore	; allow other cpus to proceed
 	move.w #$A4A4,leds			; diagnostics
-	bsr	init_plic				; initialize platform level interrupt controller
-	bra	StartMon
-	bsr	cpu_test
+	jsr	setup_pic				; initialize interrupt controller
+	jmp	StartMon
+
 ;	lea	brdisp_trap,a0	; set brdisp trap vector
 ;	move.l	a0,64*4
 
@@ -878,11 +882,12 @@ InitMMU:
 	include "..\Femtiki\source\drivers\null.x68"
 	include "..\Femtiki\source\drivers\keybd.x68"
 	include "..\Femtiki\source\drivers\textvid.x68"
-	include "err.x68"
+	include "..\Femtiki\source\drivers\err.x68"
 	include "..\Femtiki\source\drivers\serial.x68"
 	include "..\Femtiki\source\drivers\framebuf.x68"
 	include "..\Femtiki\source\drivers\gfxaccel.x68"
-	include "audio.x68"
+	include "..\Femtiki\source\drivers\audio.x68"
+	include "..\Femtiki\source\drivers\pic.x68"
 
 ;------------------------------------------------------------------------------
 ;------------------------------------------------------------------------------
@@ -1150,7 +1155,7 @@ LockSemaphore:
 ; Unlocks a semaphore even if not the owner.
 ;
 ; Parameters:
-;		d1 semaphore number
+;		d1.w semaphore number
 ; -----------------------------------------------------------------------------
 
 ForceUnlockSemaphore:
@@ -1971,35 +1976,6 @@ select_focus1:
 	bra	SyncCursor						; set cursor position
 
 ;==============================================================================
-; PLIC - platform level interrupt controller
-;
-; Register layout:
-;   bits 0 to 7  = cause code to issue (vector number)
-;   bits 8 to 11 = irq level to issue
-;   bit 16 = irq enable
-;   bit 17 = edge sensitivity
-;   bit 18 = 0=vpa, 1=inta
-;		bit 24 to 29 target core
-;
-; Note byte order must be reversed for PLIC.
-;==============================================================================
-
-init_plic:
-	lea	PLIC,a0							; a0 points to PLIC
-	lea	$80+4*29(a0),a1			; point to timer registers (29)
-	move.l #$0006033F,(a1)	; initialize, core=63,edge sensitive,enabled,irq6,vpa
-	lea	4(a1),a1						; point to keyboard registers (30)
-	move.l #$3C060502,(a1)	; core=2,level sensitive,enabled,irq6,inta
-	lea	4(a1),a1						; point to nmi button register (31)
-	move.l #$00070302,(a1)	; initialize, core=2,edge sensitive,enabled,irq7,vpa
-	lea	$80+4*16(a0),a1			; a1 points to ACIA register
-	move.l #$3D030502,(a1)	; core=2,level sensitive,enabled,irq3,inta	
-	lea	$80+4*4(a0),a1			; a1 points to io_bitmap irq
-	move.l #$3B060702,(a1)	; core=2,edge sensitive,enabled,irq6,inta	
-	rts
-
-
-;==============================================================================
 ;==============================================================================
 ; Monitor
 ;==============================================================================
@@ -2100,8 +2076,10 @@ Monitor:
 	move.w #$2200,sr		; enable level 2 and higher interrupts
 	movec	coreno,d0
 	swap d0
-	moveq	#1,d1
-	bsr	UnlockSemaphore
+	moveq	#1,d1					; Unlock semaphore #1
+	moveq #38,d0
+	trap #15
+;	bsr	UnlockSemaphore
 	clr.b KeybdEcho			; turn off keyboard echo
 PromptLn:
 	bsr	CRLF
@@ -2112,7 +2090,10 @@ PromptLn:
 ;
 Prompt3:
 	move.l #2,IOFocus					; Set the IO focus in global memory
-	jsr	GetKey
+	move.l #$10000,d7					; keyboard
+	moveq #DEV_GETCHAR,d6
+	trap #0
+;	jsr	GetKey
 	cmpi.w #-1,d1
 	beq.s	Prompt3
 	cmpi.b #CR,d1
@@ -2126,14 +2107,17 @@ Prompt1:
 	move.l #$20000,d7
 	moveq #DEV_GET_OUTPOS,d6
 	trap #0
-;	clr.b	CursorCol				; go back to the start of the line
+	move.b #$A8,leds
+	move.l #$20000,d7
 	moveq #DEV_SET_INPOS,d6
 	moveq #0,d1						; go back to the start of the line
 	trap #0
+	move.b #$A7,leds
+	move.l #$20000,d7
 	moveq #DEV_GET_INPTR,d6
 	trap #0
-	move.l d1,a0
-;	bsr	CalcScreenLoc			; a0 = screen memory location
+	move.l d1,a0					; a0 = screen memory input location
+	move.b #$A6,leds
 .0001
 	bsr	FromScreen				; grab character off screen
 	cmpi.b #'$',d1				; skip over '$' prompt character
@@ -2148,6 +2132,7 @@ Prompt1:
 ; Dispatch based on command string
 
 cmdDispatch:
+	move.b #$A7,leds
 	lea	cmdString,a2
 	clr.l	d4							; command counter
 	if (SCREEN_FORMAT==1)

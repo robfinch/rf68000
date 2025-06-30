@@ -30,7 +30,7 @@ BIOS:
 	vbccm68k sieve.c
 #	vbccm68k prtflt.c -fpu=68881
 #	vasmrf68000_mot_win32.exe -Fvobj -L fibonacci.lst fibonacci.asm -o fibonacci.o
-	vasmrf68000_mot.exe -Fvobj -L lib.lst lib.x68 -o lib.o -m68010 -m68881
+	vasmrf68000_mot.exe -Fvobj -L ..\crt\source\lib.lst ..\crt\source\lib.x68 -o ..\crt\source\lib.o -m68010 -m68881
 	vasmrf68000_mot.exe -Fvobj -L gfx.lst gfx.asm -o gfx.o -m68010 -m68881
 	vasmrf68000_mot.exe -Fvobj -L bootrom.lst bootrom.asm -o bootrom.o -m68010 -m68881
 	vasmrf68000_mot.exe -Fvobj -L LEDTest.lst LEDTest.asm -o LEDTest.o

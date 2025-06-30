@@ -34,8 +34,8 @@ extern void plot_point(unsigned int dev, unsigned int x, unsigned int y, unsigne
 extern void draw_line(unsigned int dev, unsigned int x0, unsigned int y0, unsigned int x1, unsigned int y1, unsigned int color);
 extern double CvtStringToDecflt(char* s);
 extern void DumpStack();
-extern char OutputDevice;
-extern char InputDevice;
+extern long OutputDevice;
+extern long InputDevice;
 extern void OutputChar(int ch);
 extern void OutputCRLF();
 extern void OutputFloat(double);
@@ -54,8 +54,8 @@ static char RTCBuf[96];
 
 void bootrom()
 {
-	InputDevice = 1;
-	OutputDevice = 2;
+	InputDevice = 0x10000;
+	OutputDevice = 0x20000;
 	OutputString("Bootrom\r\n");
 	shell();
 }
@@ -323,36 +323,36 @@ void cmdGrTest()
 //	i2c_init(I2C2);
 	rand_init(RAND);
 
-	set_color_depth(7,16,5,5,5);
-	set_color_depth(6,16,5,5,5);
+	set_color_depth(0x70000,16,5,5,5);
+	set_color_depth(0x60000,16,5,5,5);
 
-	dispbuf(6,buf);
-	drawbuf(7,buf);
+	dispbuf(0x60000,buf);
+	drawbuf(0x70000,buf);
 
 	// Erase screen
-	set_color(7,0x0000007F);	// medium blue
-	clear(7);
+	set_color(0x70000,0x0000007F);	// medium blue
+	clear(0x70000);
 
 	// Draw random points
 	for (nn = 0; nn < 50000; nn++) {
-		dispbuf(6,buf);
-		drawbuf(7,buf);
+		dispbuf(0x60000,buf);
+		drawbuf(0x70000,buf);
 		x0i = get_rand(RAND, -1) & 0x3ffffff;
 		y0i = (get_rand(RAND, -1) & 0x1ffffff) + (get_rand(RAND, -1) & 0xffffff);
 		color = get_rand(RAND,-1);
-		plot_point(7, x0i, y0i, color);
+		plot_point(0x70000, x0i, y0i, color);
 	}
 	OutputString("Drew Points \r\n");
 	// Draw random lines
 	for (nn = 0; nn < 20000; nn++) {
-		dispbuf(6,buf);
-		drawbuf(7,buf);
+		dispbuf(0x60000,buf);
+		drawbuf(0x70000,buf);
 		x0i = get_rand(RAND, -1) & 0x3ffffff;
 		y0i = (get_rand(RAND, -1) & 0x1ffffff) + (get_rand(RAND, -1) & 0xffffff);
 		x1i = get_rand(RAND, -1) & 0x3ffffff;
 		y1i = (get_rand(RAND, -1) & 0x1ffffff) + (get_rand(RAND, -1) & 0xffffff);
 		color = get_rand(RAND,-1);
-		draw_line(7,x0i,y0i,x1i,y1i,color);
+		draw_line(0x70000,x0i,y0i,x1i,y1i,color);
 	}
 	OutputString("Drew Lines \r\n");
 	OutputString("Demo Finished \r\n");
@@ -395,7 +395,7 @@ int GetHexNumber(unsigned int* num)
 	int ch;
 
 	do {
-		ch = get_char(2);
+		ch = get_char(0x20000);
 	} while (ch==' ');
 	if (!isHexDigit(ch))
 		return (0);
@@ -404,7 +404,7 @@ int GetHexNumber(unsigned int* num)
 	do {
 		n << 4;
 		n = n | asciiToHexNybble(ch);
-		ch = get_char(2);
+		ch = get_char(0x20000);
 		dc++;
 	} while (isHexDigit(ch));
 	if (num)
@@ -436,6 +436,7 @@ int shell()
 {
 	int ch, posx,posy,posz;
 	int n, cmd_num;
+	long fh = 0x20000;
 
 /*	set_sp(0x47FF0); */
 	OutputString("Monitor v0.1 \r\n\r\n");
@@ -444,31 +445,31 @@ int shell()
 		prompt();
 		do {
 			// Grab a character from the keyboard
-			ch = get_char(1);
+			ch = get_char(0x10000);
 			// Echo back out to display
 			if (ch > 0)
-				put_char(2,ch);
+				put_char(fh,ch);
 		} while (ch != 13);
-		get_output_pos(2,&posx,&posy,&posz);
+		get_output_pos(fh,&posx,&posy,&posz);
 		// Go to start of line
-		set_input_pos(2,0,posy,posz);
+		set_input_pos(fh,0,posy,posz);
 
 		cmd_num = 0;
 		// Skip prompt character
 		do {
-			ch = get_char(2);
+			ch = get_char(fh);
 		} while (ch == '$');
 		// Skip leading blanks
 		while (ch == ' ')
-			ch = get_char(2);
+			ch = get_char(fh);
 		// Remember start position
-		get_input_pos(2,&posx,&posy,&posz);
+		get_input_pos(fh,&posx,&posy,&posz);
 		if (posx > 0) {
 			posx--;
-			set_input_pos(2,posx,posy,posz);
+			set_input_pos(fh,posx,posy,posz);
 		}
 		while (1) {
-			ch = get_char(2);
+			ch = get_char(fh);
 			if (ch != cmdTable[n]) {
 				if (((cmdTable[n] & 0x80)==0x80) && (ch == (cmdTable[n] & 0x7f))) {
 					shell_cmd[cmd_num]();
@@ -484,7 +485,7 @@ int shell()
 					break;
 				}
 				// Reset input position for next compare
-				set_input_pos(2,posx,posy,posz);
+				set_input_pos(fh,posx,posy,posz);
 				cmd_num++;
 			}
 			else {

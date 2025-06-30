@@ -69,27 +69,31 @@ OSCallTable:
 	macOSCallAddr	_FMTK_RegisterService
 	macOSCallAddr	_FMTK_UnregisterService
 	macOSCallAddr	_FMTK_GetServiceMbx
+	macOSCallAddr	_FMTK_AllocSystemPages
+	macOSCallAddr	_FMTK_AllocPages
+	macOSCallAddr	_FMTK_AliasMem
+	macOSCallAddr	_FMTK_DeAliasMem
 
 
 	even
 _FMTK_Dispatch:
 	movem.l d1-d7/a0-a6,-(sp)
 	ext.w d7
-	lsl.w #1,d7
+	lsl.w #2,d7
 	lea OSCallTable,a0
 	move.l (a0,d7.w),a0
 	; Lock the system semaphore, trashes d0 to d2
-	movem.l d0-d2,-(sp)
-	macLockSemaphore OSSEMA,100000
-	tst.l d0
-	beq.s .0001							; lock achieved?
-	movem.l (sp)+,d0-d2			; get back d0 to d2
+;	movem.l d0-d2,-(sp)
+;	macLockSemaphore OSSEMA,100000
+;	tst.l d0
+;	beq.s .0001							; lock achieved?
+;	movem.l (sp)+,d0-d2			; get back d0 to d2
 	add.w #1,_extFMTKCall
 	jsr (a0)								; call the system  routine
 	sub.w #1,_extFMTKCall
-	move.l d0,-(sp)
-	macUnlockSemaphore OSSEMA
-	move.l (sp)+,d0					; get back d0
+;	move.l d0,-(sp)
+;	macUnlockSemaphore OSSEMA
+;	move.l (sp)+,d0					; get back d0
 	movem.l (sp)+,d1-d7/a0-a6
 	rte
 .0001

@@ -109,6 +109,8 @@ enum {
 #define OS_GET_SERVICE_MBX 15
 #define OS_ALLOC_SYSTEM_PAGES 16
 #define OS_ALLOC_PAGES 17
+#define OS_ALIAS_MEM 18
+#define OS_DEALIAS_MEM 19
 
 #define BIOS_SEMA		0
 #define SERIAL_SEMA	2

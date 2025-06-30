@@ -129,15 +129,15 @@ static unsigned long round16k(unsigned long amt)
   return (amt);
 }
 
-/*
+/* -----------------------------------------------------------------------------
 		Find a run of pages in the linear address space that could be allocated.
 
 		Parameters:
 			search_area:	1 = userland, 0 = kernel address space
 			num_pages:		number of pages needed
-*/
+----------------------------------------------------------------------------- */
 
-unsigned long FindRun(__reg("d0") long search_area, __reg("d1") unsigned long num_pages)
+unsigned long FindRun(long search_area, unsigned long num_pages)
 {
 	hACB ha;
 	ACB* pa;
@@ -152,7 +152,7 @@ unsigned long FindRun(__reg("d0") long search_area, __reg("d1") unsigned long nu
 	
 	pc = num_pages;
 	if (search_area == 1) {	// user pages
-		for (ndx = 16; ndx < 160; ndx++) {
+		for (ndx = 8; ndx < 24; ndx++) {
 			pd = &pde[ndx];
 			pde = pd;
 			if ((unsigned long)(*pde)==0xffffffff) {
@@ -174,7 +174,7 @@ unsigned long FindRun(__reg("d0") long search_area, __reg("d1") unsigned long nu
 		}
 	}
 	else {
-		for (ndx = 160; ndx < 256; ndx++) {
+		for (ndx = 24; ndx < 32; ndx++) {
 			pd = &pde[ndx];
 			pde = pd;
 			if ((unsigned long)(*pde)==0xffffffff) {
@@ -194,6 +194,72 @@ unsigned long FindRun(__reg("d0") long search_area, __reg("d1") unsigned long nu
 				pc = num_pages;
 			}
 		}
+	}
+	return (0);
+}
+
+/* ----------------------------------------------------------------------------
+		Adds alias pages to the page tables of the selected app. Maps physical
+	pages from a given app into the address space of the current app.
+
+	Parameters:
+		1 = linear address of first page of new alias entries (from FindRun)
+		2 = number of pages to alias
+		3 = linear address of pages to alias (from other process)
+		4 = Process number of app we are aliasing
+
+	Returns:
+		nothing
+----------------------------------------------------------------------------- */
+
+void AddAliasRun(long la, long num_pages, long pMem, long h)
+{
+	hACB ha;	
+	ACB* pa;
+	PDE* pd;
+	int pd_ndx;
+	long pt_ndx;
+	unsigned long phys;
+	PDE pde;
+	unsigned long pta;
+	PTE pte;
+	
+	ha = GetRunningAppid();
+	pa = ACBHandleToPointer();
+	pd = &pa->pd;
+	for (; num_pages > 0; num_pages--) {
+		pd_ndx = la >> 26;
+		pt_ndx = (la >> 14) & 0xfff;
+		pta = (unsigned long)pd[pd_ndx];
+		pta &= 0xffffc000;
+		// Get the physical address of the memory to alias.
+		phys = (unsigned long)LinearToPhysical(h,pMem);
+		phys &= 0xffffc000;
+		pte = (PTE)phys;
+		pte.present = 1;
+		pte.alias = 1;
+		pte.s = 0;
+		pte.r = 1;
+		pte.w = 1;
+		pte.x = 1;
+		if (num_pages==1)
+			pte.end_of_run = 1;
+		(PTE*)(pta)[pt_ndx] = pte;
+		// Put linear address in upper half of PD.
+		pte = (PTE)la;
+		pte.present = 1;
+		pte.alias = 1;
+		pte.s = 0;
+		pte.r = 1;
+		pte.w = 1;
+		pte.x = 1;
+		if (num_pages==1)
+			pte.end_of_run = 1;
+		(PTE*)(pta)[pt_ndx+32] = pte;
+		PMT[(phys >> 14) & 0xffff].share_count++;
+		// Advance the addresses by a page
+		pMem += 16384;
+		la += 16384;
 	}
 }
 
@@ -463,12 +529,7 @@ char* LinearToPhysical(hACB hAcb, char* linear)
 // ----------------------------------------------------------------------------
 // ----------------------------------------------------------------------------
 
-;pMem		EQU [EBP+24]		;
-;dcbMem		EQU [EBP+20]		;
-;JobNum		EQU [EBP+16]		;
-;ppAliasRet EQU [EBP+12]		;
-
-long AliasMem(
+long FMTK_AliasMem(
 	__reg("d0") long pMem,
 	__reg("d1") long cbMem,
 	__reg("d2") long hApp,
@@ -478,91 +539,35 @@ long AliasMem(
 	unsigned long la;
 	unsigned long pages_needed;
 	hACB ra;
+	ACB* pa;
 
 	if (hApp == (ra = GetRunningAppid()))
 		return (0);
+	pa = ACBHandleToPointer(hApp);
 	pages_needed = (((pMem & 0xffffc000) + cbMem) >> 14) + 1;
-	la = FindRun(IsSystemApp(ra)?0:1,pages_needed);
+	do {
+		la = FindRun(pa->is_system?0:1,pages_needed);
+		if (la==NULL) {
+			if (pa->is_system)
+				er = AddSystemPageTable();
+			else 
+				er = AddUserPageTable();
+			if (er)
+				return (er);
+		}
+	} while(la==NULL);
+	AddAliasRun(la, pages_needed, pMem, hApp);
+	la |= (pMem & 0xffffc000);
+	*(unsigned long*)ppAliasRet = la;
+	return (E_Ok);
 }
-PUBLIC __AliasMem               ;
-ALSPBegin:
 
-		;Now we find out whos memory we are in to make alias
-		;EAX is 256 for user space, 0 for OS
-		;EBX is number of pages for run
-
-		CALL GetCrntJobNum			;See if it is OS based service
-		CMP EAX, 1					;OS Job?
-		JE SHORT ALSP011			;Yes
-		MOV EAX, 256				;No, User memory
-		JMP SHORT ALSP01
-ALSP011:
-		XOR EAX, EAX				;Set up for OS memory space
-ALSP01:
-		MOV EBX, ECX				;Number of pages we need into EBX
-		CALL FindRun				;EAX has 0 or 256
-
-		;EAX is now linear address or 0 if no run is large enough
-		;EBX  still has count of pages
-
-		OR EAX, EAX					;Was there enough PTEs?
-		JNZ ALSP04					;Yes
-
-		CALL GetCrntJobNum			;See if it is OS based service
-		CMP EAX, 1					;OS Job?
-		JE SHORT ALSP02				;Yes (RAB)
-
-		CALL AddUserPT				;No!  Add a new USER page table
-		JMP SHORT ALSP03
-ALSP02:
-		CALL AddOSPT				;No!  Add a new OS page table
-ALSP03:
-		OR EAX, EAX					;0 = NO Error
-		JZ SHORT ALSP00				;Go back & try again
-		JMP SHORT ALSPExit			;ERROR!!
-
-ALSP04:
-		;EAX has linear address (from find run) Sve in EDI
-		;EBX still has number of pages to alias
-		;Set ESI to linear address of pages to alias (from other job)
-		;Set EDX job number of job we are aliasing
-
-		MOV EDI, EAX				;Save alias page address base
-		MOV ESI, [EBP+24]			;Address to alias
-		MOV EDX, [EBP+16]			;Job number
-		CALL AddAliasRun
-
-		;Now, take new alias mem and add trailing bits to address
-		;and return to caller so he knows address (EDI is lin add)
-
-		MOV EAX, [EBP+24]			;original pMem
-		AND EAX, 0FFFh				;Get remaining bits
-		ADD EDI, EAX
-		MOV ESI, [EBP+12]			;pAliasRet
-		MOV [ESI], EDI				;Returned address to caller!
-
-		XOR EAX, EAX				;Set to 0 (no error)
-
-		;We are done
-ALSPExit:			            ;
-;		PUSH EAX				;Save last error
-;		PUSH MemExch			;Send a Semaphore msg (so next guy can get in)
-;		PUSH 0FFFFFFF1h				;
-;		PUSH 0FFFFFFF1h				;
-;		CALL FWORD PTR _SendMsg	;
-;		POP EAX					;Get original error back (ignore kernel erc)
-ALSPDone:
-		MOV ESP,EBP				;
-		POP EBP                 ;
-		RETF 16                 ;
-
-;=============================================================================
 
 // ----------------------------------------------------------------------------
 // Memory is de-aliased but not deallocated.
 // ----------------------------------------------------------------------------
 
-long DeAliasMem(__reg("d0") long hACB, __reg("d1") long pMem, __reg("d2") long len)
+long FMTK_DeAliasMem(__reg("d0") long hACB, __reg("d1") long pMem, __reg("d2") long len)
 {
 	PTE* pte;
 	char *phys;
@@ -580,6 +585,7 @@ long DeAliasMem(__reg("d0") long hACB, __reg("d1") long pMem, __reg("d2") long l
 				pte->s = 1;
 				pte->r = 1;
 				pte->w = 1;
+				PMT[pte->page & 0xffff].share_count--;
 			}
 		}
 		if (eor)
@@ -610,7 +616,7 @@ void init_memory_management()
 	lastSearchedPAMWord = PAM;
 
 	// Send a dummy message to memory exchange.
-	SendMsg(MemExch,0xfffffff1,0xfffffff1,0xfffffff1);
+	FMTK_SendMsg(MemExch,0xfffffff1,0xfffffff1,0xfffffff1);
 	pNextPT = AllocSystemPage();
   
   // Allocate 16MB to the OS, 8MB OS, 8MB video frame buffer

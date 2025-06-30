@@ -76,6 +76,8 @@ long FMTK_UnregisterService(__reg("d0") long pName);
 long FMTK_GetServiceMbx(__reg("d0") long name);
 long FMTK_AllocSystemPages(__reg("d0") long numpage, __reg("d0") long ppAddr);
 long FMTK_AllocPages(__reg("d0") long numpage, __reg("d0") long ppAddr);
+long FMTK_AliasMem(__reg("d0") long pMem,__reg("d1") long cbMem,__reg("d2") long hApp,__reg("d3") long ppAliasRet);
+long FMTK_DeAliasMem(__reg("d0") long hACB, __reg("d1") long pMem, __reg("d2") long len);
 void RequestIOFocus(ACB *);
 
 int chkTCB(TCB *p);
