@@ -145,8 +145,8 @@ TEXTVID_CMDTBL:
 	TBLE textvid_stub					; 48 set display buffer
 	TBLE textvid_get_inpos	  ; 49 get input position
 	TBLE textvid_set_inpos		; 50 set input position
-	TBLE textvid_get_outpos		; 51 get output position
-	TBLE textvid_set_outpos		; 52 set output position
+	TBLE textvid_set_outpos		; 51 set output position
+	TBLE textvid_get_outpos		; 52 get output position
 	TBLE textvid_get_inptr		; 53 get input pointer
 	TBLE textvid_get_outptr		; 54 get output pointer
 
@@ -898,9 +898,9 @@ BlankLastLine:
 	subq.w #1,d2								; count must be one less than desired
 	bsr	get_screen_color				; d0,d1 = screen color
 	if (SCREEN_FORMAT==1)
-		move.l #32,d0
+		move.w #32,d0
 	else
-		move.l #32,d0								; set the character for display in low 16 bits
+		move.w #32,d0								; set the character for display in low 16 bits
 	endif
 	rol.w	#8,d0
 	swap d0

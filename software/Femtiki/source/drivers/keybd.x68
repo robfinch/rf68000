@@ -121,8 +121,8 @@ KBD_CMDTBL:
 	KBD_CMDADDR keybd_stub				; 48 set display buffer
 	KBD_CMDADDR keybd_stub				; 49 get input position
 	KBD_CMDADDR keybd_set_inpos		; 50 set input position
-	KBD_CMDADDR keybd_stub				; 51 get output position
-	KBD_CMDADDR keybd_set_outpos	; 52 set output position
+	KBD_CMDADDR keybd_set_outpos	; 51 set output position
+	KBD_CMDADDR keybd_stub				; 52 get output position
 	KBD_CMDADDR keybd_stub				; 53 get input pointer
 	KBD_CMDADDR keybd_stub				; 54 get output pointer
 

@@ -127,8 +127,8 @@ GFXACCEL_CMDTBL:
 	GFXACCEL_CMDTBL_ADDR gfxaccel_set_dispbuf		; 48 set display buffer
 	GFXACCEL_CMDTBL_ADDR gfxaccel_get_inpos	  ; 49 get input position
 	GFXACCEL_CMDTBL_ADDR gfxaccel_set_inpos		; 50 set input position
-	GFXACCEL_CMDTBL_ADDR gfxaccel_get_outpos		; 51 get output position
-	GFXACCEL_CMDTBL_ADDR gfxaccel_set_outpos		; 52 set output position
+	GFXACCEL_CMDTBL_ADDR gfxaccel_set_outpos		; 51 set output position
+	GFXACCEL_CMDTBL_ADDR gfxaccel_get_outpos		; 52 get output position
 	GFXACCEL_CMDTBL_ADDR gfxaccel_stub		; 53 get input pointer
 	GFXACCEL_CMDTBL_ADDR gfxaccel_get_outptr		; 54 get output pointer
 	GFXACCEL_CMDTBL_ADDR gfxaccel_set_unit			; 55 set unit
