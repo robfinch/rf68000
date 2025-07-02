@@ -34,6 +34,7 @@
 ;
 ; ============================================================================
 
+	ifnd TS_NONE
 TS_NONE			EQU		0
 TS_READY		EQU		1
 TS_DEAD			EQU		2
@@ -139,3 +140,4 @@ SC_DEL		EQU		$71		; extend
 SC_LCTRL	EQU		$58
 SC_TAB      EQU		$0D
 
+	endif

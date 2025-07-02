@@ -53,6 +53,7 @@ enum {
 	 E_PagesizeMismatch,
 	 E_Service,
 	 E_OwnerAbort,
+	 E_BadAlias,
 
      //; Device driver errors
      E_BadDevNum = 0x20,

@@ -37,12 +37,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <string.h>
 #include "..\inc\config.h"
 #include "..\inc\const.h"
 #include "..\inc\types.h"
 #include "..\inc\proto.h"
 #include "..\inc\glo.h"
 //#include "TCB.h"
+
+extern void DisplayString(__reg("a1") char *str);
 
 extern hTCB FreeTCB;
 
@@ -55,8 +58,10 @@ extern long __interrupt FMTK_Dispatch(
 	__reg("d4") long
 );
 extern void FMTK_TimerIRQLaunchpad(unsigned long);
+extern void RQB_Initialize();
 extern int GetRand(register int stream);
 extern int shell();
+extern int StartMon();
 MEMORY memoryList[NR_MEMORY];
 
 //int interrupt_table[512];
@@ -64,6 +69,7 @@ int reschedFlag;
 int IRQFlag;
 int irq_stack[512];
 extern int FMTK_Inited;
+extern ACB acbs[NR_ACB];
 extern ACB *ACBPtrs[NR_ACB];
 extern TCB tcbs[NR_TCB];
 extern hTCB readyQ[32];
@@ -91,6 +97,8 @@ extern hMBX hKeybdMbx;
 extern hMBX hFocusSwitchMbx;
 extern int im_save;
 
+
+
 // This set of nops needed just before the function table so that the cpu may
 // fetch nop instructions after going past the end of the routine linked prior
 // to this one.
@@ -98,10 +106,10 @@ extern int im_save;
 void FMTK_NopRamp() =
 	"\trept 16\r\n"
 	"\tnop\r\n"
-	"\tendr"
+	"\tendr\r\n"
 ;
 
-static unsigned long GetTick() = "\tmovec.l\ttick,d0";
+static unsigned long GetTick() = "\tmovec.l\ttick,d0\r\n";
 
 // Reset timer edge sense circuit
 void AckTimerIRQ() =
@@ -116,7 +124,7 @@ void DisplayIRQLive() =
 	"\tadd.l #$FD0000DC,d0\r\n"
 	"\tmove.l d0,a0\r\n"
 	"\tadd.l #1,(a0)\r\n"
-	"\tmovem.l (sp)+,d0/a0"
+	"\tmovem.l (sp)+,d0/a0\r\n"
 ;
 
 ACB *SafeGetACBPtr(register int n)
@@ -219,7 +227,7 @@ int SetImLevel(register int level)
 }
 
 unsigned long GetSP() = "\tmove.l sp,d0\r\n";
-void SetSP(__reg("d0") unsigned long sp) = "\tmove.l d0,sp";
+void SetSP(__reg("d0") unsigned long sp) = "\tmove.l d0,sp\r\n";
 
 void SetMMUAppid(__reg("d0") hACB h) =
 	"\tmove.l d0,$FDC02100\r\n"
@@ -426,7 +434,7 @@ long FMTK_ExceptionHandler(__reg("d0") long val, __reg("d1") long typ)
 		puts("Default exception handler: CTRL-C pressed.\r\n");
 		FMTK_ExitTask();
 	}
-	return (0);
+	return (E_Ok);
 }
 
 // ----------------------------------------------------------------------------
@@ -473,7 +481,7 @@ long FMTK_KillTask(__reg("d0") long taskno)
     }
     UnlockSysSemaphore();
   }
-  return (0);
+  return (E_Ok);
 }
 
 
@@ -523,15 +531,15 @@ long FMTK_StartTask(
     ht = FreeTCB;
     if (ht <= 0 || ht > NR_TCB) {
       UnlockSysSemaphore();
-    	return (E_NoMoreTCBs);
+    	return (-E_NoMoreTCBs);
     }
     FreeTCB = tcbs[ht-1].next;
     UnlockSysSemaphore();
   }
 	else {
-		return (E_Busy);
+		return (-E_Busy);
 	}
-  t = &tcbs[ht-1];
+  t = TCBHandleToPointer(ht);
   t->affinity = affinity;
   t->priority = priority;
   t->hApp = hApp;
@@ -572,7 +580,7 @@ long FMTK_StartTask(
       UnlockSysSemaphore();
   }
 	else {
-		return (E_Busy);
+		return (-E_Busy);
 	}
   return (ht);
 }
@@ -629,7 +637,7 @@ long FMTK_SetTaskPriority(__reg("d0") long ht, __reg("d1") long priority)
 void SetVector(__reg("d0") unsigned long num, __reg("d1") unsigned long addr) = 
 	"\tmovem.l d0/a0,-(sp)\r\n"
 	"\tlsl.l #2,d0\r\n"
-	"\tmove.l d0,a0"
+	"\tmove.l d0,a0\r\n"
 	"\tmove.l d1,(a0)\r\n"
 	"\tmovem.l (sp)+,d0/a0\r\n"
 ;
@@ -643,12 +651,17 @@ long FMTK_Initialize()
 	int nn,jj;
 	int lev;
 	AppStartupRec asr;
+	hMBX hMbx;
+	long d1, d2, d3;
 
+	DisplayStringCRLF("\r\nFMTK_Starting.");
+	DisplayLEDS(1);
 //    firstcall
   {
   	lev = SetImLevel(7);									// Do not allow interrupts
     SetVector(30,(unsigned long)FMTK_TimerIRQLaunchpad);	// Auto level 6
   	SetVector(33,(unsigned long)FMTK_Dispatch);					// TRAP #1
+		DisplayLEDS(2);
 
   	reschedFlag = 0;
   	IRQFlag = 0;
@@ -672,6 +685,10 @@ long FMTK_Initialize()
     }
     message[NR_MSG-1].link = 0;
     freeMSG = 1;
+
+		DisplayLEDS(3);
+		RQB_Initialize();
+ 		DisplayLEDS(4);
 
   	for (nn = 0; nn < 8; nn++)
   		readyQ[nn] = 0;
@@ -699,9 +716,10 @@ long FMTK_Initialize()
   	freeTCB = 2;
   	TimeoutList = 0;
   	
+ 		DisplayLEDS(4);
+
   	for (nn = 0; nn < NR_ACB; nn++) {
-  		memset(&acbs[nn],0,sizeof(ACB));
-  		acbs[nn].number = nn+1;
+  		memset(&ACBPtrs[nn],0,sizeof(ACB*));
   	}
 		asr.pagesize = 8;
 		asr.priority = 15;
@@ -715,8 +733,10 @@ long FMTK_Initialize()
 		asr.pData = 0;
 		asr.pUIData = 0;
 		asr.hasGarbageCollector = 0;
-		FMTK_StartApp(&asr, 1);
+		FMTK_StartApp((unsigned long)&asr, 1);
 		acbs[0].is_system = 1;
+	
+		DisplayLEDS(5);
 /*
     	InsertIntoReadyList(0);
     	InsertIntoReadyList(1);
@@ -735,7 +755,18 @@ long FMTK_Initialize()
   	FMTK_Inited = 0x12345678;
     SetupDevices();
   	SetImLevelHelper(lev);								// Restore interrupts
+		DisplayLEDS(6);
   }
-  return (0);
+	DisplayStringCRLF("FMTK_Started.");
+	hMbx = FMTK_AllocMbx();
+	if (hMbx > 0) {
+		for (nn = 0; nn < 10; nn++) {
+			FMTK_SendMsg(hMbx, 0xfffffff1, 0xfffffff1, 0xfffffff1);
+			DisplayStringCRLF("Sent");
+			FMTK_WaitMsg(hMbx, (long)&d1, (long)&d2, (long)&d3, -1);
+			DisplayStringCRLF("Received");
+		}
+		FMTK_FreeMbx(hMbx);
+	}
+  return (E_Ok);
 }
-

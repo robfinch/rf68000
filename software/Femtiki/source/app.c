@@ -59,7 +59,7 @@ void FreeACB(__reg("d0")long h) =
 ;
 // ToDo: Add UI data
 
-long FMTK_StartApp(AppStartupRec *asr, hACB hParent)
+long FMTK_StartApp(__reg("d0") long asrec, __reg("d1") long hParent)
 {
 	int mapno, omapno;
 	int ret;
@@ -74,15 +74,20 @@ long FMTK_StartApp(AppStartupRec *asr, hACB hParent)
 	int ndx;
 	long info;
 	hACB h;
+	AppStartupRec *asr;
 
+	DisplayStringCRLF("Starting App");
+	asr = (AppStartupRec *)asrec;
 	h = FindFreeACB();
 	if (h == 0)
 		return (E_NoMoreACBs);
+	DisplayLEDS(1);
 	// Allocate memory for the ACB
 	pACB = (ACB*)mem_alloc(1,sizeof(ACB),14);
 	if (pACB==NULL)
 		goto err1;
 	memset(pACB,0,sizeof(ACB));
+	DisplayLEDS(2);
 
 	// Keep track of the physical address of the ACB
 	ACBPtrs[h] = pACB;
@@ -93,12 +98,14 @@ long FMTK_StartApp(AppStartupRec *asr, hACB hParent)
 	pParentACB = ACBHandleToPointer(hParent);
 	if (pParentACB)
 		memcpy(pACB->pEnv, pParentACB->pEnv, 16384);
+	DisplayLEDS(3);
 	
 	// Allocate memory for virtual video
 	pACB->pVirtVidMem = (uint32_t*)mem_alloc(h,8192,6);
 	if (pACB->pVirtVidMem == NULL)
 		goto err1;
 	pACB->magic = ACB_MAGIC;
+	DisplayLEDS(4);
 	
 	pACB->garbage_list = null;
 	// Allocate memory for card space
@@ -124,6 +131,7 @@ long FMTK_StartApp(AppStartupRec *asr, hACB hParent)
 		goto err1;
 	memcpy(pCode,&asr->pCode,asr->codesize);
 	pACB->pCode = pCode;
+	DisplayLEDS(5);
 
 	// Allocate storage space for initialized data
 	// and copy from start-up record
@@ -132,6 +140,7 @@ long FMTK_StartApp(AppStartupRec *asr, hACB hParent)
 		goto err1;
 	memcpy(pData,&asr->pData,asr->datasize);
 	pACB->pData = pData;
+	DisplayLEDS(6);
 
 	/*
 	pACB->Heap->pHeap = (MBLK *)((1+ndpages+ncpages) << 13);
@@ -148,17 +157,14 @@ long FMTK_StartApp(AppStartupRec *asr, hACB hParent)
 	// Start the startup thread
 	info = ((asr->priority & 0xff) << 8) | (h  & 0xff);
 	FMTK_StartTask(
-		pCode,			// start address
-		nspages << 14,
-		&pACB->commandLine[0],	// parameter
-		info,
-		asr->affinity
+		(long)pCode,			// start address
+		(long)nspages << 14,
+		(long)&pACB->commandLine[0],	// parameter
+		(long)info,
+		(long)asr->affinity
 	);
-/*
-	catch(int er) {
-		return (er);
-	}
-*/
+	DisplayLEDS(7);
+	return (E_Ok);
 err1:
 	if (pACB) {
 		if (pACB->pData)

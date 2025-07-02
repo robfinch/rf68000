@@ -1,3 +1,4 @@
+	ifnd MAX_TID
 MAX_TID		EQU		4095
 NR_TCB		EQU		4096
 NTASK     EQU   4096    ; number of threads allowed
@@ -22,5 +23,6 @@ VIDEO_X	equ 800
 VIDEO_Y	equ 600
 VIDEO_Z	equ	256
 
+	endif
 
 

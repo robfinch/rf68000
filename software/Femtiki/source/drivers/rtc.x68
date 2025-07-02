@@ -1,3 +1,5 @@
+	include "..\inc\const.x68"
+
 ;------------------------------------------------------------------------------
 ;------------------------------------------------------------------------------
 ; Real Time Clock
@@ -18,35 +20,30 @@ RTC_CMDTBL:
 	dc.l rtc_stub				; 10
 	dc.l rtc_stub
 	dc.l rtc_clear
-	dc.l rtc_swapbuf
-	dc.l rtc_setbuf1
-	dc.l rtc_setbuf2
-	dc.l rtc_getbuf1
-	dc.l rtc_getbuf2
-	dc.l rtc_writeat
-	dc.l rtc_set_unit
-	dc.l rtc_get_dimen	; 20
-	dc.l rtc_get_color
-	dc.l rtc_get_inpos
-	dc.l rtc_get_outpos
-	dc.l rtc_get_outptr
-	dc.l rtc_set_color
-	dc.l rtc_set_color123
-	dc.l rtc_plot_point
-	dc.l rtc_draw_line
-	dc.l rtc_draw_triangle
-	dc.l rtc_draw_rectangle	;30
-	dc.l rtc_draw_curve
-	dc.l rtc_set_dimen
-	dc.l rtc_set_color_depth
-	dc.l rtc_set_destbuf
-	dc.l rtc_set_dispbuf
+	dc.l rtc_stub
+	dc.l rtc_stub
+	dc.l rtc_stub
+	dc.l rtc_stub
+	dc.l rtc_stub
+	dc.l rtc_stub
+	dc.l rtc_stub
+	dc.l rtc_stub	; 20
+	dc.l rtc_stub
+	dc.l rtc_stub
+	dc.l rtc_stub
+	dc.l rtc_stub
+	dc.l rtc_stub
+	dc.l rtc_stub
+	dc.l rtc_stub
+	dc.l rtc_stub
+	dc.l rtc_stub
+	dc.l rtc_stub	;30
 
 	code
 	even
 
 rtc_cmdproc:
-	cmpi.b #36,d6
+	cmpi.b #13,d6
 	bhs.s .0001
 	movem.l d6/a0,-(a7)
 	ext.w d6
@@ -58,6 +55,21 @@ rtc_cmdproc:
 	movem.l (a7)+,d6/a0
 	rts
 .0001:
-	moveq #E_Func,d0
+	moveq #E_NotSupported,d0
 	rts
 
+rtc_init:
+rtc_putchar:
+rtc_putbuf:
+rtc_getchar:
+rtc_getbuf:
+rtc_stub:
+rtc_clear:
+	moveq #E_NotSupported,d0
+	rts
+
+rtc_stat:
+rtc_set_inpos:
+rtc_set_outpos:
+	moveq #E_Ok,d0
+	rts

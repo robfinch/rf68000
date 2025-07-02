@@ -1,16 +1,106 @@
 #
-PATH = $PATH;D:\cores2022\Thor\software\CC64\cc64\debug;"C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Tools\MSVC\14.28.29333\bin\Hostx64\x64\bin\Hostx64\x64\"
-INC = D:\cores2022\Thor\software\source\;D:\cores2022\Thor\software\FMTK\source\kernel\;D:\cores2022\Thor\software\inc\
-INCLUDE = D:\cores2022\Thor\software\source\;D:\cores2022\Thor\software\FMTK\source\kernel\;D:\cores2022\Thor\software\inc\
-FPPINC  = D:\cores2022\Thor\software\source\;D:\cores2022\Thor\software\FMTK\source\kernel\;D:\cores2022\Thor\software\inc\
+#PATH = $PATH;D:\cores2022\Thor\software\CC64\cc64\debug;"C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Tools\MSVC\14.28.29333\bin\Hostx64\x64\bin\Hostx64\x64\"
+#INC = D:\cores2022\Thor\software\source\;D:\cores2022\Thor\software\FMTK\source\kernel\;D:\cores2022\Thor\software\inc\
+#INCLUDE = D:\cores2022\Thor\software\source\;D:\cores2022\Thor\software\FMTK\source\kernel\;D:\cores2022\Thor\software\inc\
+#FPPINC  = D:\cores2022\Thor\software\source\;D:\cores2022\Thor\software\FMTK\source\kernel\;D:\cores2022\Thor\software\inc\
+PATH1 = "C:/Users/Robert/OneDrive/documents/Cores2025/rf68000/software/"
+PATH2 = "C:\Users\Robert\OneDrive\documents\Cores2025\rf68000\software\c_standard_lib-master\assert\"
+PATH = $PATH;$(PATH1)"Femtiki/source/";$(PATH1)"Femtiki/source/kernel/";"F:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Tools\MSVC\14.29.30133\bin\Hostx64\x64"
+INC1 = "C:/Users/Robert/OneDrive/documents/Cores2025/rf68000/software/c_standard_lib-master/_Femtiki/"
+FEMTIKI_INC = "C:/Users/Robert/OneDrive/documents/Cores2025/rf68000/software/Femtiki/source/inc/"
+INC = $(INC1)
+#;$(FEMTIKI_INC)
+INCLUDE = $(INC1)	
 CXX = cc64
 #CXX = opt
+AFLAGS = -Fvobj -m68010 -m68881
 CFLAGS2 = -c99 -ID:\cores2022\Thor\software\inc\ -O=31
-CFLAGS = -w -S -fno-exceptions
+#CFLAGS = -w -S -fno-exceptions
+CFLAGS = -I$(INC) -fpu=68881
 
 LLX = vlink
+AAX = vasmrf68000_mot
 
-#
+.SUFFIXES:	.x68
+
+.x68.o:
+	$(AAX) $(AFLAGS) $<
+
+DRIVER_ASMS = \
+	../Femtiki/source/drivers/null.x68 \
+	../Femtiki/source/drivers/err.x68 \
+	../Femtiki/source/drivers/keybd.x68 \
+	../Femtiki/source/drivers/textvid.x68 \
+	../Femtiki/source/drivers/framebuf.x68 \
+	../Femtiki/source/drivers/gfxaccel.x68 \
+	../Femtiki/source/drivers/audio.x68 \
+	../Femtiki/source/drivers/serial.x68 \
+	../Femtiki/source/drivers/rtc.x68 \
+	../Femtiki/source/drivers/pic.x68
+
+DRIVERS = \
+	../Femtiki/source/drivers/null.o \
+	../Femtiki/source/drivers/err.o \
+	../Femtiki/source/drivers/keybd.o \
+	../Femtiki/source/drivers/textvid.o \
+	../Femtiki/source/drivers/framebuf.o \
+	../Femtiki/source/drivers/gfxaccel.o \
+	../Femtiki/source/drivers/audio.o \
+	../Femtiki/source/drivers/serial.o \
+	../Femtiki/source/drivers/rtc.o \
+	../Femtiki/source/drivers/pic.o
+
+#..\Femtiki\source\drivers\drivers.o: $(DRIVERS)
+#	$(AAX) $(AFLAGS) -L ../Femtiki/source/drivers/pic.lst ../Femtiki/source/drivers/pic.x68 -o ../Femtiki/source/drivers/pic.o
+#	$(AAX) $(AFLAGS) -L ../Femtiki/source/drivers/audio.lst ../Femtiki/source/drivers/audio.x68 -o ../Femtiki/source/drivers/audio.o
+#	$(AAX) $(AFLAGS) -L ../Femtiki/source/drivers/err.lst ../Femtiki/source/drivers/err.x68 -o ../Femtiki/source/drivers/err.o
+#	$(AAX) $(AFLAGS) -L ../Femtiki/source/drivers/serial.lst ../Femtiki/source/drivers/serial.x68 -o ../Femtiki/source/drivers/serial.o
+#	$(AAX) $(AFLAGS) -L ../Femtiki/source/drivers/rtc.lst ../Femtiki/source/drivers/rtc.x68 -o ../Femtiki/source/drivers/rtc.o
+#	$(LLX) -T ..\Femtiki\source\Femtiki.cmd \
+#	../Femtiki/source/drivers/null.o \
+#	../Femtiki/source/drivers/err.o \
+#	../Femtiki/source/drivers/keybd.o \
+#	../Femtiki/source/drivers/textvid.o \
+#	../Femtiki/source/drivers/framebuf.o \
+#	../Femtiki/source/drivers/gfxaccel.o \
+#	../Femtiki/source/drivers/audio.o \
+#	../Femtiki/source/drivers/serial.o \
+#	../Femtiki/source/drivers/rtc.o \
+# ../Femtiki/source/drivers/pic.o \
+# -o drivers.o
+
+OUT = \
+	boot.o \
+	DumpTasks.o \
+	..\Femtiki\source\kernel\Femtiki_vars.o \
+#	..\Femtiki\source\kernel\Femtiki_kern.o \
+	..\Femtiki\source\kernel\msg.o \
+	..\Femtiki\source\kernel\tcb.o \
+	..\Femtiki\source\kernel\dbg_console.o \
+	..\Femtiki\source\kernel\semaphore.o \
+	..\Femtiki\source\kernel\SetupDevices.o \
+	..\Femtiki\source\errno.o \
+	..\Femtiki\source\ctype.o \
+	..\Femtiki\source\localeco.o \
+	..\Femtiki\source\signal.o \
+	..\Femtiki\source\stdlib.o \
+	..\Femtiki\source\stdio.o \
+	..\Femtiki\source\string.o \
+	..\Femtiki\source\timelib.o \
+	..\Femtiki\source\xfloat.o \
+	..\Femtiki\source\xvalues.o \
+	..\Femtiki\source\xdtento.o \
+	..\Femtiki\source\xdunscal.o \
+	..\Femtiki\source\xldunsca.o \
+	..\Femtiki\source\xdscale.o \
+	..\Femtiki\source\xdnorm.o \
+	..\Femtiki\source\_lmath.o \
+	..\crt\source\crt.o \
+	..\crt\source\lib.o \
+	..\Femtiki\source\mem_support.o \
+	..\Femtiki\source\kernel\femtiki_asm.o \
+	..\Femtiki\source\Femtiki2.o
+
 
 BIOS:
 	del boot_rom.bin
@@ -42,67 +132,10 @@ BIOS:
 #	vlink -T rom_bios.cmd -brawbin1 LEDTest.o -o LEDTest.bin
 #	vlink -T rom_bios.cmd -brawbin1 cputest.o -o cputest.bin
 
-	$(LLX) -T ..\Femtiki\source\Femtiki.cmd -bsrec37 \
-		boot.o \
-		..\Femtiki\source\kernel\Femtiki_vars.o \
-		..\Femtiki\source\kernel\Femtiki_kern.o \
-		..\Femtiki\source\kernel\msg.o \
-		..\Femtiki\source\kernel\tcb.o \
-		..\Femtiki\source\kernel\dbg_console.o \
-		..\Femtiki\source\kernel\semaphore.o \
-		..\Femtiki\source\kernel\SetupDevices.o \
-		..\Femtiki\source\errno.o \
-		..\Femtiki\source\ctype.o \
-		..\Femtiki\source\localeco.o \
-		..\Femtiki\source\signal.o \
-		..\Femtiki\source\stdlib.o \
-		..\Femtiki\source\stdio.o \
-		..\Femtiki\source\string.o \
-		..\Femtiki\source\timelib.o \
-		..\Femtiki\source\xfloat.o \
-		..\Femtiki\source\xvalues.o \
-		..\Femtiki\source\xdtento.o \
-		..\Femtiki\source\xdunscal.o \
-		..\Femtiki\source\xldunsca.o \
-		..\Femtiki\source\xdscale.o \
-		..\Femtiki\source\xdnorm.o \
-		..\Femtiki\source\_lmath.o \
-		..\crt\source\crt.o \
-		..\crt\source\lib.o \
-		..\Femtiki\source\mem_support.o \
-		..\Femtiki\source\kernel\femtiki_asm.o \
-		..\Femtiki\source\Femtiki2.o -o Femtiki.s37
-
-	$(LLX) -T ..\Femtiki\source\Femtiki.cmd -brawbin1 \
-		boot.o \
-		..\Femtiki\source\kernel\Femtiki_vars.o \
-		..\Femtiki\source\kernel\Femtiki_kern.o \
-		..\Femtiki\source\kernel\msg.o \
-		..\Femtiki\source\kernel\tcb.o \
-		..\Femtiki\source\kernel\dbg_console.o \
-		..\Femtiki\source\kernel\semaphore.o \
-		..\Femtiki\source\kernel\SetupDevices.o \
-		..\Femtiki\source\errno.o \
-		..\Femtiki\source\ctype.o \
-		..\Femtiki\source\localeco.o \
-		..\Femtiki\source\signal.o \
-		..\Femtiki\source\stdlib.o \
-		..\Femtiki\source\stdio.o \
-		..\Femtiki\source\string.o \
-		..\Femtiki\source\timelib.o \
-		..\Femtiki\source\xfloat.o \
-		..\Femtiki\source\xvalues.o \
-		..\Femtiki\source\xdtento.o \
-		..\Femtiki\source\xdunscal.o \
-		..\Femtiki\source\xldunsca.o \
-		..\Femtiki\source\xdnorm.o \
-		..\Femtiki\source\xdscale.o \
-		..\Femtiki\source\_lmath.o \
-		..\crt\source\crt.o \
-		..\crt\source\lib.o \
-		..\Femtiki\source\mem_support.o \
-		..\Femtiki\source\kernel\femtiki_asm.o \
-		..\Femtiki\source\Femtiki2.o -o Femtiki.bin
+	vbccm68k $(CFLAGS) DumpTasks.c
+	vasmrf68000_mot.exe -Fvobj -L DumpTasks.lst DumpTasks.asm -o DumpTasks.o -m68010 -m68881
+	$(LLX) -MFemtiki.map -T ..\Femtiki\source\Femtiki.cmd -bsrec37 $(OUT) -o Femtiki.s37
+	$(LLX) -MFemtiki.map -T ..\Femtiki\source\Femtiki.cmd -brawbin1 $(OUT) -o Femtiki.bin
 
 		bin2ver Femtiki.bin 32 m
 		copy rom.mem rom1.mem

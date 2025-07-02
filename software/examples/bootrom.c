@@ -37,6 +37,7 @@ extern void DumpStack();
 extern long OutputDevice;
 extern long InputDevice;
 extern void OutputChar(int ch);
+extern void OutputString(char *str);
 extern void OutputCRLF();
 extern void OutputFloat(double);
 extern void OutputNumber(int num, int sz);

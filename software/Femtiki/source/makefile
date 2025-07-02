@@ -52,12 +52,10 @@ LIB:
 #	$(AAX) $(AFLAGS) drivers\framebuf.x68 -L drivers\framebuf.lst -o drivers\framebuf.o
 #	$(AAX) $(AFLAGS) drivers\gfxaccel.x68 -L drivers\gfxaccel.lst -o drivers\gfxaccel.o
 #	$(AAX) $(AFLAGS) drivers\serial.x68 -L drivers\serial.lst -o drivers\serial.o
-	del crt.o
 	del lib.o
 	del femtiki_asm.o
-	copy drivers\*.o . /Y
+#	copy drivers\*.o . /Y
 #	copy ..\..\crt\source\lib.o lib.o
-#	copy ..\..\crt\source\crt.o crt.o
 	$(AAX) $(AFLAGS) Femtiki2.asm -L Femtiki2.lst -o Femtiki2.o
 	$(LLX) -T Femtiki.cmd -bsrec37 \
 		errno.o ctype.o localeco.o \
@@ -72,6 +70,7 @@ LIB:
 		kernel\dbg_console.o \
 		kernel\SetupDevices.o \
 		..\..\examples\boot.o \
+		..\..\crt\source\crt.o \
 		Femtiki2.o -o Femtiki.s37
 
          

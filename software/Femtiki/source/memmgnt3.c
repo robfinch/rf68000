@@ -23,6 +23,7 @@
 //
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 #include "inc/config.h"
 #include "inc/const.h"
 //#include "../inc/errno.h"
@@ -36,8 +37,9 @@
 #define MMU	0xFDC00000
 
 char *pNextPT;
-
+extern long nPagesFree;
 extern char *os_brk;
+extern hMBX MemExch;
 
 extern unsigned long* lastSearchedPAMWord;
 extern int errno;
@@ -142,6 +144,7 @@ unsigned long FindRun(long search_area, unsigned long num_pages)
 	hACB ha;
 	ACB* pa;
 	PDE* pde,* spde, * pd;
+	PDE_u pdeu;
 	int ndx;
 	unsigned long pc;
 	unsigned long la;
@@ -155,12 +158,14 @@ unsigned long FindRun(long search_area, unsigned long num_pages)
 		for (ndx = 8; ndx < 24; ndx++) {
 			pd = &pde[ndx];
 			pde = pd;
-			if ((unsigned long)(*pde)==0xffffffff) {
+			pdeu.pde = *pde;
+			if (pdeu.l==0xffffffff) {
 				spde = pde;
-				while ((unsigned long)(*pde)==0xffffffff) {
+				while (pdeu.l==0xffffffff) {
 					pc--;
 					if (pc==0) {
-						la = (unsigned long)(*spde);
+						pdeu.pde = *spde;
+						la = pdeu.l;
 						la &= 0xffffc000;
 						return (la);
 					}
@@ -177,12 +182,14 @@ unsigned long FindRun(long search_area, unsigned long num_pages)
 		for (ndx = 24; ndx < 32; ndx++) {
 			pd = &pde[ndx];
 			pde = pd;
-			if ((unsigned long)(*pde)==0xffffffff) {
+			pdeu.pde = *pde;
+			if (pdeu.l==0xffffffff) {
 				spde = pde;
-				while ((unsigned long)(*pde)==0xffffffff) {
+				while (pdeu.l==0xffffffff) {
 					pc--;
 					if (pc==0) {
-						la = (unsigned long)(*spde);
+						pdeu.pde = *spde;
+						la = pdeu.l;
 						la &= 0xffffc000;
 						return (la);
 					}
@@ -223,39 +230,42 @@ void AddAliasRun(long la, long num_pages, long pMem, long h)
 	PDE pde;
 	unsigned long pta;
 	PTE pte;
+	PDE_u pdeu;
+	PTE_u pteu;
 	
 	ha = GetRunningAppid();
 	pa = ACBHandleToPointer();
-	pd = &pa->pd;
+	pd = &(pa->pd);
 	for (; num_pages > 0; num_pages--) {
 		pd_ndx = la >> 26;
 		pt_ndx = (la >> 14) & 0xfff;
-		pta = (unsigned long)pd[pd_ndx];
+		pdeu.pde = pd[pd_ndx];
+		pta = pdeu.l;
 		pta &= 0xffffc000;
 		// Get the physical address of the memory to alias.
-		phys = (unsigned long)LinearToPhysical(h,pMem);
+		phys = (unsigned long)LinearToPhysical(h,(char*)pMem);
 		phys &= 0xffffc000;
-		pte = (PTE)phys;
-		pte.present = 1;
-		pte.alias = 1;
-		pte.s = 0;
-		pte.r = 1;
-		pte.w = 1;
-		pte.x = 1;
+		pteu.l = phys;
+		pteu.pte.present = 1;
+		pteu.pte.alias = 1;
+		pteu.pte.s = 0;
+		pteu.pte.r = 1;
+		pteu.pte.w = 1;
+		pteu.pte.x = 1;
 		if (num_pages==1)
-			pte.end_of_run = 1;
-		(PTE*)(pta)[pt_ndx] = pte;
+			pteu.pte.end_of_run = 1;
+		((PTE*)(pta))[pt_ndx] = pteu.pte;
 		// Put linear address in upper half of PD.
-		pte = (PTE)la;
-		pte.present = 1;
-		pte.alias = 1;
-		pte.s = 0;
-		pte.r = 1;
-		pte.w = 1;
-		pte.x = 1;
+		pteu.l = la;
+		pteu.pte.present = 1;
+		pteu.pte.alias = 1;
+		pteu.pte.s = 0;
+		pteu.pte.r = 1;
+		pteu.pte.w = 1;
+		pteu.pte.x = 1;
 		if (num_pages==1)
-			pte.end_of_run = 1;
-		(PTE*)(pta)[pt_ndx+32] = pte;
+			pteu.pte.end_of_run = 1;
+		((PTE*)(pta))[pt_ndx+32] = pteu.pte;
 		PMT[(phys >> 14) & 0xffff].share_count++;
 		// Advance the addresses by a page
 		pMem += 16384;
@@ -288,12 +298,13 @@ long AddSystemPageTable()
 	hACB ha;
 	int ndx;
 	PDE pde1;
+	PDE_u pdeu;
 	
 	if (nPagesFree==0)
 		return (E_NoMem);
 	if (pNextPT==NULL)
 		return (E_NoMem);
-	phys = LinearToPhysical(1, pNextPT)
+	phys = (unsigned long)LinearToPhysical(1, pNextPT)
 	if (phys == 0)
 		return (E_NoMem);
 	// Find an unused entry in the PD.
@@ -301,19 +312,21 @@ long AddSystemPageTable()
 	pd = &pa->pd;
 	for (ndx = 1; ndx < 33; ndx++) {
 		if (ndx < 9 || ndx > 24) {
-			pde = &pd[ndx-1];
-			if ((unsigned long)(*pde)==0xffffffff) {
-				(unsigned long)(*pde) = phys;
-				pde->present = 1;
-				pde->s = 1;
-				pde->r = 1;
-				pde->w = 1;
-				pde[32] = (PDE)((uint32_t)pNextPT & 0xffffc000);
-				pde[32].present = 1;
-				pde[32].s = 1;
-				pde[32].r = 1;
-				pde[32].w = 1;
-				pde[32].x = 1;
+			pdeu.pde = pd[ndx-1];
+			if (pdeu.l==0xffffffff) {
+				pdeu.l = phys;
+				pdeu.pde.present = 1;
+				pdeu.pde.s = 1;
+				pdeu.pde.r = 1;
+				pdeu.pde.w = 1;
+				pd[ndx-1] = pdeu.pde;
+				pdeu.l = (uint32_t)pNextPT & 0xffffc000;
+				pdeu.pde.present = 1;
+				pdeu.pde.s = 1;
+				pdeu.pde.r = 1;
+				pdeu.pde.w = 1;
+				pdeu.pde.x = 1;
+				pd[ndx+32-1] = pdeu.pde;
 				break;
 			}
 		}
@@ -326,17 +339,19 @@ long AddSystemPageTable()
 		pa = ACBHandleToPointer(ha);
 		pd = &pa->pd;
 		pde = &pd[ndx-1];
-		(unsigned long)(*pde) = phys;
-		pde->present = 1;
-		pde->s = 1;
-		pde->r = 1;
-		pde->w = 1;
-		pde[32] = (PDE)((uint32_t)pNextPT & 0xffffc000);
-		pde[32].present = 1;
-		pde[32].s = 1;
-		pde[32].r = 1;
-		pde[32].w = 1;
-		pde[32].x = 1;
+		pdeu.l = phys;
+		pdeu.pde.present = 1;
+		pdeu.pde.s = 1;
+		pdeu.pde.r = 1;
+		pdeu.pde.w = 1;
+		pd[ndx-1] = pdeu.pde;
+		pdeu.l = (uint32_t)pNextPT & 0xffffc000;
+		pdeu.pde.present = 1;
+		pdeu.pde.s = 1;
+		pdeu.pde.r = 1;
+		pdeu.pde.w = 1;
+		pdeu.pde.x = 1;
+		pd[ndx+32-1] = pdeu.pde;
 	}
 	// Allocate the next page table
 	pNextPT = AllocPageTable();
@@ -355,6 +370,7 @@ long AddUserPageTable()
 	PDE* pde,* spde, * pd;
 	hACB ha;
 	int ndx;
+	PDE_u pdeu;
 	
 	if (nPagesFree==0)
 		return (E_NoMem);
@@ -363,20 +379,22 @@ long AddUserPageTable()
 	pa = ACBHandleToPointer(ha);
 	pd = &pa->pd;
 	for (ndx = 8; ndx < 24; ndx++) {
-		pde = &pd[ndx];
-		if ((unsigned long)(*pde)==0xffffffff) {
-			phys = LinearToPhysical(ha, pNextPT)
-			(unsigned long)(*pde) = phys;
-			pde->present = 1;
-			pde->s = 0;
-			pde->r = 1;
-			pde->w = 1;
-			pde[32] = (PDE)((uint32_t)pNextPT & 0xffffc000);
-			pde[32].present = 1;
-			pde[32].s = 0;
-			pde[32].r = 1;
-			pde[32].w = 1;
-			pde[32].x = 1;
+		pdeu.pde = pd[ndx];
+		if (pdeu.l==0xffffffff) {
+			phys = (unsigned long)LinearToPhysical(ha, pNextPT)
+			pdeu.l = phys;
+			pdeu.pde.present = 1;
+			pdeu.pde.s = 0;
+			pdeu.pde.r = 1;
+			pdeu.pde.w = 1;
+			pd[ndx] = pdeu.pde;
+			pdeu.l = ((uint32_t)pNextPT & 0xffffc000);
+			pdeu.pde.present = 1;
+			pdeu.pde.s = 0;
+			pdeu.pde.r = 1;
+			pdeu.pde.w = 1;
+			pdeu.pde.x = 1;
+			pd[ndx+32] = pdeu.pde;
 			pNextPT = AllocPageTable();
 			return (E_Ok);
 		}
@@ -391,18 +409,18 @@ long AddUserPageTable()
 long FMTK_AllocSystemPages(__reg("d0") long num_pages, __reg("d1") long ppAddr)
 {
 	char* page;
-	long er;
+	long re;
 	long d1,d2,d3;
 
 	if (num_pages==0 || ppAddr==0)
 		return(E_Arg);
-	FMTK_WaitMsg(MemExch,&d1,&d2,&d3,-1);
+	FMTK_WaitMsg(MemExch,(long)&d1,(long)&d2,(long)&d3,-1);
 	if (num_pages > nPagesFree) {
 		re = E_NoMem;
 		goto j1;
 	}
 	do {
-		page = FindRun(0,num_pages);
+		page = (char *)FindRun(0,num_pages);
 		if (page==NULL) {
 			re = AddSystemPageTable();
 			if (re)
@@ -423,18 +441,18 @@ j1:
 long FMTK_AllocPages(__reg("d0") long num_pages, __reg("d1") long ppAddr)
 {
 	char* page;
-	long er;
+	long re;
 	long d1,d2,d3;
 
 	if (num_pages==0 || ppAddr==0)
 		return(E_Arg);
-	FMTK_WaitMsg(MemExch,&d1,&d2,&d3,-1);
+	FMTK_WaitMsg(MemExch,(long)&d1,(long)&d2,(long)&d3,-1);
 	if (num_pages > nPagesFree) {
 		re = E_NoMem;
 		goto j1;
 	}
 	do {
-		page = FindRun(1,num_pages);
+		page = (char *)FindRun(1,num_pages);
 		if (page==NULL) {
 			re = AddUserPageTable();
 			if (re)
@@ -540,6 +558,7 @@ long FMTK_AliasMem(
 	unsigned long pages_needed;
 	hACB ra;
 	ACB* pa;
+	long er;
 
 	if (hApp == (ra = GetRunningAppid()))
 		return (0);
@@ -547,7 +566,7 @@ long FMTK_AliasMem(
 	pages_needed = (((pMem & 0xffffc000) + cbMem) >> 14) + 1;
 	do {
 		la = FindRun(pa->is_system?0:1,pages_needed);
-		if (la==NULL) {
+		if (la==0) {
 			if (pa->is_system)
 				er = AddSystemPageTable();
 			else 
@@ -555,7 +574,7 @@ long FMTK_AliasMem(
 			if (er)
 				return (er);
 		}
-	} while(la==NULL);
+	} while(la==0);
 	AddAliasRun(la, pages_needed, pMem, hApp);
 	la |= (pMem & 0xffffc000);
 	*(unsigned long*)ppAliasRet = la;
@@ -567,9 +586,10 @@ long FMTK_AliasMem(
 // Memory is de-aliased but not deallocated.
 // ----------------------------------------------------------------------------
 
-long FMTK_DeAliasMem(__reg("d0") long hACB, __reg("d1") long pMem, __reg("d2") long len)
+long FMTK_DeAliasMem(__reg("d0") long hAcb, __reg("d1") long pMem, __reg("d2") long len)
 {
 	PTE* pte;
+	PTE_u pteu;
 	char *phys;
 	int eor = 0;
 	
@@ -577,19 +597,21 @@ long FMTK_DeAliasMem(__reg("d0") long hACB, __reg("d1") long pMem, __reg("d2") l
 	for (; len > 0; len -= min(16384,len)) {
 		pte = GetPageTableEntryAddress(hAcb, (char *)pMem, 0);
 		if (pte) {
-			eor = pte->end_of_run;
-			if (pte->alias) {
-				*pte = 0;
-				pte->page = 0x3ffff;
-				pte->present = 1;
-				pte->s = 1;
-				pte->r = 1;
-				pte->w = 1;
-				PMT[pte->page & 0xffff].share_count--;
+			pteu.pte = *pte;
+			eor = pteu.pte.end_of_run;
+			if (pteu.pte.alias) {
+				pteu.l = 0;
+				pteu.pte.present = 1;
+				pteu.pte.s = 1;
+				pteu.pte.r = 1;
+				pteu.pte.w = 1;
+				PMT[pteu.pte.page & 0xffff].share_count--;
+				pteu.pte.page = 0x3ffff;
+				*pte = pteu.pte;
 			}
 		}
 		if (eor)
-			return (len - min(16384,len) > 0 ? E_BadAlias : E_Ok);
+			return ((len - min(16384,len) > 0) ? E_BadAlias : E_Ok);
 		pMem += 16384;
 	}
 	return (E_Ok);
@@ -617,7 +639,7 @@ void init_memory_management()
 
 	// Send a dummy message to memory exchange.
 	FMTK_SendMsg(MemExch,0xfffffff1,0xfffffff1,0xfffffff1);
-	pNextPT = AllocSystemPage();
+	FMTK_AllocSystemPages(1, (long)&pNextPT);
   
   // Allocate 16MB to the OS, 8MB OS, 8MB video frame buffer
   osmem = (char *)mem_alloc(1, 16777216,7);

@@ -61,7 +61,7 @@ void SetupDevices()
 	DCB *p;
 	int n;
 
-  for (n = 0; n < 32; n++) {
+  for (n = 0; n < NR_DCB; n++) {
     FMTK_AllocMbx((long)&hDevMailbox[n*2]);
     FMTK_AllocMbx((long)&hDevMailbox[n*2+1]);
     p = &DeviceTable[n];

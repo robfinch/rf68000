@@ -34,17 +34,32 @@
 ;                                                                          
 ; ============================================================================
 
-;	include "..\inc\const.x68"
-;	include "..\inc\config.x68"
+	include "..\Femtiki\source\inc\const.x68"
+	include "..\Femtiki\source\inc\config.x68"
 ;	include "..\inc\device.x68"
 
-gfxaccel_dcb	equ _DeviceTable+160*7
-
+	section gvars
+	align 2
+gfx_inbuf_ptr
+	ds.l	1
+gfx_outbuf_ptr
+	ds.l	1
+gfx_inbuf_ptr2
+	ds.l	1
+gfx_outbuf_ptr2
+	ds.l	1
+gfx_inbuf_size
+	ds.l	1
+gfx_outbuf_size
+	ds.l	1
+gfx_color_comp
+	ds.l	1
+	
+	code
+	even
 GFXACCEL_CMDTBL_ADDR macro arg1
 	dc.w ((\1-GFXACCEL_CMDTBL))
 endm
-
-GFXACCEL	equ	$FD210000
 
 GFX_CTRL		equ	$100
 GFX_STATUS	equ $104
@@ -160,27 +175,28 @@ gfxaccel_cmdproc:
 setup_gfxaccel:
 gfxaccel_setup:
 	movem.l d0/a0/a1,-(a7)
-	moveq #32,d0
-	lea.l gfxaccel_dcb,a0
+	move.l d0,a0
+	move.l d0,a1
+	moveq #15,d0
 .0001:
 	clr.l (a0)+
 	dbra d0,.0001
-	move.l #$44434220,gfxaccel_dcb+DCB_MAGIC			; 'DCB'
-	move.l #$47465841,gfxaccel_dcb+DCB_NAME				; 'GFXACCEL'
-	move.l #$4343454C,gfxaccel_dcb+DCB_NAME+4
-	move.l #gfxaccel_cmdproc,gfxaccel_dcb+DCB_CMDPROC
+	move.l #$44434220,DCB_MAGIC(a1)			; 'DCB'
+	move.l #$47465841,DCB_NAME(a1)				; 'GFXACCEL'
+	move.l #$4343454C,DCB_NAME+4(a1)
+	move.l #gfxaccel_cmdproc,DCB_CMDPROC(a1)
 	move.l #$00000000,d0
-	move.l d0,gfxaccel_dcb+DCB_INBUFPTR
-	move.l d0,gfxaccel_dcb+DCB_OUTBUFPTR
+	move.l d0,gfx_inbuf_ptr
+	move.l d0,gfx_outbuf_ptr
 	add.l #$400000,d0
-	move.l d0,gfxaccel_dcb+DCB_INBUFPTR2
-	move.l d0,gfxaccel_dcb+DCB_OUTBUFPTR2
-	move.l #$00400000,gfxaccel_dcb+DCB_INBUFSIZE
-	move.l #$00400000,gfxaccel_dcb+DCB_OUTBUFSIZE
+	move.l d0,gfx_inbuf_ptr2
+	move.l d0,gfx_outbuf_ptr2
+	move.l #$00400000,gfx_inbuf_size
+	move.l #$00400000,gfx_outbuf_size
 	move.l #$00008888,GFXACCEL+GFX_COLOR_COMP
-	lea.l gfxaccel_dcb+DCB_MAGIC,a1
-	jsr DisplayString
-	jsr CRLF
+	lea.l DCB_MAGIC(a1),a1
+	moveq #13,d0
+	trap #15
 	movem.l (a7)+,d0/a0/a1
 
 gfxaccel_init:
@@ -530,7 +546,7 @@ gfxaccel_wait:
 	ext.l d1
 	move.l d3,d2
 	add.l d1,d2
-	cmpi.l #2040,d2
+	cmpi.l #2020,d2
 	bhi.s .0001
 	movem.l (a7)+,d1/d2/d3
 	rts

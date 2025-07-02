@@ -34,14 +34,50 @@
 ;                                                                          
 ; ============================================================================
 
-;	include "..\inc\const.x68"
-;	include "..\inc\config.x68"
+	include "..\Femtiki\source\inc\const.x68"
+	include "..\Femtiki\source\inc\config.x68"
 ;	include "..\inc\device.x68"
 
-framebuf_dcb	equ _DeviceTable+160*6
+	section gvars
+	align 2
+fb_fg_color
+	ds.l	1
+fb_bk_color
+	ds.l	1
+fb_inbuf_ptr
+	ds.l	1
+fb_outbuf_ptr
+	ds.l	1
+fb_inbuf_size
+	ds.l	1
+fb_outbuf_size
+	ds.l	1
+fb_inpos_x
+	ds.l	1
+fb_inpos_y
+	ds.l	1
+fb_outpos_x
+	ds.l	1
+fb_outpos_y
+	ds.l	1
+fb_opcode
+	ds.b	1
+	align 2
+fb_dimen_x
+	ds.w	1
+fb_dimen_y
+	ds.w	1
+fb_inbuf_ptr2
+	ds.l	1
+fb_outbuf_ptr2
+	ds.l	1
+fb_outbuf_size2
+	ds.l	1
+fb_unit
+	ds.l	1
 
 FB_CTA macro arg1
-	dc.w ((\1-FRAMEBUF_CMDTBL)>>2)
+	dc.w (\1-FRAMEBUF_CMDTBL)
 endm
 
 FRAMEBUF_CTRL equ 0
@@ -136,7 +172,6 @@ framebuf_cmdproc:
 	lea.l FRAMEBUF_CMDTBL(pc),a0
 	move.w (a0,d6.w),d6
 	ext.l d6
-	lsl.l #2,d6
 	add.l d6,a0
 	jsr (a0)
 	movem.l (a7)+,d6/a0
@@ -146,174 +181,156 @@ framebuf_cmdproc:
 	rts
 	global _framebuf_cmdproc
 
-	align 2
 setup_framebuf:
 framebuf_setup:
 	movem.l d0/a0/a1,-(a7)
-	moveq #32,d0
-	lea.l framebuf_dcb,a0
+	move.l d0,a0
+	move.l d0,a1
+	moveq #15,d0
 .0001:
 	clr.l (a0)+
 	dbra d0,.0001
-	move.l #$44434220,framebuf_dcb+DCB_MAGIC			; 'DCB '
-	move.l #$4652414D,framebuf_dcb+DCB_NAME				; 'FRAMEBUF'
-	move.l #$42554600,framebuf_dcb+DCB_NAME+4
-	move.l #framebuf_cmdproc,framebuf_dcb+DCB_CMDPROC
+	move.l #$44434220,DCB_MAGIC(a1)			; 'DCB '
+	move.l #$4652414D,DCB_NAME(a1)				; 'FRAMEBUF'
+	move.l #$42554600,DCB_NAME+4(a1)
+	move.l #framebuf_cmdproc,DCB_CMDPROC(a1)
 	move.l #$00000000,d0
-	move.l d0,framebuf_dcb+DCB_INBUFPTR
-	move.l d0,framebuf_dcb+DCB_OUTBUFPTR
-	move.l #$00400000,framebuf_dcb+DCB_INBUFSIZE
-	move.l #$00400000,framebuf_dcb+DCB_OUTBUFSIZE
-	lea.l framebuf_dcb+DCB_MAGIC,a1
-	jsr DisplayString
-	jsr CRLF
+	move.l d0,fb_inbuf_ptr
+	move.l d0,fb_outbuf_ptr
+	move.l #$00400000,fb_inbuf_size
+	move.l #$00400000,fb_outbuf_size
+	lea.l DCB_MAGIC(a1),a1
+	moveq #13,d0									; DisplayStringCRLF function
+	trap #15
 	bsr framebuf_init
 	movem.l (a7)+,d0/a0/a1
 	rts
 
-	align 2
 framebuf_init:
 	move.b #1,FRAMEBUF+0		; turn on frame buffer
 	move.l #$00002AAA,FRAMEBUF+FRAMEBUF_COLOR_COMP	; 2-10-10-10 color
 	move.b #$11,FRAMEBUF+2	; hres 1:1 vres 1:1
 	move.l #$0F000063,FRAMEBUF+4		; burst length, burst interval
-	move.l #$3fffffff,framebuf_dcb+DCB_FGCOLOR	; white
-	move.l #$000000ff,framebuf_dcb+DCB_BKCOLOR	; medium blue
-	clr.l framebuf_dcb+DCB_OUTPOSX
-	clr.l framebuf_dcb+DCB_OUTPOSY
-	clr.l framebuf_dcb+DCB_INPOSX
-	clr.l framebuf_dcb+DCB_INPOSY
-	move.b #1,framebuf_dcb+DCB_OPCODE	; raster op = copy
-	move.w #1024,framebuf_dcb+DCB_OUTDIMX		; set rows and columns
-	move.w #768,framebuf_dcb+DCB_OUTDIMY
-	move.w #1024,framebuf_dcb+DCB_INDIMX			; set rows and columns
-	move.w #768,framebuf_dcb+DCB_INDIMY
-	move.l #$00000000,framebuf_dcb+DCB_INBUFPTR
-	move.l #$00400000,framebuf_dcb+DCB_INBUFPTR2
-	move.l #$00000000,framebuf_dcb+DCB_OUTBUFPTR
-	move.l #$00400000,framebuf_dcb+DCB_OUTBUFPTR2
+	move.l #$3fffffff,fb_fg_color	; white
+	move.l #$000000ff,fb_bk_color	; medium blue
+	clr.l fb_outpos_x
+	clr.l fb_outpos_y
+	clr.l fb_inpos_x
+	clr.l fb_inpos_y
+	move.b #1,fb_opcode	; raster op = copy
+	move.w #1024,fb_dimen_x		; set rows and columns
+	move.w #768,fb_dimen_y
+	move.w #1024,fb_dimen_x			; set rows and columns
+	move.w #768,fb_dimen_y
+	move.l #$00000000,fb_inbuf_ptr
+	move.l #$00400000,fb_inbuf_ptr2
+	move.l #$00000000,fb_outbuf_ptr
+	move.l #$00400000,fb_outbuf_ptr2
 	move.l #$00000000,FRAMEBUF+FRAMEBUF_PAGE1_ADDR	; base addr 1
 	move.l #$00400000,FRAMEBUF+FRAMEBUF_PAGE2_ADDR	; base addr 2
 	rts
 
-	align 2
 framebuf_stat:
 framebuf_putchar:
 framebuf_getchar:
 framebuf_set_destbuf:
 	rts
 
-	align 2
 framebuf_is_removeable:
 	moveq #0,d1
 	moveq #E_Ok,d0
 	rts
 
-	align 2
 framebuf_set_inpos:
-	move.l d1,framebuf_dcb+DCB_INPOSX
-	move.l d2,framebuf_dcb+DCB_INPOSY
+	move.l d1,fb_inpos_x
+	move.l d2,fb_inpos_y
 	rts
-	align 2
 framebuf_set_outpos:
-	move.l d1,framebuf_dcb+DCB_OUTPOSX
-	move.l d2,framebuf_dcb+DCB_OUTPOSY
+	move.l d1,fb_outpos_x
+	move.l d2,fb_outpos_y
 	rts
 
-	align 2
 framebuf_getbuf1:
-	move.l framebuf_dcb+DCB_OUTBUFPTR,d1
+	move.l fb_outbuf_ptr,d1
 	rts
-	align 2
 framebuf_getbuf2:
-	move.l framebuf_dcb+DCB_OUTBUFPTR2,d1
+	move.l fb_outbuf_ptr2,d1
 	rts
-	align 2
 framebuf_setbuf1:
-	move.l d1,framebuf_dcb+DCB_OUTBUFPTR
-	move.l d2,framebuf_dcb+DCB_OUTBUFSIZE
+	move.l d1,fb_outbuf_ptr
+	move.l d2,fb_outbuf_size
 	rts
-	align 2
 framebuf_setbuf2:
-	move.l d1,framebuf_dcb+DCB_OUTBUFPTR2
-	move.l d2,framebuf_dcb+DCB_OUTBUFSIZE2
+	move.l d1,fb_outbuf_ptr2
+	move.l d2,fb_outbuf_size2
 	rts
 
-	align 2
 framebuf_swapbuf:
 	movem.l d1/d2,-(a7)
 	move.b FRAMEBUF+3,d1
 	eor.b #1,d1
 	move.b d1,FRAMEBUF+3					; page flip
-	move.l framebuf_dcb+DCB_OUTBUFPTR,d2
-	move.l framebuf_dcb+DCB_OUTBUFPTR2,d0
-	move.l d2,framebuf_dcb+DCB_OUTBUFPTR2
-	move.l d0,framebuf_dcb+DCB_OUTBUFPTR
+	move.l fb_outbuf_ptr,d2
+	move.l fb_outbuf_ptr2,d0
+	move.l d2,fb_outbuf_ptr2
+	move.l d0,fb_outbuf_ptr
 	move.l d0,GFXACCEL+FRAMEBUF_PAGE1_ADDR
-	move.l framebuf_dcb+DCB_INBUFPTR,d2
-	move.l framebuf_dcb+DCB_INBUFPTR2,d0
-	move.l d2,framebuf_dcb+DCB_INBUFPTR2
-	move.l d0,framebuf_dcb+DCB_INBUFPTR
+	move.l fb_inbuf_ptr,d2
+	move.l fb_inbuf_ptr2,d0
+	move.l d2,fb_inbuf_ptr2
+	move.l d0,fb_inbuf_ptr
 	movem.l (a7)+,d1/d2
 	move.l #E_Ok,d0
 	rts
 
-	align 2
 framebuf_set_dispbuf:
 	move.l d1,FRAMEBUF+FRAMEBUF_PAGE1_ADDR
 	move.b #0,FRAMEBUF+3					; set display page
 	move.l #E_Ok,d0
 	rts
 
-	align 2
 framebuf_set_unit:
-	move.l d1,framebuf_dcb+DCB_UNIT
+	move.l d1,fb_unit
 	move.l #E_Ok,d0
 	rts
 
-	align 2
 framebuf_getbuf:
 framebuf_putbuf:
 framebuf_stub:
 	moveq #E_NotSupported,d0
 	rts
 
-	align 2
 framebuf_set_color_depth:
 	move.l d1,FRAMEBUF+FRAMEBUF_COLOR_COMP
 	move.l #E_Ok,d0
 	rts
 	
-	align 2
 framebuf_get_color:
-	move.l framebuf_dcb+DCB_FGCOLOR,d1
-	move.l framebuf_dcb+DCB_BKCOLOR,d2
+	move.l fb_fg_color,d1
+	move.l fb_bk_color,d2
 	move.l #E_Ok,d0
 	rts
 
-	align 2
 framebuf_get_dimen:
 	cmpi.b #0,d0
 	bne.s .0001
-	move.l framebuf_dcb+DCB_OUTDIMX,d1
-	move.l framebuf_dcb+DCB_OUTDIMY,d2
-	move.l framebuf_dcb+DCB_OUTDIMZ,d3
+	move.l fb_dimen_x,d1
+	move.l fb_dimen_y,d2
+	clr.l d3
 	move.l #E_Ok,d0
 	rts
 .0001:
-	move.l framebuf_dcb+DCB_INDIMX,d1
-	move.l framebuf_dcb+DCB_INDIMY,d2
-	move.l framebuf_dcb+DCB_INDIMZ,d3
+	move.l fb_dimen_x,d1
+	move.l fb_dimen_y,d2
+	clr.l d3
 	move.l #E_Ok,d0
 	rts
 
-	align 2
 framebuf_set_dimen:
 	cmpi.b #0,d0
 	bne.s .0001
-	move.l d1,framebuf_dcb+DCB_OUTDIMX
-	move.l d2,framebuf_dcb+DCB_OUTDIMY
-	move.l d3,framebuf_dcb+DCB_OUTDIMZ
+	move.l d1,fb_dimen_x
+	move.l d2,fb_dimen_y
 	move.l d1,FRAMEBUF+FRAMEBUF_BMPSIZE_X
 	move.l d2,FRAMEBUF+FRAMEBUF_BMPSIZE_Y
 	move.l #E_Ok,d0
@@ -321,9 +338,8 @@ framebuf_set_dimen:
 .0001:
 	cmpi.b #1,d0
 	bne.s .0002
-	move.l d1,framebuf_dcb+DCB_INDIMX
-	move.l d2,framebuf_dcb+DCB_INDIMY
-	move.l d3,framebuf_dcb+DCB_INDIMZ
+	move.l d1,fb_dimen_x
+	move.l d2,fb_dimen_y
 	move.l #E_Ok,d0
 	rts
 .0002:
@@ -349,7 +365,6 @@ framebuf_set_dimen:
 ; okay.
 ;---------------------------------------------------------------------
 
-	align 2
 framebuf_writeat:
 plot:
 	bra plot_sw
@@ -360,8 +375,8 @@ plot:
 ;	bne.s .0001										; Then set:
 	move.w d1,32(a0)							; pixel x co-ord
 	move.w d2,34(a0)							; pixel y co-ord
-	move.w framebuf_dcb+DCB_FGCOLOR,44(a0)	; pixel color
-	move.b framebuf_dcb+DCB_OPCODE,41(a0)	; set raster operation
+	move.w fb_fg_color,44(a0)	; pixel color
+	move.b fb_opcode,41(a0)	; set raster operation
 	move.b #2,40(a0)							; point plot command
 	movem.l (a7)+,d1/d2/a0
 	rts
@@ -369,7 +384,7 @@ plot:
 ;-------------------------------------------
 ; In case of lacking hardware plot
 ;-------------------------------------------
-	align 2
+
 plottbl:
 	dc.l plot_black
 	dc.l plot_copy
@@ -387,10 +402,9 @@ plottbl:
 	dc.l plot_copy
 	dc.l plot_white
 
-	align 2
 plot_sw:
 	movem.l d1/d2/d3/d4/a0/a1,-(a7)
-	mulu framebuf_dcb+DCB_OUTDIMX,d2	; multiply y by screen width
+	mulu fb_dimen_x,d2	; multiply y by screen width
 ;	move.l d1,d3
 ;	andi.l #30,d3
 ;	moveq #30,d4
@@ -400,33 +414,33 @@ plot_sw:
 	ext.l d1											; clear high-order word of x
 	add.l d1,d2										; add in x co-ord
 	add.l d2,d2										; *2 for 16 BPP
-	move.l framebuf_dcb+DCB_OUTBUFPTR2,a0		; where the draw occurs
-	move.b framebuf_dcb+DCB_OPCODE,d3				; raster operation
+	move.l fb_outbuf_ptr2,a0		; where the draw occurs
+	move.b fb_opcode,d3				; raster operation
 	ext.w d3
 	lsl.w #2,d3
 	move.l plottbl(pc,d3.w),a1
 	jmp (a1)
 plot_or:
 	move.w (a0,d2.l),d4	
-	or.w framebuf_dcb+DCB_FGCOLOR,d4
+	or.w fb_fg_color,d4
 	move.w d4,(a0,d2.l)
 	movem.l (a7)+,d1/d2/d3/d4/a0/a1
 	rts
 plot_xor:
 	move.w (a0,d2.l),d4
-	move.w framebuf_dcb+DCB_FGCOLOR,d3	
+	move.w fb_fg_color,d3	
 	eor.w d3,d4
 	move.w d4,(a0,d2.l)
 	movem.l (a7)+,d1/d2/d3/d4/a0/a1
 	rts
 plot_and:
 	move.w (a0,d2.l),d4	
-	and.w framebuf_dcb+DCB_FGCOLOR,d4
+	and.w fb_fg_color,d4
 	move.w d4,(a0,d2.l)
 	movem.l (a7)+,d1/d2/d3/d4/a0/a1
 	rts
 plot_copy:
-	move.w framebuf_dcb+DCB_FGCOLOR,(a0,d2.l)
+	move.w fb_fg_color,(a0,d2.l)
 	movem.l (a7)+,d1/d2/d3/d4/a0/a1
 	rts
 plot_black:
@@ -439,7 +453,6 @@ plot_white:
 	rts
 
 
-	align 2
 clear_graphics_screen:
 ;	move.l #0,d1
 ;	bsr gfxaccel_set_color
@@ -450,7 +463,7 @@ clear_graphics_screen:
 ;	bsr gfxaccel_draw_rectangle
 	move.l #VIDEO_X*VIDEO_Y,d5		; compute number of strips to write
 	lsr.l #3,d5						; 8 pixels per strip
-;	move.l framebuf_dcb+DCB_OUTBUFPTR,a4
+;	move.l fb_outbuf_ptr,a4
 	move.l #$40000000,a4
 	move.l #0,$7FFFFFF8		; burst length of zero
 	bra.s .0001
@@ -469,7 +482,6 @@ clear_graphics_screen:
 
 ; Clears the page opposite to the display page
 
-	align 2
 framebuf_clear:
 	fmove.x fp0,-(a7)
 	fmove.x fp1,-(a7)
@@ -477,13 +489,13 @@ framebuf_clear:
 	move.b FRAMEBUF+3,d1		; get displayed page
 	cmpi.b #1,d1
 	bne.s .0001
-	move.l framebuf_dcb+DCB_OUTBUFPTR,a0		; where the draw occurs
+	move.l fb_outbuf_ptr,a0		; where the draw occurs
 	bra.s .0002
 .0001
-	move.l framebuf_dcb+DCB_OUTBUFPTR2,a0		; where the draw occurs
+	move.l fb_outbuf_ptr2,a0		; where the draw occurs
 .0002
-	move.l framebuf_dcb+DCB_OUTDIMX,d1
-	move.l framebuf_dcb+DCB_OUTDIMY,d2
+	move.l fb_dimen_x,d1
+	move.l fb_dimen_y,d2
 	mulu d1,d2							; d2 = X dimen * Y dimen = number of pixels
 	move.l FRAMEBUF+FRAMEBUF_PPS,d1
 	andi.w #$3ff,d1					; extract pixels per strip
@@ -494,7 +506,7 @@ framebuf_clear:
 	fmove.l d4,fp1					; so use float divider
 	fdiv fp1,fp0						; fp0 = screen size / pixels per strip
 	fmove.l fp0,d0					; d0 = number of strips to set
-	move.l framebuf_dcb+DCB_FGCOLOR,d1
+	move.l fb_fg_color,d1
 	move.l d1,d4
 	move.l #0,$7FFFFFF8			; set burst length zero
 	bra.s .loop

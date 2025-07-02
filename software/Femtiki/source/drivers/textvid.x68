@@ -37,8 +37,8 @@
 ;		d7.high word = device #
 ; ============================================================================
 
-;	include "..\inc\const.x68"
-;	include "..\inc\config.x68"
+	include "..\Femtiki\source\inc\const.x68"
+	include "..\Femtiki\source\inc\config.x68"
 ;	include "..\inc\device.x68"
 
 TEXTREG		equ	$FD080000
@@ -182,7 +182,7 @@ textvid_setup:
 	movem.l d0/a0/a1,-(a7)
 	move.l d0,a0
 	move.l d0,a1
-	moveq #31,d0
+	moveq #15,d0
 .0001:
 	clr.l (a1)+
 	dbra d0,.0001
@@ -200,6 +200,7 @@ textvid_setup:
 	trap #15
 	movem.l (a7)+,d0/a0/a1
 	rts
+	global setup_textvid
 
 	align 2
 textvid_init:

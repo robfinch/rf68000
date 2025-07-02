@@ -99,7 +99,10 @@ main_loop:
 	moveq	#94,d0					; copy screen buffer to main (page flip)
 	trap #15
 
-	jsr clear_bitmap_screen4
+	move.l $60000,d7						; video frame buffer
+	moveq #DEV_CLEAR,d6
+	trap #0
+
 ;	move.w #$FF00,d1			; clear screen
 ;	moveq #11,d0					; position cursor
 ;	trap #15
@@ -199,8 +202,6 @@ game_message:
 do_start_mess:
 	moveq #5,d0					; GetKey
 	trap #15
-	tst.l d1
-	bmi.s push_start_mess
 	moveq #1,d0
 	cmpi.b #'1',d1
 	beq.s start_game
@@ -374,21 +375,21 @@ check_next_object
 	bmi.s next_pss			; if all done go do next player/saucer/shot
 
 check_all
-	MOVE.b	flags_off(a5,d7.w),d2	; get the item flag indexed by d7
-	BLE.s		check_next_object		; if the item doesn't exist or the item is
+	move.b flags_off(a5,d7.w),d2	; get the item flag indexed by d7
+	ble.s	check_next_object		; if the item doesn't exist or the item is
 							; exploding go try the next item
 
-	MOVE.w	d7,d5				; copy the item index
-	ADD.w		d5,d5				; ; 2 for the item position index
+	move.w d7,d5				; copy the item index
+	add.w d5,d5					; *2 for the item position index
 
-	MOVE.w	d6,d4				; copy the fire item index
-	ADD.w		d4,d4				; ; 2 for the fire item position index
+	move.w d6,d4				; copy the fire item index
+	add.w	d4,d4					; * 2 for the fire item position index
 
-	MOVE.w	x_pos_off(a5,d5.w),d0	; get item x position
-	SUB.w		p_xpos_off(a5,d4.w),d0	; subtract the player/saucer/shot x position
-	BPL.s		delta_x_pos			; if the delta is positive skip the negate
+	move.w x_pos_off(a5,d5.w),d0	; get item x position
+	sub.w p_xpos_off(a5,d4.w),d0	; subtract the player/saucer/shot x position
+	bpl.s delta_x_pos			; if the delta is positive skip the negate
 
-	NEG.w		d0				; else negate the delta
+	neg.w	d0						; else negate the delta
 delta_x_pos
 	CMPI.w	#$0151,d0			; compare the range with $0151
 	BCC.s		check_next_object		; if it's out of range go try the next item
@@ -555,7 +556,7 @@ what_hit_saucer
 	TST.b		num_players(a3)		; test the number of players in the game
 	BEQ.s		explode_object		; if no players skip adding the score
 
-	MOVEQ		#$99,d1			; default to 990 points for a small saucer
+	move.l #$99,d1			; default to 990 points for a small saucer
 	BTST.b	#0,s_flag_off(a5)		; test the saucer size bit
 	BNE.s		keep_small			; if it was a small saucer keep the score value
 
@@ -641,7 +642,7 @@ saucer_yok
 
 							; else start at the right side and move left
 	MOVE.w	#$1FFF,d0			; set the saucer x position
-	MOVEQ		#$F0,d1			; set the saucer x velocity to - $10
+	move.l #$FFFFFFF0,d1			; set the saucer x velocity to - $10
 start_left
 	MOVE.b	d1,s_xvel_off(a5)		; save the saucer x velocity byte
 	MOVE.w	d0,s_xpos_off(a5)		; save the saucer x position
@@ -907,7 +908,7 @@ test_neg_fire
 	CMPI.b	#$91,d3			; compare it with the negative limit
 	BCC.s		fire_ok			; if < the negative limit skip the adjust
 
-	MOVEQ		#$91,d3			; else set the value to the negative limit
+	move.l #$FFFFFF91,d3			; else set the value to the negative limit
 fire_ok
 	EXT.w		d0				; make the byte value into a word
 
@@ -1195,7 +1196,7 @@ hype_yok2
 	CMP.b		rock_count(a5),d2		; compare this with the rock count
 	BCS.s		save_hyperspace		; if < the rock count allow the jump
 
-	MOVEQ		#$80,d1			; else flag an unsuccessful hyperspace jump
+	move.l #$FFFFFF80,d1			; else flag an unsuccessful hyperspace jump
 save_hyperspace
 	MOVE.b	d1,hyper(a3)		; save the hyperspace flag
 exit_hyperspace
@@ -1857,7 +1858,7 @@ copy_rock_2
 
 copy_velocity:
 	BSR		gen_prng			; generate the next pseudo random number
-	MOVEQ		#$8F,d0			; mask +/- $00 to $0F
+	move.l #$FFFFFF8F,d0			; mask +/- $00 to $0F
 	AND.b		PRNlword(a3),d0		; mask a pseudo random byte
 	BPL.s		x_off_pos			; skip bits set if positive
 
@@ -1869,7 +1870,7 @@ x_off_pos
 
 
 	BSR		gen_prng			; generate the next pseudo random number
-	MOVEQ		#$8F,d0			; mask +/- $00 to $0F
+	move.l #$FFFFFF8F,d0			; mask +/- $00 to $0F
 	AND.b		PRNlword(a3),d0		; mask a pseudo random byte
 	BPL.s		y_off_pos			; skip bits set if positive
 
@@ -1892,13 +1893,13 @@ limit_velocity:
 	CMPI.b	#$E1,d0			; compare velocity with upper limit
 	BCC.s		neg_upper_ok		; if less skip set
 
-	MOVEQ		#$E1,d0			; else set velocity to -$1F
+	move.l #$FFFFFFE1,d0			; else set velocity to -$1F
 neg_upper_ok
 	CMPI.b	#$FB,d0			; compare velocity with lower limit
 	BCS.s		exit_limit_velocity	; if greater just exit
 
-	MOVEQ		#$FA,d0			; else set velocity to -$06
-	RTS
+	move.l #$FFFFFFFA,d0			; else set velocity to -$06
+	rts
 
 ; test velocity positive limit
 
@@ -2365,7 +2366,7 @@ vec_y_pos
 	BPL		piece_draw_loop		; loop if more to do
 
 	MOVEM.l	(sp)+,d6-d7			; restore the registers
-	RTS
+	rts
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -3067,9 +3068,9 @@ Initialise:
 	moveq	#12,d0				; keyboard echo
 	trap #15
 
-	move.w #$FF00,d1		; clear screen
-	moveq #11,d0				; position cursor
-	trap #15
+;	move.w #$FF00,d1		; clear screen
+;	moveq #11,d0				; position cursor
+;	trap #15
 
 	moveq #17,d1				; enable double buffering
 	moveq	#92,d0				; set draw mode
@@ -3102,7 +3103,7 @@ clear_loop
 	eori.l	#$DEADBEEF,d1		; EOR with the initial PRNG seed, this must
 													; result in any value but zero
 	jsr InitRand
-;	move.l	d1,PRNlword(a3)		; save the initial PRNG seed
+	move.l	d1,PRNlword(a3)		; save the initial PRNG seed
 
 	moveq #3,d1					; get the switches address
 	moveq #32,d0				; simulator hardware
@@ -3167,7 +3168,11 @@ close_all_2
 ; generator as can be seen from analysing the output.
 
 gen_prng:
-	jmp RandGetNum
+	move.l d1,-(a7)
+	jsr RandGetNum
+	move.l d1,PRNlword(a3)
+	move.l (a7)+,d1
+	rts
 
 ;	MOVEM.l	d0-d2,-(sp)			; save d0, d1 and d2
 ;	MOVE.l	PRNlword(a3),d0		; get current seed longword

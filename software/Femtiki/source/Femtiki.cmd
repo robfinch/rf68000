@@ -1,7 +1,7 @@
 ENTRY (_bootrom)
 
 MEMORY {
-	BIOS_DATA : ORIGIN = 0x00000000, LENGTH = 3k
+	BIOS_DATA : ORIGIN = 0x00000000, LENGTH = 4k
 }
 
 MEMORY {
@@ -13,7 +13,7 @@ MEMORY {
 }
 
 MEMORY {
-	BIOS_BSS : ORIGIN = 0x000031000, LENGTH = 4k
+	BIOS_BSS : ORIGIN = 0x000031000, LENGTH = 8k
 }
 
 MEMORY {
@@ -62,6 +62,7 @@ SECTIONS {
 	} >BIOS_RODATA
 	bss(NOLOAD): {
 		. = 0x00031000
+		_SDA_BASE_ = .;
 		_start_bss = .;
 		*(bss);
 		. = ALIGN(2);

@@ -15,54 +15,53 @@
 ;
 ;==============================================================================
 
-;	include "..\inc\const.x68"
+	include "..\Femtiki\source\inc\const.x68"
 ;	include "..\inc\device.x68"
 
-keybd_dcb	equ _DeviceTable+160*1
 	section local_ram
-kbd_dimen_x
+keybd_vars	equ	*
+kbd_dimen_x equ *-keybd_vars
 	ds.b	1
-kbd_dimen_y
+kbd_dimen_y equ *-keybd_vars
 	ds.b	1
-kbd_ibufsize
+kbd_ibufsize equ *-keybd_vars
 	ds.b	1
-kbd_obufsize
+kbd_obufsize equ *-keybd_vars
 	ds.b	1
-kbd_ibufptr
+kbd_ibufptr equ *-keybd_vars
 	ds.l	1
-kbd_obufptr
+kbd_obufptr equ *-keybd_vars
 	ds.l	1
 
-KeybdLEDs
+KeybdLEDs equ *-keybd_vars
 	ds.b	1
-_KeyState1
+_KeyState1 equ *-keybd_vars
 	ds.b	1
-_KeyState2
+_KeyState2 equ *-keybd_vars
 	ds.b	1
-_KeybdHead
+_KeybdHead equ *-keybd_vars
 	ds.b	1
-_KeybdTail
+_KeybdTail equ *-keybd_vars
 	ds.b	1
-_KeybdCnt
+_KeybdCnt equ *-keybd_vars
 	ds.b	1
-KeybdEcho
+KeybdEcho equ *-keybd_vars
 	ds.b	1
-KeybdWaitFlag
+KeybdWaitFlag equ *-keybd_vars
 	ds.b	1
 	align 2
-KeybdID
+KeybdID equ *-keybd_vars
 	ds.l	1
-_Keybd_tick
+_Keybd_tick equ *-keybd_vars
 	ds.l	1
-_KeybdBuf
+_KeybdBuf equ *-keybd_vars
 	ds.b	32
-_KeybdOBuf
+_KeybdOBuf equ *-keybd_vars
 	ds.b	32
 
 	code
 	even
 
-KEYBD_DCB	equ keybd_dcb
 
 KBD_CMDADDR macro arg1
 	dc.w (\1-KBD_CMDTBL)
@@ -125,20 +124,23 @@ KBD_CMDTBL:
 	KBD_CMDADDR keybd_stub				; 52 get output position
 	KBD_CMDADDR keybd_stub				; 53 get input pointer
 	KBD_CMDADDR keybd_stub				; 54 get output pointer
+	KBD_CMDADDR keybd_stub				; 55 set unit
+	KBD_CMDADDR keybd_set_echo		; 56 set unit
 
 _keybd_cmdproc:
 keybd_cmdproc:
-	cmpi.b #55,d6
+	cmpi.b #57,d6
 	bhs.s .0001
-	movem.l d6/a0,-(a7)
+	movem.l d6/a0/a3,-(a7)
 	ext.w d6
 	lsl.l #1,d6
 	lea KBD_CMDTBL(pc),a0
 	move.w (a0,d6.w),d6
 	ext.l d6
 	add.l d6,a0
+	move.l #keybd_vars,a3
 	jsr (a0)
-	movem.l (a7)+,d6/a0
+	movem.l (a7)+,d6/a0/a3
 	rts
 .0001:
 	moveq #E_NotSupported,d0
@@ -149,26 +151,34 @@ keybd_cmdproc:
 ;------------------------------------------------------------------------------
 ; Setup the Keyboard device
 ;------------------------------------------------------------------------------
-	align 2
+
 setup_keybd:
 keybd_setup:
+	move.l a3,-(sp)
+	move.l #keybd_vars,a3
+	bsr keybd_init
+	move.l (sp)+,a3
+	rts
+
+	global setup_keybd
+
 keybd_init:
 	movem.l d0/a0/a1,-(a7)
 	move.l d0,a0
 	move.l d0,a1
-	moveq #31,d0
+	moveq #15,d0
 .0001:
 	clr.l (a1)+
 	dbra d0,.0001
 	move.l #$44434220,DCB_MAGIC(a0)				; 'DCB '
 	move.l #$4B424400,DCB_NAME(a0)				; 'KBD'
 	move.l #keybd_cmdproc,DCB_CMDPROC(a0)
-	move.l #_KeybdBuf,kbd_ibufptr
-	move.l #_KeybdOBuf,kbd_obufptr
-	move.l #32,kbd_ibufsize
-	move.l #32,kbd_obufsize
-	clr.b kbd_dimen_x		; set rows and columns
-	clr.b kbd_dimen_y
+	move.l #_KeybdBuf,kbd_ibufptr(a3)
+	move.l #_KeybdOBuf,kbd_obufptr(a3)
+	move.l #32,kbd_ibufsize(a3)
+	move.l #32,kbd_obufsize(a3)
+	clr.b kbd_dimen_x(a3)		; set rows and columns
+	clr.b kbd_dimen_y(a3)
 ;	bsr KeybdInit
 	bsr keybd_clear
 	moveq #13,d0									; DisplayStringCRLF function
@@ -196,11 +206,11 @@ keybd_is_removeable:
 
 	align 2
 keybd_clear:
-	clr.b _KeybdHead
-	clr.b _KeybdTail
-	clr.b _KeybdCnt
-	clr.b _KeyState1
-	clr.b _KeyState2
+	clr.b _KeybdHead(a3)
+	clr.b _KeybdTail(a3)
+	clr.b _KeybdCnt(a3)
+	clr.b _KeyState1(a3)
+	clr.b _KeyState2(a3)
 	moveq #E_Ok,d0
 	rts
 
@@ -271,7 +281,7 @@ KeybdGetID:
 	bne			kgnotKbd
 	move.l	#$AB83,d1
 kgid1:
-	move.w	d1,KeybdID
+	move.w	d1,KeybdID(a3)
 	rts
 kgnotKbd:
 	moveq		#0,d1
@@ -291,20 +301,20 @@ kgnotKbd:
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 KeybdSetLED:
-	move.l	d1,-(a7)
-	move.b	#$ED,d1
-	bsr			KeybdSendByte
-	bsr			KeybdWaitTx
-	bsr			KeybdRecvByte
-	tst.b		d1
-	bmi			.0001
-	cmpi.b	#$FA,d1
-	move.l	(a7),d1
-	bsr			KeybdSendByte
-	bsr			KeybdWaitTx
-	bsr			KeybdRecvByte
+	move.l d1,-(a7)
+	move.b #$ED,d1
+	bsr	KeybdSendByte
+	bsr	KeybdWaitTx
+	bsr	KeybdRecvByte
+	tst.b	d1
+	bmi	.0001
+	cmpi.b #$FA,d1
+	move.l (a7),d1
+	bsr	KeybdSendByte
+	bsr	KeybdWaitTx
+	bsr	KeybdRecvByte
 .0001:
-	move.l	(a7)+,d1
+	move.l (a7)+,d1
 	rts
 
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -491,8 +501,9 @@ KeybdWaitTx:
 ; d1.b 0=echo off, non-zero = echo on
 ;------------------------------------------------------------------------------
 
+keybd_set_echo:
 SetKeyboardEcho:
-	move.b	d1,KeybdEcho
+	move.b	d1,KeybdEcho(a3)
 	rts
 
 ;------------------------------------------------------------------------------
@@ -507,7 +518,7 @@ CheckForKey:
 ;	move.b	KEYBD+1,d1		; get keyboard port status
 ;	smi.b		d1						; set true/false
 ;	andi.b	#1,d1					; return true (1) if key available, 0 otherwise
-	tst.b	_KeybdCnt
+	tst.b	_KeybdCnt(a3)
 	sne.b	d1
 	rts
 
@@ -530,7 +541,7 @@ GetKey:
 	bsr	KeybdGetCharNoWait		; get a character
 	tst.l	d1									; was a key available?
 	bmi.s	.0004
-	tst.b	KeybdEcho						; is keyboard echo on ?
+	tst.b	KeybdEcho(a3)				; is keyboard echo on ?
 	beq.s	.0003								; no echo, just return the key
 	cmpi.b #CR,d1							; convert CR keystroke into CRLF
 	bne.s	.0005
@@ -571,12 +582,13 @@ CheckForCtrlC:
 ;------------------------------------------------------------------------------
 ;------------------------------------------------------------------------------
 
+	align 2
 KeybdGetCharNoWait:
-	clr.b	KeybdWaitFlag
+	clr.b	KeybdWaitFlag(a3)
 	bra	KeybdGetChar
 
 KeybdGetCharWait:
-	move.b #-1,KeybdWaitFlag
+	move.b #-1,KeybdWaitFlag(a3)
 
 KeybdGetChar:
 	movem.l	d0/d2/d3/a0,-(a7)
@@ -585,171 +597,171 @@ KeybdGetChar:
 	moveq #37,d0						; Lock semaphore
 	move.l #100000,d2				; wait this long
 	trap #15
-	move.b	_KeybdCnt,d2		; get count of buffered scan codes
-	beq.s		.0015						;
-	move.b	_KeybdHead,d2		; d2 = buffer head
-	ext.w		d2
-	lea			_KeybdBuf,a0		; a0 = pointer to keyboard buffer
-	clr.l		d1
-	move.b	(a0,d2.w),d1		; d1 = scan code from buffer
-	addi.b	#1,d2						; increment keyboard head index
-	andi.b	#31,d2					; and wrap around at buffer size
-	move.b	d2,_KeybdHead
-	subi.b	#1,_KeybdCnt		; decrement count of scan codes in buffer
-	exg			d1,d2						; save scancode value in d2
+	move.b _KeybdCnt(a3),d2		; get count of buffered scan codes
+	beq.s	.0015								;
+	move.b _KeybdHead(a3),d2		; d2 = buffer head
+	ext.w	d2
+	lea	_KeybdBuf(a3),a0		; a0 = pointer to keyboard buffer
+	clr.l	d1
+	move.b (a0,d2.w),d1			; d1 = scan code from buffer
+	addi.b #1,d2						; increment keyboard head index
+	andi.b #31,d2						; and wrap around at buffer size
+	move.b d2,_KeybdHead(a3)
+	subi.b #1,_KeybdCnt(a3)	; decrement count of scan codes in buffer
+	exg	d1,d2								; save scancode value in d2
 	moveq	#KEYBD_SEMA,d1
 	moveq #38,d0						; unlock semaphore
 	trap #15
-	exg			d2,d1						; restore scancode value
-	bra			.0001						; go process scan code
+	exg	d2,d1								; restore scancode value
+	bra	.0001								; go process scan code
 .0014:
-	bsr		_KeybdGetStatus		; check keyboard status for key available
-	bmi		.0006							; yes, go process
+	bsr	_KeybdGetStatus			; check keyboard status for key available
+	bmi	.0006								; yes, go process
 .0015:
 	moveq	#KEYBD_SEMA,d1
 	moveq #38,d0						; unlock semaphore
 	trap #15
-	tst.b		KeybdWaitFlag			; are we willing to wait for a key ?
-	bmi			.0003							; yes, branch back
+	tst.b	KeybdWaitFlag(a3)	; are we willing to wait for a key ?
+	bmi	.0003								; yes, branch back
 	movem.l	(a7)+,d0/d2/d3/a0
-	moveq		#-1,d1						; flag no char available
+	moveq #-1,d1						; flag no char available
 	rts
 .0006:
 	bsr	_KeybdGetScancode
 	bsr _KeybdClearIRQ
 .0001:
-	move.w	#1,leds
+	move.w #1,leds
 	cmp.b	#SC_KEYUP,d1
-	beq		.doKeyup
+	beq	.doKeyup
 	cmp.b	#SC_EXTEND,d1
-	beq		.doExtend
+	beq	.doExtend
 	cmp.b	#SC_CTRL,d1
-	beq		.doCtrl
+	beq	.doCtrl
 	cmp.b	#SC_LSHIFT,d1
-	beq		.doShift
+	beq	.doShift
 	cmp.b	#SC_RSHIFT,d1
-	beq		.doShift
+	beq	.doShift
 	cmp.b	#SC_NUMLOCK,d1
-	beq		.doNumLock
+	beq	.doNumLock
 	cmp.b	#SC_CAPSLOCK,d1
-	beq		.doCapsLock
+	beq	.doCapsLock
 	cmp.b	#SC_SCROLLLOCK,d1
-	beq		.doScrollLock
-	cmp.b   #SC_ALT,d1
-	beq     .doAlt
-	move.b	_KeyState1,d2			; check key up/down
-	move.b	#0,_KeyState1			; clear keyup status
+	beq	.doScrollLock
+	cmp.b #SC_ALT,d1
+	beq .doAlt
+	move.b _KeyState1(a3),d2			; check key up/down
+	move.b #0,_KeyState1(a3)			; clear keyup status
 	tst.b	d2
-	bne	    .0003					; ignore key up
-	cmp.b   #SC_TAB,d1
-	beq     .doTab
+	bne	.0003					; ignore key up
+	cmp.b #SC_TAB,d1
+	beq .doTab
 .0013:
-	move.b	_KeyState2,d2
-	bpl		.0010					; is it extended code ?
+	move.b _KeyState2(a3),d2
+	bpl	.0010							; is it extended code ?
 	and.b	#$7F,d2					; clear extended bit
-	move.b	d2,_KeyState2
-	move.b	#0,_KeyState1			; clear keyup
-	lea		_keybdExtendedCodes,a0
-	move.b	(a0,d1.w),d1
-	bra		.0008
+	move.b d2,_KeyState2(a3)
+	move.b #0,_KeyState1(a3)			; clear keyup
+	lea	_keybdExtendedCodes,a0
+	move.b (a0,d1.w),d1
+	bra	.0008
 .0010:
-	btst	#2,d2					; is it CTRL code ?
-	beq		.0009
+	btst #2,d2					; is it CTRL code ?
+	beq	.0009
 	and.w	#$7F,d1
-	lea		_keybdControlCodes,a0
-	move.b	(a0,d1.w),d1
-	bra		.0008
+	lea	_keybdControlCodes,a0
+	move.b (a0,d1.w),d1
+	bra	.0008
 .0009:
-	btst	#0,d2					; is it shift down ?
-	beq  	.0007
-	lea		_shiftedScanCodes,a0
-	move.b	(a0,d1.w),d1
-	bra		.0008
+	btst #0,d2					; is it shift down ?
+	beq .0007
+	lea	_shiftedScanCodes,a0
+	move.b (a0,d1.w),d1
+	bra .0008
 .0007:
-	lea		_unshiftedScanCodes,a0
-	move.b	(a0,d1.w),d1
-	move.w	#$0202,leds
+	lea	_unshiftedScanCodes,a0
+	move.b (a0,d1.w),d1
+	move.w #$0202,leds
 .0008:
-	move.w	#$0303,leds
+	move.w #$0303,leds
 	movem.l	(a7)+,d0/d2/d3/a0
 	rts
 .doKeyup:
-	move.b	#-1,_KeyState1
-	bra		.0003
+	move.b #-1,_KeyState1(a3)
+	bra .0003
 .doExtend:
-	or.b	#$80,_KeyState2
-	bra		.0003
+	or.b #$80,_KeyState2(a3)
+	bra .0003
 .doCtrl:
-	move.b	_KeyState1,d1
-	clr.b	_KeyState1
+	move.b _KeyState1(a3),d1
+	clr.b	_KeyState1(a3)
 	tst.b	d1
 	bpl.s	.0004
-	bclr	#2,_KeyState2
-	bra		.0003
+	bclr #2,_KeyState2(a3)
+	bra .0003
 .0004:
-	bset	#2,_KeyState2
-	bra		.0003
+	bset #2,_KeyState2(a3)
+	bra .0003
 .doAlt:
-	move.b	_KeyState1,d1
-	clr.b	_KeyState1
+	move.b _KeyState1(a3),d1
+	clr.b	_KeyState1(a3)
 	tst.b	d1
-	bpl		.0011
-	bclr	#1,_KeyState2
-	bra		.0003
+	bpl .0011
+	bclr #1,_KeyState2(a3)
+	bra	.0003
 .0011:
-	bset	#1,_KeyState2
-	bra		.0003
+	bset #1,_KeyState2(a3)
+	bra .0003
 .doTab:
-	move.l	d1,-(a7)
-  move.b  _KeyState2,d1
-  btst	#1,d1                 ; is ALT down ?
-  beq     .0012
+	move.l d1,-(a7)
+  move.b _KeyState2(a3),d1
+  btst #1,d1                 ; is ALT down ?
+  beq .0012
 ;    	inc     _iof_switch
-  move.l	(a7)+,d1
-  bra     .0003
+  move.l (a7)+,d1
+  bra .0003
 .0012:
-  move.l	(a7)+,d1
-  bra     .0013
+  move.l (a7)+,d1
+  bra .0013
 .doShift:
-	move.b	_KeyState1,d1
-	clr.b	_KeyState1
+	move.b _KeyState1(a3),d1
+	clr.b	_KeyState1(a3)
 	tst.b	d1
 	bpl.s	.0005
-	bclr	#0,_KeyState2
-	bra		.0003
+	bclr #0,_KeyState2(a3)
+	bra	.0003
 .0005:
-	bset	#0,_KeyState2
-	bra		.0003
+	bset #0,_KeyState2(a3)
+	bra	.0003
 .doNumLock:
-	bchg	#4,_KeyState2
-	bsr		KeybdSetLEDStatus
-	bra		.0003
+	bchg #4,_KeyState2(a3)
+	bsr KeybdSetLEDStatus
+	bra .0003
 .doCapsLock:
-	bchg	#5,_KeyState2
-	bsr		KeybdSetLEDStatus
-	bra		.0003
+	bchg #5,_KeyState2(a3)
+	bsr KeybdSetLEDStatus
+	bra	.0003
 .doScrollLock:
-	bchg	#6,_KeyState2
-	bsr		KeybdSetLEDStatus
-	bra		.0003
+	bchg #6,_KeyState2(a3)
+	bsr KeybdSetLEDStatus
+	bra	.0003
 
 KeybdSetLEDStatus:
 	movem.l	d2/d3,-(a7)
-	clr.b		KeybdLEDs
-	btst		#4,_KeyState2
-	beq.s		.0002
-	move.b	#2,KeybdLEDs
+	clr.b	KeybdLEDs(a3)
+	btst #4,_KeyState2(a3)
+	beq.s	.0002
+	move.b #2,KeybdLEDs(a3)
 .0002:
-	btst		#5,_KeyState2
-	beq.s		.0003
-	bset		#2,KeybdLEDs
+	btst #5,_KeyState2(a3)
+	beq.s	.0003
+	bset #2,KeybdLEDs(a3)
 .0003:
-	btst		#6,_KeyState2
-	beq.s		.0004
-	bset		#0,KeybdLEDs
+	btst #6,_KeyState2(a3)
+	beq.s	.0004
+	bset #0,KeybdLEDs(a3)
 .0004:
-	move.b	KeybdLEDs,d1
-	bsr			KeybdSetLED
+	move.b KeybdLEDs(a3),d1
+	bsr	KeybdSetLED
 	movem.l	(a7)+,d2/d3
 	rts
 
@@ -769,11 +781,11 @@ KeybdSendByte:
 Wait10ms:
 	movem.l	d0/d1,-(a7)
 	movec	tick,d0
-	addi.l #400000,d0			; 400,000 cycles at 40MHz
+	addi.l #100000,d0			; 100,000 cycles at 100MHz
 .0001:
 	movec	tick,d1
 	cmp.l	d1,d0
-	bhi	.0001
+	bne.s	.0001
 	movem.l	(a7)+,d0/d1
 	rts
 
@@ -788,12 +800,12 @@ Wait10ms:
 
 Wait300ms:
 	movem.l	d0/d1,-(a7)
-	movec		tick,d0
-	addi.l	#12000000,d0			; 12,000,000 cycles at 40MHz
+	movec	tick,d0
+	addi.l #4800000,d0			; 4,800,000 cycles at 100MHz
 .0001:
-	movec		tick,d1
-	cmp.l		d1,d0
-	bhi			.0001
+	movec	tick,d1
+	cmp.l d1,d0
+	bne.s	.0001
 	movem.l	(a7)+,d0/d1
 	rts
 
@@ -808,7 +820,8 @@ Wait300ms:
 
 KeybdIRQ:
 	move.w #$2600,sr					; disable lower interrupts
-	movem.l	d0/d1/d2/a0,-(a7)
+	movem.l	d0/d1/d2/a0/a3,-(a7)
+	move.l #keybd_vars,a3
 	eori.l #-1,$FD000000
 	moveq	#0,d1								; check if keyboard IRQ
 	move.b KEYBD+1,d1					; get status reg
@@ -820,23 +833,23 @@ KeybdIRQ:
 	trap #15
 	move.b KEYBD,d1						; get scan code
 	clr.b KEYBD+1							; clear status register (clears IRQ AND scancode)
-	btst #1,_KeyState2				; Is Alt down?
+	btst #1,_KeyState2(a3)		; Is Alt down?
 	beq.s	.0003
 	cmpi.b #SC_TAB,d1					; is Alt-Tab?
 	bne.s	.0003
 	movec tick,d0
-	sub.l _Keybd_tick,d0
+	sub.l _Keybd_tick(a3),d0
 	cmp.l #10,d0							; has it been 10 or more ticks?
 ;	blo.s .0002
 	movec tick,d0							; update tick of last ALT-Tab
-	move.l d0,_Keybd_tick
+	move.l d0,_Keybd_tick(a3)
 	jsr	rotate_iofocus
-	clr.b	_KeybdHead					; clear keyboard buffer
-	clr.b	_KeybdTail
-	clr.b	_KeybdCnt
+	clr.b	_KeybdHead(a3)			; clear keyboard buffer
+	clr.b	_KeybdTail(a3)
+	clr.b	_KeybdCnt(a3)
 	bra	.0002									; do not store Alt-Tab
 .0003
-	btst #2,_KeyState2				; Is Ctrl down?
+	btst #2,_KeyState2(a3)		; Is Ctrl down?
 	beq.s .0004
 	cmpi.b #SC_C,d1						; Is if Ctrl-C ?
 	bne.s .0004
@@ -845,28 +858,31 @@ KeybdIRQ:
 	bra .0002
 .0004
 	; Insert keyboard scan code into raw keyboard buffer
-	cmpi.b #32,_KeybdCnt			; see if keyboard buffer full
+	cmpi.b #32,_KeybdCnt(a3)	; see if keyboard buffer full
 	bhs.s	.0002
-	move.b _KeybdTail,d0			; keyboard buffer not full, add to tail
+	move.b _KeybdTail(a3),d0	; keyboard buffer not full, add to tail
 	ext.w	d0
-	lea	_KeybdBuf,a0					; a0 = pointer to buffer
+	lea	_KeybdBuf(a3),a0			; a0 = pointer to buffer
 	move.b d1,(a0,d0.w)				; put scancode in buffer
 	addi.b #1,d0							; increment tail index
 	andi.b #31,d0							; wrap at buffer limit
-	move.b d0,_KeybdTail			; update tail index
-	addi.b #1,_KeybdCnt				; increment buffer count
+	move.b d0,_KeybdTail(a3)	; update tail index
+	addi.b #1,_KeybdCnt(a3)		; increment buffer count
 .0002
 	moveq	#KEYBD_SEMA,d1
 	moveq #38,d0							; unlock semaphore
 	trap #15
 .0001
-	movem.l	(a7)+,d0/d1/d2/a0		; return
+	movem.l	(a7)+,d0/d1/d2/a0/a3		; return
 	rte
 
 ;--------------------------------------------------------------------------
 ; PS2 scan codes to ascii conversion tables.
 ;--------------------------------------------------------------------------
 ;
+	section rodata
+
+	align 6
 _unshiftedScanCodes:
 	dc.b	$2e,$a9,$2e,$a5,$a3,$a1,$a2,$ac
 	dc.b	$2e,$aa,$a8,$a6,$a4,$09,$60,$2e

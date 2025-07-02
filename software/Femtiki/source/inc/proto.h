@@ -70,7 +70,7 @@ long FMTK_KillTask(__reg("d0") long);
 long FMTK_AllocMbx();
 long FMTK_FreeMbx(__reg("d0") long hMbx);
 long FMTK_SetTaskPriority(__reg("d0") long hTCB, __reg("d1") long pri);
-long FMTK_StartApp(__reg("d0") long rec);
+long FMTK_StartApp(__reg("d0") long rec, __reg("d1") long hParent);
 long FMTK_RegisterService(__reg("d0") long pName);
 long FMTK_UnregisterService(__reg("d0") long pName);
 long FMTK_GetServiceMbx(__reg("d0") long name);
@@ -142,6 +142,10 @@ extern void OutputChar(char);
 extern void DBGDisplayChar(char);
 extern void DBGDisplayString(char *);
 extern void DBGDisplayStringCRLF(char *);
+extern void DisplayStringCRLF(__reg("a1") char *);
+void DisplayLEDS(__reg("d0") long v) =
+	"\tmove.b d0,$FDFFC000\r\n"
+;
 
 extern char* LinearToPhysical(hACB appid, char* linadr);
 

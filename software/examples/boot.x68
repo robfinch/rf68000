@@ -202,6 +202,7 @@ macUnhmash macro arg1
 endm
 
 	data
+	org 0
 	; 0
 	dc.l		$00047FFC
 	dc.l		start
@@ -242,7 +243,7 @@ endm
 	dc.l		TickIRQ						; IRQ 30 - timer / keyboard
 	dc.l		nmi_rout
 	dc.l		io_trap						; TRAP zero
-	dc.l		0
+	dc.l		_FMTK_Dispatch		; OS
 	dc.l		0
 	dc.l		trap3							; breakpoint
 	dc.l		0
@@ -442,6 +443,7 @@ start:
 	jsr setup_textvid
 	bsr test_scratchpad_ram
 	move.b #3,leds
+	move.l #_DeviceTable+0*DCB_SIZE,d0
 	jsr setup_null
 	move.b #4,leds
 	move.l #_DeviceTable+1*DCB_SIZE,d0
@@ -453,8 +455,10 @@ start:
 	movec.l	coreno,d0					; get core number
 	cmpi.b #2,d0
 	bne	start_other
+	move.l #_DeviceTable+6*DCB_SIZE,d0
 	jsr setup_framebuf
 	move.b #8,leds
+	move.l #_DeviceTable+7*DCB_SIZE,d0
 	jsr setup_gfxaccel
 	move.b #9,leds
 	clr.l sys_switches
@@ -530,9 +534,7 @@ start_other:
 	bsr			Delay3s2						; need time for system setup (io_bitmap etc.)
 	bsr			Delay3s2						; need time for system setup (io_bitmap etc.)
 	bsr			Delay3s2						; need time for system setup (io_bitmap etc.)
-.0001
 	move.l #$20000,d7
-	bra.s .0001
 	move.l #DEV_CLEAR,d6
 	trap #0
 	movec		coreno,d1
@@ -693,7 +695,7 @@ T15DispatchTable:
 	; 10
 	T15DTAddr	StubRout
 	T15DTAddr	T15Cursor
-	T15DTAddr	SetKeyboardEcho
+	T15DTAddr	T15SetKeyboardEcho
 	T15DTAddr	DisplayStringCRLF
 	T15DTAddr	DisplayString
 	T15DTAddr	StubRout
@@ -888,7 +890,10 @@ InitMMU:
 	include "..\Femtiki\source\drivers\gfxaccel.x68"
 	include "..\Femtiki\source\drivers\audio.x68"
 	include "..\Femtiki\source\drivers\pic.x68"
+	include "..\Femtiki\source\kernel\Femtiki_kern.asm"
 
+	code
+	even
 ;------------------------------------------------------------------------------
 ;------------------------------------------------------------------------------
 ;------------------------------------------------------------------------------
@@ -1227,6 +1232,14 @@ T15Abort:
 	bsr DisplayStringCRLF
 	bra Monitor
 
+T15SetKeyboardEcho:
+	movem.l d6/d7,-(sp)
+	moveq #1,d7
+	moveq #DEV_SET_ECHO,d6
+	trap #0
+	movem.l (sp)+,d6/d7
+	rts
+
 chk_exception:
 	move.l 2(sp),d1
 	bsr DisplayTetra
@@ -1274,7 +1287,7 @@ Delay3s2:
 ; -----------------------------------------------------------------------------
 
 set_text_mode:
-	moveq #TEXTCOL,d0
+	move.l #TEXTCOL,d0
 	move.b d0,TEXTREG					; number of columns
 	moveq #TEXTROW,d0
 	move.b d0,TEXTREG+1				; number of rows
@@ -1287,7 +1300,7 @@ set_text_mode:
 	rts
 	
 set_graphics_mode:
-	moveq #TEXTCOL*2,d0
+	move.l #TEXTCOL*2,d0
 	move.b d0,TEXTREG					; number of columns
 	moveq #TEXTROW*2,d0
 	move.b d0,TEXTREG+1				; number of rows
@@ -1327,6 +1340,7 @@ CRLF:
 ; Display a string on standard output.
 ;------------------------------------------------------------------------------
 
+_DisplayString:
 DisplayString:
 	movem.l	d0/d1/a1,-(a7)
 dspj1:
@@ -1344,10 +1358,14 @@ dsret:
 ; Display a string on the screen followed by carriage return / linefeed.
 ;------------------------------------------------------------------------------
 
+_DisplayStringCRLF:
 DisplayStringCRLF:
 	bsr		DisplayString
 	bra		CRLF
 
+	global _DisplayString
+	global _DisplayStringCRLF
+	
 ;------------------------------------------------------------------------------
 ; Display a string on the screen limited to 255 chars max.
 ;------------------------------------------------------------------------------
@@ -1499,7 +1517,7 @@ T15Wait100ths:
 SetDrawMode:
 	cmpi.b #10,d1
 	bne.s .0001
-	move.b #5,framebuf_dcb+DCB_OPCODE			; 'OR' operation
+;	move.b #5,framebuf_dcb+DCB_OPCODE			; 'OR' operation
 	rts
 .0001:
 	cmpi.b #17,d1
@@ -1511,7 +1529,7 @@ SetDrawMode:
 	
 SetPenColor:
 	bsr gfxaccel_set_color
-	move.l d1,framebuf_dcb+DCB_FGCOLOR
+;	move.l d1,framebuf_dcb+DCB_FGCOLOR
 	rts
 
 ; parameters:
@@ -1533,7 +1551,7 @@ T15GetPixel:
 	movem.l d1/d2/a0,-(a7)
 	ext.l d1								; clear upper bits
 	ext.l d2
-	move.l framebuf_dcb+DCB_OUTBUFPTR,a0
+;	move.l framebuf_dcb+DCB_OUTBUFPTR,a0
 	mulu #800,d2						; y * pixels per line
 	add.l d1,d2							; + x
 	lsl.l #2,d2							; * 4 bytes per pixel
@@ -1588,7 +1606,7 @@ GRBufferToScreen:
 
 TestBitmap:
 ;	move.w #$0700,pen_color		; dark blue
-	move.w #$0700,framebuf_dcb+DCB_BKCOLOR
+;	move.w #$0700,framebuf_dcb+DCB_BKCOLOR
 	move.l #$60000,d7
 	move.l #DEV_CLEAR,d6
 	trap #0
@@ -1991,8 +2009,10 @@ cmdString:
 	dc.b	'FMT','K'+$80			; FMTK run Femtiki OS
 	dc.b	'B','A'+$80				; BA start Tiny Basic
 	dc.b	'B','R'+$80				; BR breakpoint
+	dc.b	'D','A'+$80				; DA dump applications
 	dc.b	'D','I'+$80				; DI disassemble
 	dc.b	'D','R'+$80				; DR dump registers
+	dc.b	'D','T'+$80				; DT dump tasks
 	dc.b	'D'+$80						; D dump memory
 	dc.b	'J'+$80						; J jump to code
 	dc.b	'E'+$80						; : edit memory
@@ -2026,8 +2046,10 @@ cmdTable:
 	dc.l	cmdFMTK
 	dc.l	cmdTinyBasic
 	dc.l	cmdBreakpoint
+	dc.l	cmdDumpApps
 	dc.l	cmdDisassemble
 	dc.l	cmdDumpRegs
+	dc.l	cmdDumpTasks
 	dc.l	cmdDumpMemory
 	dc.l	cmdJump
 	dc.l	cmdEditMemory
@@ -2064,6 +2086,8 @@ FromScreen:
 	rol.w #8,d1
 	rts
 
+_StartMon:
+	global _StartMon
 StartMon:
 	clr.w	NumSetBreakpoints
 	bsr	ClearBreakpointList
@@ -2317,6 +2341,14 @@ cmdCore:
 cmdFMTK:
 	moveq #0,d7							; Femtiki Initialize
 	trap #1
+	bra Monitor
+	
+cmdDumpApps:
+	jsr _DumpApps
+	bra Monitor
+
+cmdDumpTasks:
+	jsr _DumpTasks
 	bra Monitor
 
 cmdTestFP:
@@ -3030,7 +3062,7 @@ clear_graphics_screen2:
 	move.l #VIDEO_X*VIDEO_Y,d5		; compute number of strips to write
 	lsr.l #3,d5						; 8 pixels per strip
 	lsr.l #4,d5						; and burst writing 16 strips at once
-	move.l framebuf_dcb+DCB_OUTBUFPTR,a4
+;	move.l framebuf_dcb+DCB_OUTBUFPTR,a4
 	move.l #15,$7FFFFFF8		; burst length = 16
 	bra.s .0001
 .0002:
@@ -3629,6 +3661,8 @@ DisplaySpace:
 ; Display the 32 bit word in D1.L
 ;------------------------------------------------------------------------------
 
+_DisplayTetra
+	global _DisplayTetra
 DisplayTetra:
 	swap	d1
 	bsr		DisplayWyde
@@ -3638,6 +3672,8 @@ DisplayTetra:
 ; Display the byte in D1.W
 ;------------------------------------------------------------------------------
 
+_DisplayWyde
+	global _DisplayWyde
 DisplayWyde:
 	ror.w		#8,d1
 	bsr			DisplayByte
@@ -3647,6 +3683,8 @@ DisplayWyde:
 ; Display the byte in D1.B
 ;------------------------------------------------------------------------------
 
+_DisplayByte
+	global _DisplayByte
 DisplayByte:
 	ror.b		#4,d1
 	bsr			DisplayNybble
@@ -4696,7 +4734,7 @@ TickIRQ:
 ;	addi.w #1,d2							; flashy colors
 	addi.l #$0001,d2
 	move.l d2,4(a0,d3.w)			; update onscreen IRQ flag
-	bsr	ReceiveMsg
+;	bsr	ReceiveMsg
 	movem.l	(a7)+,d1/d2/d3/a0
 	rte
 
@@ -5011,3 +5049,4 @@ FREL30:
 	global DisplayString
 	global DisplayStringCRLF
 	global CRLF
+	

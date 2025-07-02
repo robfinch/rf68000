@@ -6,7 +6,7 @@ typedef short int hTCB;
 typedef short int hACB;
 typedef short int hMBX;
 typedef short int hMSG;
-typedef short int hRBQ;
+typedef short int hRQB;
 
 #define PTE_PRESENT		13
 #define PTE_ALIAS			12
@@ -27,10 +27,29 @@ typedef struct _tagPTE {
 	unsigned int page : 18;
 } PTE;
 
+typedef union 
+{
+	unsigned long l;
+	PTE pte;
+} PTE_u;
+
 typedef struct _tagPDE {
-	unsigned int acr : 14;
+	unsigned int x : 1;
+	unsigned int w : 1;
+	unsigned int r : 1;
+	unsigned int s : 1;
+	unsigned int acr : 7;
+	unsigned int end_of_run : 1;
+	unsigned int alias : 1;
+	unsigned int present : 1;
 	unsigned int page : 18;
 } PDE;
+
+typedef union 
+{
+	unsigned long l;
+	PDE pde;
+} PDE_u;
 
 typedef struct _tagPMTE {
 	unsigned char share_count;
@@ -117,12 +136,11 @@ typedef struct tagMSG {
 	unsigned long d3;            // payload data 3
 } MSG;
 
-#define MT_RQB	1
 
 typedef struct _tagRQB {
 	long magic;
 	hACB owner;
-	hRBQ next;
+	hRQB next;
 	hMBX service_mbx;
 	hMBX response_mbx;
 	short int handle;
@@ -206,6 +224,7 @@ typedef struct _tagACB
 struct tagMBX;
 
 typedef struct _tagTCB {
+	unsigned long magic;	// 'TCB '
     // exception storage area
 	unsigned long regs[17];
 	unsigned long ssp;

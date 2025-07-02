@@ -1,22 +1,26 @@
+	include "..\Femtiki\source\inc\const.x68"
+	include "..\Femtiki\source\inc\device.x68"
+
 ;------------------------------------------------------------------------------
 ;------------------------------------------------------------------------------
 ; Setup the err device
 ;------------------------------------------------------------------------------
 ;------------------------------------------------------------------------------
 
-err_dcb equ _DeviceTable+160*3
-
 setup_err:
 err_init:
-	moveq #32,d0
-	lea.l err_dcb,a0
+	movem.l d0/a0/a1,-(sp)
+	move.l d0,a0
+	move.l d0,a0
+	moveq #31,d0
 .0001:
 	clr.l (a0)+
 	dbra d0,.0001
-	move.l #$20424344,err_dcb+DCB_MAGIC				; 'DCB'
-	move.l #$4C4C554E,err_dcb+DCB_NAME					; 'err'
-	move.l #err_cmdproc,err_dcb+DCB_CMDPROC
+	move.l #$20424344,DCB_MAGIC(a1)				; 'DCB'
+	move.l #$4C4C554E,DCB_NAME(a1)					; 'err'
+	move.l #err_cmdproc,DCB_CMDPROC(a1)
 err_ret:
+	movem.l (sp)+,d0/a0/a1
 	rts
 
 err_cmdproc:

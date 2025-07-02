@@ -16,6 +16,7 @@ _request_block_end
 _acbs
 	ds.b	32*32768
 _acbs_end
+	global _acbs
 	global _tcbs
 	global _message
 	global _mailbox
@@ -32,10 +33,10 @@ RunningAppID	EQU		$00100220
 MidStackBottoms	EQU		$00100264
 FemtikiInited	EQU		$00100284
 IOFocusList		EQU		$0010028C
-hKeybdMbx			EQU		$001002BA
+;hKeybdMbx			EQU		$001002BA
 hFocusSwitchMbx		EQU		$001002BC
 BIOS_RespMbx	EQU		$001002BE
-im_save				EQU		$001002C2
+;im_save				EQU		$001002C2
 sp_tmp				EQU		$001002C4
 startQNdx			EQU		$001002C6
 NPAGES				EQU		$001002D8
@@ -50,7 +51,7 @@ FemtikiVars_end	EQU	$00100400
 
 	section local_ram
 _DeviceTable
-	ds.b	6144
+	ds.b	3072			; room for 48 devices
 spi_buff
 	ds.b	512
 
@@ -173,6 +174,7 @@ memend
 	ds.l	1
 _FMTK_Inited
 	ds.l	1
+_nPagesFree
 _sys_pages_available
 	ds.l	1
 _nMsgBlk
@@ -184,6 +186,8 @@ _nMailbox
 _hDevMailbox
 	ds.w	64
 _nRequest
+	ds.l	1
+_MemExch
 	ds.l	1
 
 _ACBList
@@ -371,6 +375,9 @@ _FemtikiVars_end
 	global _hFocusSwitchMbx
 
 	global __C0environ
+	global _service
+	global _nPagesFree
+	global _MemExch
 
 ;gc_stack		rmb		512
 ;gc_pc				fcdw		0

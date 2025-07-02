@@ -39,6 +39,7 @@
 //
 #include <stdint.h>
 #include "config.h"
+#include "types.h"
 
 /*
 ; the following constant is used to scramble device handles. The device handle
@@ -101,6 +102,7 @@
 #define DEV_GET_INPTR	53
 #define DEV_GET_OUTPTR 54
 #define DEV_SET_UNIT 55
+#define DEV_SET_ECHO 56
 //#define MAX_DEV_OP		31
 
 #define DVT_Block			0
@@ -125,68 +127,10 @@ typedef struct _tagDCB {
 	short int resv1;
 	int8_t *pSema;
 	long resv2[2];
-	// 64 bytes
-	int32_t inpos_x;
-	int32_t inpos_y;
-	int32_t inpos_z;
-	int32_t outpos_x;
-	int32_t outpos_y;
-	int32_t outpos_z;
-	uint32_t inbufptr;
-	uint32_t outbufptr;
-	uint32_t inbuf_size;
-	uint32_t outbuf_size;
-	uint32_t indim_x;
-	uint32_t indim_y;
-	uint32_t indim_z;
-	uint32_t outdim_x;
-	uint32_t outdim_y;
-	uint32_t outdim_z;
-	uint32_t bk_color;
-	uint32_t fg_color;
-	uint32_t opcode;
-	uint32_t inbufptr2;
-	uint32_t outbufptr2;
-	uint32_t inbuf_size2;
-	uint32_t outbuf_size2;
-	int32_t resv3;
-} DCB;	// 160 bytes
+} DCB;	// 64 bytes
 
 extern DCB DeviceTable[NR_DCB];
 
-/*
-typedef struct _tagDCB
-{
-	uint32_t magic;					// 'DCB '
-	uint8_t name[12];				// eleven chars + NULL
-	int32_t (*cmdproc)();
-	int32_t inpos_x;
-	int32_t inpos_y;
-	int32_t inpos_z;
-	int32_t outpos_x;
-	int32_t outpos_y;
-	int32_t outpos_z;
-	uint32_t inbufptr;
-	uint32_t outbufptr;
-	uint32_t inbuf_size;
-	uint32_t outbuf_size;
-	uint32_t indim_x;
-	uint32_t indim_y;
-	uint32_t indim_z;
-	uint32_t outdim_x;
-	uint32_t outdim_y;
-	uint32_t outdim_z;
-	uint32_t bk_color;
-	uint32_t fg_color;
-	uint32_t opcode;
-	int32_t lasterc;
-	uint32_t inbufptr2;
-	uint32_t outbufptr2;
-	uint32_t inbuf_size2;
-	uint32_t outbuf_size2;
-	int32_t unit;
-} DCB;
-*/
 /*
 ;Standard Devices are:
 
