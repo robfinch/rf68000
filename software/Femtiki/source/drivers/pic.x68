@@ -12,6 +12,8 @@
 ; Note byte order must be reversed for PLIC.
 ;==============================================================================
 
+	include "..\Femtiki\source\inc\device.x68"
+
 setup_pic:
 pic_setup:
 pic_init:

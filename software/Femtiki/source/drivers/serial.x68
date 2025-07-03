@@ -125,6 +125,7 @@ serial_cmdproc:
 	global _serial_cmdproc
 
 serial_init:
+_setup_serial:
 setup_serial:
 serial_setup:
 	movem.l d0/a0/a1,-(a7)
@@ -145,6 +146,8 @@ serial_setup:
 	trap #15
 	movem.l (a7)+,d0/a0/a1
 	rts
+	global setup_serial
+	global _setup_serial
 
 serial_nop:
 serial_stat:
@@ -247,11 +250,10 @@ SerialInit:
 ;------------------------------------------------------------------------------
 
 SerialGetChar:
-	move.l		d2,-(a7)
-	movec			coreno,d0
-	swap			d0
-	moveq			#SERIAL_SEMA,d1
-	bsr				LockSemaphore
+	move.l d2,-(a7)
+	move.l #100000,d2
+	moveq	#SERIAL_SEMA,d1
+	bsr	_LockSemaphore
 	bsr				SerialRcvCount			; check number of chars in receive buffer
 	cmpi.w		#8,d0								; less than 8?
 	bhi				.sgc2
@@ -275,13 +277,12 @@ SerialGetChar:
 	moveq			#-1,d1
 .Xit
 	exg				d1,d2
-	movec			coreno,d0
-	swap			d0
 	moveq			#SERIAL_SEMA,d1
-	bsr				UnlockSemaphore
+	bsr				_UnlockSemaphore
 	exg				d2,d1
 	move.l		(a7)+,d2
 	rts
+	global SerialGetChar
 
 ;------------------------------------------------------------------------------
 ; SerialPeekChar
@@ -302,10 +303,9 @@ SerialGetChar:
 
 SerialPeekChar:
 	move.l d2,-(a7)
-	movec	coreno,d0
-	swap d0
+	move.l #100000,d2
 	moveq	#SERIAL_SEMA,d1
-	bsr	LockSemaphore
+	bsr	_LockSemaphore
 	move.w SerHeadRcv,d2		; check if anything is in buffer
 	cmp.w	SerTailRcv,d2
 	beq	.NoChars				; no?
@@ -315,13 +315,12 @@ SerialPeekChar:
 .NoChars
 	moveq	#-1,d2
 .Xit
-	movec	coreno,d0
-	swap d0
 	moveq	#SERIAL_SEMA,d1
-	bsr	UnlockSemaphore
+	jsr	_UnlockSemaphore
 	move.l	d2,d1
 	move.l (a7)+,d2
 	rts
+	global SerialPeekChar
 
 ;------------------------------------------------------------------------------
 ; SerialPeekChar
@@ -371,10 +370,9 @@ SerialPutChar:
 	tst.w SerXmitBufsize	; buffered output?
 	beq.s SerialPutCharDirect
 	movem.l d0/d1/d2/a0,-(a7)
-	movec	coreno,d0
-	swap d0
+	move.l #100000,d2
 	moveq	#SERIAL_SEMA,d1
-	bsr	LockSemaphore
+	jsr	_LockSemaphore
 	move.w SerTailXmit,d0
 	move.w d0,d2
 	addi.w #1,d0
@@ -384,21 +382,18 @@ SerialPutChar:
 .0002
 	cmp.w SerHeadXmit,d0			; Is Xmit buffer full?
 	bne.s .0003
-	movec	coreno,d0						; buffer full, unlock semaphore and wait
-	swap d0
 	moveq	#SERIAL_SEMA,d1
-	bsr	UnlockSemaphore
+	jsr	_UnlockSemaphore
 	bra.s .0004
 .0003
 	move.w d0,SerTailXmit			; update tail pointer
 	lea SerXmitBuf,a0
 	move.b d1,(a0,d2.w)				; store byte in Xmit buffer
-	movec	coreno,d0						; unlock semaphore
-	swap d0
 	moveq	#SERIAL_SEMA,d1
-	bsr	UnlockSemaphore
+	jsr	_UnlockSemaphore
 	movem.l (a7)+,d0/d1/d2/a0
 	rts
+	global SerialPutChar
 
 SerialPutCharDirect:
 	movem.l	d0/d1,-(a7)							; push d0,d1
@@ -450,10 +445,11 @@ SerialIRQ:
 	move.l (a0),d2						; get char from screen
 	eori.l #$0000FFFF,d2
 	move.l d2,(a0)						; update onscreen IRQ flag
-	movec	coreno,d0
-	swap d0
+	move.l #200,d2
 	moveq	#SERIAL_SEMA,d1
-	bsr	LockSemaphore
+	jsr	_LockSemaphore				; can semaphore be locked?
+	tst.l d0
+	bmi sirqexit
 sirqNxtByte
 	move.l ACIA+ACIA_STAT,d1		; check the status
 	btst #27,d1									; bit 3 = rx full
@@ -505,12 +501,12 @@ sirq0002
 sirqXmitOff
 sirqTxEmpty
 notTxInt
-	movec	coreno,d0
-	swap d0
 	moveq	#SERIAL_SEMA,d1
-	bsr	UnlockSemaphore
+	jsr	_UnlockSemaphore
+sirqexit
 	movem.l	(a7)+,d0/d1/d2/a0
 	rte
+	global SerialIRQ
 
 nmeSerial:
 	dc.b		"Serial",0

@@ -36,7 +36,7 @@
 
 	include "..\Femtiki\source\inc\const.x68"
 	include "..\Femtiki\source\inc\config.x68"
-;	include "..\inc\device.x68"
+	include "..\Femtiki\source\inc\device.x68"
 
 	section gvars
 	align 2
@@ -80,7 +80,7 @@ FB_CTA macro arg1
 	dc.w (\1-FRAMEBUF_CMDTBL)
 endm
 
-FRAMEBUF_CTRL equ 0
+;FRAMEBUF_CTRL equ 0
 FRAMEBUF_PAGE1_ADDR equ 2*8
 FRAMEBUF_PAGE2_ADDR equ 3*8
 FRAMEBUF_BMPSIZE_X equ 13*8
@@ -181,6 +181,7 @@ framebuf_cmdproc:
 	rts
 	global _framebuf_cmdproc
 
+_setup_framebuf:
 setup_framebuf:
 framebuf_setup:
 	movem.l d0/a0/a1,-(a7)
@@ -205,6 +206,8 @@ framebuf_setup:
 	bsr framebuf_init
 	movem.l (a7)+,d0/a0/a1
 	rts
+	global setup_framebuf
+	global _setup_framebuf
 
 framebuf_init:
 	move.b #1,FRAMEBUF+0		; turn on frame buffer

@@ -132,7 +132,6 @@ _FindFreePage:
 	lsl.l d1,d0							; convert page number to address
 	rts
 
-
 ; ------------------------------------------------------------------------------
 ; Gets the physical address for given the virtual address.
 ;

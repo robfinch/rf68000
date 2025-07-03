@@ -35,7 +35,7 @@
 //	Reg
 //	$0000 to $0FFF	root pointers for app's
 //	$2000						mmu enable bit
-//	$2100						user app id
+//	$2100						app id
 //	$2104						page fault address
 // ============================================================================
 
@@ -123,9 +123,9 @@ reg [31:0] adri_r;
 reg [31:0] dati_r;
 reg [31:8] root_ptro;
 reg mmu_en;
+reg [31:0] cdati;
 
 reg [9:0] appid;
-reg [9:0] uappid;			// user mode appid
 reg [31:8] root_adr;
 pte_t pte;
 reg [31:0] page_fault_addr;
@@ -133,10 +133,22 @@ reg mmu_access;
 reg kernel_as;
 reg [31:0] cdatr;
 
+// Byte lane reversals on input and output data.
 always_comb
-	cdatr = rbo_i ? {cdat_o[7:0],cdat_o[15:8],cdat_o[23:16],cdat_o[31:24]} : cdat_o;
+	case(csel_i)
+	4'b0011:	cdatr = rbo_i ? {cdat_o[7:0],cdat_o[15:8],cdat_o[7:0],cdat_o[15:8]} : cdat_o;
+	4'b1100:	cdatr = rbo_i ? {cdat_o[23:16],cdat_o[31:24],cdat_o[23:16],cdat_o[31:24]} : cdat_o;
+	4'b1111:	cdatr = rbo_i ? {cdat_o[7:0],cdat_o[15:8],cdat_o[23:16],cdat_o[31:24]} : cdat_o;
+	default:	cdatr = cdat_o;
+	endcase
 always_comb
-	cdat_i = rbo_i ? {cdati[7:0],cdati[15:8],cdati[23:16],cdati[31:24]} : cdati;
+	case(csel_i)
+	4'b0011:	cdat_i = rbo_i ? {cdati[7:0],cdati[15:8],cdati[7:0],cdati[15:8]} : cdati;
+	4'b1100:	cdat_i = rbo_i ? {cdati[23:16],cdati[31:24],cdati[23:16],cdati[31:24]} : cdati;
+	4'b1111:	cdat_i = rbo_i ? {cdati[7:0],cdati[15:8],cdati[23:16],cdati[31:24]} : cdati;
+	default:	cdat_i = cdati;
+	endcase
+	
 
 initial begin
 	mmu_en = 1'd0;
@@ -162,7 +174,7 @@ reg [9:0] mmu_state;
 //	kernel_as = cadr_i[31:28]==4'h0 || cadr_i[31:30]==2'b11 || cfc_i[2];
 
 always_comb
-	cs_mmu = cadr_i[31:16]==16'hFD07 && ccyc_i && cstb_i;
+	cs_mmu = cadr_i[31:14]==18'b1111_1101_1100_00 && ccyc_i && cstb_i;
 always_ff @(posedge clk_i)
 	ack2 <= cs_mmu;
 always_ff @(posedge clk_i)
@@ -190,7 +202,7 @@ edge_det ued2 (.rst(rst_i), .clk(clk_i), .ce(1'b1), .i(cs_mmu & ~cwe_i), .pe(pe_
 
 always_ff @(posedge clk_i)
 if (rst_i) begin
-	uappid <= 10'd0;
+	appid <= 10'd0;
 end
 else begin
 if (cs_mmu & cwe_i)
@@ -198,18 +210,15 @@ if (cs_mmu & cwe_i)
 	12'b100000000000:	
 		mmu_en <= cdatr[0];
 	12'b100001000000:	
-		uappid <= cdatr[9:0];
+		appid <= cdatr[9:0];
 	default:	;
 	endcase
 end
 
-always_comb
-	appid = cfc_i[2] ? 10'd1 : uappid;
-
 always_ff @(posedge clk_i)
 if (cs_mmu & ~cwe_i)
 	casez(adri_r[13:2])
-	12'b00??????????:	cdat_i <= root_ptro;
+	12'b00??????????:	cdati <= root_ptro;
 	12'b100000000000:	
 		begin
 			cdati <= {31'd0,mmu_en};
@@ -217,7 +226,7 @@ if (cs_mmu & ~cwe_i)
 	12'b100001000000:
 		begin
 			cdati <= 32'd0;
-			cdati[9:0] <= uappid;
+			cdati[9:0] <= appid;
 		end
 	12'b100001000001:
 		cdati <= page_fault_addr;

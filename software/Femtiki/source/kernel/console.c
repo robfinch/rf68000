@@ -31,17 +31,17 @@ unsigned long rbo(unsigned long i)
 
 unsigned long *GetScreenLocation()
 {
-  return GetACBPtr()->pVidMem;
+  return GetACBPtr(1)->pVidMem;
 }
 
 unsigned long GetCurrAttr()
 {
-  return GetACBPtr()->NormAttr;
+  return GetACBPtr(1)->NormAttr;
 }
 
 void SetCurrAttr(unsigned long attr)
 {
-   GetACBPtr()->NormAttr = attr & 0xFFFF0000;
+   GetACBPtr(1)->NormAttr = attr & 0xFFFF0000;
 }
 
 static void SetVideoReg(int regno, unsigned long val)
@@ -58,7 +58,7 @@ void UpdateCursorPos()
 	ACB *j;
 	int pos;
 
-	j = GetACBPtr();
+	j = GetACBPtr(1);
 //    if (j == IOFocusNdx) {
   pos = (j->CursorRow * j->VideoCols + j->CursorCol) +
   	(get_coreno() * j->VideoCols * j->VideoRows);
@@ -70,7 +70,7 @@ void SetCursorPos(int row, int col)
 {
 	ACB *j;
 
-	j = GetACBPtr();
+	j = GetACBPtr(1);
 	j->CursorCol = col;
 	j->CursorRow = row;
 	UpdateCursorPos();
@@ -80,7 +80,7 @@ void SetCursorCol(int col)
 {
 	ACB *j;
 
-	j = GetACBPtr();
+	j = GetACBPtr(1);
 	j->CursorCol = col;
 	UpdateCursorPos();
 }
@@ -89,25 +89,25 @@ int GetCursorPos()
 {
 	ACB *j;
 
-	j = GetACBPtr();
+	j = GetACBPtr(1);
 	return j->CursorCol | (j->CursorRow << 8);
 }
 
 int GetTextCols()
 {
-	return GetACBPtr()->VideoCols;
+	return GetACBPtr(1)->VideoCols;
 }
 
 int GetTextRows()
 {
-	return GetACBPtr()->VideoRows;
+	return GetACBPtr(1)->VideoRows;
 }
 
 void HomeCursor()
 {
 	ACB *j;
 
-	j = GetACBPtr();
+	j = GetACBPtr(1);
 	j->CursorCol = 0;
 	j->CursorRow = 0;
 	UpdateCursorPos();
@@ -118,7 +118,7 @@ unsigned long* CalcScreenLocation()
   ACB *j;
   int pos;
 
-  j = GetACBPtr();
+  j = GetACBPtr(1);
   pos = (j->CursorRow * j->VideoCols + j->CursorCol) +
   	(get_coreno() * j->VideoCols * j->VideoRows);
 //    if (j == IOFocusNdx) {
@@ -140,7 +140,7 @@ void ClearScreen()
 	ACB *j;
 	int vc;
 
-	j = GetACBPtr();
+	j = GetACBPtr(1);
 	p = GetScreenLocation();
 	// Compiler did a byte multiply generating a single byte result first
 	// before assigning it to mx. The (int) casts force the compiler to use
@@ -163,7 +163,7 @@ void BlankLine(int row)
 	ACB *j;
 	int vc;
 
-	j = GetACBPtr();
+	j = GetACBPtr(1);
 	p = GetScreenLocation();
 	p = p + (int)j->VideoCols * row;
 	vc = GetCurrAttr() | ' ';
@@ -178,7 +178,7 @@ void VBScrollUp()
 	int count;
   ACB *j;
 
-  j = GetACBPtr();
+  j = GetACBPtr(1);
 	count = (int)j->VideoCols*(int)(j->VideoRows-1);
 	for (nn = 0; nn < count; nn++)
 		scrn[nn] = scrn[nn+(int)j->VideoCols];
@@ -190,7 +190,7 @@ void IncrementCursorRow()
 {
 	ACB *j;
 
-	j = GetACBPtr();
+	j = GetACBPtr(1);
 	j->CursorRow++;
 	if (j->CursorRow < j->VideoRows) {
 		UpdateCursorPos();
@@ -205,7 +205,7 @@ void IncrementCursorPos()
 {
 	ACB *j;
 
-	j = GetACBPtr();
+	j = GetACBPtr(1);
 	j->CursorCol++;
 	if (j->CursorCol < j->VideoCols) {
 		UpdateCursorPos();
@@ -221,7 +221,7 @@ void DisplayChar(char ch)
    int nn;
    ACB *j;
 
-   j = GetACBPtr();
+   j = GetACBPtr(1);
    switch(ch) {
    case '\r':  j->CursorCol = 0; UpdateCursorPos(); break;
    case '\n':  IncrementCursorRow(); break;

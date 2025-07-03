@@ -18,6 +18,7 @@ CFLAGS2 = -c99 -ID:\cores2022\Thor\software\inc\ -O=31
 #CFLAGS = -w -S -fno-exceptions
 CFLAGS = -I$(INC) -fpu=68881
 
+CCX = vbccm68k
 LLX = vlink
 AAX = vasmrf68000_mot
 
@@ -73,7 +74,7 @@ OUT = \
 	boot.o \
 	DumpTasks.o \
 	..\Femtiki\source\kernel\Femtiki_vars.o \
-#	..\Femtiki\source\kernel\Femtiki_kern.o \
+	..\Femtiki\source\kernel\Femtiki_kern.o \
 	..\Femtiki\source\kernel\msg.o \
 	..\Femtiki\source\kernel\tcb.o \
 	..\Femtiki\source\kernel\dbg_console.o \
@@ -97,12 +98,29 @@ OUT = \
 	..\Femtiki\source\_lmath.o \
 	..\crt\source\crt.o \
 	..\crt\source\lib.o \
+	..\Femtiki\source\drivers\null.o \
+	..\Femtiki\source\drivers\keybd.o \
+	..\Femtiki\source\drivers\textvid.o \
+	..\Femtiki\source\drivers\framebuf.o \
+	..\Femtiki\source\drivers\gfxaccel.o \
+	..\Femtiki\source\drivers\serial.o \
+	..\Femtiki\source\drivers\pic.o \
 	..\Femtiki\source\mem_support.o \
 	..\Femtiki\source\kernel\femtiki_asm.o \
 	..\Femtiki\source\Femtiki2.o
 
-
-BIOS:
+$(OUT):	$(ASMS)
+	$(AAX) $(AFLAGS) ..\Femtiki\source\drivers\null.x68 -L ..\Femtiki\source\drivers\null.lst -o ..\Femtiki\source\drivers\null.o
+	$(AAX) $(AFLAGS) ..\Femtiki\source\drivers\keybd.x68 -L ..\Femtiki\source\drivers\keybd.lst -o ..\Femtiki\source\drivers\keybd.o
+	$(AAX) $(AFLAGS) ..\Femtiki\source\drivers\textvid.x68 -L ..\Femtiki\source\drivers\textvid.lst -o ..\Femtiki\source\drivers\textvid.o
+	$(AAX) $(AFLAGS) ..\Femtiki\source\drivers\framebuf.x68 -L ..\Femtiki\source\drivers\framebuf.lst -o ..\Femtiki\source\drivers\framebuf.o
+	$(AAX) $(AFLAGS) ..\Femtiki\source\drivers\gfxaccel.x68 -L ..\Femtiki\source\drivers\gfxaccel.lst -o ..\Femtiki\source\drivers\gfxaccel.o
+	$(AAX) $(AFLAGS) ..\Femtiki\source\drivers\serial.x68 -L ..\Femtiki\source\drivers\serial.lst -o ..\Femtiki\source\drivers\serial.o
+	$(AAX) $(AFLAGS) ..\Femtiki\source\drivers\pic.x68 -L ..\Femtiki\source\drivers\pic.lst -o ..\Femtiki\source\drivers\pic.o
+	$(AAX) $(AFLAGS) ..\Femtiki\source\mem_support.x68 -L ..\Femtiki\source\mem_support.lst -o ..\Femtiki\source\mem_support.o
+	
+	
+BIOS:	$(OUT)
 	del boot_rom.bin
 	del boot_rom.lst
 	del rom1.mem
@@ -115,7 +133,7 @@ BIOS:
 #	cc64 $(CFLAGS) SieveOfE.c
 #	cc64 $(CFLAGS) os_stub.c
 
-	vbccm68k bootrom.c -fpu=68881
+	$(CCX) $(CFLAGS) bootrom.c
 	vbccm68k gfx.c -fpu=68881
 	vbccm68k sieve.c
 #	vbccm68k prtflt.c -fpu=68881
@@ -150,9 +168,55 @@ BIOS:
 #	vlink -T ..\Femtiki\source\Femtiki.cmd -bsrec37 boot.o -o boot.s37
 #	vlink -T bios.cmd -bsrec37 TestFp.o lib.o -o TestFp.s37
 	
+	$(AAX) $(AFLAGS) ..\Femtiki\source\drivers\null.x68 -L ..\Femtiki\source\drivers\null.lst -o ..\Femtiki\source\drivers\null.o
+	$(AAX) $(AFLAGS) ..\Femtiki\source\drivers\keybd.x68 -L ..\Femtiki\source\drivers\keybd.lst -o ..\Femtiki\source\drivers\keybd.o
+	$(AAX) $(AFLAGS) ..\Femtiki\source\drivers\textvid.x68 -L ..\Femtiki\source\drivers\textvid.lst -o ..\Femtiki\source\drivers\textvid.o
+	$(AAX) $(AFLAGS) ..\Femtiki\source\drivers\framebuf.x68 -L ..\Femtiki\source\drivers\framebuf.lst -o ..\Femtiki\source\drivers\framebuf.o
+	$(AAX) $(AFLAGS) ..\Femtiki\source\drivers\gfxaccel.x68 -L ..\Femtiki\source\drivers\gfxaccel.lst -o ..\Femtiki\source\drivers\gfxaccel.o
+	$(AAX) $(AFLAGS) ..\Femtiki\source\drivers\serial.x68 -L ..\Femtiki\source\drivers\serial.lst -o ..\Femtiki\source\drivers\serial.o
+	$(AAX) $(AFLAGS) ..\Femtiki\source\drivers\pic.x68 -L ..\Femtiki\source\drivers\pic.lst -o ..\Femtiki\source\drivers\pic.o
 	
 #	vlink -T ..\Femtiki\source\Femtiki.cmd -brawbin1 boot.o ..\Femtiki\source\Femtiki.o -o boot.bin
-	vlink -T bios.cmd -bsrec37 bootrom.o lib.o gfx.o -o bootrom.s37
+	vlink -T ..\Femtiki\source\Femtiki.cmd -bsrec37 bootrom.o \
+	..\c_standard_lib-master\errno\errno.o \
+	..\c_standard_lib-master\ctype\ctype.o \
+	..\c_standard_lib-master\locale\localeco.o \
+	..\c_standard_lib-master\signal\signal.o \
+	..\c_standard_lib-master\stdio\stdio.o \
+	..\c_standard_lib-master\stdlib\stdlib.o \
+	..\c_standard_lib-master\string\string.o \
+	..\c_standard_lib-master\time\timelib.o \
+	..\c_standard_lib-master\float\xfloat.o \
+	..\Femtiki\source\xvalues.o \
+	..\Femtiki\source\xdtento.o \
+	..\Femtiki\source\xdunscal.o \
+	..\Femtiki\source\xldunsca.o \
+	..\Femtiki\source\xdscale.o \
+	..\Femtiki\source\xdnorm.o \
+	..\Femtiki\source\_lmath.o \
+	..\Femtiki\source\drivers\null.o \
+	..\Femtiki\source\drivers\keybd.o \
+	..\Femtiki\source\drivers\textvid.o \
+	..\Femtiki\source\drivers\framebuf.o \
+	..\Femtiki\source\drivers\gfxaccel.o \
+	..\Femtiki\source\drivers\serial.o \
+	..\Femtiki\source\drivers\pic.o \
+	..\Femtiki\source\kernel\dbg_console.o \
+	..\Femtiki\source\kernel\semaphore.o \
+	..\Femtiki\source\kernel\tcb.o \
+	..\Femtiki\source\kernel\msg.o \
+	..\Femtiki\source\kernel\Femtiki_vars.o \
+	..\Femtiki\source\kernel\SetupDevices.o \
+	..\Femtiki\source\kernel\femtiki_asm.o \
+	..\Femtiki\source\kernel\Femtiki_kern.o \
+	..\Femtiki\source\mem_support.o \
+	..\crt\source\crt.o \
+	..\crt\source\lib.o \
+	..\Femtiki\source\Femtiki2.o \
+	DumpTasks.o \
+	boot.o \
+	gfx.o -o bootrom.s37
+
 #	vlink -T rom_bios.cmd -brawbin1 add.o -o add.bin
 #	bin2ver fibonacci.bin 128
 #	bin2ver LEDTest.bin 32 m

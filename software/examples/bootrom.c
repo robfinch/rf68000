@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include "gfx.h"
 
 #define SYS_FREQ	50e6
@@ -36,8 +37,6 @@ extern double CvtStringToDecflt(char* s);
 extern void DumpStack();
 extern long OutputDevice;
 extern long InputDevice;
-extern void OutputChar(int ch);
-extern void OutputString(char *str);
 extern void OutputCRLF();
 extern void OutputFloat(double);
 extern void OutputNumber(int num, int sz);
@@ -57,7 +56,7 @@ void bootrom()
 {
 	InputDevice = 0x10000;
 	OutputDevice = 0x20000;
-	OutputString("Bootrom\r\n");
+	puts("Bootrom\r");
 	shell();
 }
 
@@ -248,30 +247,22 @@ double get_rand_float(int* p)
 	return (d);
 }
 
-void OutputString(char* str)
-{
-	while (*str) {
-		OutputChar(*str);
-		str++;
-	}
-}
-
 void DisplayAddress(unsigned long addr)
 {
 	OutputWyde(addr >> 20);
-	OutputChar('\r');
+	putchar('\r');
 }
 
 void log_ramtest_err(unsigned long addr, unsigned long val)
 {
 	OutputTetra(addr);
-	OutputChar(' ');
+	putchar(' ');
 	OutputTetra(val);
-	OutputChar('\r');
-	OutputChar('\n');
+	putchar('\r');
+	putchar('\n');
 }
 
-void ramtest1(unsigned long val1, unsigned long val2)
+void ramtest3(unsigned long val1, unsigned long val2)
 {
 	unsigned long* pRAM = (unsigned long*)0x40000000;
 	
@@ -302,10 +293,10 @@ void ramtest2(unsigned long val1, unsigned long val2)
 // Double checkboard RAM test.
 void cmdTestRAM()
 {
-	OutputString("Running RAM test\r\n");
-	ramtest1(0xAAAAAAAA,0x55555555);
+	puts("Running RAM test\r");
+	ramtest3(0xAAAAAAAA,0x55555555);
 	ramtest2(0xAAAAAAAA,0x55555555);
-	ramtest1(0x55555555,0xAAAAAAAA);
+	ramtest3(0x55555555,0xAAAAAAAA);
 	ramtest2(0x55555555,0xAAAAAAAA);
 }
 
@@ -319,7 +310,7 @@ void cmdGrTest()
 	unsigned int buf = 0;
 	
 	OutputDevice = 2;
-	OutputString("Booting \r\n");
+	puts("Booting \r");
 //	i2c_init(I2C1);
 //	i2c_init(I2C2);
 	rand_init(RAND);
@@ -343,7 +334,7 @@ void cmdGrTest()
 		color = get_rand(RAND,-1);
 		plot_point(0x70000, x0i, y0i, color);
 	}
-	OutputString("Drew Points \r\n");
+	puts("Drew Points \r");
 	// Draw random lines
 	for (nn = 0; nn < 20000; nn++) {
 		dispbuf(0x60000,buf);
@@ -355,8 +346,8 @@ void cmdGrTest()
 		color = get_rand(RAND,-1);
 		draw_line(0x70000,x0i,y0i,x1i,y1i,color);
 	}
-	OutputString("Drew Lines \r\n");
-	OutputString("Demo Finished \r\n");
+	puts("Drew Lines \r");
+	puts("Demo Finished \r");
 }
 
 char cmdTable[] =
@@ -430,7 +421,9 @@ int (*shell_cmd[])() = {
 
 void prompt()
 {
-	OutputString("\r\n$");
+	putchar('\r');
+	putchar('\r');
+	putchar('$');
 }
 
 int shell()
@@ -440,7 +433,7 @@ int shell()
 	long fh = 0x20000;
 
 /*	set_sp(0x47FF0); */
-	OutputString("Monitor v0.1 \r\n\r\n");
+	puts("Monitor v0.1 \r\n\r");
 	while(1) {
 /*		set_sp(0x47FF0); */
 		prompt();
@@ -482,7 +475,7 @@ int shell()
 				n++;
 				// Reached end of table?
 				if (cmdTable[n]==0) {
-					OutputString("??\r\n");
+					puts("??\r");
 					break;
 				}
 				// Reset input position for next compare

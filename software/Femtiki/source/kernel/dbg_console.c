@@ -2,8 +2,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-extern memsetW(int *, int, int);
-extern memsetT(long *, long, long);
+extern int *memsetW(int *, int, int);
+extern void *memsetT(long *, long, long);
 
 // The text screen memory can only handle half-word transfers, hence the use
 // of memsetH, memcpyH.

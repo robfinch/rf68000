@@ -39,9 +39,10 @@
 
 	include "..\Femtiki\source\inc\const.x68"
 	include "..\Femtiki\source\inc\config.x68"
-;	include "..\inc\device.x68"
+	include "..\Femtiki\source\inc\device.x68"
 
-TEXTREG		equ	$FD080000
+	extrn Delay3s
+
 TEXTREG_CURSOR_POS	equ $24
 
 	section local_ram
@@ -178,6 +179,7 @@ textvid_cmdproc:
 
 	align 2
 setup_textvid:
+_setup_textvid:
 textvid_setup:
 	movem.l d0/a0/a1,-(a7)
 	move.l d0,a0
@@ -200,7 +202,7 @@ textvid_setup:
 	trap #15
 	movem.l (a7)+,d0/a0/a1
 	rts
-	global setup_textvid
+	global _setup_textvid
 
 	align 2
 textvid_init:
@@ -840,7 +842,7 @@ ScrollUp:
 	movec	coreno,d0
 	swap d0	
 	moveq	#SCREEN_SEMA,d1
-	bsr	LockSemaphore
+;	bsr	LockSemaphore
 	move.l tv_bufptr(a3),a0
 	move.l a0,a5								; a5 = pointer to text screen
 .0003:								
@@ -870,7 +872,7 @@ ScrollUp:
 	movec coreno,d0
 	swap d0	
 	moveq #SCREEN_SEMA,d1
-	bsr UnlockSemaphore
+;	bsr UnlockSemaphore
 	movem.l (a7)+,d0/d1/a0/a5
 	; Fall through into blanking out last line
 
@@ -883,7 +885,7 @@ BlankLastLine:
 	movec	coreno,d0
 	swap d0	
 	moveq	#SCREEN_SEMA,d1
-	bsr	LockSemaphore
+;	bsr	LockSemaphore
 	move.l tv_bufptr(a3),a0
 	move.w tv_dimen_x(a3),d0					; d0 = columns
 	move.w tv_dimen_y(a3),d1					; d1 = rows
@@ -918,7 +920,7 @@ BlankLastLine:
 	movec	coreno,d0
 	swap d0	
 	moveq #SCREEN_SEMA,d1
-	bsr UnlockSemaphore
+;	bsr UnlockSemaphore
 	movem.l	(a7)+,d0/d1/d2/a0
 	rts
 
@@ -938,6 +940,7 @@ HomeCursor:
 	clr.w tv_outpos_x(a3)
 	clr.w tv_outpos_y(a3)
 	bra SyncCursor
+	global HomeCursor
 
 ;------------------------------------------------------------------------------
 ; SyncCursor:
@@ -973,4 +976,5 @@ SyncCursor:
 .0001:	
 	movem.l	(a7)+,d0/d1/d2
 	rts
-
+	global SyncCursor
+	

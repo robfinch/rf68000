@@ -156,7 +156,7 @@ hACB GetRunningACB()
 
 ACB *GetRunningACBPtr()
 {
-	return (GetACBPtr(GetAppHandle()));
+	return (GetACBPtr(GetRunningAppid()));
 }
 
 ACB* ACBHandleToPointer(hACB h)
@@ -679,6 +679,7 @@ long FMTK_Initialize()
     UnlockIOFSemaphore();
     UnlockKbdSemaphore();
 
+		DisplayLEDS(3);
 		// Setting up message array
     for (nn = 0; nn < NR_MSG; nn++) {
       message[nn].link = nn+2;
@@ -686,7 +687,6 @@ long FMTK_Initialize()
     message[NR_MSG-1].link = 0;
     freeMSG = 1;
 
-		DisplayLEDS(3);
 		RQB_Initialize();
  		DisplayLEDS(4);
 
@@ -695,7 +695,7 @@ long FMTK_Initialize()
   	for (nn = 0; nn < NR_TCB; nn++) {
       tcbs[nn].number = nn;
       tcbs[nn].acbnext = 0;
-  		tcbs[nn].next = nn+1;
+  		tcbs[nn].next = nn+2;
   		tcbs[nn].prev = 0;
   		tcbs[nn].status = 0;
   		tcbs[nn].priority = 15;

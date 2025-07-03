@@ -35,7 +35,7 @@
 ; ============================================================================
 
 	include "..\Femtiki\source\inc\const.x68"
-;	include "..\Femtiki\source\inc\device.x68"
+	include "..\Femtiki\source\inc\device.x68"
 
 	extrn DisplayString
 
@@ -46,6 +46,7 @@
 ;------------------------------------------------------------------------------
 
 setup_null:
+_setup_null:
 null_init:
 	movem.l d0/a0/a1,-(a7)
 	move.l d0,a0
@@ -58,8 +59,8 @@ null_init:
 	move.l #$4E554C4C,DCB_NAME(a1)					; 'NULL'
 	move.l #null_cmdproc,DCB_CMDPROC(a1)
 	lea.l DCB_MAGIC(a1),a1
-	jsr DisplayString
-	jsr CRLF
+	moveq #13,d0									; DisplayStringCRLF function
+	trap #15
 	movem.l (a7)+,d0/a0/a1
 null_ret:
 	rts
@@ -68,4 +69,6 @@ _null_cmdproc:
 null_cmdproc:
 	moveq #E_Ok,d0
 	rts
+	global _setup_null
+	global setup_null
 	global _null_cmdproc

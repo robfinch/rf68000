@@ -100,18 +100,9 @@ endm
 
 NCORES equ 4
 
-CTRLC	EQU		$03
-CTRLH	EQU		$08
-CTRLS	EQU		$13
-CTRLX	EQU		$18
-CTRLZ	EQU		$1A
-LF		EQU		$0A
-CR		EQU		$0D
-XON		EQU		$11
-XOFF	EQU		$13
-EOT		EQU		$04
-BLANK EQU		$20
+	extrn _setup_textvid
 
+	include "..\Femtiki\source\inc\const.x68"
 	include "..\Femtiki\source\inc\device.x68"
 	include "..\Femtiki\FemtikiTop.x68"
 
@@ -205,7 +196,7 @@ endm
 	org 0
 	; 0
 	dc.l		$00047FFC
-	dc.l		start
+	dc.l		__crt_start
 	dc.l		bus_err
 	dc.l		addr_err
 	dc.l		illegal_trap		* ILLEGAL instruction
@@ -440,26 +431,26 @@ start:
 	move.l #$10000,InputDevice			; select keyboard input
 	move.l #$20000,OutputDevice		; select text screen output
 	move.l #_DeviceTable+2*DCB_SIZE,d0
-	jsr setup_textvid
+	jsr _setup_textvid
 	bsr test_scratchpad_ram
 	move.b #3,leds
 	move.l #_DeviceTable+0*DCB_SIZE,d0
-	jsr setup_null
+	jsr _setup_null
 	move.b #4,leds
 	move.l #_DeviceTable+1*DCB_SIZE,d0
-	jsr setup_keybd
+	jsr _setup_keybd
 	move.b #6,leds
 	move.l #_DeviceTable+5*DCB_SIZE,d0
-	jsr setup_serial
+	jsr _setup_serial
 	move.b #7,leds
 	movec.l	coreno,d0					; get core number
 	cmpi.b #2,d0
 	bne	start_other
 	move.l #_DeviceTable+6*DCB_SIZE,d0
-	jsr setup_framebuf
+	jsr _setup_framebuf
 	move.b #8,leds
 	move.l #_DeviceTable+7*DCB_SIZE,d0
-	jsr setup_gfxaccel
+	jsr _setup_gfxaccel
 	move.b #9,leds
 	clr.l sys_switches
 	lea I2C2,a6
@@ -687,7 +678,7 @@ T15DispatchTable:
 	T15DTAddr	StubRout
 	T15DTAddr	DisplayNumber
 	T15DTAddr	StubRout
-	T15DTAddr	GetKey
+	T15DTAddr	T15GetKey
 	T15DTAddr	OutputChar
 	T15DTAddr	CheckForKey
 	T15DTAddr	GetTick
@@ -834,6 +825,13 @@ T15ReadScreenChar:
 	movem.l (sp)+,d2/d3/a0
 	rts
 
+T15GetKey
+	movem.l d6/d7,-(sp)
+	move.l #$10000,d7					; keyboard
+	moveq #DEV_GETCHAR,d6
+	trap #0
+	movem.l (sp)+,d6/d7
+	rts
 
 ;------------------------------------------------------------------------------
 ; Initialize the MMU to allow thread #0 access to IO
@@ -881,16 +879,16 @@ InitMMU:
 ;------------------------------------------------------------------------------
 
 ;	include "..\Femtiki\source\kernel\Femtiki_vars.x68"
-	include "..\Femtiki\source\drivers\null.x68"
-	include "..\Femtiki\source\drivers\keybd.x68"
-	include "..\Femtiki\source\drivers\textvid.x68"
-	include "..\Femtiki\source\drivers\err.x68"
-	include "..\Femtiki\source\drivers\serial.x68"
-	include "..\Femtiki\source\drivers\framebuf.x68"
-	include "..\Femtiki\source\drivers\gfxaccel.x68"
-	include "..\Femtiki\source\drivers\audio.x68"
-	include "..\Femtiki\source\drivers\pic.x68"
-	include "..\Femtiki\source\kernel\Femtiki_kern.asm"
+;	include "..\Femtiki\source\drivers\null.x68"
+;	include "..\Femtiki\source\drivers\keybd.x68"
+;	include "..\Femtiki\source\drivers\textvid.x68"
+;	include "..\Femtiki\source\drivers\err.x68"
+;	include "..\Femtiki\source\drivers\serial.x68"
+;	include "..\Femtiki\source\drivers\framebuf.x68"
+;	include "..\Femtiki\source\drivers\gfxaccel.x68"
+;	include "..\Femtiki\source\drivers\audio.x68"
+;	include "..\Femtiki\source\drivers\pic.x68"
+;	include "..\Femtiki\source\kernel\Femtiki_kern.asm"
 
 	code
 	even
@@ -1266,6 +1264,7 @@ dly3s1:
 	swap		d0
 	dbra		d0,dly3s2
 	rts
+	global Delay3s
 
 Delay3s2:
 	movec		coreno,d0			; vary delay by core to stagger startup
@@ -1440,6 +1439,7 @@ div32:
 	move.l d3,d1
 	movem.l (sp)+,d0/d3/d4/d7
 	rts
+	global div32
 	
 ; d1 = number to print
 ; d2 = number of digits
@@ -1528,7 +1528,7 @@ SetDrawMode:
 	rts
 	
 SetPenColor:
-	bsr gfxaccel_set_color
+;	bsr gfxaccel_set_color
 ;	move.l d1,framebuf_dcb+DCB_FGCOLOR
 	rts
 
@@ -1540,11 +1540,13 @@ SetPenColor:
 ;		d4 = y co-ord
 
 T15Rectangle:
-	movem.l d1/d2,-(a7)
+	movem.l d1/d2/d6/d7,-(a7)
 	add.l d3,d1
 	add.l d4,d2
-	bsr gfxaccel_draw_rectangle
-	movem.l (a7)+,d1/d2
+	move.l #$70000,d7
+	move.l DEV_DRAW_RECTANGLE,d6
+	trap #0
+	movem.l (a7)+,d1/d2/d6/d6
 	rts
 
 T15GetPixel:
@@ -1773,7 +1775,7 @@ DrawToXY:
 	adda.l d6,a0
 .loop:
 	jsr CheckForCtrlC
-	bsr plot				; plot(x0,y0)
+;	bsr plot				; plot(x0,y0)
 	move.l a0,a1
 	adda.l a1,a1		; a1 = error *2
 	cmp.l a1,d6			; e2 >= dy?
@@ -1842,7 +1844,7 @@ DrawVertTo:
 	bhi.s .0001
 	neg.l d5					; switch to decrement
 .0001:
-	bsr plot
+;	bsr plot
 	cmp.l d2,d4
 	beq.s .0002
 	add.l d5,d2
@@ -1991,7 +1993,8 @@ select_focus1:
 	swap d0										; get bits 16-31
 	rol.w	#8,d0								; swap byte order
 	move.l d0,TEXTREG+$28			; update screen address in text controller
-	bra	SyncCursor						; set cursor position
+	jmp	SyncCursor						; set cursor position
+	global rotate_iofocus
 
 ;==============================================================================
 ;==============================================================================
@@ -2104,7 +2107,11 @@ Monitor:
 	moveq #38,d0
 	trap #15
 ;	bsr	UnlockSemaphore
-	clr.b KeybdEcho			; turn off keyboard echo
+;	clr.b KeybdEcho			; turn off keyboard echo
+	move.l #$70000,d7
+	moveq #DEV_SET_ECHO,d6
+	moveq #0,d1
+	trap #0
 PromptLn:
 	bsr	CRLF
 	move.b #'$',d1
@@ -2324,7 +2331,7 @@ cmdTestCPU:
 
 cmdClearScreen:
 	bsr	ClearScreen
-	bsr	HomeCursor
+	jsr	HomeCursor
 	bra	Monitor
 
 cmdCore:
@@ -2564,52 +2571,54 @@ GetCmdLine:
 		bsr		OutputChar
 		lea		CmdBuf,a0
 .0001:
-		jsr		GetKey
-		cmp.b	#CTRLH,d0
+	move.l #$10000,d7					; keyboard
+	moveq #DEV_GETCHAR,d6
+	trap #0
+		cmp.b	#CTRLH,d1
 		beq.s	.0003
-		cmp.b	#CTRLX,d0
+		cmp.b	#CTRLX,d1
 		beq.s	.0004
-		cmp.b	#CR,d0
+		cmp.b	#CR,d1
 		beq.s	.0002
-		cmp.b	#' ',d0
+		cmp.b	#' ',d1
 		bcs.s	.0001
 .0002:
-		move.b	d0,(a0)
+		move.b	d1,(a0)
 		lea			8(a0),a0
 		bsr		OutputChar
-		cmp.b	#CR,d0
+		cmp.b	#CR,d1
 		beq		.0007
 		cmp.l	#CmdBufEnd-1,a0
 		bcs.s	.0001
 .0003:
-		move.b	#CTRLH,d0
+		move.b	#CTRLH,d1
 		bsr		OutputChar
-		move.b	#' ',d0
+		move.b	#' ',d1
 		bsr		OutputChar
 		cmp.l	#CmdBuf,a0
 		bls.s	.0001
-		move.b	#CTRLH,d0
+		move.b	#CTRLH,d1
 		bsr		OutputChar
 		subq.l	#1,a0
 		bra.s	.0001
 .0004:
-		move.l	a0,d1
-		sub.l	#CmdBuf,d1
+		move.l	a0,d2
+		sub.l	#CmdBuf,d2
 		beq.s	.0006
-		subq	#1,d1
+		subq	#1,d2
 .0005:
-		move.b	#CTRLH,d0
+		move.b	#CTRLH,d1
 		bsr		OutputChar
-		move.b	#' ',d0
+		move.b	#' ',d1
 		bsr		OutputChar
-		move.b	#CTRLH,d0
+		move.b	#CTRLH,d1
 		bsr		OutputChar
-		dbra	d1,.0005
+		dbra	d2,.0005
 .0006:
 		lea		CmdBuf,a0
 		bra		.0001
 .0007:
-		move.b	#LF,d0
+		move.b	#LF,d1
 		bsr		OutputChar
 		rts
 
@@ -3219,7 +3228,9 @@ rand_rect2:
 .0006:
 	jsr CheckForCtrlC
 	bsr RandGetNum
-	bsr gfxaccel_set_color
+	move.l #$70000,d7
+	moveq #DEV_SET_COLOR,d6
+	trap #0
 	bsr RandGetNum
 	move.l d1,d4
 	divu #VIDEO_Y,d4
@@ -3231,7 +3242,9 @@ rand_rect2:
 	divu #VIDEO_Y,d2
 	bsr RandGetNum
 	divu #VIDEO_X,d1
-	bsr gfxaccel_draw_rectangle
+	move.l #$70000,d7
+	moveq #DEV_DRAW_RECTANGLE,d6
+	trap #0
 	bsr wait1ms
 	dbra d5,.0003
 	bra Monitor
@@ -3794,6 +3807,7 @@ rbo:
 	swap d1
 	rol.w	#8,d1
 	rts
+	global rbo
 
 ;===============================================================================
 ;===============================================================================

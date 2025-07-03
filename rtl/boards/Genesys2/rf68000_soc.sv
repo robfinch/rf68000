@@ -61,7 +61,7 @@ module rf68000_soc(cpu_reset_n, sysclk_p, sysclk_n, led, sw, btnl, btnr, btnc, b
 //    dp_tx_lane0_p, dp_tx_lane0_n, dp_tx_lane1_p, dp_tx_lane1_n
 );
 parameter WXGA800x600 = 1'b1;
-parameter WXGA1920x1080 = 1'b1;
+parameter WXGA1920x1080 = 1'b0;
 parameter HAS_CPU = 1'b1;
 parameter HAS_FRAME_BUFFER = 1'b1;
 parameter HAS_TEXTCTRL = 1'b1;
@@ -146,8 +146,8 @@ wire clk10, clk12;
 wire clk20, clk40, clk50, clk100, clk70, clk140, clk200, clk700;
 wire clk17, clk33;
 wire clk86, clk429;
-wire dot_clk = clk40;
-wire dot5_clk = clk200;
+wire dot_clk = clk50;
+wire dot5_clk;
 wire mem_ui_clk;
 wire mem_ui_rst;
 wire xclk_bufg;
@@ -299,6 +299,64 @@ WXGA800x600_clkgen ucg1
   .clk_in1_n(sysclk_n)
 );
 
+
+   // PLLE2_BASE: Base Phase Locked Loop (PLL)
+   //             Artix-7
+   // Xilinx HDL Language Template, version 2025.1
+wire CLKFBOUT;
+
+   PLLE2_BASE #(
+      .BANDWIDTH("OPTIMIZED"),  // OPTIMIZED, HIGH, LOW
+      .CLKFBOUT_MULT(25),       // Multiply value for all CLKOUT, (2-64)
+      .CLKFBOUT_PHASE(0.0),     // Phase offset in degrees of CLKFB, (-360.000-360.000).
+      .CLKIN1_PERIOD(20.000),   // Input clock period in ns to ps resolution (i.e. 33.333 is 30 MHz).
+      // CLKOUT0_DIVIDE - CLKOUT5_DIVIDE: Divide amount for each CLKOUT (1-128)
+      .CLKOUT0_DIVIDE(5),
+      .CLKOUT1_DIVIDE(5),
+      .CLKOUT2_DIVIDE(5),
+      .CLKOUT3_DIVIDE(5),
+      .CLKOUT4_DIVIDE(5),
+      .CLKOUT5_DIVIDE(5),
+      // CLKOUT0_DUTY_CYCLE - CLKOUT5_DUTY_CYCLE: Duty cycle for each CLKOUT (0.001-0.999).
+      .CLKOUT0_DUTY_CYCLE(0.5),
+      .CLKOUT1_DUTY_CYCLE(0.5),
+      .CLKOUT2_DUTY_CYCLE(0.5),
+      .CLKOUT3_DUTY_CYCLE(0.5),
+      .CLKOUT4_DUTY_CYCLE(0.5),
+      .CLKOUT5_DUTY_CYCLE(0.5),
+      // CLKOUT0_PHASE - CLKOUT5_PHASE: Phase offset for each CLKOUT (-360.000-360.000).
+      .CLKOUT0_PHASE(0.0),
+      .CLKOUT1_PHASE(0.0),
+      .CLKOUT2_PHASE(0.0),
+      .CLKOUT3_PHASE(0.0),
+      .CLKOUT4_PHASE(0.0),
+      .CLKOUT5_PHASE(0.0),
+      .DIVCLK_DIVIDE(1),        // Master division value, (1-56)
+      .REF_JITTER1(0.0),        // Reference input jitter in UI, (0.000-0.999).
+      .STARTUP_WAIT("FALSE")    // Delay DONE until PLL Locks, ("TRUE"/"FALSE")
+   )
+   PLLE2_BASE_inst (
+      // Clock Outputs: 1-bit (each) output: User configurable clock outputs
+      .CLKOUT0(dot5_clk),   // 1-bit output: CLKOUT0
+      .CLKOUT1(),   // 1-bit output: CLKOUT1
+      .CLKOUT2(),   // 1-bit output: CLKOUT2
+      .CLKOUT3(),   // 1-bit output: CLKOUT3
+      .CLKOUT4(),   // 1-bit output: CLKOUT4
+      .CLKOUT5(),   // 1-bit output: CLKOUT5
+      // Feedback Clocks: 1-bit (each) output: Clock feedback ports
+      .CLKFBOUT(CLKFBOUT), // 1-bit output: Feedback clock
+      .LOCKED(locked2),     // 1-bit output: LOCK
+      .CLKIN1(dot_clk),     // 1-bit input: Input clock
+      // Control Ports: 1-bit (each) input: PLL control ports
+      .PWRDWN(1'b0),     // 1-bit input: Power-down
+      .RST(xrst),           // 1-bit input: Reset
+      // Feedback Clocks: 1-bit (each) input: Clock feedback ports
+      .CLKFBIN(CLKFBOUT)    // 1-bit input: Feedback clock
+   );
+
+   // End of PLLE2_BASE_inst instantiation
+					
+				
 /*
 WXGA1366x768_clkgen ucg2
 (
@@ -340,7 +398,7 @@ WXGA1920x1080_clkgen ucg2
   .clk_in1(clk200)
 );
 */
-assign locked2 = 1'b1;
+//assign locked2 = 1'b1;
 
 assign rst = !(locked&locked2);
 
@@ -1189,10 +1247,10 @@ binary_semamem usema1
 	.rst_i(rst),
 	.clk_i(node_clk),
 	.cs_i(cs_sema),
-	.cyc_i(ch7req.cyc),
-	.stb_i(ch7req.stb),
+	.cyc_i(cpu_cyc),
+	.stb_i(cpu_stb),
 	.ack_o(sema_ack),
-	.we_i(ch7req.we),
+	.we_i(cpu_we),
 	.adr_i(cpu_adr[13:0]),
 	.dat_i(cpu_dato),
 	.dat_o(sema_dato)

@@ -133,6 +133,7 @@ inline void LEDS(int val)
 {
 }
 
+extern char* FindFreePage();
 extern void FreeACB(hACB);
 extern hACB FindFreeACB();
 extern void* mem_alloc(hACB,unsigned long sz,int acr);

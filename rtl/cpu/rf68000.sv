@@ -47,7 +47,7 @@
 `define SUPPORT_MUL	1'b1
 `define SUPPORT_DIV	1'b1
 `define SUPPORT_BCD	1'b1
-//`define SUPPORT_010	1'b1
+`define SUPPORT_010	1'b1
 `define SUPPORT_BITPAIRS 1'b1
 
 `define SUPPORT_NANO_CACHE	1'b1
@@ -5842,7 +5842,7 @@ RTE3:
 		if (!rtr)
 			call (FETCH_WORD,RTE4);
 		else begin
-			pid <= pid_stack[pid_sp];
+			cpid <= pid_stack[pid_sp];
 			pid_sp <= pid_sp + 4'd1;
 			ret();
 		end
@@ -5871,7 +5871,7 @@ RTE4:
 				ssp <= sp;
 				sp <= usp;	// switch back to user stack
 			end
-			pid <= pid_stack[pid_sp];
+			cpid <= pid_stack[pid_sp];
 			pid_sp <= pid_sp + 4'd1;
 			ret();
 		end
@@ -5922,7 +5922,7 @@ RTE11:
 			ssp <= sp;
 			sp <= usp;	// switch back to user stack
 		end
-		pid <= pid_stack[pid_sp];
+		cpid <= pid_stack[pid_sp];
 		pid_sp <= pid_sp + 4'd1;
 		ret();
 	end

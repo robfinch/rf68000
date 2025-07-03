@@ -5,6 +5,7 @@ int main()
 {
 	hMBX hMbx;
 	int nn;
+	long d1, d2, d3;
 
 	FMTK_Initialize();
 	hMbx = FMTK_AllocMbx();

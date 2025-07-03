@@ -20,17 +20,16 @@ CCX = vbccm68k
 AAX = vasmrf68000_mot.exe
 LLX = vlink
 
+.SUFFIXES:	.x68
 
 ASMS = \
 	lib.x68 \
-	putnum.asm \
 	mem_support.x68 \
 	memmgnt3.asm \
 	femtiki.asm
 
 OUT = \
 	lib.o \
-	putnum.o \
 	mem_support.o \
 	memmgnt3.o \
 	femtiki.o

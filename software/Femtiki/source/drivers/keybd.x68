@@ -16,7 +16,8 @@
 ;==============================================================================
 
 	include "..\Femtiki\source\inc\const.x68"
-;	include "..\inc\device.x68"
+	include "..\Femtiki\source\inc\device.x68"
+	include "..\Femtiki\source\inc\const.x68"
 
 	section local_ram
 keybd_vars	equ	*
@@ -152,6 +153,7 @@ keybd_cmdproc:
 ; Setup the Keyboard device
 ;------------------------------------------------------------------------------
 
+_setup_keybd:
 setup_keybd:
 keybd_setup:
 	move.l a3,-(sp)
@@ -161,6 +163,7 @@ keybd_setup:
 	rts
 
 	global setup_keybd
+	global _setup_keybd
 
 keybd_init:
 	movem.l d0/a0/a1,-(a7)
@@ -348,10 +351,8 @@ KeybdInit:
 kbdi0002:
 	bsr			Wait10ms
 	clr.b		KEYBD+1				; clear receive register (write $00 to status reg)
-	jsr net_delay
 	moveq		#-1,d1				; send reset code to keyboard
 	move.b	d1,KEYBD+1		; write $FF to status reg to clear TX state
-	jsr net_delay
 	bsr			KeybdSendByte	; now write ($FF) to transmit register for reset
 	bsr			KeybdWaitTx		; wait until no longer busy
 	tst.l		d1
@@ -370,7 +371,6 @@ kbdi0002:
 .config:
 	move.w	#$F0,d1			; send scan code select
 	move.b	d1,leds
-	jsr net_delay
 	bsr			KeybdSendByte
 	bsr			KeybdWaitTx
 	tst.l		d1
@@ -383,8 +383,9 @@ kbdi0002:
 kbdiTryAgain:
 	dbra		d3,kbdi0002
 .keybdErr:
-	lea			msgBadKeybd,a1
-	jsr			DisplayStringCRLF
+	lea	msgBadKeybd,a1
+	moveq #13,d0									; DisplayStringCRLF function
+	trap #15
 	bra			ledxit
 kbdi0004:
 	moveq		#2,d1			; select scan code set #2
@@ -408,11 +409,13 @@ ledxit:
 	movem.l	(a7)+,d0/d1/d3/a1
 	rts
 kbdiXmitBusy:
-	lea			msgXmitBusy,a1
-	jsr			DisplayStringCRLF
+	lea	msgXmitBusy,a1
+	moveq #13,d0									; DisplayStringCRLF function
+	trap #15
 	movem.l	(a7)+,d0/d1/d3/a1
 	rts
-	
+	global _KeybdInit
+
 msgBadKeybd:
 	dc.b		"Keyboard error",0
 msgXmitBusy:
@@ -521,6 +524,7 @@ CheckForKey:
 	tst.b	_KeybdCnt(a3)
 	sne.b	d1
 	rts
+	global CheckForKey
 
 ;------------------------------------------------------------------------------
 ; GetKey
@@ -568,16 +572,16 @@ GetKey:
 ; back into the monitor.
 ;------------------------------------------------------------------------------
 
-_CheckForCtrlC:
 CheckForCtrlC:
 	move.l d1,-(a7)
 	bsr	KeybdGetCharNoWait
 	cmpi.b #CTRLC,d1
 	bne .0001
-	jmp	Monitor
+	jmp	_StartMon
 .0001
 	move.l (a7)+,d1
 	rts
+	global CheckForCtrlC
 
 ;------------------------------------------------------------------------------
 ;------------------------------------------------------------------------------
@@ -853,7 +857,7 @@ KeybdIRQ:
 	beq.s .0004
 	cmpi.b #SC_C,d1						; Is if Ctrl-C ?
 	bne.s .0004
-	move.l #Monitor,a0				; Stuff the Monitor address as
+	move.l #_StartMon,a0				; Stuff the Monitor address as
 	move.l a0,14(sp)					; the return address
 	bra .0002
 .0004
@@ -875,6 +879,7 @@ KeybdIRQ:
 .0001
 	movem.l	(a7)+,d0/d1/d2/a0/a3		; return
 	rte
+	global KeybdIRQ
 
 ;--------------------------------------------------------------------------
 ; PS2 scan codes to ascii conversion tables.

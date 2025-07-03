@@ -36,7 +36,7 @@
 
 	include "..\Femtiki\source\inc\const.x68"
 	include "..\Femtiki\source\inc\config.x68"
-;	include "..\inc\device.x68"
+	include "..\Femtiki\source\inc\device.x68"
 
 	section gvars
 	align 2
@@ -172,6 +172,7 @@ gfxaccel_cmdproc:
 	rts
 	global _gfxaccel_cmdproc
 
+_setup_gfxaccel:
 setup_gfxaccel:
 gfxaccel_setup:
 	movem.l d0/a0/a1,-(a7)
@@ -218,6 +219,8 @@ gfxaccel_init:
 	move.l #0,GFXACCEL+GFX_TARGET_Y0
 	move.l (a7)+,d1
 	rts
+	global setup_gfxaccel
+	global _setup_gfxaccel
 
 gfxaccel_stat:
 	move.l GFXACCEL+GFX_STATUS,d1
@@ -288,7 +291,7 @@ gfxaccel_clear:
 	move.l d2,d1						; d1 = total pixels
 	lsr.l #5,d1							; pixel count/burst length
 	move.l d4,d2						; d2 = pixels per strip
-	bsr div32								; number might be too big for divu
+	jsr div32								; number might be too big for divu
 	move.l d1,d0						; d0 = number of strips to set
 	move.l GFXACCEL+GFX_COLOR0,d4
 	move.l GFXACCEL+GFX_TARGET_BASE,d1
@@ -299,7 +302,7 @@ gfxaccel_clear:
 	swap d0
 .loop:
 	move.l a0,d1
-	bsr rbo
+	jsr rbo
 	move.l d1,$7FFFFFF4			; set destination address
 	move.l d4,$7FFFFFFC			; write value (color) to use and trigger write op
 	lea 1024(a0),a0					; advance pointer 32 bytes * 32 strips

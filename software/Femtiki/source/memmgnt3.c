@@ -57,8 +57,6 @@ void puthexnum(int num, int wid, int ul, char padchar);
 void putnum(int num, int wid, int sepchar, int padchar);
 extern void DBGHideCursor(int hide);
 extern void* memsetT(void* ptr, long c, size_t n);
-extern char* memset(char* ptr, long c, size_t n);
-extern char* FindFreePage();
 PTE* GetPageTableEntryAddress(hACB ha, char* virtadr, int alloc);
 void *pt_alloc(int amt, int acr);
 
