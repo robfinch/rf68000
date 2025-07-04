@@ -496,6 +496,8 @@ wire [31:0] fb_irq;
 rfFrameBuffer_fta64 #(
 	.BUSWID(32),
 	.INTERNAL_SYNCGEN(1'b1),
+	.pDevName("FRAMEBUF        "),
+	.pReverseByteOrder(1'b1),
 	.FBC_ADDR(32'hFD200001)
 ) 
 uframebuf1
@@ -531,7 +533,11 @@ begin
 	gfxs_req.dat = br1_dato;
 end
 
-gfx_top ugfx1
+gfx_top #(
+	.pDevName("GFXACCEL        "),
+	.pReverseByteOrder(1'b1)
+)
+ugfx1
 (
 	.wb_clk_i(clk100),
 	.wb_rst_i(rst),
