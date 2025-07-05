@@ -46,6 +46,7 @@
 //#include "TCB.h"
 
 extern void DisplayString(__reg("a1") char *str);
+extern void ClearScreen();
 
 extern hTCB FreeTCB;
 
@@ -139,21 +140,27 @@ ACB *GetACBPtr(int n)
   return (ACBPtrs[n-1]);
 }
 
+/*
 hACB GetAppHandle()
 {
 	return (GetRunningTCBPtr()->hApp);
 }
-
+*/
+/*
 hACB GetRunningAppid()
 {
-	return (GetRunningTCBPtr()->hApp);
+	if (GetRunningTCBPtr())
+		return (GetRunningTCBPtr()->hApp);
+	else 
+		return (1);
 }
-
+*/
+/*
 hACB GetRunningACB()
 {
 	return (GetAppHandle());
 }
-
+*/
 ACB *GetRunningACBPtr()
 {
 	return (GetACBPtr(GetRunningAppid()));
@@ -652,9 +659,24 @@ long FMTK_Initialize()
 	int lev;
 	AppStartupRec asr;
 	hMBX hMbx;
+	hACB hAcb;
 	long d1, d2, d3;
 
-	DisplayStringCRLF("\r\nFMTK_Starting.");
+	// Lock up the other cores for now	
+	while (get_coreno() != 2);
+	
+	DisplayLEDS(0x21);
+
+	// Nothing is running ATM
+	SetRunningAppid(0);
+	SetRunningTCB(0);
+
+	// Delay 3s;
+	for (nn = 3000000; nn > 0; nn--)
+		DisplayLEDS(nn >> 16);
+	DBGClearScreen();
+	DBGDisplayStringCRLF("\r\nFMTK_Starting.");
+  SetupDevices();
 	DisplayLEDS(1);
 //    firstcall
   {
@@ -673,7 +695,7 @@ long FMTK_Initialize()
     hSearchApp = 0;
     hFreeApp = 0;
 
-		SetRunningTCBPtr(0);
+//		SetRunningTCBPtr(0);
     im_save = 7;
     UnlockSysSemaphore();
     UnlockIOFSemaphore();
@@ -718,9 +740,8 @@ long FMTK_Initialize()
   	
  		DisplayLEDS(4);
 
-  	for (nn = 0; nn < NR_ACB; nn++) {
-  		memset(&ACBPtrs[nn],0,sizeof(ACB*));
-  	}
+  	for (nn = 0; nn < NR_ACB; nn++)
+  		ACBPtrs[nn] = NULL;
 		asr.pagesize = 8;
 		asr.priority = 15;
 		asr.affinity = 2;
@@ -733,8 +754,12 @@ long FMTK_Initialize()
 		asr.pData = 0;
 		asr.pUIData = 0;
 		asr.hasGarbageCollector = 0;
-		FMTK_StartApp((unsigned long)&asr, 1);
-		acbs[0].is_system = 1;
+		hAcb = FMTK_StartApp((unsigned long)&asr, 1);
+		if (hAcb < 0) {
+			DisplayLEDS(-hAcb);
+			return (hAcb);
+		}
+		ACBPtrs[hAcb]->is_system = 1;
 	
 		DisplayLEDS(5);
 /*
@@ -753,18 +778,17 @@ long FMTK_Initialize()
 		hKeybdMbx = 0;
 		hFocusSwitchMbx = 0;
   	FMTK_Inited = 0x12345678;
-    SetupDevices();
   	SetImLevelHelper(lev);								// Restore interrupts
 		DisplayLEDS(6);
   }
-	DisplayStringCRLF("FMTK_Started.");
+	DBGDisplayStringCRLF("FMTK_Started.");
 	hMbx = FMTK_AllocMbx();
 	if (hMbx > 0) {
 		for (nn = 0; nn < 10; nn++) {
 			FMTK_SendMsg(hMbx, 0xfffffff1, 0xfffffff1, 0xfffffff1);
-			DisplayStringCRLF("Sent");
+			DBGDisplayStringCRLF("Sent");
 			FMTK_WaitMsg(hMbx, (long)&d1, (long)&d2, (long)&d3, -1);
-			DisplayStringCRLF("Received");
+			DBGDisplayStringCRLF("Received");
 		}
 		FMTK_FreeMbx(hMbx);
 	}

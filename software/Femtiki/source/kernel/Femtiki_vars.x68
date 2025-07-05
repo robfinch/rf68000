@@ -90,10 +90,6 @@ tickcnt
 	ds.l	1
 IRQFlag
 	ds.l	1
-InputDevice
-	ds.l	1
-OutputDevice
-	ds.l	1
 Regsave
 	ds.l	96
 BreakpointFlag
@@ -167,6 +163,10 @@ numwka
 
 	section gvars
 scratch_ram
+_sys_pd						; system page directory
+	ds.b	2048
+_kernel_pt
+	ds.b	8192*6
 IOFocus
 _IOFocus
 	ds.l	1
@@ -261,15 +261,19 @@ __C0environ
 	ds.l	1
 
 	align 2
+_lastSearchedPAMWord
+	ds.l	1
 _SysAcb
 	ds.b	16384
 _PAM
-	ds.l	2048
+	ds.l	4096
 _PAMEnd
 
 _FemtikiVars_end
 
 	global scratch_ram
+	global _sys_pd
+	global _kernel_pt
 	global IOFocus
 	global _IOFocus
 	global memend
@@ -291,8 +295,6 @@ _FemtikiVars_end
 	global tickcnt
 	global _tickcnt
 	global IRQFlag
-	global InputDevice
-	global OutputDevice
 	global Regsave
 	global BreakpointFlag
 	global NumSetBreakpoints
@@ -361,6 +363,7 @@ _FemtikiVars_end
 	global RTCBuf
 	global spi_buff			
 
+	global _lastSearchedPAMWord
 	global _SysACB
 	global _PMT
 	global _PAM

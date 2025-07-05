@@ -36,6 +36,7 @@ DRIVER_ASMS = \
 	../Femtiki/source/drivers/gfxaccel.x68 \
 	../Femtiki/source/drivers/audio.x68 \
 	../Femtiki/source/drivers/serial.x68 \
+	../Femtiki/source/drivers/random.x68 \
 	../Femtiki/source/drivers/rtc.x68 \
 	../Femtiki/source/drivers/pic.x68
 
@@ -48,6 +49,7 @@ DRIVERS = \
 	../Femtiki/source/drivers/gfxaccel.o \
 	../Femtiki/source/drivers/audio.o \
 	../Femtiki/source/drivers/serial.o \
+	../Femtiki/source/drivers/random.o \
 	../Femtiki/source/drivers/rtc.o \
 	../Femtiki/source/drivers/pic.o
 
@@ -104,8 +106,8 @@ OUT = \
 	..\Femtiki\source\drivers\framebuf.o \
 	..\Femtiki\source\drivers\gfxaccel.o \
 	..\Femtiki\source\drivers\serial.o \
+	..\Femtiki\source\drivers\random.o \
 	..\Femtiki\source\drivers\pic.o \
-	..\Femtiki\source\mem_support.o \
 	..\Femtiki\source\kernel\femtiki_asm.o \
 	..\Femtiki\source\Femtiki2.o
 
@@ -116,6 +118,7 @@ $(OUT):	$(ASMS)
 	$(AAX) $(AFLAGS) ..\Femtiki\source\drivers\framebuf.x68 -L ..\Femtiki\source\drivers\framebuf.lst -o ..\Femtiki\source\drivers\framebuf.o
 	$(AAX) $(AFLAGS) ..\Femtiki\source\drivers\gfxaccel.x68 -L ..\Femtiki\source\drivers\gfxaccel.lst -o ..\Femtiki\source\drivers\gfxaccel.o
 	$(AAX) $(AFLAGS) ..\Femtiki\source\drivers\serial.x68 -L ..\Femtiki\source\drivers\serial.lst -o ..\Femtiki\source\drivers\serial.o
+	$(AAX) $(AFLAGS) ..\Femtiki\source\drivers\random.x68 -L ..\Femtiki\source\drivers\random.lst -o ..\Femtiki\source\drivers\random.o
 	$(AAX) $(AFLAGS) ..\Femtiki\source\drivers\pic.x68 -L ..\Femtiki\source\drivers\pic.lst -o ..\Femtiki\source\drivers\pic.o
 	$(AAX) $(AFLAGS) ..\Femtiki\source\mem_support.x68 -L ..\Femtiki\source\mem_support.lst -o ..\Femtiki\source\mem_support.o
 	
@@ -174,6 +177,7 @@ BIOS:	$(OUT)
 	$(AAX) $(AFLAGS) ..\Femtiki\source\drivers\framebuf.x68 -L ..\Femtiki\source\drivers\framebuf.lst -o ..\Femtiki\source\drivers\framebuf.o
 	$(AAX) $(AFLAGS) ..\Femtiki\source\drivers\gfxaccel.x68 -L ..\Femtiki\source\drivers\gfxaccel.lst -o ..\Femtiki\source\drivers\gfxaccel.o
 	$(AAX) $(AFLAGS) ..\Femtiki\source\drivers\serial.x68 -L ..\Femtiki\source\drivers\serial.lst -o ..\Femtiki\source\drivers\serial.o
+	$(AAX) $(AFLAGS) ..\Femtiki\source\drivers\random.x68 -L ..\Femtiki\source\drivers\random.lst -o ..\Femtiki\source\drivers\random.o
 	$(AAX) $(AFLAGS) ..\Femtiki\source\drivers\pic.x68 -L ..\Femtiki\source\drivers\pic.lst -o ..\Femtiki\source\drivers\pic.o
 	
 #	vlink -T ..\Femtiki\source\Femtiki.cmd -brawbin1 boot.o ..\Femtiki\source\Femtiki.o -o boot.bin
@@ -200,6 +204,7 @@ BIOS:	$(OUT)
 	..\Femtiki\source\drivers\framebuf.o \
 	..\Femtiki\source\drivers\gfxaccel.o \
 	..\Femtiki\source\drivers\serial.o \
+	..\Femtiki\source\drivers\random.o \
 	..\Femtiki\source\drivers\pic.o \
 	..\Femtiki\source\kernel\dbg_console.o \
 	..\Femtiki\source\kernel\semaphore.o \
@@ -209,7 +214,6 @@ BIOS:	$(OUT)
 	..\Femtiki\source\kernel\SetupDevices.o \
 	..\Femtiki\source\kernel\femtiki_asm.o \
 	..\Femtiki\source\kernel\Femtiki_kern.o \
-	..\Femtiki\source\mem_support.o \
 	..\crt\source\crt.o \
 	..\crt\source\lib.o \
 	..\Femtiki\source\Femtiki2.o \

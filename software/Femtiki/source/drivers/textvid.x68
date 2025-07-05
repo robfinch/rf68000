@@ -199,7 +199,9 @@ textvid_setup:
 	bsr textvid_clear
 	moveq #13,d0
 	lea.l DCB_MAGIC(a0),a1
+	move.b #$B0,leds
 	trap #15
+	move.b #$B1,leds
 	movem.l (a7)+,d0/a0/a1
 	rts
 	global _setup_textvid
@@ -241,6 +243,7 @@ textvid_init:
 	clr.w tv_inpos_y(a3)
 	clr.w tv_outpos_x(a3)
 	clr.w tv_outpos_y(a3)
+	bsr SyncCursor
 	move.l (a7)+,d0
 	rts
 
@@ -272,9 +275,9 @@ textvid_getchar:
 		lsl.l #3,d2
 		move.l 4(a0,d2.l),d1
 	endif
-	rol.w #8,d1			; swap byte order
-	swap d1
-	rol.w #8,d1
+;	rol.w #8,d1			; swap byte order
+;	swap d1
+;	rol.w #8,d1
 	andi.l #$0FF,d1
 	bsr IncInputPos
 	movem.l (sp)+,d2/a0
@@ -458,9 +461,9 @@ textvid_clear:
 		or.l d1,d2								; forground color in bits 24 to 31
 		swap d2										; color in bits 16 to 23
 		ori.w #32,d2							; insert character to display (space)
-		rol.w #8,d2								; reverse byte order
-		swap d2
-		rol.w #8,d2
+;		rol.w #8,d2								; reverse byte order
+;		swap d2
+;		rol.w #8,d2
 loop3:
 		move.l d2,(a0)+						; copy to cell
 	else
@@ -473,12 +476,12 @@ loop3:
 		; char in bits 0 to 15
 		swap d2										; color in bits 16 to 32
 		move.w #32,d2							; load space character
-		rol.w	#8,d2								; swap endian, text controller expects little endian
-		swap d2
-		rol.w	#8,d2
-		rol.w	#8,d0								; swap endian
-		swap d0
-		rol.w	#8,d0
+;		rol.w	#8,d2								; swap endian, text controller expects little endian
+;		swap d2
+;		rol.w	#8,d2
+;		rol.w	#8,d0								; swap endian
+;		swap d0
+;		rol.w	#8,d0
 loop3:
 		move.l d2,(a0)+						; copy char plus bkcolor to cell
 		move.l d1,(a0)+						; copy fgcolor to cell
@@ -703,16 +706,16 @@ dcx11:
 	move.l d1,d2					; d2 = char
 	bsr get_screen_color	; d0,d1 = color
 	or.l d2,d0						; d0 = char + color
-	rol.w	#8,d0						; swap bytes - text controller expects little endian data
-	swap d0								; swap halfs
-	rol.w	#8,d0						; swap remaining bytes
+;	rol.w	#8,d0						; swap bytes - text controller expects little endian data
+;	swap d0								; swap halfs
+;	rol.w	#8,d0						; swap remaining bytes
 	if (SCREEN_FORMAT==1)
 		move.l d0,(a0)+
 	else
 		move.l d0,(a0)+
-		rol.w	#8,d1					; swap bytes
-		swap d1							; swap halfs
-		rol.w	#8,d1					; swap remaining bytes
+;		rol.w	#8,d1					; swap bytes
+;		swap d1							; swap halfs
+;		rol.w	#8,d1					; swap remaining bytes
 		move.l d1,(a0)
 	endif
 	bsr	IncCursorPos
@@ -757,15 +760,15 @@ doDelete:
 	bsr	get_screen_color
 	if (SCREEN_FORMAT==1)
 		move.w #' ',d0
-		rol.w	#8,d0
-		swap d0
-		rol.w	#8,d0
+;		rol.w	#8,d0
+;		swap d0
+;		rol.w	#8,d0
 		move.l d0,-4(a0)
 	else
 		move.w #' ',d0					; terminate line with a space
-		rol.w	#8,d0
-		swap d0
-		rol.w	#8,d0
+;		rol.w	#8,d0
+;		swap d0
+;		rol.w	#8,d0
 		move.l d0,-8(a0)
 	endif
 	movem.l	(a7)+,d0/d1/a0
@@ -905,15 +908,15 @@ BlankLastLine:
 	else
 		move.w #32,d0								; set the character for display in low 16 bits
 	endif
-	rol.w	#8,d0
-	swap d0
-	rol.w	#8,d0
+;	rol.w	#8,d0
+;	swap d0
+;	rol.w	#8,d0
 .0001:
 	if (SCREEN_FORMAT==1)
 		move.l d0,(a0)+
 	else
 		move.l d0,(a0)+
-		bsr rbo
+;		bsr rbo
 		move.l d1,(a0)+
 	endif
 	dbra d2,.0001
@@ -969,9 +972,9 @@ SyncCursor:
 	mulu d1,d2
 	ext.l d0
 	add.l d0,d2
-	rol.w	#8,d2					; swap byte order
-	swap d2
-	rol.w #8,d2
+;	rol.w	#8,d2					; swap byte order
+;	swap d2
+;	rol.w #8,d2
 	move.l d2,TEXTREG+TEXTREG_CURSOR_POS
 .0001:	
 	movem.l	(a7)+,d0/d1/d2

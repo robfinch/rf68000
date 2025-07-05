@@ -50,17 +50,12 @@ extern void prtdbl(double);
 extern hTCB FreeTCB;
 extern TCB tcbs[];
 
-hTCB GetRunningTCB() =
-	"\tmovec.l cpid,d0\r\n"
-;
-
-void SetRunningTCB(__reg("d0") hTCB h) =
-	"\tmovec.l d0,cpid\r\n"
-;
-
 TCB* GetRunningTCBPtr()
 {
-	return (&tcbs[GetRunningAppid()-1]);
+	if (GetRunningTCB() > 0 && GetRunningTCB() <= NR_TCB)
+		return (&tcbs[GetRunningTCB()-1]);
+	else
+		return (NULL);
 }
 
 TCB* TCBHandleToPointer(hTCB handle)

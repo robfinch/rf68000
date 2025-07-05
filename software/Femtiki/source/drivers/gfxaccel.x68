@@ -61,27 +61,27 @@ GFXACCEL_CMDTBL_ADDR macro arg1
 	dc.w ((\1-GFXACCEL_CMDTBL))
 endm
 
-GFX_CTRL		equ	$100
-GFX_STATUS	equ $104
-GFX_TARGET_BASE		equ $110
-GFX_TARGET_SIZE_X	equ $114
-GFX_TARGET_SIZE_Y equ $118
-GFX_DEST_PIXEL_X  equ $138
-GFX_DEST_PIXEL_Y  equ $13c
-GFX_DEST_PIXEL_Z  equ $140
-GFX_CLIP_PIXEL0_X	equ $174
-GFX_CLIP_PIXEL0_Y	equ $178
-GFX_CLIP_PIXEL1_X	equ $17C
-GFX_CLIP_PIXEL1_Y	equ $180
-GFX_COLOR0	equ $184
-GFX_COLOR1	equ $188
-GFX_COLOR2	equ $18C
-GFX_TARGET_X0	equ $1B0
-GFX_TARGET_Y0 equ $1B4
-GFX_TARGET_X1	equ $1B8
-GFX_TARGET_Y1	equ $1BC
-GFX_COLOR_COMP equ $1D0
-GFX_PPS equ $1D4
+GFX_CTRL		equ	$00
+GFX_STATUS	equ $04
+GFX_TARGET_BASE		equ $10
+GFX_TARGET_SIZE_X	equ $14
+GFX_TARGET_SIZE_Y equ $18
+GFX_DEST_PIXEL_X  equ $38
+GFX_DEST_PIXEL_Y  equ $3c
+GFX_DEST_PIXEL_Z  equ $40
+GFX_CLIP_PIXEL0_X	equ $74
+GFX_CLIP_PIXEL0_Y	equ $78
+GFX_CLIP_PIXEL1_X	equ $7C
+GFX_CLIP_PIXEL1_Y	equ $80
+GFX_COLOR0	equ $84
+GFX_COLOR1	equ $88
+GFX_COLOR2	equ $8C
+GFX_TARGET_X0	equ $B0
+GFX_TARGET_Y0 equ $B4
+GFX_TARGET_X1	equ $B8
+GFX_TARGET_Y1	equ $BC
+GFX_COLOR_COMP equ $D0
+GFX_PPS equ $D4
 
 ;------------------------------------------------------------------------------
 ;------------------------------------------------------------------------------

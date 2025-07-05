@@ -142,10 +142,6 @@ IO_BITMAP	EQU $1F00000
 txtscreen	EQU	$FD000000
 RST_REG		EQU	$FDFF0000
 RAND			EQU	$FDFF4010
-RAND_NUM	EQU	$FDFF4010
-RAND_STRM	EQU	$FDFF4014
-RAND_MZ		EQU $FDFF4018
-RAND_MW		EQU	$FDFF401C
 keybd			EQU	$FDFF8000
 ;ACIA			EQU	$FDFE0000
 I2C2 			equ $FDFE4000
@@ -196,7 +192,7 @@ endm
 	org 0
 	; 0
 	dc.l		$00047FFC
-	dc.l		__crt_start
+	dc.l		start
 	dc.l		bus_err
 	dc.l		addr_err
 	dc.l		illegal_trap		* ILLEGAL instruction
@@ -415,8 +411,8 @@ start:
 	move.b #2,leds
 .stp	
 	movec.l coreno,d0							; set initial value of thread register
-;	cmpi.b #2,d0
-;	bne .stp
+	cmpi.b #2,d0
+	bne .stp
 	move.b d0,leds
 	swap d0											; coreno in high eight bits
 	lsl.l #8,d0
@@ -428,10 +424,11 @@ start:
 ;	clr.l	(a0)+								; clear the memory area
 ;	dbra d0,.0111
 	move.b #5,leds
-	move.l #$10000,InputDevice			; select keyboard input
-	move.l #$20000,OutputDevice		; select text screen output
+	move.l #$10000,_InputDevice			; select keyboard input
+	move.l #$20000,_OutputDevice		; select text screen output
 	move.l #_DeviceTable+2*DCB_SIZE,d0
 	jsr _setup_textvid
+	move.b #4,leds
 	bsr test_scratchpad_ram
 	move.b #3,leds
 	move.l #_DeviceTable+0*DCB_SIZE,d0
@@ -452,6 +449,8 @@ start:
 	move.l #_DeviceTable+7*DCB_SIZE,d0
 	jsr _setup_gfxaccel
 	move.b #9,leds
+	move.l #_DeviceTable+9*DCB_SIZE,d0
+	jsr _setup_random
 	clr.l sys_switches
 	lea I2C2,a6
 	bsr i2c_setup
@@ -468,8 +467,8 @@ start:
 	endif
 	bsr	InitIOPBitmap					; not going to get far without this
 	bsr	InitSemaphores
-	bsr	InitRand
-	bsr RandGetNum
+;	bsr	InitRand
+	jsr RandGetNum
 	andi.l #$FFFFFF00,d1
 ;	move.l d1,_canary
 ;	movec d1,canary
@@ -492,7 +491,7 @@ start:
 	; Write startup message to screen
 
 	lea	msg_start,a1
-	bsr	DisplayString
+	bsr	_DisplayString
 ;	bsr	FemtikiInit
 	bsr Delay3s
 	movec	coreno,d0
@@ -506,7 +505,9 @@ start:
 ;	bsr	UnlockSemaphore	; allow other cpus to proceed
 	move.w #$A4A4,leds			; diagnostics
 	jsr	setup_pic				; initialize interrupt controller
+	jsr __crt_start
 	jmp	StartMon
+
 
 ;	lea	brdisp_trap,a0	; set brdisp trap vector
 ;	move.l	a0,64*4
@@ -531,7 +532,7 @@ start_other:
 	movec		coreno,d1
 	bsr			DisplayByte
 	lea			msg_core_start,a1
-	bsr			DisplayString
+	bsr			_DisplayString
 ;	bsr			FemtikiInitIRQ
 do_nothing:	
 	bra			StartMon
@@ -576,7 +577,7 @@ test_scratchpad_ram:
 .log_err:
 	bsr DisplayTetra
 	moveq #' ',d1
-	bsr OutputChar
+	bsr _OutputChar
 	move.l a0,d1
 	bsr DisplayTetra
 	bsr CRLF
@@ -600,7 +601,7 @@ msgTestScratch
 ;==============================================================================
 
 scan_for_dev:
-	moveq #13,d0					; DisplayStringCRLF
+	moveq #13,d0					; _DisplayStringCRLF
 	lea msgScanning(pc),a1
 	trap #15
 	move.l #$D0000000,a0
@@ -622,21 +623,17 @@ scan_for_dev:
 	rts
 .0002
 	addq.l #1,d2
-	moveq #14,d0					; DisplayString
+	moveq #14,d0					; _DisplayString
 	lea msgFound(pc),a1
 	trap #15
 	move.l $80(a0),d1
-	macRbo d1
 	move.l d1,numwka+12
 	move.l $84(a0),d1
-	macRbo d1
 	move.l d1,numwka+8
 	move.l $88(a0),d1
-	macRbo d1
 	move.l d1,numwka+4
 	move.l $8C(a0),d1
-	macRbo d1
-	move.l d1,numwka
+	move.l d1,numwka+0
 	moveq #1,d0						; DisplayStringLimited
 	moveq #16,d1					; max 16 chars
 	lea numwka,a1
@@ -668,7 +665,7 @@ msgDeviceCount
 ;==============================================================================
 
 T15DTAddr macro arg1
-	dc.l (\1-T15DispatchTable)
+	dc.l (\1)
 endm
 
 	align	2
@@ -679,7 +676,7 @@ T15DispatchTable:
 	T15DTAddr	DisplayNumber
 	T15DTAddr	StubRout
 	T15DTAddr	T15GetKey
-	T15DTAddr	OutputChar
+	T15DTAddr _OutputChar
 	T15DTAddr	CheckForKey
 	T15DTAddr	GetTick
 	T15DTAddr	StubRout
@@ -687,8 +684,8 @@ T15DispatchTable:
 	T15DTAddr	StubRout
 	T15DTAddr	T15Cursor
 	T15DTAddr	T15SetKeyboardEcho
-	T15DTAddr	DisplayStringCRLF
-	T15DTAddr	DisplayString
+	T15DTAddr	_DisplayStringCRLF
+	T15DTAddr	_DisplayString
 	T15DTAddr	StubRout
 	T15DTAddr	StubRout
 	T15DTAddr	StubRout
@@ -786,10 +783,11 @@ T15DispatchTable:
 TRAP15:
 	movem.l	d0/a0,-(a7)
 	lea T15DispatchTable(pc),a0
-	ext.w d0
+	and.w #$0FF,d0
 	lsl.w #2,d0
 	move.l (a0,d0.w),d0
-	add.l d0,a0
+	move.l d0,a0
+	move.b #$B2,leds
 	jsr (a0)
 	movem.l (a7)+,d0/a0
 	rte
@@ -820,7 +818,7 @@ T15ReadScreenChar:
 	add.l TextScr,d1
 	move.l d1,a0
 	move.l (a0),d1
-	bsr rbo
+;	bsr rbo
 	and.l #$01FF,d1
 	movem.l (sp)+,d2/d3/a0
 	rts
@@ -858,7 +856,7 @@ InitMMU:
 	move.l #510,d0			; then override for IO later
 .0002
 	move.l d2,d1
-	bsr rbo
+;	bsr rbo
 	move.l d1,(a0)+
 	addi.w #1,d2				; increment DRAM page number
 	dbra d0,.0002
@@ -959,48 +957,48 @@ InitIOPBitmap:
 ;		none
 ;------------------------------------------------------------------------------
 
-InitRand:
-RandInit:
-	move.l #$12345678,m_z		; initialize to some value
-	move.l #$98765432,m_w
-	move.l #$82835438,next_m_z
-	move.l #$08723746,next_m_w
-	movem.l	d0/d1,-(a7)
-	moveq #37,d0								; lock semaphore
-	moveq	#RAND_SEMA,d1
-	trap #15
-	movec coreno,d0							; d0 = core number
-	sub.l #2,d0									; make 0 to 9
-	lsl.l	#6,d0									; allow 64 streams per core
-	move.l d0,RAND_STRM					; select the stream
-	move.l #$12345678,RAND_MZ		; initialize to some value
-	move.l #$98765432,RAND_MW
-	move.l #777777777,RAND_NUM	; generate first number
-	moveq #38,d0								; unlock semaphore
-	moveq	#RAND_SEMA,d1
-	trap #15
-	movem.l	(a7)+,d0/d1
-	rts
+;InitRand:
+;RandInit:
+;	move.l #$12345678,m_z		; initialize to some value
+;	move.l #$98765432,m_w
+;	move.l #$82835438,next_m_z
+;	move.l #$08723746,next_m_w
+;	movem.l	d0/d1,-(a7)
+;	moveq #37,d0								; lock semaphore
+;	moveq	#RAND_SEMA,d1
+;	trap #15
+;	movec coreno,d0							; d0 = core number
+;	sub.l #2,d0									; make 0 to 9
+;	lsl.l	#6,d0									; allow 64 streams per core
+;	move.l d0,RAND_STRM					; select the stream
+;	move.l #$12345678,RAND_MZ		; initialize to some value
+;	move.l #$98765432,RAND_MW
+;	move.l #777777777,RAND_NUM	; generate first number
+;	moveq #38,d0								; unlock semaphore
+;	moveq	#RAND_SEMA,d1
+;	trap #15
+;	movem.l	(a7)+,d0/d1
+;	rts
 
 ;------------------------------------------------------------------------------
 ; Returns
 ;		d1 = random integer
 ;------------------------------------------------------------------------------
 
-RandGetNum:
-	movem.l	d0/d2,-(a7)
-	moveq #RAND_SEMA,d1
-	bsr T15LockSemaphore
-	movec	coreno,d0
-	sub.l #2,d0									; make 0 to 9
-	lsl.l	#6,d0
-	move.l d0,RAND_STRM					; select the stream
-	move.l RAND_NUM,d2					; d2 = random number
-	move.l d2,RAND_NUM		 		  ; generate next number
-	bsr T15UnlockSemaphore
-	move.l d2,d1
-	movem.l	(a7)+,d0/d2
-	rts
+;RandGetNum:
+;	movem.l	d0/d2,-(a7)
+;	moveq #RAND_SEMA,d1
+;	bsr T15LockSemaphore
+;	movec	coreno,d0
+;	sub.l #2,d0									; make 0 to 9
+;	lsl.l	#6,d0
+;	move.l d0,RAND_STRM					; select the stream
+;	move.l RAND_NUM,d2					; d2 = random number
+;	move.l d2,RAND_NUM		 		  ; generate next number
+;	bsr T15UnlockSemaphore
+;	move.l d2,d1
+;	movem.l	(a7)+,d0/d2
+;	rts
 
 prng:
 	move.l d2,-(a7)
@@ -1039,7 +1037,7 @@ prng:
 _GetRand:
 	move.l d1,-(sp)
 	fmove.x fp1,-(sp)
-	bsr RandGetNum
+	jsr RandGetNum
 	lsr.l #1,d1									; make number between 0 and 2^31
 	fmove.l d1,fp0
 	fmove.l #$7FFFFFFF,fp1			; divide by 2^31
@@ -1055,7 +1053,7 @@ _GetRand:
 
 RandWait:
 	movem.l	d0/d1,-(a7)
-	bsr			RandGetNum
+	jsr RandGetNum
 	andi.w	#15,d1
 .0001:
 	nop
@@ -1227,7 +1225,7 @@ T15GetFloat:
 T15Abort:
 	bsr DisplayByte
 	lea msgStackCanary,a1
-	bsr DisplayStringCRLF
+	bsr _DisplayStringCRLF
 	bra Monitor
 
 T15SetKeyboardEcho:
@@ -1242,7 +1240,7 @@ chk_exception:
 	move.l 2(sp),d1
 	bsr DisplayTetra
 	lea msgChk,a1
-	bsr DisplayStringCRLF
+	bsr _DisplayStringCRLF
 	bra Monitor
 
 ; -----------------------------------------------------------------------------
@@ -1340,10 +1338,10 @@ CRLF:
 ;------------------------------------------------------------------------------
 
 _DisplayString:
-DisplayString:
+;_DisplayString:
 	movem.l	d0/d1/a1,-(a7)
 dspj1:
-	clr.l d1							; clear upper bits of d1
+;	clr.l d1							; clear upper bits of d1
 	move.b (a1)+,d1				; move string char into d1
 	beq.s dsret						; is it end of string ?
 	moveq #6,d0						; output character function
@@ -1358,9 +1356,10 @@ dsret:
 ;------------------------------------------------------------------------------
 
 _DisplayStringCRLF:
-DisplayStringCRLF:
-	bsr		DisplayString
-	bra		CRLF
+;_DisplayStringCRLF:
+	move.b #$4,leds
+	bsr _DisplayString
+	bra CRLF
 
 	global _DisplayString
 	global _DisplayStringCRLF
@@ -1405,7 +1404,7 @@ div32:
 	tst.l d2							; check for divide-by-zero
 	bne .0006
   lea	msgDivZero(pc),a1
-  bsr DisplayStringCRLF
+  bsr _DisplayStringCRLF
   bra Monitor
 .0006
 	moveq #31,d0					; iteration count for 32 bits
@@ -1468,17 +1467,17 @@ DisplayNumber:
 	ble .0003
 .0004
 	move.b #' ',d1
-	bsr OutputChar
+	bsr _OutputChar
 	subi.b #1,d5
 	bne .0004
 .0003
 	tst.l d6				; is number negative?
 	bpl.s .0005
 	move.b #'-',d1	; if so, display the sign
-	bsr OutputChar
+	bsr _OutputChar
 .0005
 	move.b -(a0),d1	; now unstack the digits and display
-	bsr OutputChar
+	bsr _OutputChar
 	cmpa.l #numwka,a0
 	bhi .0005
 	movem.l (sp)+,d1/d2/d5/d6/a0
@@ -1546,7 +1545,7 @@ T15Rectangle:
 	move.l #$70000,d7
 	move.l DEV_DRAW_RECTANGLE,d6
 	trap #0
-	movem.l (a7)+,d1/d2/d6/d6
+	movem.l (a7)+,d1/d2/d6/d7
 	rts
 
 T15GetPixel:
@@ -2060,7 +2059,7 @@ cmdTable:
 	dc.l	cmdCore
 	dc.l  cmdTestFP
 	dc.l	cmdTestGF
-	dc.l  cmdTestRAM
+	dc.l  _ramtest					; cmdTestRAM
 	dc.l	cmdSetTime
 	dc.l	cmdTime
 	dc.l	cmdTestSerialReceive
@@ -2084,9 +2083,9 @@ FromScreen:
 		move.l 4(a0),d1
 		lea 8(a0),a0
 	endif
-	rol.w #8,d1
-	swap d1
-	rol.w #8,d1
+;	rol.w #8,d1
+;	swap d1
+;	rol.w #8,d1
 	rts
 
 _StartMon:
@@ -2115,7 +2114,7 @@ Monitor:
 PromptLn:
 	bsr	CRLF
 	move.b #'$',d1
-	bsr OutputChar
+	bsr _OutputChar
 
 ; Get characters until a CR is keyed
 ;
@@ -2129,7 +2128,7 @@ Prompt3:
 	beq.s	Prompt3
 	cmpi.b #CR,d1
 	beq.s	Prompt1
-	bsr	OutputChar
+	bsr	_OutputChar
 	bra.s	Prompt3
 
 ; Process the screen line that the CR was keyed on
@@ -2192,7 +2191,7 @@ cmdDispatch:
 	bmi.s	.checkNextCmd
 .endOfTable
 	lea	msgUnknownCmd,a1
-	bsr	DisplayStringCRLF
+	bsr	_DisplayStringCRLF
 	bra	Monitor
 .foundCmd:
 	lea	cmdTable,a1				; a1 = pointer to command address table
@@ -2277,7 +2276,7 @@ cmdTime:
 	lea TimeBuf,a6
 	bsr get_time
 	move.l a6,a1
-	bsr DisplayStringCRLF
+	bsr _DisplayStringCRLF
 	bra Monitor
 
 ; Get the time into a buffer
@@ -2326,7 +2325,7 @@ cmdTinyBasic:
 cmdTestCPU:
 	bsr	cpu_test
 	lea	msg_test_done,a1
-	bsr	DisplayStringCRLF
+	bsr	_DisplayStringCRLF
 	bra	Monitor
 
 cmdClearScreen:
@@ -2490,7 +2489,7 @@ tblPow2:
 cmdHelp:
 DisplayHelp:
 	lea			HelpMsg,a1
-	bsr			DisplayString
+	bsr			_DisplayString
 	bra			Monitor
 
 cmdTestSD:
@@ -2520,7 +2519,7 @@ cmdTestSD:
 .0001
 	move.b #'S',d1
 .0002
-	bsr OutputChar
+	bsr _OutputChar
 	move.l d0,d1
 	bsr DisplayTetra
 	bsr CRLF
@@ -2566,9 +2565,9 @@ msgHello:
 ;------------------------------------------------------------------------------
 
 GetCmdLine:
-		bsr		OutputChar		; display prompt
+		bsr		_OutputChar		; display prompt
 		move.b	#' ',d0
-		bsr		OutputChar
+		bsr		_OutputChar
 		lea		CmdBuf,a0
 .0001:
 	move.l #$10000,d7					; keyboard
@@ -2585,20 +2584,20 @@ GetCmdLine:
 .0002:
 		move.b	d1,(a0)
 		lea			8(a0),a0
-		bsr		OutputChar
+		bsr		_OutputChar
 		cmp.b	#CR,d1
 		beq		.0007
 		cmp.l	#CmdBufEnd-1,a0
 		bcs.s	.0001
 .0003:
 		move.b	#CTRLH,d1
-		bsr		OutputChar
+		bsr		_OutputChar
 		move.b	#' ',d1
-		bsr		OutputChar
+		bsr		_OutputChar
 		cmp.l	#CmdBuf,a0
 		bls.s	.0001
 		move.b	#CTRLH,d1
-		bsr		OutputChar
+		bsr		_OutputChar
 		subq.l	#1,a0
 		bra.s	.0001
 .0004:
@@ -2608,18 +2607,18 @@ GetCmdLine:
 		subq	#1,d2
 .0005:
 		move.b	#CTRLH,d1
-		bsr		OutputChar
+		bsr		_OutputChar
 		move.b	#' ',d1
-		bsr		OutputChar
+		bsr		_OutputChar
 		move.b	#CTRLH,d1
-		bsr		OutputChar
+		bsr		_OutputChar
 		dbra	d2,.0005
 .0006:
 		lea		CmdBuf,a0
 		bra		.0001
 .0007:
 		move.b	#LF,d1
-		bsr		OutputChar
+		bsr		_OutputChar
 		rts
 
 ;------------------------------------------------------------------------------
@@ -2714,7 +2713,7 @@ cmdFillB:
 .0001:	
 	cmpi.b #'R',d5
 	bne.s .0003
-	bsr RandGetNum
+	jsr RandGetNum
 .0003:
 	move.b d4,(a1)+
 	sub.l	#1,d3
@@ -2747,7 +2746,7 @@ cmdFillW:
 .0001:	
 	cmpi.b #'R',d5
 	bne.s .0003
-	bsr RandGetNum
+	jsr RandGetNum
 .0003:
 	move.w d4,(a1)+
 	sub.l	#1,d3
@@ -2780,7 +2779,7 @@ cmdFillL:
 .0001:	
 	cmpi.b #'R',d5
 	bne.s .0003
-	bsr RandGetNum
+	jsr RandGetNum
 .0003:
 	move.l d4,(a1)+
 	sub.l	#1,d3
@@ -2812,6 +2811,7 @@ ignBlanks:
 
 PeekScreenChar:
 	move.l (a0),d1
+	rts
 	bra rbo
 
 ;------------------------------------------------------------------------------
@@ -2829,7 +2829,7 @@ GetSzChar:
 	bsr	ignBlanks
 	moveq #'B',d4		; assume byte
 	move.l (a0),d1
-	bsr	rbo
+;	bsr	rbo
 	cmpi.b #'B',d1
 	beq.s .0002
 	cmpi.b #'W',d1
@@ -3002,13 +3002,13 @@ plot_rand_points:
 	move.l #10000,d5
 .0005:
 	move.l #$40000000,a4
-	bsr RandGetNum
+	jsr RandGetNum
 	move.l d1,d4					; color
-	bsr RandGetNum
+	jsr RandGetNum
 	andi.l #$0FFFF,d1
 	mulu #VIDEO_Y,d1
 	move.l d1,d2
-	bsr RandGetNum
+	jsr RandGetNum
 	andi.l #$0FFFF,d1
 	mulu #VIDEO_X,d1
 	swap d2
@@ -3123,14 +3123,14 @@ rand_points:
 .0004:
 	move.l #$70000,d7
 	moveq #DEV_SET_COLOR,d6
-	bsr RandGetNum
+	jsr RandGetNum
 	trap #0
 	move.l #0,d3					; Z
-	bsr RandGetNum
+	jsr RandGetNum
 	andi.l #$0FFFF,d1
 	mulu #VIDEO_Y,d1
 	move.l d1,d2
-	bsr RandGetNum
+	jsr RandGetNum
 	andi.l #$0FFFF,d1
 	mulu #VIDEO_X,d1
 	move.l #$70000,d7
@@ -3148,29 +3148,29 @@ rand_lines:
 	jsr CheckForCtrlC
 	move.l #$70000,d7
 	moveq #DEV_SET_COLOR,d6
-	bsr RandGetNum
+	jsr RandGetNum
 	trap #0
-	bsr RandGetNum
+	jsr RandGetNum
 	andi.l #$0FFFF,d1
 	mulu #VIDEO_Z,d1
 	moveq #0,d0
-	bsr RandGetNum
+	jsr RandGetNum
 	andi.l #$0FFFF,d1
 	mulu #VIDEO_Y,d1
 	move.l d1,d5
-	bsr RandGetNum
+	jsr RandGetNum
 	andi.l #$0FFFF,d1
 	mulu #VIDEO_X,d1
 	move.l d1,d4
-	bsr RandGetNum
+	jsr RandGetNum
 	andi.l #$0FFFF,d1
 	mulu #VIDEO_Z,d1
 	moveq #0,d3
-	bsr RandGetNum
+	jsr RandGetNum
 	andi.l #$0FFFF,d1
 	mulu #VIDEO_Y,d1
 	move.l d1,d2
-	bsr RandGetNum
+	jsr RandGetNum
 	andi.l #$0FFFF,d1
 	mulu #VIDEO_X,d1
 	move.l #$70000,d7
@@ -3189,29 +3189,29 @@ rand_rect:
 	jsr CheckForCtrlC
 	move.l #$70000,d7
 	moveq #DEV_SET_COLOR,d6
-	bsr RandGetNum
+	jsr RandGetNum
 	trap #0
-	bsr RandGetNum
+	jsr RandGetNum
 	andi.l #$0FFFF,d1
 	mulu #VIDEO_Z,d1
 	moveq #0,d0
-	bsr RandGetNum
+	jsr RandGetNum
 	andi.l #$0FFFF,d1
 	mulu #VIDEO_Y,d1
 	move.l d1,d5
-	bsr RandGetNum
+	jsr RandGetNum
 	andi.l #$0FFFF,d1
 	mulu #VIDEO_X,d1
 	move.l d1,d4
-	bsr RandGetNum
+	jsr RandGetNum
 	andi.l #$0FFFF,d1
 	mulu #VIDEO_Z,d1
 	moveq #0,d3
-	bsr RandGetNum
+	jsr RandGetNum
 	andi.l #$0FFFF,d1
 	mulu #VIDEO_Y,d1
 	move.l d1,d2
-	bsr RandGetNum
+	jsr RandGetNum
 	andi.l #$0FFFF,d1
 	mulu #VIDEO_X,d1
 	move.l #$70000,d7
@@ -3227,20 +3227,20 @@ rand_rect2:
 .0003:
 .0006:
 	jsr CheckForCtrlC
-	bsr RandGetNum
+	jsr RandGetNum
 	move.l #$70000,d7
 	moveq #DEV_SET_COLOR,d6
 	trap #0
-	bsr RandGetNum
+	jsr RandGetNum
 	move.l d1,d4
 	divu #VIDEO_Y,d4
-	bsr RandGetNum
+	jsr RandGetNum
 	move.l d1,d3
 	divu #VIDEO_X,d3
-	bsr RandGetNum
+	jsr RandGetNum
 	move.l d1,d2
 	divu #VIDEO_Y,d2
-	bsr RandGetNum
+	jsr RandGetNum
 	divu #VIDEO_X,d1
 	move.l #$70000,d7
 	moveq #DEV_DRAW_RECTANGLE,d6
@@ -3256,41 +3256,41 @@ rand_triangle:
 	jsr CheckForCtrlC
 	move.l #$70000,d7
 	moveq #DEV_SET_COLOR,d6
-	bsr RandGetNum
+	jsr RandGetNum
 	trap #0
-	bsr RandGetNum
+	jsr RandGetNum
 	andi.l #$0FFFF,d1
 	mulu #VIDEO_Z,d1
 	move.l #0,a3
-	bsr RandGetNum
+	jsr RandGetNum
 	andi.l #$0FFFF,d1
 	mulu #VIDEO_Y,d1
 	move.l d1,a2
-	bsr RandGetNum
+	jsr RandGetNum
 	andi.l #$0FFFF,d1
 	mulu #VIDEO_X,d1
 	move.l d1,a1
-	bsr RandGetNum
+	jsr RandGetNum
 	andi.l #$0FFFF,d1
 	mulu #VIDEO_Z,d1
 	move.l #0,d0
-	bsr RandGetNum
+	jsr RandGetNum
 	andi.l #$0FFFF,d1
 	mulu #VIDEO_Y,d1
 	move.l d1,d5
-	bsr RandGetNum
+	jsr RandGetNum
 	andi.l #$0FFFF,d1
 	mulu #VIDEO_X,d1
 	move.l d1,d4
-	bsr RandGetNum
+	jsr RandGetNum
 	andi.l #$0FFFF,d1
 	mulu #VIDEO_Z,d1
 	move.l #0,d3
-	bsr RandGetNum
+	jsr RandGetNum
 	andi.l #$0FFFF,d1
 	mulu #VIDEO_Y,d1
 	move.l d1,d2
-	bsr RandGetNum
+	jsr RandGetNum
 	andi.l #$0FFFF,d1
 	mulu #VIDEO_X,d1
 	move.l #$400,a4			; triangle draw
@@ -3309,41 +3309,41 @@ rand_curve:
 	jsr CheckForCtrlC
 	move.l #$70000,d7
 	moveq #DEV_SET_COLOR,d6
-	bsr RandGetNum
+	jsr RandGetNum
 	trap #0
-	bsr RandGetNum
+	jsr RandGetNum
 	andi.l #$0FFFF,d1
 	mulu #VIDEO_Z,d1
 	move.l #0,a3
-	bsr RandGetNum
+	jsr RandGetNum
 	andi.l #$0FFFF,d1
 	mulu #VIDEO_Y,d1
 	move.l d1,a2
-	bsr RandGetNum
+	jsr RandGetNum
 	andi.l #$0FFFF,d1
 	mulu #VIDEO_X,d1
 	move.l d1,a1
-	bsr RandGetNum
+	jsr RandGetNum
 	andi.l #$0FFFF,d1
 	mulu #VIDEO_Z,d1
 	move.l #0,d0
-	bsr RandGetNum
+	jsr RandGetNum
 	andi.l #$0FFFF,d1
 	mulu #VIDEO_Y,d1
 	move.l d1,d5
-	bsr RandGetNum
+	jsr RandGetNum
 	andi.l #$0FFFF,d1
 	mulu #VIDEO_X,d1
 	move.l d1,d4
-	bsr RandGetNum
+	jsr RandGetNum
 	andi.l #$0FFFF,d1
 	mulu #VIDEO_Z,d1
 	move.l #0,d3
-	bsr RandGetNum
+	jsr RandGetNum
 	andi.l #$0FFFF,d1
 	mulu #VIDEO_Y,d1
 	move.l d1,d2
-	bsr RandGetNum
+	jsr RandGetNum
 	andi.l #$0FFFF,d1
 	mulu #VIDEO_X,d1
 	move.l #$70000,d7
@@ -3393,7 +3393,7 @@ cmdDisassemble:
 	move.w #62,d4
 .0001:
 	move.b (a5)+,d1
-	bsr OutputChar
+	bsr _OutputChar
 	dbra d4,.0001
 	bsr CRLF
 	move.l a4,d1
@@ -3438,9 +3438,9 @@ DumpMem1:
 	
 DisplayMem:
 	move.b #'E',d1
-	bsr	OutputChar
+	bsr	_OutputChar
 	move.b d4,d1
-	bsr OutputChar
+	bsr _OutputChar
 	bsr DisplaySpace
 	move.l a0,d1
 	bsr	DisplayTetra
@@ -3455,7 +3455,7 @@ DisplayMem:
 	moveq #3,d2
 dspmem1:
 	move.b #' ',d1
-	bsr	OutputChar
+	bsr	_OutputChar
 	cmpi.b #'L',d4
 	bne.s .0005
 	move.l (a0)+,d1
@@ -3474,7 +3474,7 @@ dspmem1:
 	dbra d2,dspmem1
 	bsr	DisplayTwoSpaces
 	move.b #34,d1
-	bsr	OutputChar
+	bsr	_OutputChar
 	lea	-8(a0),a0
 	moveq	#7,d2
 .0002:
@@ -3486,10 +3486,10 @@ dspmem1:
 .0003:
 	move.b #'.',d1
 .0001:
-	bsr	OutputChar
+	bsr	_OutputChar
 	dbra d2,.0002
 	move.b #34,d1
-	bsr	OutputChar
+	bsr	_OutputChar
 	jsr	CheckForCtrlC
 	bra	CRLF
 
@@ -3509,30 +3509,30 @@ cmdDumpRegs:
 	lea	msg_regs,a1
 	lea	Regsave,a2					; a2 points to register save area
 .0001:
-	bsr			DisplayString
+	bsr			_DisplayString
 	move.b	(a0)+,d1
-	bsr			OutputChar
+	bsr			_OutputChar
 	move.b	(a0)+,d1
-	bsr			OutputChar
+	bsr			_OutputChar
 	bsr			DisplaySpace
 	move.l	(a2)+,d1
 	bsr			DisplayTetra
 	bsr			CRLF
 	dbra		d3,.0001
-	bsr			DisplayString
+	bsr			_DisplayString
 	move.b	(a0)+,d1
-	bsr			OutputChar
+	bsr			_OutputChar
 	move.b	(a0)+,d1
-	bsr			OutputChar
+	bsr			_OutputChar
 	bsr			DisplaySpace
 	move.l	Regsave+$44,d1
 	bsr			DisplayTetra
 	bsr			CRLF
-	bsr			DisplayString
+	bsr			_DisplayString
 	move.b	(a0)+,d1
-	bsr			OutputChar
+	bsr			_OutputChar
 	move.b	(a0)+,d1
-	bsr			OutputChar
+	bsr			_OutputChar
 	bsr			DisplaySpace
 	move.w	Regsave+$40,d1
 	bsr			DisplayWyde
@@ -3558,7 +3558,7 @@ cmdTestSerialReceive:
 	bmi.s		.0001
 	cmpi.b	#CTRLZ,d1
 	beq			.0003
-	bsr			OutputChar
+	bsr			_OutputChar
 .0001:	
 	jsr			CheckForCtrlC
 	bra			.0002
@@ -3659,9 +3659,9 @@ gthx3:
 DisplayTwoSpaces:
 	move.l	d1,-(a7)
 	move.b	#' ',d1
-	bsr			OutputChar
+	bsr			_OutputChar
 dspspc1:
-	bsr			OutputChar
+	bsr			_OutputChar
 	move.l	(a7)+,d1
 	rts
 
@@ -3715,7 +3715,7 @@ DisplayNybble:
 	bls.s		.0001
 	addi.b	#7,d1
 .0001:
-	bsr			OutputChar
+	jsr			_OutputChar
 	move.l	(a7)+,d1
 	rts
 
@@ -3792,11 +3792,13 @@ BouncingBalls:
 	rts
 GraphicsDemo:
 	rts
+_ClearScreen:
 ClearScreen:
 	move.l #$20000,d7
 	move.l #DEV_CLEAR,d6
 	trap #0
 	rts
+	global _ClearScreen
 
 ;------------------------------------------------------------------------------
 ; Reverse the order of bytes in d1.
@@ -4319,7 +4321,7 @@ msgBusErr:
 bus_err:
 	nop
 	lea.l msgBusErr,a1
-	bsr DisplayString
+	bsr _DisplayString
 	move.l 2(a7),d1
 	bsr DisplayTetra
 	bsr CRLF
@@ -4597,7 +4599,7 @@ prtflt:
 	move.b d3,_E
 	bsr _FloatToString
 	move.b #12,leds
-	bsr DisplayString
+	bsr _DisplayString
 	move.b #13,leds
 	fmove.x 32(sp),fp0
 	move.b #14,leds
@@ -4654,11 +4656,11 @@ io_trap:
 ;		none
 ;==============================================================================
 
-OutputChar:
+_OutputChar:
 	movem.l d0/d6/d7,-(a7)
 	clr.l d7
 	clr.l d6
-	move.l OutputDevice,d7		; d7 = output device
+	move.l _OutputDevice,d7		; d7 = output device
 	move.w #DEV_PUTCHAR,d6		; d6 = function
 	trap #0
 	movem.l (a7)+,d0/d6/d7
@@ -4746,7 +4748,7 @@ TickIRQ:
 ;	or.b	d1,d2								; insert core number
 ;	ror.l #8,d2								; reposition to proper place
 ;	addi.w #1,d2							; flashy colors
-	addi.l #$0001,d2
+	addi.l #$10000,d2
 	move.l d2,4(a0,d3.w)			; update onscreen IRQ flag
 ;	bsr	ReceiveMsg
 	movem.l	(a7)+,d1/d2/d3/a0
@@ -4818,7 +4820,7 @@ SpuriousIRQ:
 nmi_rout:
 	movem.l	d0/d1/a0,-(a7)
 	move.b	#'N',d1
-	bsr			OutputChar
+	bsr			_OutputChar
 	movem.l	(a7)+,d0/d1/a0		; return
 	rte
 
@@ -4827,7 +4829,7 @@ addr_err:
 	move.l	(sp)+,d1				; pop exception address
 	bsr			DisplayTetra		; and display it
 	lea			msgAddrErr,a1	; followed by message
-	bsr			DisplayStringCRLF
+	bsr			_DisplayStringCRLF
 .0001:
 	bra			.0001
 	bra			Monitor
@@ -4839,7 +4841,7 @@ brdisp_trap:
 	move.l	#$47FFC,a7			; reset stack pointer
 	move.w	#$2500,sr				; enable interrupts
 	lea			msg_bad_branch_disp,a1
-	bsr			DisplayString
+	bsr			_DisplayString
 	bsr			DisplaySpace
 	move.l	Regsave+$44,d1	; exception address
 	bsr			DisplayTetra		; and display it
@@ -4851,7 +4853,7 @@ illegal_trap:
 	move.l	(sp)+,d1				; pop exception address
 	bsr			DisplayTetra		; and display it
 	lea			msg_illegal,a1	; followed by message
-	bsr			DisplayString
+	bsr			_DisplayString
 .0001:
 	bra			.0001
 	bra			Monitor
@@ -4861,7 +4863,7 @@ io_irq:
 	move.l (sp)+,d1
 	bsr DisplayTetra
 	lea msg_io_access,a1
-	bsr DisplayString
+	bsr _DisplayString
 	bra cmdDumpRegs
 
 ; -----------------------------------------------------------------------------
@@ -5060,7 +5062,7 @@ FREL30:
 	include "games/plants/plants.x68"
 
 	global Delay3s
-	global DisplayString
-	global DisplayStringCRLF
+	global _DisplayString
+	global _DisplayStringCRLF
 	global CRLF
 	

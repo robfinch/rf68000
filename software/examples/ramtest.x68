@@ -14,7 +14,7 @@ DisplayAddr:
 	bsr	DisplayWyde
 	bsr DisplaySpace
 	move.b #CR,d1
-	bsr OutputChar
+	bsr _OutputChar
 	rts
 	
 cmdTestRAM:
@@ -31,10 +31,10 @@ rmtst5:
 	moveq #37,d0					; lock semaphore
 	moveq #MEMORY_SEMA,d1
 ;	trap #15
-  movea.l #$7FFFFFF8,a0
+  movea.l #$7FFFFFE0,a0
   move.l a0,memend
 	; Create very first memory block.
-  movea.l #$3FFFFFE4,a0
+  movea.l #$3FFFFFD0,a0
   move.l a0,$40000004		; length of block
   move.l #$46524545,$40000000
 	moveq #38,d0					; unlock semaphore
@@ -94,7 +94,7 @@ rmtst2
 rmtst3
 	bsr CRLF
 	moveq	#'E',d1
-	bsr OutputChar
+	bsr _OutputChar
 	bsr DisplaySpace
 	move.l a0,d1
 	bsr DisplayTetra

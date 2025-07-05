@@ -43,7 +43,7 @@ NextRec:
 	cmpi.b #LF,d1					; look for a line-feed
 	bne	NextRec
 	move.b #'.',d1				; progress display
-	bsr	OutputChar
+	bsr	_OutputChar
 ProcessRec:
 	jsr CheckForCtrlC			; check for CTRL-C once per record
 	bsr	sGetChar
@@ -136,7 +136,7 @@ pcssxa:
 	beq	NextRec
 	bsr DisplayByte
 	move.b #'E',d1
-	bsr	OutputChar
+	bsr	_OutputChar
 	bra	NextRec
 
 	align 2

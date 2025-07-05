@@ -58,7 +58,7 @@ LIB:
 	$(AAX) $(AFLAGS) Femtiki2.asm -L Femtiki2.lst -o Femtiki2.o
 	$(LLX) -T Femtiki.cmd -bsrec37 \
 		errno.o ctype.o localeco.o \
-		signal.o stdlib.o stdio.o string.o _lmath.o mem_support.o \
+		signal.o stdlib.o stdio.o string.o _lmath.o \
 		kernel\Femtiki_vars.o \
 		kernel\Femtiki_asm.o \
 		kernel\Femtiki_kern.o \

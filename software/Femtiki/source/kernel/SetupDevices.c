@@ -61,14 +61,6 @@ void SetupDevices()
 	DCB *p;
 	int n;
 
-  for (n = 0; n < NR_DCB; n++) {
-    FMTK_AllocMbx((long)&hDevMailbox[n*2]);
-    FMTK_AllocMbx((long)&hDevMailbox[n*2+1]);
-    p = &DeviceTable[n];
-    p->hMbxSend = hDevMailbox[n*2];
-    p->hMbxRcv = hDevMailbox[n*2+1];
-  }
-
 	p = &DeviceTable[0];
 	memset(p, 0, sizeof(DCB) * NR_DCB);
 
@@ -131,5 +123,15 @@ void SetupDevices()
 	strncpy(p->name,"DBG",12);
 	p->type = DVT_Unit;
 	p->UnitSize = 1;
+
+  for (n = 0; n < NR_DCB; n++) {
+    if ((hDevMailbox[n*2] = FMTK_AllocMbx()) < 0)
+    	hDevMailbox[n*2] = 0;
+    if ((hDevMailbox[n*2+1] = FMTK_AllocMbx()) < 0)
+    	hDevMailbox[n*2+1] = 0;
+    p = &DeviceTable[n];
+    p->hMbxSend = hDevMailbox[n*2];
+    p->hMbxRcv = hDevMailbox[n*2+1];
+  }
 
 }

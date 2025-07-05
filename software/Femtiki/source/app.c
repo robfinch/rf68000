@@ -50,6 +50,21 @@
 
 #define MMU_RW	MMU_WR|MMU_RD
 
+extern unsigned long ACBList;
+
+hACB FindFreeACB()
+{
+	int nn;
+	
+	for (nn = 1; nn < 32; nn++) {
+		if ((ACBList & (1 << nn))==0) {
+			ACBList |= (1 << nn);
+			return (nn);
+		}
+	}	
+	return (0);
+}
+
 void FreeACB(__reg("d0")long h) =
 "\tmove.l d1,-(sp)\r\n"
 "\tmove.l _ACBList,d1\r\n"
@@ -58,11 +73,14 @@ void FreeACB(__reg("d0")long h) =
 "\tmove.l (sp)+,d1\r\n"
 ;
 // ToDo: Add UI data
+//
+// Returns:
+//		handle for ACB, or negative error code
 
 long FMTK_StartApp(__reg("d0") long asrec, __reg("d1") long hParent)
 {
 	int mapno, omapno;
-	int ret;
+	int err;
 	ACB *pACB, *pParentACB;
 	int32_t *pScrn;
 	int *pStack;
@@ -80,12 +98,14 @@ long FMTK_StartApp(__reg("d0") long asrec, __reg("d1") long hParent)
 	asr = (AppStartupRec *)asrec;
 	h = FindFreeACB();
 	if (h == 0)
-		return (E_NoMoreACBs);
+		return (-E_NoMoreACBs);
 	DisplayLEDS(1);
 	// Allocate memory for the ACB
 	pACB = (ACB*)mem_alloc(1,sizeof(ACB),14);
-	if (pACB==NULL)
+	if (pACB==NULL) {
+		err = E_NoMoreACBs;
 		goto err1;
+	}
 	memset(pACB,0,sizeof(ACB));
 	DisplayLEDS(2);
 
@@ -102,8 +122,10 @@ long FMTK_StartApp(__reg("d0") long asrec, __reg("d1") long hParent)
 	
 	// Allocate memory for virtual video
 	pACB->pVirtVidMem = (uint32_t*)mem_alloc(h,8192,6);
-	if (pACB->pVirtVidMem == NULL)
+	if (pACB->pVirtVidMem == NULL) {
+		err = E_NoMem;
 		goto err1;
+	}
 	pACB->magic = ACB_MAGIC;
 	DisplayLEDS(4);
 	
@@ -127,8 +149,10 @@ long FMTK_StartApp(__reg("d0") long asrec, __reg("d1") long hParent)
 
 	// Allocate storage space for code and copy
 	pCode = (uint16_t*)mem_alloc(h,asr->codesize+16383,5);
-	if (pCode==NULL)
+	if (pCode==NULL) {
+		err = E_NoMem;
 		goto err1;
+	}
 	memcpy(pCode,&asr->pCode,asr->codesize);
 	pACB->pCode = pCode;
 	DisplayLEDS(5);
@@ -136,8 +160,10 @@ long FMTK_StartApp(__reg("d0") long asrec, __reg("d1") long hParent)
 	// Allocate storage space for initialized data
 	// and copy from start-up record
 	pData = (char*)mem_alloc(h,asr->datasize+8191,6);
-	if (pData==NULL)
+	if (pData==NULL) {
+		err = E_NoMem;
 		goto err1;
+	}
 	memcpy(pData,&asr->pData,asr->datasize);
 	pACB->pData = pData;
 	DisplayLEDS(6);
@@ -164,7 +190,7 @@ long FMTK_StartApp(__reg("d0") long asrec, __reg("d1") long hParent)
 		(long)asr->affinity
 	);
 	DisplayLEDS(7);
-	return (E_Ok);
+	return (h);
 err1:
 	if (pACB) {
 		if (pACB->pData)
@@ -178,4 +204,5 @@ err1:
 		mem_free(1,pACB);
 	}
 	FreeACB(h);
+	return (-err);
 }

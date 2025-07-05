@@ -63,8 +63,8 @@ ENDMEM	DC.L	$47FF0		end of available memory
 CSTART
 	move.l ENDMEM,sp					; initialize stack pointer
 	move.l #INC1,INPPTR
-	move.b #1,InputDevice			; keyboard
-	move.b #2,OutputDevice		; text video
+	move.b #1,_InputDevice			; keyboard
+	move.b #2,_OutputDevice		; text video
 	move.l #1,_fpTextIncr
 	lea	INITMSG,a6	tell who we are
 	bsr	PRMESG
@@ -412,12 +412,12 @@ INCOM
 IOCOM
 	move.l	#AUXIN,INPPTR
 OUTCOM
-	move.b #2,OutputDevice
+	move.b #2,_OutputDevice
 	bra	FINISH
 IOCON
 	move.l	#INC1,INPPTR
 OUTCON
-	move.b #1,OutputDevice
+	move.b #1,_OutputDevice
 	bra	FINISH
 
 *******************************************************************
@@ -3066,9 +3066,9 @@ INC1
 *	(Preserves all registers.)
 *
 AUXOUT:
-	move.b #2,OutputDevice
+	move.b #2,_OutputDevice
 	bsr OUTC
-	move.b #1,OutputDevice
+	move.b #1,_OutputDevice
 	rts
 
 *AUXOUT	BTST	#1,$10041	is port 2 ready for a character?
