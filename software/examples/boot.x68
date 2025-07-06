@@ -200,7 +200,7 @@ endm
 	dc.l		chk_exception		; CHK
 	dc.l		EXCEPTION_7			* TRAPV
 	dc.l		0
-	dc.l		0
+	dc.l		trace_exc
 	
 	; 10
 	dc.l		0
@@ -284,6 +284,24 @@ irq_list_tbl:
 	endr
 
 	org			$A00
+_regPC
+	ds.l	1
+_regSR
+	ds.w	1
+_fmtword
+	ds.w	1
+	align 2
+_regs
+	ds.l	8			; data registers d0 to d7
+	ds.l	7			; address registers a0 to a6
+_regA7
+	ds.l	1
+_regUSP
+	ds.l	1			; user stack pointer
+
+_tracemd
+	ds.b	1
+
 
 ;-------------------------------------------------------------------------------
 ;-------------------------------------------------------------------------------
@@ -390,6 +408,7 @@ start:
 ;	fadd (a0)+,fp2
 	move.b #1,leds
 	move.w #$2700,sr					; enable level 6 and higher interrupts
+	move.w #$2700,_regSR
 	move.l #2,IOFocus					; Set the IO focus in global memory
 	moveq #0,d0								; set address space zero
 	movec d0,asid
@@ -505,7 +524,7 @@ start:
 ;	bsr	UnlockSemaphore	; allow other cpus to proceed
 	move.w #$A4A4,leds			; diagnostics
 	jsr	setup_pic				; initialize interrupt controller
-	jsr __crt_start
+;	jsr __crt_start
 	jmp	StartMon
 
 
@@ -592,7 +611,7 @@ msgTestScratch
 ; Scan the I/O discovery address space looking for I/O devices.
 ;
 ; The I/O discovery address space has the upper four bits of the address
-; equal to $D. Only the $D0 block is scanned.
+; equal to $F. Only the $F0 block is scanned.
 ;
 ; Each I/O device has a 16kB block of address space reserved for it. A device
 ; has an eleven character NULL terminated device name stored at $80 in the
@@ -604,7 +623,7 @@ scan_for_dev:
 	moveq #13,d0					; _DisplayStringCRLF
 	lea msgScanning(pc),a1
 	trap #15
-	move.l #$D0000000,a0
+	move.l #$F0000000,a0
 	moveq #0,d2
 .0001
 	move.l (a0),d0
@@ -612,7 +631,7 @@ scan_for_dev:
 	bne.s .0002
 .0003
 	add.l #$4000,a0
-	cmp.l #$D1000000,a0
+	cmp.l #$F1000000,a0
 	blo.s .0001
 	moveq #3,d0
 	move.l d2,d1
@@ -2022,6 +2041,7 @@ cmdString:
 	dc.b	"COR",'E'+$80			; CORE <n> switch to core
 	dc.b	"TF",'P'+$80			; TFP test fp
 	dc.b  "TG",'F'+$80			; TGF test get float
+	dc.b	"trac",'e'+$80		; trace
 	dc.b  "TRA",'M'+$80			; TRAM test RAM
 	dc.b	'SET_TIM','E'+$80
 	dc.b	'TIM','E'+$80
@@ -2059,6 +2079,7 @@ cmdTable:
 	dc.l	cmdCore
 	dc.l  cmdTestFP
 	dc.l	cmdTestGF
+	dc.l	cmdTrace
 	dc.l  _ramtest					; cmdTestRAM
 	dc.l	cmdSetTime
 	dc.l	cmdTime
@@ -2091,6 +2112,7 @@ FromScreen:
 _StartMon:
 	global _StartMon
 StartMon:
+	clr.b _tracemd
 	clr.w	NumSetBreakpoints
 	bsr	ClearBreakpointList
 cmdMonitor:
@@ -2113,6 +2135,11 @@ Monitor:
 	trap #0
 PromptLn:
 	bsr	CRLF
+	tst.b _tracemd			; output extra prompt char for trace mode
+	beq.s .0001
+	move.b #'$',d1
+	bsr _OutputChar
+.0001
 	move.b #'$',d1
 	bsr _OutputChar
 
@@ -2129,6 +2156,11 @@ Prompt3:
 	cmpi.b #CR,d1
 	beq.s	Prompt1
 	bsr	_OutputChar
+	tst.b _tracemd
+	beq.s Prompt3
+	cmpi.b #'s',d1
+	bne.s Prompt3
+	bsr cmdStep
 	bra.s	Prompt3
 
 ; Process the screen line that the CR was keyed on
@@ -2197,6 +2229,51 @@ cmdDispatch:
 	lea	cmdTable,a1				; a1 = pointer to command address table
 	move.l (a1,d4.w),a1		; fetch command routine address from table
 	jmp	(a1)							; go execute command
+
+cmdTrace:
+	bsr ignBlanks
+	bsr GetHexNumber
+	tst.l d1
+	bne.s .0001
+	clr.b _tracemd
+	move.w _regSR,d0
+	andi.w #$7fff,d0
+	move.w d0,_regSR
+	bra Monitor
+.0001
+	move.l d1,_regPC
+	move.b #-1,_tracemd
+	move.w #$24,_fmtword	; $24 = trace vector,
+	move.w _regSR,d0
+	ori.w #$8000,d0
+	move.w d0,_regSR
+
+cmdStep:
+	move.w _fmtword,-(sp)
+	move.l _regPC,-(sp)
+	move.w _regSR,-(sp)
+	move.l _regUSP,a0
+	move a0,usp
+	movem.l _regs,d0-d7/a0-a6
+	move.b #$B3,leds
+	rte
+
+	; We get here if trace mode is on
+	; The trace bit will be automatically reset.
+trace_exc:
+	move.b #$B4,leds
+	movem.l d0-d7/a0-a7,_regs
+	move usp,a0
+	move.l a0,_regUSP
+	move.w (sp)+,_regSR
+	move.l (sp)+,_regPC
+	move.w (sp)+,_fmtword
+	move.b #$B5,leds
+	jsr CRLF
+	move.l _regPC,d1
+	moveq #0,d3						; disassemble just one line
+	bsr cmdDisassemble1
+	bra cmdDumpRegs
 
 cmdVideoMode:
 	bsr ignBlanks
@@ -3375,6 +3452,9 @@ cmdDisassemble:
 	bsr GetHexNumber
 	beq Monitor
 	move.w #20,d3			; number of lines to disassemble
+	bsr cmdDisassemble1
+	bra Monitor
+cmdDisassemble1:
 .0002:
 	move.l d3,-(a7)
 	move.l d1,a0
@@ -3399,7 +3479,7 @@ cmdDisassemble:
 	move.l a4,d1
 	move.l (a7)+,d3
 	dbra d3,.0002
-	bra Monitor
+	rts
 	
 ;------------------------------------------------------------------------------
 ; Do a memory dump of the requested location.
@@ -3504,45 +3584,45 @@ dspmem1:
 
 cmdDumpRegs:
 	bsr	CRLF
-	move.w #15,d3						; number of registers-1
+	move.w #16,d3						; number of registers-1
 	lea	msg_reglist,a0			;
 	lea	msg_regs,a1
-	lea	Regsave,a2					; a2 points to register save area
+	lea	_regs,a2						; a2 points to register save area
 .0001:
-	bsr			_DisplayString
-	move.b	(a0)+,d1
-	bsr			_OutputChar
-	move.b	(a0)+,d1
-	bsr			_OutputChar
-	bsr			DisplaySpace
-	move.l	(a2)+,d1
-	bsr			DisplayTetra
-	bsr			CRLF
-	dbra		d3,.0001
-	bsr			_DisplayString
-	move.b	(a0)+,d1
-	bsr			_OutputChar
-	move.b	(a0)+,d1
-	bsr			_OutputChar
-	bsr			DisplaySpace
-	move.l	Regsave+$44,d1
-	bsr			DisplayTetra
-	bsr			CRLF
-	bsr			_DisplayString
-	move.b	(a0)+,d1
-	bsr			_OutputChar
-	move.b	(a0)+,d1
-	bsr			_OutputChar
-	bsr			DisplaySpace
-	move.w	Regsave+$40,d1
-	bsr			DisplayWyde
-	bsr			CRLF
-	bra			Monitor
+	bsr	_DisplayString
+	move.b (a0)+,d1
+	bsr	_OutputChar
+	move.b (a0)+,d1
+	bsr	_OutputChar
+	bsr	DisplaySpace
+	move.l (a2)+,d1
+	bsr	DisplayTetra
+	bsr CRLF
+	dbra d3,.0001
+	bsr	_DisplayString
+	move.b (a0)+,d1
+	bsr	_OutputChar
+	move.b (a0)+,d1
+	bsr	_OutputChar
+	bsr	DisplaySpace
+	move.l _regPC,d1
+	bsr	DisplayTetra
+	bsr	CRLF
+	bsr	_DisplayString
+	move.b (a0)+,d1
+	bsr	_OutputChar
+	move.b (a0)+,d1
+	bsr	_OutputChar
+	bsr	DisplaySpace
+	move.w _regSR,d1
+	bsr	DisplayWyde
+	bsr	CRLF
+	bra	Monitor
 
 msg_regs:
 	dc.b	"Reg",0
 msg_reglist:
-	dc.b	"D0D1D2D3D4D5D6D7A0A1A2A3A4A5A6A7PCSR",0
+	dc.b	"D0D1D2D3D4D5D6D7A0A1A2A3A4A5A6A7USPCSR",0
 
 	align	1
 
@@ -4329,15 +4409,16 @@ bus_err:
 
 trap3:
 	; First save all registers
-	movem.l		d0/d1/d2/d3/d4/d5/d6/d7/a0/a1/a2/a3/a4/a5/a6/a7,Regsave
-	move.w		(a7)+,Regsave+$40
-	move.l		(a7)+,Regsave+$44
-	move.l		#$40FFC,a7			; reset stack pointer
+	movem.l		d0-d7/a0-a7,_regs
+	move.w		(a7)+,_regSR
+	move.l		(a7)+,_regPC
+	move.w		(sp)+,_fmtword
+	move.l		#$47FFC,a7			; reset stack pointer
 	move.w		#$2500,sr				; enable interrupts
 	move.w		NumSetBreakpoints,d0
 	subi.w		#1,d0
 	lea				Breakpoints,a0
-	move.l		Regsave+$44,d1
+	move.l		_regPC,d1
 .0001:
 	cmp.l			(a0)+,d1
 	beq.s			ProcessBreakpoint
@@ -4835,18 +4916,19 @@ addr_err:
 	bra			Monitor
 	
 brdisp_trap:
-	movem.l	d0/d1/d2/d3/d4/d5/d6/d7/a0/a1/a2/a3/a4/a5/a6/a7,Regsave
-	move.w	(a7)+,Regsave+$40
-	move.l	(a7)+,Regsave+$44
+	movem.l	d0-d7/a0-a7,_regs
+	move.w (sp)+,_regSR
+	move.l (sp)+,_regPC
+	move.w (sp)+,_fmtword
 	move.l	#$47FFC,a7			; reset stack pointer
 	move.w	#$2500,sr				; enable interrupts
-	lea			msg_bad_branch_disp,a1
-	bsr			_DisplayString
-	bsr			DisplaySpace
-	move.l	Regsave+$44,d1	; exception address
-	bsr			DisplayTetra		; and display it
+	lea	msg_bad_branch_disp,a1
+	bsr	_DisplayString
+	bsr	DisplaySpace
+	move.l _regPC,d1				; exception address
+	bsr	DisplayTetra				; and display it
 ;	move.l	(sp)+,d1				; pop format word 68010 mode only
-	bra			cmdDumpRegs
+	bra	cmdDumpRegs
 
 illegal_trap:
 	addq		#2,sp						; get rid of sr

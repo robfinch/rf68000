@@ -230,11 +230,11 @@ reg [31:0] acia_dato;
 wire acia_irq;
 wire i2c1_ack;
 wire [7:0] i2c1_dato;
-wire i2c2_ack;
-wire [7:0] i2c2_dato;
-wire i2c2_irq;
-wire [7:0] spi_dato;
-wire spi_ack;
+reg rtc_ack;
+reg [31:0] rtc_dato;
+wire rtc_irq;
+reg spi1_ack;
+reg [31:0] spi1_dato;
 wire spi2_ack;
 wire [7:0] spi2_dato;
 wire plic_ack;
@@ -428,7 +428,7 @@ assign cs_iobitmap = iops;	//ch7req.adr[31:16]==16'hFC10;
 wire cs_mmu;
 assign cs_mmu = mmus;	//cpu_adr[31:16]==16'hFC00 || cpu_adr[31:16]==16'hFC01;
 
-wire cs_ddbb = cpu_adr[31:28]==4'hD && cpu_stb;
+wire cs_ddbb = cpu_adr[31:24]==8'hF0 && cpu_stb;
 wire cs_tc = (cpu_adr[31:20]==12'hFD0 || cpu_adr[31:20]==12'hFD1)
 							&& ch7req.stb && cs_io2;
 wire cs_br1_tc = (br1_adr[31:20]==12'hFD0 || br1_adr[31:20]==12'hFD1)
@@ -505,7 +505,7 @@ uframebuf1
 	.rst_i(rst),
 	.xonoff_i(sw[0]),
 	.irq_o(fb_irq),
-	.cs_config_i(br1_fta.req.adr[31:28]==4'hD),
+	.cs_config_i(br1_fta.req.adr[31:24]==8'hF0),
 	.s_bus_i(fbs_if),
 	.m_bus_o(fbm_if),
 	.m_fst_o(), 
@@ -610,7 +610,11 @@ rfFrameBuffer uframebuf1
 );
 */
 
-rfTextController utc1
+rfTextController #(
+	.pDevName("TEXTVIDEO       "),
+	.pReverseByteOrder(1'b1)
+)
+utc1
 (
 	.rst_i(rst),
 	.clk_i(node_clk),
@@ -797,15 +801,17 @@ always_ff @(posedge clk100)
 
 wire kclk_en, kdat_en;
 PS2kbd #(
-	.pClkFreq(50000000),
-	.KBD_ADDR(32'hFDFF8000)
+	.pClkFreq(100000000),
+	.pReverseByteOrder(1'b1),
+	.pDevName("PS2_KEYBOARD    "),
+	.IO_ADDR(32'hFDFF8000)
 )
 ukbd1
 (
 	// WISHBONE/SoC bus interface 
 	.rst_i(rst),
 	.clk_i(node_clk),	// system clock
-	.cs_i(cs_io2),
+	.cs_i(cs_ddbb),
 	.cyc_i(br3_cyc),
 	.stb_i(br3_stb),	// core select (active high)
 	.ack_o(kbd_ack),	// bus transfer acknowledged
@@ -816,6 +822,8 @@ ukbd1
 	.dat_o(kbd_dato),	// data out
 	.db(),
 	//-------------
+	.irq_chain_i(16'h0),
+	.irq_chain_o(),
 	.irq(kbd_irq),	// interrupt request (active high)
 	.kclk_i(ps2_clk_0),	// keyboard clock from keyboard
 	.kclk_en(kclk_en),	// 1 = drive clock low
@@ -827,7 +835,9 @@ assign ps2_clk_0 = kclk_en ? 1'b0 : 1'bz;
 assign ps2_data_0 = kdat_en ? 1'b0 : 1'bz;
 
 random #(
-	.RAND_ADDR(32'hFDFF4000)
+	.pReverseByteOrder(1'b1),
+	.pDevName("RANDOM          "),
+	.IO_ADDR(32'hFDFF4000)
 )
 urnd1
 (
@@ -840,7 +850,9 @@ urnd1
 	.we_i(br3_we),
 	.adr_i(br3_adr),
 	.dat_i(br3_dato),
-	.dat_o(rand_dato)
+	.dat_o(rand_dato),
+	.irq_chain_i(16'h0),
+	.irq_chain_o()
 );
 
 wb_cmd_request32_t acia_req;
@@ -858,7 +870,13 @@ begin
 	acia_dato = acia_resp.dat;
 end
 
-uart6551 #(.pClkFreq(100), .pClkDiv(24'd130)) uuart
+uart6551 #(
+	.pClkFreq(100),
+	.pClkDiv(24'd130),
+	.pReverseByteOrder(1'b1),
+	.pDevName("ACIA            ")
+)
+uuart
 (
 	.rst_i(rst),
 	.clk_i(clk100),
@@ -883,22 +901,42 @@ uart6551 #(.pClkFreq(100), .pClkDiv(24'd130)) uuart
 	.RxC_i(clk20)
 );
 
+wb_cmd_request32_t rtc_req;
+wb_cmd_response32_t rtc_resp;
+always_comb
+begin
+	rtc_req = {$bits(wb_cmd_request32_t){1'b0}};
+	rtc_req.cyc = br3_cyc;
+	rtc_req.stb = br3_stb;
+	rtc_req.we = br3_we;
+	rtc_req.sel = br3_sel;
+	rtc_req.adr = br3_adr;
+	rtc_req.dat = br3_dato;
+	rtc_ack = rtc_resp.ack;
+	rtc_dato = rtc_resp.dat;
+end
+
 wire rtc_clko, rtc_clkoen;
 wire rtc_datao, rtc_dataoen;
 
-i2c_master_top ui2cm2
+i2c_master #(
+	.pReverseByteOrder(1'b1),
+	.pDevName("RTC_I2C_MASTER  "),
+	.IO_ADDR(32'hFDFE8000),
+	.CFG_BUS(6'd0),
+	.CFG_DEVICE(5'd16),
+	.CFG_FUNC(3'd4)
+)
+ui2c_rtc
 (
-	.wb_clk_i(node_clk),
-	.wb_rst_i(rst),
-	.arst_i(~rst),
-	.wb_adr_i(br3_adr[2:0]),
-	.wb_dat_i(br3_dato[7:0]),
-	.wb_dat_o(i2c2_dato),
-	.wb_we_i(br3_we),
-	.wb_stb_i(cs_br3_i2c2),
-	.wb_cyc_i(br3_cyc),
-	.wb_ack_o(i2c2_ack),
-	.wb_inta_o(i2c2_irq),
+	.clk_i(node_clk),
+	.rst_i(rst),
+	.irq_o(rtc_irq),
+	.irq_chain_i(16'h0),
+	.irq_chain_o(),
+	.cs_i(cs_ddbb),
+	.wbs_req_i(rtc_req),
+	.wbs_resp_o(rtc_resp),
 	.scl_pad_i(rtc_clk),
 	.scl_pad_o(rtc_clko),
 	.scl_padoen_o(rtc_clkoen),
@@ -954,59 +992,60 @@ assign br3_fta.resp.dat = 32'd0;
 always_ff @(posedge clk100)
 	case(cs_br3_leds)
 	1'b1:	br3_dati <= led;
-	1'b0:	br3_dati <= kbd_dato|rand_dato|acia_dato|{4{i2c2_dato}}|{4{spi_dato}}|{4{spi2_dato}};
+	1'b0:	br3_dati <= kbd_dato|rand_dato|acia_dato|rtc_dato|spi1_dato|{4{spi2_dato}};
 	endcase
 
 always_ff @(posedge clk100)
-	br3_ack <= leds_ack|kbd_ack|rand_ack|acia_ack|i2c2_ack|rst_ack|spi_ack|spi2_ack;
+	br3_ack <= leds_ack|kbd_ack|rand_ack|acia_ack|rtc_ack|rst_ack|spi1_ack|spi2_ack;
 
 assign leds_ack = cs_br3_leds;
 always_ff @(posedge clk100)
 	if (cs_br3_leds & br3_we)
 		led <= br3_dato[7:0];
 
-spiMaster uspi1 (
-  .clk_i(node_clk),
-  .rst_i(rst),
-  .address_i(br3_adr[7:0]),
-  .data_i(br3_dato[7:0]),
-  .data_o(spi_dato),
-  .strobe_i(br3_cyc && cs_br3_spi),
-  .we_i(br3_we),
-  .ack_o(spi_ack),
+wb_cmd_request32_t spi1_req;
+wb_cmd_response32_t spi1_resp;
+always_comb
+begin
+	spi1_req = {$bits(wb_cmd_request32_t){1'b0}};
+	spi1_req.cyc = br3_cyc;
+	spi1_req.stb = br3_stb;
+	spi1_req.we = br3_we;
+	spi1_req.sel = br3_sel;
+	spi1_req.adr = br3_adr;
+	spi1_req.dat = br3_dato;
+	spi1_ack = spi1_resp.ack;
+	spi1_dato = spi1_resp.dat;
+end
+
+spi_master #(
+	.pReverseByteOrder(1'b1),
+	.pDevName("SD1_SPI_MASTER  "),
+	.IO_ADDR(32'hFD280000),
+	.CFG_BUS(6'd0),
+	.CFG_DEVICE(5'd16),
+	.CFG_FUNC(3'd6)
+)
+uspi1 (
+	.clk_i(node_clk),
+	.rst_i(rst),
+	.irq_o(),
+	.irq_chain_i(16'h0),
+	.irq_chain_o(),
+	.cs_i(cs_ddbb),
+	.wbs_req_i(spi1_req),
+	.wbs_resp_o(spi1_resp),
 
   // SPI logic clock
-  .spiSysClk(clk50),
+  .clk50_i(clk50),
 
   //SPI bus
-  .cardDetect(sd_cd),
+  .sd_cd(sd_cd),
   .spiReset(spiReset),
   .spiClkOut(spiClkOut),
   .spiDataIn(spiDataIn),
   .spiDataOut(spiDataOut),
   .spiCS_n(spiCS_n)
-);
-
-spiMaster uspi2 (
-  .clk_i(node_clk),
-  .rst_i(rst),
-  .address_i(br3_adr[7:0]),
-  .data_i(br3_dato[7:0]),
-  .data_o(spi2_dato),
-  .strobe_i(br3_cyc && cs_br3_spi2),
-  .we_i(br3_we),
-  .ack_o(spi2_ack),
-
-  // SPI logic clock
-  .spiSysClk(clk50),
-
-  //SPI bus
-  .cardDetect(1'b0),
-  .spiReset(),
-  .spiClkOut(sd_sck),
-  .spiDataIn(sd_miso),
-  .spiDataOut(sd_mosi),
-  .spiCS_n(sd_ss)
 );
 
 wire calib_complete;
@@ -1351,7 +1390,7 @@ rf68000_plic uplic1
 	.i9(1'b0),
 	.i10(1'b0),
 	.i11(1'b0),
-	.i12(i2c2_irq),
+	.i12(rtc_irq),
 	.i13(1'b0),
 	.i14(1'b0),
 	.i15(1'b0),
@@ -1407,7 +1446,7 @@ else begin
 		ack_cnt <= 6'd0;
 		io_ack2 <= 1'b0;
 	end
-	if ((cpu_adr[31:24]==8'hFD || cpu_adr[31:28]==4'hD) && cpu_cyc && cpu_stb) begin
+	if ((cpu_adr[31:24]==8'hFD || cpu_adr[31:24]==8'hF0) && cpu_cyc && cpu_stb) begin
 		ack_cnt <= ack_cnt + 6'd1;
 		if (ack_cnt[5])
 			io_ack2 <= 1'b1;

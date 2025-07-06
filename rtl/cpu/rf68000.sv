@@ -609,6 +609,7 @@ wire [31:0] pco;
 reg [15:0] pid_stack [0:15];
 reg [3:0] pid_sp;
 reg cf,vf,nf,zf,xf,sf,tf;
+reg otf;
 reg [2:0] im;
 reg [2:0] ccr57;
 reg [1:0] sr1112;
@@ -828,7 +829,7 @@ reg [31:0] mmus, ios, iops;
 reg [31:0] canary;
 assign mmus_o = adr_o[31:20] == mmus[31:20];
 assign iops_o = adr_o[31:16] == iops[31:16];
-assign ios_o  = adr_o[31:24] == ios [31:24] || adr_o[31:28]==4'hD;
+assign ios_o  = adr_o[31:24] == ios [31:24] || adr_o[31:24]==8'hF0;
 integer n;
 
 wire [16:0] lfsr_o;
@@ -1533,6 +1534,7 @@ if (rst_i) begin
 	im <= 3'b111;
 	sf <= 1'b1;
 	tf <= 1'b0;
+	otf <= 1'b0;
 	fnanf <= 1'b0;
 	fzf <= 1'b0;
 	fnf <= 1'b0;
@@ -2188,6 +2190,7 @@ IFETCH:
 		fpcnt <= 12'd0;
 		fpiar <= pc;
 		ext_ir <= 1'b0;
+		otf <= tf;
 		if (!cyc_o) begin
 			is_nmi <= 1'b0;
 			is_irq <= 1'b0;
@@ -5479,6 +5482,7 @@ TRAP:
     		tf <= 1'b0;
     		sf <= 1'b1;
     		vecno <= `TRACE_VEC;
+    		is_trace <= 1'b0;
       	goto (TRAP3);
     	end
     is_irq:
@@ -5495,6 +5499,7 @@ TRAP:
     		isr <= srx;
     		tf <= 1'b0;
     		sf <= 1'b1;
+    		is_priv <= 1'b0;
     		vecno <= `PRIV_VEC;
       	goto (TRAP3);
     	end
@@ -7609,17 +7614,22 @@ begin
 			state_stk1==BCD0 ||
 			state_stk1==CMPM)
 		MMMRRR <= 1'b1;
-	if (state_stk1==IFETCH && tf) begin
+	// TRAP will come back here for a second try at returning. If trace is on
+	// then a return is not done, instead flow goes to the TRAP sequence which
+	// will then do a ret(), but this time trace will be off.
+	if (state_stk1==IFETCH && otf) begin
+		otf <= 1'b0;
 		is_trace <= 1'b1;
 		state <= TRAP;
 	end
-	else
+	else begin
 		state <= state_stk1;
-	state_stk1 <= state_stk2;
-	state_stk2 <= state_stk3;
-	state_stk3 <= state_stk4;
-	state_stk4 <= state_stk5;
-	state_stk5 <= state_stk6;
+		state_stk1 <= state_stk2;
+		state_stk2 <= state_stk3;
+		state_stk3 <= state_stk4;
+		state_stk4 <= state_stk5;
+		state_stk5 <= state_stk6;
+	end
 end
 endtask
 

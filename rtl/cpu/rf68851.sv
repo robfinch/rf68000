@@ -73,26 +73,28 @@ input [31:0] mdat_i;
 output reg mios_o;
 output reg page_fault_o;
 
-parameter PTE_PRESENT = 13;
+parameter PTE_PRESENT = 12;
 parameter PTE_R = 2;
 parameter PTE_W = 1;
 parameter PTE_X = 0;
 
 typedef struct packed
 {
-	logic [17:0] ppage;
-	logic p;
-	logic [8:0] resv;
-	logic s;
-	logic r;
-	logic w;
-	logic x;
+	logic [18:0] ppage;
+	logic p;							// present
+	logic a;							// alias page
+	logic e;							// end of run
+	logic [5:0] resv;
+	logic s;							// system
+	logic r;							// read
+	logic w;							// write
+	logic x;							// execute
 } pte_t;
 
 typedef struct packed
 {
 	logic [10:0] appid;
-	logic [17:0] vpage;
+	logic [18:0] vpage;
 	pte_t pte;
 } atc_entry_t;
 
@@ -118,15 +120,15 @@ reg mmu_act;
 reg [5:0] atc_ua;
 atc_entry_t atc [0:63];
 reg atc_err;
-reg [31:14] padr1;
+reg [31:13] padr1;
 reg [31:0] adri_r;
 reg [31:0] dati_r;
-reg [31:8] root_ptro;
+reg [31:10] root_ptro;
 reg mmu_en;
 reg [31:0] cdati;
 
 reg [9:0] appid;
-reg [31:8] root_adr;
+reg [31:10] root_adr;
 pte_t pte;
 reg [31:0] page_fault_addr;
 reg mmu_access;
@@ -186,10 +188,10 @@ always_ff @(posedge clk_i)
 	dati_r <= cdatr;
 
 (* ram_style="block" *)
-reg [31:8] root_ptr [0:1023];
+reg [31:10] root_ptr [0:1023];
 always_ff @(posedge clk_i)
 	if (cs_mmu && cwe_i && cadr_i[13:12]==2'b00) begin
-		root_ptr[cadr_i[11:2]] <= cdatr[31:8];
+		root_ptr[cadr_i[11:2]] <= cdatr[31:10];
 	end
 always_ff @(posedge clk_i)
 	root_adr <= root_ptr[appid];
@@ -243,7 +245,7 @@ begin
 	atc_hit = 1'b0;
 	atc_err = 1'b0;
 	for (n1 = 0; n1 < 64; n1 = n1 + 1)
-		if (atc[n1].vpage==cadr_i[31:14] && appid==atc[n1].appid) begin
+		if (atc[n1].vpage==cadr_i[31:13] && appid==atc[n1].appid) begin
 			padr1 = atc[n1].pte.ppage;
 			atc_hit = 1'b1;
 			case(cfc_i)
@@ -344,7 +346,7 @@ else begin
 			work_stb <= 1'b1;
 			work_we <= 1'b0;
 			work_sel <= 4'hF;
-			work_adr <= {root_adr,cadr_i[31:26],2'b00};
+			work_adr <= {root_adr,cadr_i[31:24],2'b00};
 		end
 	mmu_state[ST_ACCESS1]:
 		begin
@@ -353,7 +355,7 @@ else begin
 			work_stb <= 1'b1;
 			work_we <= 1'b0;
 			work_sel <= 4'hF;
-			work_adr <= {root_adr,cadr_i[31:26],2'b00};
+			work_adr <= {root_adr,cadr_i[31:24],2'b00};
 			if (mack_i) begin
 				work_cyc <= 1'b0;
 				work_stb <= 1'b0;
@@ -368,7 +370,7 @@ else begin
 			work_stb <= 1'b1;
 			work_we <= 1'b0;
 			work_sel <= 4'hF;
-			work_adr <= {pte.ppage,cadr_i[25:14],2'b00};
+			work_adr <= {pte.ppage,cadr_i[23:13],2'b00};
 		end
 	mmu_state[ST_WAIT_ACK2]:
 		begin
@@ -377,7 +379,7 @@ else begin
 			work_stb <= 1'b1;
 			work_we <= 1'b0;
 			work_sel <= 4'hF;
-			work_adr <= {pte.ppage,cadr_i[25:14],2'b00};
+			work_adr <= {pte.ppage,cadr_i[23:13],2'b00};
 			if (mack_i) begin
 				work_cyc <= 1'b0;
 				work_stb <= 1'b0;
@@ -391,7 +393,7 @@ else begin
 			mmu_access <= 1'b0;
 			if (pte.p) begin
 				atc[atc_ua].pte <= pte;
-				atc[atc_ua].vpage <= cadr_i[31:14];
+				atc[atc_ua].vpage <= cadr_i[31:13];
 				atc[atc_ua].appid <= appid;
 				atc_ua <= atc_ua + 6'd1;
 			end
