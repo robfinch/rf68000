@@ -42,11 +42,20 @@
 // ACB functions
 ACB *GetACBPtr();                   // get the ACB pointer of the running task
 extern ACB *GetRunningACBPtr();
-extern hACB GetRunningACB();
-extern hACB GetAppHandle();
-hTCB GetRunningTCB() =
+
+hTCB GetRunningAppid() =
 	"\tmovec.l cpid,d0\r\n"
 ;
+void SetRunningAppid(__reg("d0") hACB h) =
+	"\tmovec.l d0,cpid\r\n"
+;
+hTCB GetRunningTCB() =
+	"\tmovec.l tr,d0\r\n"
+;
+void SetRunningTCB(__reg("d0") hTCB h) =
+	"\tmovec.l d0,tr\r\n"
+;
+
 extern hACB GetRunningAppid();
 extern TCB *GetRunningTCBPtr();
 extern void SetRunningTCBPtr(TCB *p);
@@ -108,12 +117,20 @@ long LockIOFSemaphore(long retries);
 long LockKbdSemaphore(long retries);
 long LockMMUSemaphore(long retries);
 long LockPMTSemaphore(long retries);
+long LockMSGSemaphore(long retries);
+long LockMBXSemaphore(long retries);
+long LockTOLSemaphore(long retries);
+long LockRDQSemaphore(long retries);
 
 void UnlockSysSemaphore();
 void UnlockIOFSemaphore();
 void UnlockKbdSemaphore();
 void UnlockMMUSemaphore();
 void UnlockPMTSemaphore();
+void UnlockMSGSemaphore();
+void UnlockMBXSemaphore();
+void UnlockTOLSemaphore();
+void UnlockRDQSemaphore();
 
 // Restoring the interrupt level does not have a ramp, because the level is
 // being set back to enable interrupts, from a disabled state. Following the

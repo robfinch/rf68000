@@ -19,6 +19,8 @@ AAX = vasmrf68000_mot.exe
 LXX = vlink
 LFLAGS = -bvobj-be
 
+.SUFFIXES:	.x68
+
 # -cpu=68010 -fpu=68881
  
 ASMS =    inout.asm \
@@ -45,6 +47,9 @@ ALL:	$(OUT)
 
 CTYPE:	$(OUT)
 	echo "made CTYPE"
+
+.x68.o:
+	$(AAX) $(AFLAGS) $*.x68 -L $*.lst -o $*.o
 
 .c.o:
 	$(CCX) $(CFLAGS) $<

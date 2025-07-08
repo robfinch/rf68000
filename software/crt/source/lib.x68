@@ -8,57 +8,26 @@ _OutputDevice:
 _FpStrBuf:
 	ds.b	60
 
+	code
 	align 2
-; Parameters
-;		d7 = device handle
-; Returns:
-;		d0 = device handle with unit, 0 if unsuccessful
-;
-__io_open:
-	move.l d6,-(sp)
-	moveq #DEV_OPEN,d6
-	trap #0
-	cmpi.l #E_Ok,d0
-	bne.s .0001
-	or.l d7,d0
-	move.l (sp)+,d6
-	rts
-.0001
-	move.l (sp)+,d6
-	moveq #-1,d0
-	rts
-	global __io_open
 
-__io_close:
-	move.l d6,-(sp)
-	moveq #DEV_CLOSE,d6
-	trap #0
-	cmpi.b #E_Ok,d0
-	bne.s .0001
-	move.l (sp)+,d6
-	moveq #0,d0
-	rts
-.0001
-	move.l (sp)+,d6
-	moveq #-1,d0
-	rts
-	global __io_close
+	include "_io_open.x68"
+	include "_io_close.x68"
 
 ;==============================================================================
 ; Output a character to the current output device.
 ;
 ; Parameters:
-;		d1.b	 character to output
+;		character to output
 ; Returns:
 ;		none
 ;==============================================================================
 	code
 	even
 _OutputChar:
-OutputChar:
+;OutputChar:
 	movem.l d0/d1/d6/d7,-(a7)
-	move.l 20(sp),d1
-	clr.l d7
+	move.l 20(sp),d1					; d1 = character
 	clr.l d6
 	move.l _OutputDevice,d7		; d7 = output device
 	move.w #DEV_PUTCHAR,d6		; d6 = function
@@ -298,6 +267,17 @@ _set_color_depth:
 	movem.l (sp)+,d1/d2/d3/d4/d6/d7
 	rts
 	
+_set_dimen:
+	movem.l d1/d2/d3/d6/d7,-(sp)
+	move.l 24(sp),d7
+	move.l 28(sp),d1
+	move.l 32(sp),d2
+	move.l 36(sp),d3
+	moveq #DEV_SET_DIMEN,d6
+	trap #0
+	movem.l (sp)+,d1/d2/d3/d6/d7
+	rts
+	
 _set_color:
 	movem.l d1/d6/d7,-(sp)
 	move.l 16(sp),d7
@@ -339,6 +319,63 @@ _draw_line:
 	moveq #0,d0
 	trap #0
 	movem.l (sp)+,d0-d7
+	rts
+
+_draw_rectangle3d:
+	movem.l d0-d7,-(sp)
+	move.l 36(sp),d7
+	move.l 64(sp),d1
+	moveq #DEV_SET_COLOR,d6
+	trap #0	
+	moveq #DEV_DRAW_RECTANGLE,d6
+	move.l 40(sp),d1
+	move.l 44(sp),d2
+	move.l 48(sp),d3
+	move.l 52(sp),d4
+	move.l 56(sp),d5
+	move.l 60(sp),d0
+	trap #0
+	movem.l (sp)+,d0-d7
+	rts
+
+_draw_triangle3d:
+	movem.l d0-d7/a1-a3,-(sp)
+	move.l 48(sp),d7
+	move.l 76(sp),d1
+	moveq #DEV_SET_COLOR,d6
+	trap #0	
+	moveq #DEV_DRAW_TRIANGLE,d6
+	move.l 52(sp),d1
+	move.l 56(sp),d2
+	move.l 60(sp),d3
+	move.l 64(sp),d4
+	move.l 68(sp),d5
+	move.l 72(sp),d0
+	move.l 76(sp),a1
+	move.l 80(sp),a2
+	move.l 84(sp),a3
+	trap #0
+	movem.l (sp)+,d0-d7/a1-a3
+	rts
+
+_draw_curve3d:
+	movem.l d0-d7/a1-a3,-(sp)
+	move.l 48(sp),d7
+	move.l 76(sp),d1
+	moveq #DEV_SET_COLOR,d6
+	trap #0	
+	moveq #DEV_DRAW_CURVE,d6
+	move.l 52(sp),d1
+	move.l 56(sp),d2
+	move.l 60(sp),d3
+	move.l 64(sp),d4
+	move.l 68(sp),d5
+	move.l 72(sp),d0
+	move.l 76(sp),a1
+	move.l 80(sp),a2
+	move.l 84(sp),a3
+	trap #0
+	movem.l (sp)+,d0-d7/a1-a3
 	rts
 
 _drawbuf:
@@ -400,7 +437,7 @@ _set_input_pos:
 	
 _get_coreno:
 	movec.l coreno,d0
-	subq.l #2,d0
+;	subq.l #2,d0
 	rts
 
 _get_tick:
@@ -510,10 +547,14 @@ _write:
 	global _DumpStack
 	global _set_color_depth
 	global _set_color
+	global _set_dimen
 	global _plot_point
 	global _plot_point3d
 	global _draw_line
 	global _draw_line3d
+	global _draw_rectangle3d
+	global _draw_triangle3d
+	global _draw_curve3d
 	global _dispbuf
 	global _drawbuf
 
@@ -526,5 +567,4 @@ _write:
 	
 	global _read
 	global _write
-
 	

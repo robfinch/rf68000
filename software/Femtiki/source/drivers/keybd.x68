@@ -13,6 +13,7 @@
 ; |+------- = 
 ; +-------- = extended
 ;
+; The keyboard driver does not rely on the presence of an OS.
 ;==============================================================================
 
 	include "..\Femtiki\source\inc\const.x68"
@@ -59,7 +60,8 @@ _KeybdBuf equ *-keybd_vars
 	ds.b	32
 _KeybdOBuf equ *-keybd_vars
 	ds.b	32
-
+;_KeyState
+;	ds.b	256
 	code
 	even
 
@@ -119,7 +121,7 @@ KBD_CMDTBL:
 	KBD_CMDADDR keybd_stub				; 46 set color depth
 	KBD_CMDADDR keybd_stub				; 47 set destination buffer
 	KBD_CMDADDR keybd_stub				; 48 set display buffer
-	KBD_CMDADDR keybd_stub				; 49 get input position
+	KBD_CMDADDR keybd_get_inpos		; 49 get input position
 	KBD_CMDADDR keybd_set_inpos		; 50 set input position
 	KBD_CMDADDR keybd_set_outpos	; 51 set output position
 	KBD_CMDADDR keybd_stub				; 52 get output position
@@ -173,6 +175,13 @@ keybd_init:
 .0001:
 	clr.l (a1)+
 	dbra d0,.0001
+	; Clear key state array
+;	move.l #_KeyState,a1
+;	add.l a3,a1
+;	move.w #255,d0
+;.0002
+;	clr.b (a1)+
+;	dbra d0,.0002
 	move.l #$44434220,DCB_MAGIC(a0)				; 'DCB '
 	move.l #$4B424400,DCB_NAME(a0)				; 'KBD'
 	move.l #keybd_cmdproc,DCB_CMDPROC(a0)
@@ -250,8 +259,8 @@ keybd_getbuf:
 	move.l d1,a0					; a0 = pointer to buffer
 	bsr GetKey						; d1 = character
 	moveq #1,d0						; user data = 1
-	movec d0,dfc					; user data function code
-	moves.b d1,(a0)				; move using user data space
+;	movec d0,dfc					; user data function code
+	move.b d1,(a0)				; move using user data space
 	movem.l (sp)+,d1/a0
 	moveq #E_Ok,d0
 	rts
@@ -440,8 +449,8 @@ _KeybdGetScancode:
 	movec coreno,d1
 	cmpi.b #2,d1
 	bne .0001
-	moveq		#0,d1
-	move.b	KEYBD,d1				; get the scan code
+	moveq	#0,d1
+	move.b KEYBD,d1					; get the scan code
 	rts
 .0001:
 	moveq #0,d1
@@ -517,14 +526,10 @@ SetKeyboardEcho:
 ;------------------------------------------------------------------------------
 
 CheckForKey:
+keybd_get_inpos:
 	moveq.l	#0,d1					; clear high order bits
-;	move.b	KEYBD+1,d1		; get keyboard port status
-;	smi.b		d1						; set true/false
-;	andi.b	#1,d1					; return true (1) if key available, 0 otherwise
-	tst.b	_KeybdCnt(a3)
-	sne.b	d1
+	move.b	_KeybdCnt(a3),d1
 	rts
-	global CheckForKey
 
 ;------------------------------------------------------------------------------
 ; GetKey
@@ -573,13 +578,14 @@ GetKey:
 ;------------------------------------------------------------------------------
 
 CheckForCtrlC:
-	move.l d1,-(a7)
+	movem.l d1/a3,-(a7)
+	move.l #keybd_vars,a3
 	bsr	KeybdGetCharNoWait
 	cmpi.b #CTRLC,d1
 	bne .0001
 	jmp	_StartMon
 .0001
-	move.l (a7)+,d1
+	movem.l (a7)+,d1/a3
 	rts
 	global CheckForCtrlC
 
@@ -601,6 +607,8 @@ KeybdGetChar:
 	moveq #37,d0						; Lock semaphore
 	move.l #100000,d2				; wait this long
 	trap #15
+	tst.b d0
+;	beq.s .lockFailed
 	move.b _KeybdCnt(a3),d2		; get count of buffered scan codes
 	beq.s	.0015								;
 	move.b _KeybdHead(a3),d2		; d2 = buffer head
@@ -627,6 +635,7 @@ KeybdGetChar:
 	trap #15
 	tst.b	KeybdWaitFlag(a3)	; are we willing to wait for a key ?
 	bmi	.0003								; yes, branch back
+.lockFailed
 	movem.l	(a7)+,d0/d2/d3/a0
 	moveq #-1,d1						; flag no char available
 	rts
@@ -817,24 +826,34 @@ Wait300ms:
 ; Keyboard IRQ routine.
 ; - only core 2 processes keyboard interrupts.
 ; - the keyboard buffer is in shared global scratchpad space.
+;	- the keyboard buffer is guarded by a semaphore as there are multiple
+;		cores that could access it. Disabling IRQs is not enough.
+; - if the keyboard semaphore cannot be locked this routine will return
+;   leaving the IRQ active. Which should result in a return to this 
+;   routine. Instructions will advance one at a time (very slowly) until
+;	  the IRQ can be serviced.
 ;
 ; Returns:
-; 	d1 = -1 if keyboard routine handled interrupt, otherwise positive.
+; 	none
 ;--------------------------------------------------------------------------
 
 KeybdIRQ:
-	move.w #$2600,sr					; disable lower interrupts
+	; Disable lower interrupts. The IPL will be restored by the RTE at the
+	; end of this routine.
+	move.w #$2600,sr					
 	movem.l	d0/d1/d2/a0/a3,-(a7)
 	move.l #keybd_vars,a3
-	eori.l #-1,$FD000000
+	neg.l $FD000000						; update IRQ live indicator
 	moveq	#0,d1								; check if keyboard IRQ
 	move.b KEYBD+1,d1					; get status reg
 	tst.b	d1
 	bpl	.0001									; branch if not keyboard
 	moveq	#KEYBD_SEMA,d1
 	moveq #37,d0							; lock semaphore
-	move.l #100,d2
+	move.l #1000,d2
 	trap #15
+;	tst.b d0									; was the semaphore locked?
+;	beq .lockFailed						; nope, return
 	move.b KEYBD,d1						; get scan code
 	clr.b KEYBD+1							; clear status register (clears IRQ AND scancode)
 	btst #1,_KeyState2(a3)		; Is Alt down?
@@ -855,10 +874,10 @@ KeybdIRQ:
 .0003
 	btst #2,_KeyState2(a3)		; Is Ctrl down?
 	beq.s .0004
-	cmpi.b #SC_C,d1						; Is if Ctrl-C ?
+	cmpi.b #SC_C,d1						; Is it Ctrl-C ?
 	bne.s .0004
-	move.l #_StartMon,a0				; Stuff the Monitor address as
-	move.l a0,14(sp)					; the return address
+	move.l #_StartMon,a0			; Stuff the Monitor address as
+	move.l a0,22(sp)					; the return address
 	bra .0002
 .0004
 	; Insert keyboard scan code into raw keyboard buffer
@@ -876,9 +895,11 @@ KeybdIRQ:
 	moveq	#KEYBD_SEMA,d1
 	moveq #38,d0							; unlock semaphore
 	trap #15
+.lockFailed
 .0001
 	movem.l	(a7)+,d0/d1/d2/a0/a3		; return
 	rte
+
 	global KeybdIRQ
 
 ;--------------------------------------------------------------------------

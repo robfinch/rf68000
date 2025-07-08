@@ -110,7 +110,7 @@ void FMTK_NopRamp() =
 	"\tendr\r\n"
 ;
 
-static unsigned long GetTick() = "\tmovec.l\ttick,d0\r\n";
+static unsigned long GetTick() = "\tmovec.l tick,d0\r\n";
 
 // Reset timer edge sense circuit
 void AckTimerIRQ() =
@@ -118,13 +118,12 @@ void AckTimerIRQ() =
 	"\tmove.l d0,PIC_ESR\r\n"
 ;
 
-void DisplayIRQLive() =
+void DisplayTimerIRQLive() =
 	"\tmovem.l d0/a0,-(sp)\r\n"
 	"\tmovec.l coreno,d0\r\n"
 	"\tlsl.l #2,d0\r\n"
-	"\tadd.l #$FD0000DC,d0\r\n"
-	"\tmove.l d0,a0\r\n"
-	"\tadd.l #1,(a0)\r\n"
+	"\tlea $FD0000DC,a0\r\n"
+	"\tadd.l #$10000,(a0,d0.w)\r\n"
 	"\tmovem.l (sp)+,d0/a0\r\n"
 ;
 
@@ -251,12 +250,8 @@ void SetMMUAppid(__reg("d0") hACB h) =
 
 void SwapContext(register TCB *octx, register TCB *nctx)
 {
-	ACB* q;
-
 	// Set the app's page directory in the MMU 
 	SetMMUAppid(nctx->hApp);
-	octx->ssp = GetSP();
-	SetSP(nctx->ssp);
 }
 
 // ----------------------------------------------------------------------------
@@ -334,17 +329,23 @@ void FMTK_Reschedule()
 }
 
 // ----------------------------------------------------------------------------
+// All cores will receive a timer interrupt.
+//
 // If timer interrupts are enabled during a priority #0 task, this routine
 // only updates the missed ticks and remains in the same task. No timeouts
 // are updated and no task switches will occur. The timer tick routine
 // basically has a fixed latency when priority #0 is present.
 // ----------------------------------------------------------------------------
 
-void FMTK_TimerIRQ(unsigned long* sp)
+void FMTK_TimerIRQ()
 {
   TCB *t, *ot, *tol;
-  char* sp2;
 
+  if (FMTK_Inited != FMTK_MAGIC) {
+		IRQFlag = 1;
+		DisplayTimerIRQLive();
+		return;
+  }
 	ot = t = GetRunningTCBPtr();
 	t->endTick = GetTick();
 	// Explicit rescheduling request?
@@ -363,34 +364,36 @@ void FMTK_TimerIRQ(unsigned long* sp)
 //		AckTimerIRQ();
 		// Set IRQ flag for interpreters
 		IRQFlag = 1;
-		DisplayIRQLive();
-		// Try and lock the system semaphore, but not too hard.
-		if (LockSysSemaphore(20)) {
-			t->ticks = t->ticks + (t->endTick - t->startTick);
-			if (t->priority != 31) {
-				t->status |= TS_PREEMPT;
-				t->status &= ~TS_RUNNING;
-				while (TimeoutList > 0 && TimeoutList <= NR_TCB) {
-					tol = TCBHandleToPointer(TimeoutList);
-					if (tol->timeout <= 0)
-						TCBInsertIntoReadyQueue(TCBPopTimeoutList());
-					else {
-						tol->timeout = tol->timeout - missed_ticks - 1;
-						missed_ticks = 0;
-						break;
+		DisplayTimerIRQLive();
+		// Allow tasks to run at least 3 ticks before switching.
+		if (1 || t->endTick - t->startTick > 3) {
+			// Try and lock the system semaphore, but not too hard.
+			if (LockSysSemaphore(20)) {
+				t->ticks = t->ticks + (t->endTick - t->startTick);
+				if (t->priority != 31) {
+					t->status |= TS_PREEMPT;
+					t->status &= ~TS_RUNNING;
+					while (TimeoutList > 0 && TimeoutList <= NR_TCB) {
+						tol = TCBHandleToPointer(TimeoutList);
+						if (tol->timeout <= 0)
+							TCBInsertIntoReadyQueue(TCBPopTimeoutList());
+						else {
+							tol->timeout = tol->timeout - missed_ticks - 1;
+							missed_ticks = 0;
+							break;
+						}
 					}
+					if (t->priority < 28)
+						SetRunningTCBPtr(TCBHandleToPointer(SelectTaskToRun()));
+					GetRunningTCBPtr()->status |= TS_RUNNING;
 				}
-				if (t->priority < 28)
-					SetRunningTCBPtr(TCBHandleToPointer(SelectTaskToRun()));
-				GetRunningTCBPtr()->status |= TS_RUNNING;
+				else
+					missed_ticks++;
+				UnlockSysSemaphore();
 			}
-			else
+			else {
 				missed_ticks++;
-			UnlockSysSemaphore();
-		}
-		// System semaphore could not be locked.
-		else {
-			missed_ticks++;
+			}
 		}
 	}
 	// If an exception was flagged (eg CTRL-C) return to the catch handler
@@ -398,19 +401,14 @@ void FMTK_TimerIRQ(unsigned long* sp)
 	t = GetRunningTCBPtr();
 	if (t->exception) {
 		// Dig into the stack here to set registers
-		sp[2] = t->exception;				// d1 = exception value
-		sp[3] = 45;									// d2 = exception type
-		// The CPU stores a word instead of an lword for the status register.
-		// This shifts the placement of the return PC value by two bytes.
-		sp = &sp[17];								// PC would be here except that only
-		sp2 = (char *)sp;						// two bytes were stored for the SR.
-		sp2 -= 2;										// So, the pointer needs to back up two
-		sp = (unsigned long*)sp2;		// bytes.
-		*sp2 = (unsigned long)t->exceptionHandler;	// Now copy exception handler address to stack
+		t->regs[1] = t->exception;				// d1 = exception value
+		t->regs[2] = 45;									// d2 = exception type
+		t->pc = (unsigned long)t->exceptionHandler;	// Now copy exception handler address
 	}
-	t->startTick = GetTick();
-	if (ot != t)
+	if (ot != t) {
+		t->startTick = GetTick();		// Only starting if context is switching to task.
 		SwapContext(ot,t);
+	}
 }
 
 void panic(char *msg)
@@ -562,10 +560,10 @@ long FMTK_StartTask(
   // Put ExitTask address on top of stack, when the task is finished then
   // this address will be returned to.
   t->stack[stacksize - 4] = (unsigned long)FMTK_ExitTask;
-  t->regs[15] = (unsigned long)t->stack + stacksize - 4;	// Set USP
+  t->regs[14] = (unsigned long)t->stack + stacksize - 4;	// Set USP
   // Setup system stack image to look as if a syscall were performed.
   sp = &t->sys_stack[1024 - 4 - 18*4];
-  t->ssp = (unsigned long)sp;
+  t->regs[16] = (unsigned long)sp;
 	sp[0] = (unsigned long)t->stack + stacksize - 4;	// USP
 	sp[1] = parm;				// d0 gets parameter
   for (nn = 2; nn < 16; nn = nn + 1)
@@ -700,7 +698,11 @@ long FMTK_Initialize()
     UnlockSysSemaphore();
     UnlockIOFSemaphore();
     UnlockKbdSemaphore();
-
+    UnlockMSGSemaphore();
+    UnlockMBXSemaphore();
+    UnlockTOLSemaphore();
+    UnlockRDQSemaphore();
+    
 		DisplayLEDS(3);
 		// Setting up message array
     for (nn = 0; nn < NR_MSG; nn++) {
@@ -714,7 +716,7 @@ long FMTK_Initialize()
 
   	for (nn = 0; nn < 8; nn++)
   		readyQ[nn] = 0;
-  	for (nn = 0; nn < NR_TCB; nn++) {
+  	for (nn = 0; nn < 128; nn++) {
       tcbs[nn].number = nn;
       tcbs[nn].acbnext = 0;
   		tcbs[nn].next = nn+2;
@@ -734,14 +736,16 @@ long FMTK_Initialize()
       }
       tcbs[nn].exception = 0;
   	}
-  	tcbs[NR_TCB-1].next = 0;
+  	tcbs[127].next = 0;
   	freeTCB = 2;
   	TimeoutList = 0;
   	
  		DisplayLEDS(4);
+    init_memory_management();
 
   	for (nn = 0; nn < NR_ACB; nn++)
   		ACBPtrs[nn] = NULL;
+  	ACBPtrs[0] = &SysAcb;
 		asr.pagesize = 8;
 		asr.priority = 15;
 		asr.affinity = 2;
@@ -777,7 +781,7 @@ long FMTK_Initialize()
 //    	set_vector(2,(unsigned int)FMTK_SchedulerIRQ);
 		hKeybdMbx = 0;
 		hFocusSwitchMbx = 0;
-  	FMTK_Inited = 0x12345678;
+  	FMTK_Inited = FMTK_MAGIC;
   	SetImLevelHelper(lev);								// Restore interrupts
 		DisplayLEDS(6);
   }

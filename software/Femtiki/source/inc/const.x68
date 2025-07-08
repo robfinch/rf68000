@@ -80,6 +80,7 @@ E_WriteError EQU		36
 E_BadBlockNum	EQU	37
 E_TooManyBlocks	EQU	38
 E_InitErr EQU 39
+E_TooManyStreams equ 40
 
 ; resource errors
 E_NoMoreMbx	EQU		64

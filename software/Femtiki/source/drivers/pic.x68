@@ -19,8 +19,9 @@ pic_setup:
 pic_init:
 init_pic:
 	lea	PLIC,a0							; a0 points to PLIC
+;	move.l #$02050000,$1c(a0)	; set min/max core number for rotate
 	lea	$80+4*29(a0),a1			; point to timer registers (29)
-	move.l #$0006033F,(a1)	; initialize, core=63,edge sensitive,enabled,irq6,vpa
+	move.l #$00060302,(a1)	; initialize, core=2,edge sensitive,enabled,irq6,vpa,rotate
 	lea	4(a1),a1						; point to keyboard registers (30)
 	move.l #$3C060502,(a1)	; core=2,level sensitive,enabled,irq6,inta
 	lea	4(a1),a1						; point to nmi button register (31)

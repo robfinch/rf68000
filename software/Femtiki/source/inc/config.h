@@ -14,4 +14,10 @@
 
 #define leds 0xFDFFC000
 
+// Memory management
+#define DRAM_BASE	0x40000000
+#define MEM_PAGE_SIZE	8192
+#define PAGE_MASK	0xffffe000
+#define LOG_PAGESIZE 13
+
 #endif

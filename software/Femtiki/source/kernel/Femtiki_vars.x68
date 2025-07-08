@@ -1,9 +1,6 @@
 	section dram
 _PMT
 	ds.b	65536*16
-_tcbs
-	ds.b	4096*256
-_tcbs_end
 _message
 	ds.b	8192*32
 _message_end
@@ -90,8 +87,6 @@ tickcnt
 	ds.l	1
 IRQFlag
 	ds.l	1
-Regsave
-	ds.l	96
 BreakpointFlag
 	ds.l	1
 NumSetBreakpoints
@@ -162,6 +157,9 @@ numwka
 ;EightPixels equ $40100000	; to $40200020
 
 	section gvars
+_tcbs
+	ds.b	256*128
+_tcbs_end
 scratch_ram
 _sys_pd						; system page directory
 	ds.b	2048
@@ -194,6 +192,8 @@ _ACBList
 	ds.l	1
 _ACBPtrs
 	ds.l	64
+_RunningTCBPointer
+	ds.l	1
 _RunningTCB
 	ds.w	1
 _FreeTCB
@@ -295,7 +295,6 @@ _FemtikiVars_end
 	global tickcnt
 	global _tickcnt
 	global IRQFlag
-	global Regsave
 	global BreakpointFlag
 	global NumSetBreakpoints
 	global Breakpoints
@@ -331,6 +330,7 @@ _FemtikiVars_end
 
 	global _FMTK_Inited
 	global _sys_pages_available
+	global _RunningTCBPointer
 	global _ACBList
 	global _ACBPtrs
 	global _nMsgBlk
@@ -364,7 +364,7 @@ _FemtikiVars_end
 	global spi_buff			
 
 	global _lastSearchedPAMWord
-	global _SysACB
+	global _SysAcb
 	global _PMT
 	global _PAM
 	global _PAMEnd

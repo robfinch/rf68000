@@ -58,5 +58,43 @@ void UnlockPMTSemaphore()
 	UnlockSemaphore(PMT_SEMA);
 }
 
+long LockMSGSemaphore(long retries)
+{
+	return(LockSemaphore(MSG_SEMA,retries));
+}
 
+void UnlockMSGSemaphore()
+{
+	UnlockSemaphore(MSG_SEMA);
+}
+
+long LockMBXSemaphore(long retries)
+{
+	return(LockSemaphore(MBX_SEMA,retries));
+}
+
+void UnlockMBXSemaphore()
+{
+	UnlockSemaphore(MBX_SEMA);
+}
+
+long LockTOLSemaphore(long retries)
+{
+	return(LockSemaphore(TOL_SEMA,retries));
+}
+
+void UnlockTOLSemaphore()
+{
+	UnlockSemaphore(TOL_SEMA);
+}
+
+long LockRDQSemaphore(long retries)
+{
+	return(LockSemaphore(RDQ_SEMA,retries));
+}
+
+void UnlockRDQSemaphore()
+{
+	UnlockSemaphore(RDQ_SEMA);
+}
 

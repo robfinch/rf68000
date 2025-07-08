@@ -187,6 +187,9 @@ macUnhmash macro arg1
 	eori.l #DEV_HMASH,\1
 	swap \1
 endm
+	section gvars
+_go:
+	ds.l	1
 
 	data
 	org 0
@@ -227,7 +230,7 @@ endm
 	dc.l		0
 	
 	; 30
-	dc.l		TickIRQ						; IRQ 30 - timer / keyboard
+	dc.l		TickIRQ	;_FMTK_TimerIRQLaunchpad	;TickIRQ						; IRQ 30 - timer / keyboard
 	dc.l		nmi_rout
 	dc.l		io_trap						; TRAP zero
 	dc.l		_FMTK_Dispatch		; OS
@@ -406,10 +409,18 @@ EightPixels equ $40100000	; to $40200020
 	align		2
 start:
 ;	fadd (a0)+,fp2
+	clr.l _go
 	move.b #1,leds
 	move.w #$2700,sr					; enable level 6 and higher interrupts
 	move.w #$2700,_regSR
-	move.l #2,IOFocus					; Set the IO focus in global memory
+	move.l #_tcbs,a0
+	move.l a0,_RunningTCBPointer	; point to task #1's tcb
+	moveq #1,d0
+	movec d0,tr								; current task = 1
+	movec d0,cpid							; current app = 1
+	move.l #_SysAcb,a0
+	move.l a0,_ACBPtrs
+	move.l #2,_IOFocus				; Set the IO focus in global memory
 	moveq #0,d0								; set address space zero
 	movec d0,asid
 	; Setup circuit select signals
@@ -428,10 +439,13 @@ start:
 	endif
 ;	move.l $4000000C,d0
 	move.b #2,leds
-.stp	
+.stp
 	movec.l coreno,d0							; set initial value of thread register
 	cmpi.b #2,d0
-	bne .stp
+	beq .go1
+	tst.l _go
+	beq.s .stp
+.go1
 	move.b d0,leds
 	swap d0											; coreno in high eight bits
 	lsl.l #8,d0
@@ -448,7 +462,8 @@ start:
 	move.l #_DeviceTable+2*DCB_SIZE,d0
 	jsr _setup_textvid
 	move.b #4,leds
-	bsr test_scratchpad_ram
+;	bsr test_scratchpad_ram
+	move.l #2,_IOFocus				; Set the IO focus in global memory
 	move.b #3,leds
 	move.l #_DeviceTable+0*DCB_SIZE,d0
 	jsr _setup_null
@@ -475,7 +490,7 @@ start:
 	bsr i2c_setup
 	lea I2C1,a6
 	bsr i2c_setup
-	move.l #2,IOFocus					; Set the IO focus in global memory
+	move.l #2,_IOFocus					; Set the IO focus in global memory
 	bsr scan_for_dev
 ;	lea SPI_MASTER1,a1
 ;	bsr spi_setup
@@ -517,14 +532,17 @@ start:
 	swap d0
 	moveq	#1,d1
 ;	bsr	UnlockSemaphore	; allow another cpu access
-	moveq #37,d0				; Unlock semaphore
+	moveq #44,d0				; Force unlock semaphore
 	trap #15
 	moveq	#BIOS_SEMA,d1
+	trap #15
+	moveq	#KEYBD_SEMA,d1
 	trap #15
 ;	bsr	UnlockSemaphore	; allow other cpus to proceed
 	move.w #$A4A4,leds			; diagnostics
 	jsr	setup_pic				; initialize interrupt controller
 ;	jsr __crt_start
+;	move.l #-1,_go			; Let the other cores start up
 	jmp	StartMon
 
 
@@ -696,7 +714,7 @@ T15DispatchTable:
 	T15DTAddr	StubRout
 	T15DTAddr	T15GetKey
 	T15DTAddr _OutputChar
-	T15DTAddr	CheckForKey
+	T15DTAddr T15CheckForKey
 	T15DTAddr	GetTick
 	T15DTAddr	StubRout
 	; 10
@@ -709,7 +727,7 @@ T15DispatchTable:
 	T15DTAddr	StubRout
 	T15DTAddr	StubRout
 	T15DTAddr	StubRout
-	T15DTAddr	CheckForKey
+	T15DTAddr	T15CheckForKey
 	; 20
 	T15DTAddr	StubRout
 	T15DTAddr	StubRout
@@ -737,7 +755,7 @@ T15DispatchTable:
 	T15DTAddr	T15GetFloat
 	T15DTAddr	T15Abort
 	T15DTAddr	T15FloatToString
-	T15DTAddr	StubRout
+	T15DTAddr	T15ForceUnlockSemaphore
 	T15DTAddr	StubRout
 	T15DTAddr	StubRout
 	T15DTAddr	StubRout
@@ -812,6 +830,25 @@ TRAP15:
 	rte
 
 
+; Check if a character is available from the keyboard
+;
+; Parameters:
+;		none
+; Returns:
+;		d1.b = 1 if key available, 0 otherwise
+
+T15CheckForKey:
+	movem.l d0/d6/d7,-(sp)
+	moveq #1,d7
+	moveq #DEV_GET_INPOS,d6	; For keyboard, returns number of characters buffered.
+	trap #0
+	tst.b d1
+	sne d1
+	andi.b #1,d1
+	movem.l (sp)+,d0/d6/d7
+	rts
+	
+	
 ; Parameters:
 ; 	d1 = text co-ordinates
 ;		d1.low word = colum
@@ -1095,13 +1132,13 @@ RandWait:
 
 InitSemaphores:
 	movem.l	d1/a0,-(a7)
-	lea			semamem,a0
-	move.l	#$20000,$2000(a0)	; lock the first semaphore for core #2, thread #0
-	move.w	#254,d1
+	lea	semamem,a0
+	move.l #$20000,$2000(a0)	; lock the first semaphore for core #2, thread #0
+	move.w #1022,d1
 .0001:
-	lea			4(a0),a0
-	clr.l		$2000(a0)					; write zeros to unlock
-	dbra		d1,.0001
+	lea	4(a0),a0
+	clr.l	$2000(a0)						; write zeros to unlock
+	dbra d1,.0001
 	movem.l	(a7)+,d1/a0
 	rts
 
@@ -1159,7 +1196,7 @@ InitSemaphores:
 LockSemaphore:
 	movem.l	d1/d2/a0,-(a7)	; save registers
 	lea	semamem,a0					; point to semaphore memory lock area
-	andi.w #255,d1					; make d1 word value
+	andi.w #1023,d1					; make d1 word value
 	lsl.w	#2,d1							; align to memory
 .0001
 	move.l d0,(a0,d1.w)			; try and write the semaphore
@@ -1181,7 +1218,7 @@ LockSemaphore:
 ForceUnlockSemaphore:
 	movem.l	d1/a0,-(a7)				; save registers
 	lea	semamem+$3000,a0			; point to semaphore memory read/write area
-	andi.w #255,d1						; make d1 word value
+	andi.w #1023,d1						; make d1 word value
 	lsl.w	#2,d1								; align to memory
 	clr.l	(a0,d1.w)						; write zero to unlock
 	movem.l	(a7)+,a0/d1				; restore regs
@@ -1195,15 +1232,14 @@ ForceUnlockSemaphore:
 ; 3) already unlocked, the write will be ignored
 ;
 ; Parameters:
-;		d0 = key
+;		d0 = key (task id)
 ;		d1 = semaphore number
 ; -----------------------------------------------------------------------------
 
 UnlockSemaphore:
-	bra ForceUnlockSemaphore
 	movem.l	d1/a0,-(a7)				; save registers
 	lea	semamem+$1000,a0			; point to semaphore memory unlock area
-	andi.w #255,d1						; make d1 word value
+	andi.w #1023,d1						; make d1 word value
 	lsl.w	#2,d1								; align to memory
 	move.l d0,(a0,d1.w)				; write matching value to unlock
 	movem.l	(a7)+,a0/d1				; restore regs
@@ -1222,6 +1258,10 @@ T15LockSemaphore:
 T15UnlockSemaphore:
 	movec tr,d0
 	bra UnlockSemaphore
+
+T15ForceUnlockSemaphore:
+	movec tr,d0
+	bra ForceUnlockSemaphore
 
 ; Parameters:
 ; 	a1 = pointer to input text
@@ -2113,6 +2153,7 @@ _StartMon:
 	global _StartMon
 StartMon:
 	clr.b _tracemd
+	move.w #$2200,_regSR			; setup with level 2 and higher interrupts
 	clr.w	NumSetBreakpoints
 	bsr	ClearBreakpointList
 cmdMonitor:
@@ -3008,6 +3049,9 @@ ExecuteCode:
 	bra Monitor
 
 cmdGrDemo:
+	jsr _grDemo
+	bra Monitor
+
 	move.l #$00008888,d1		; 32 bpp
 	move.l #$60000,d7							; framebuf device
 	moveq #DEV_SET_COLOR_DEPTH,d6
@@ -4810,7 +4854,17 @@ InstallIRQ:
 
 TickIRQ:
 	move.w #$2600,sr					; disable lower level IRQs
-	movem.l	d1/d2/d3/a0,-(a7)
+	move.l a0,-(a7)						; push a0
+	move.l _RunningTCBPointer,a0		; a0 points to task control block
+	movem.l d0-d7/a1-a6,4(a0)	; save registers in task control block
+	move usp,a1								; save usp in TCB
+	move.l a1,60(a0)
+	move.l (sp)+,64(a0)				; pop a0 into TCB
+	move.w (sp)+,108(a0)			; status reg
+	move.l (sp)+,104(a0)			; program counter
+	move.w (sp)+,112(a0)			; and format word
+	move.l a7,68(a0)					; finally save a7
+
 	addi.l #1,tickcnt
 	move.b #1,IRQFlag					; tick interrupt indicator in local memory
 	movec	coreno,d1						; d1 = core number
@@ -4832,7 +4886,16 @@ TickIRQ:
 	addi.l #$10000,d2
 	move.l d2,4(a0,d3.w)			; update onscreen IRQ flag
 ;	bsr	ReceiveMsg
-	movem.l	(a7)+,d1/d2/d3/a0
+
+	move.l _RunningTCBPointer,a0	; a0 points to task control block
+	move.l 60(a0),a1					; restore usp
+	move.l a1,usp
+	movem.l 4(a0),d0-d7/a1-a6	; restore register set
+	move.l 68(a0),a7					; restore a7
+	move.w 112(a0),-(sp)			; push format word
+	move.l 104(a0),-(sp)			; push program counter
+	move.w 108(a0),-(sp)			; push status reg
+	move.l 64(a0),a0					; restore a0
 	rte
 
 ;------------------------------------------------------------------------------
@@ -4863,7 +4926,7 @@ irq_rout:
 
 ;	rept 192
 ;	macIRQ_proc_label REPTN
-;	movem.l a0/a1,-(a7)
+;	movem.l d0/a0/a1,-(a7)
 ;	move.l irq_list_tbl+REPTN*4,a1	; get the head of the list
 ;	jmp irq_proc_generic
 ;	endr
@@ -4874,14 +4937,14 @@ irq_proc_generic:
 	cmpa.l #0,a0										; ugh. move to address does not set flags
 	beq.s .0001											; valid vector?
 	jsr (a0)												; call the interrupt routine
-	tst.l d1												; IRQ handled?
-	bmi.s .0002											
+	tst.b d0												; IRQ handled?
+	bmi.s .0002
 .0001:
 	move.l (a1),a1
-	cmpa.l #0,a0										; end of list?
+	cmpa.l #0,a1										; end of list?
 	bne.s .0003
 .0002:
-	movem.l (a7)+,a0/a1
+	movem.l (a7)+,d0/a0/a1
 	rte 
 
 SpuriousIRQ:

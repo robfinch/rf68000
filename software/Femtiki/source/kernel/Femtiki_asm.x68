@@ -105,14 +105,30 @@ _FMTK_Dispatch:
 	global _FMTK_Dispatch
 
 _FMTK_TimerIRQLaunchpad:
-	movem.l d0-d7/a0-a6,-(sp)		; save all regs
-	move.l usp,a0								; including usp
-	move.l a0,-(sp)							; supply pointer to save area to IRQ routine
-	move.l sp,d0
+	move.w #$2600,sr						; disable lower interrupts
+	move.l a0,-(a7)							; push a0
+	move.l _RunningTCBPointer,a0		; a0 points to task control block
+	movem.l d0-d7/a1-a6,4(a0)		; save registers in task control block
+	move usp,a1									; save usp in TCB
+	move.l a1,60(a0)
+	move.l (sp)+,64(a0)					; pop a0 into TCB
+	move.w (sp)+,108(a0)				; status reg
+	move.l (sp)+,104(a0)				; program counter
+	move.w (sp)+,112(a0)				; and format word
+	move.l a7,68(a0)						; finally save a7
+	
+	move.l #$1D000000,$FD260014	; reset edge sense circuit
 	jsr _FMTK_TimerIRQ					; call the IRQ routine
-	move.l (sp)+,a0							; restore usp
-	move.l a0,usp
-	movem.l (sp)+,d0-d7/a0-a6		; and the rest of the registers
+
+	move.l _RunningTCBPointer,a0	; a0 points to task control block
+	move.l 60(a0),a1						; restore usp
+	move.l a1,usp
+	movem.l 4(a0),d0-d7/a1-a6		; restore register set
+	move.l 68(a0),a7						; restore a7
+	move.w 112(a0),-(sp)				; push format word
+	move.l 104(a0),-(sp)				; push program counter
+	move.w 108(a0),-(sp)				; push status reg
+	move.l 64(a0),a0						; restore a0
 	rte
 
 	global _FMTK_TimerIRQLaunchpad

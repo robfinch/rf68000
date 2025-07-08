@@ -61,11 +61,11 @@ typedef struct _tagPMTE {
 } PMTE;
 
 typedef struct _tagPageTable {
-	PTE pte[4096];
+	PTE_u pte[1024];
 } PageTable;
 
 typedef struct _tagPageDirectory {
-	PDE pte[64];
+	PDE_u pde[2048];
 } PageDirectory;
 
 typedef struct _tagPageTables {
@@ -227,9 +227,10 @@ typedef struct _tagTCB {
 	unsigned long magic;	// 'TCB '
     // exception storage area
 	unsigned long regs[17];
-	unsigned long ssp;
 	double fpregs[8];
-	int epc;
+	int pc;
+	int sr;
+	int fmt;
 	int vl;
 	int cr0;
 	hTCB acbnext;				// task list associated with app

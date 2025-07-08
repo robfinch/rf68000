@@ -63,6 +63,8 @@ enum {
      E_WriteError,
      E_BadBlockNum,
      E_TooManyBlocks,
+     E_InitErr,
+     E_TooManyStreams,
 
      // resource errors
      E_NoMoreMbx = 0x40,
@@ -78,6 +80,7 @@ enum {
 
 #define OBJ_MAGIC	(('O') | ('B' << 8) | ('J' << 16) | ('\0' << 24))
 #define ACB_MAGIC	(('A') | ('C' << 8) | ('B' << 16) | ('\0' << 24))
+#define FMTK_MAGIC	(('F') | ('M' << 8) | ('T' << 16) | ('K' << 24))
 
 #define OL_USER			3
 #define OL_SUPERVISOR	2
@@ -123,6 +126,10 @@ enum {
 #define OSSEMA			8
 #define IOFSEMA			9
 #define PMT_SEMA 		10
+#define MBX_SEMA		11
+#define MSG_SEMA		12
+#define TOL_SEMA		13
+#define RDQ_SEMA		14
 
 /*
 ; the following constant is used to scramble device handles. The device handle
