@@ -78,23 +78,43 @@ void UnlockMBXSemaphore()
 	UnlockSemaphore(MBX_SEMA);
 }
 
-long LockTOLSemaphore(long retries)
+long LockTimeoutList(long retries)
 {
 	return(LockSemaphore(TOL_SEMA,retries));
 }
 
-void UnlockTOLSemaphore()
+void UnlockTImeoutList()
 {
 	UnlockSemaphore(TOL_SEMA);
 }
 
-long LockRDQSemaphore(long retries)
+long LockReadyQueue(long retries)
 {
 	return(LockSemaphore(RDQ_SEMA,retries));
 }
 
-void UnlockRDQSemaphore()
+void UnlockReadyQueue()
 {
 	UnlockSemaphore(RDQ_SEMA);
+}
+
+long LockTCBList(long retries)
+{
+	return(LockSemaphore(TCB_SEMA,retries));
+}
+
+void UnlockTCBList()
+{
+	UnlockSemaphore(TCB_SEMA);
+}
+
+long LockACBSemaphore(long retries)
+{
+	return(LockSemaphore(ACB_SEMA,retries));
+}
+
+void UnlockACBSemaphore()
+{
+	UnlockSemaphore(ACB_SEMA);
 }
 

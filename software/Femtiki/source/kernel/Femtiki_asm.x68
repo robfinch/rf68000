@@ -1,5 +1,6 @@
 	include "..\inc\const.x68"
 	include "..\inc\config.x68"
+	include "..\inc\device.x68"
 
 	section local_ram
 	align 2
@@ -54,10 +55,10 @@ endm
 
 OSCallTable:
 	macOSCallAddr	_FMTK_Initialize
-	macOSCallAddr	_FMTK_StartTask
-	macOSCallAddr	_FMTK_ExitTask
-	macOSCallAddr	_FMTK_KillTask
-	macOSCallAddr	_FMTK_SetTaskPriority
+	macOSCallAddr	_FMTK_StartThread
+	macOSCallAddr	_FMTK_ExitThread
+	macOSCallAddr	_FMTK_KillThread
+	macOSCallAddr	_FMTK_SetThreadPriority
 	macOSCallAddr	_FMTK_Sleep
 	macOSCallAddr	_FMTK_WaitMsg
 	macOSCallAddr	_FMTK_SendMsg
@@ -104,31 +105,75 @@ _FMTK_Dispatch:
 
 	global _FMTK_Dispatch
 
+; Timer ISR
+;
+; The only code modifying the register context is in the timer IRQ. That means
+; the register context should not need to be protected by a semaphore. The only
+; issue that might arise if if the timer ISR takes too long and overlaps with
+; the next one. This should not happen unless the tick interval is set too short.
+;
 _FMTK_TimerIRQLaunchpad:
-	move.w #$2600,sr						; disable lower interrupts
+	move.w #$2700,sr						; disable lower interrupts
+	move.l d0,-(sp)
+	movec.l coreno,d0
+	cmp.b _InTimerISR,d0				; Is it core's turn to process?
+	bne .0002										; no, just return
+	move.l (sp)+,d0
+;	bset #0,_InTimerISR					; Just in case, do not allow re-entry
+;	bne .busy
+
+	; Save register context in TCB
 	move.l a0,-(a7)							; push a0
 	move.l _RunningTCBPointer,a0		; a0 points to task control block
 	movem.l d0-d7/a1-a6,4(a0)		; save registers in task control block
 	move usp,a1									; save usp in TCB
 	move.l a1,60(a0)
 	move.l (sp)+,64(a0)					; pop a0 into TCB
-	move.w (sp)+,108(a0)				; status reg
-	move.l (sp)+,104(a0)				; program counter
-	move.w (sp)+,112(a0)				; and format word
+	move.w (sp)+,140(a0)				; status reg
+	move.l (sp)+,136(a0)				; program counter
+	move.w (sp)+,144(a0)				; and format word
 	move.l a7,68(a0)						; finally save a7
-	
+
+	; Reset timer IRQ	
+	lea PIT,a0
+	move.l $800(a0),d0					; read underflow register
+	move.l d0,$800(a0)					; write it back
 	move.l #$1D000000,$FD260014	; reset edge sense circuit
+
+	; Display IRQ Live indicator
+	movec.l coreno,d0
+	lsl.l #2,d0
+	lea.l $FD0000DC,a0
+	move.l (a0,d0.w),d1					; fetch colors from screen
+	movec.l coreno,d2
+	clr.w d1
+	or.w d2,d1									; or in core number
+	add.l #$10030,d1						; add ascii '0'
+	move.l d1,(a0,d0.w)					; move to screen
+
+	; Call 'C' interrupt handler
 	jsr _FMTK_TimerIRQ					; call the IRQ routine
 
+	; Restore register context from TCB. Note that a different context may be
+	; restored than the one saved.
 	move.l _RunningTCBPointer,a0	; a0 points to task control block
 	move.l 60(a0),a1						; restore usp
 	move.l a1,usp
 	movem.l 4(a0),d0-d7/a1-a6		; restore register set
 	move.l 68(a0),a7						; restore a7
-	move.w 112(a0),-(sp)				; push format word
-	move.l 104(a0),-(sp)				; push program counter
-	move.w 108(a0),-(sp)				; push status reg
+	move.w 144(a0),-(sp)				; push format word
+	move.l 136(a0),-(sp)				; push program counter
+	move.w 140(a0),-(sp)				; push status reg
 	move.l 64(a0),a0						; restore a0
+;	clr.b _InTimerISR
+;	addi.b #1,_InTimerISR
+;	cmpi.b #3,_InTimerISR
+;	bls.s .0001
+	move.b #2,_InTimerISR
+.0001
+	rte
+.0002
+	move.l (sp)+,d0
 	rte
 
 	global _FMTK_TimerIRQLaunchpad

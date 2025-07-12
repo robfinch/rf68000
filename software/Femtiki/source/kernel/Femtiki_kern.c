@@ -45,6 +45,7 @@
 #include "..\inc\glo.h"
 //#include "TCB.h"
 
+extern void DumpThreads();
 extern void DisplayString(__reg("a1") char *str);
 extern void ClearScreen();
 
@@ -116,15 +117,6 @@ static unsigned long GetTick() = "\tmovec.l tick,d0\r\n";
 void AckTimerIRQ() =
 	"\tmoveq #3,d0\r\n"
 	"\tmove.l d0,PIC_ESR\r\n"
-;
-
-void DisplayTimerIRQLive() =
-	"\tmovem.l d0/a0,-(sp)\r\n"
-	"\tmovec.l coreno,d0\r\n"
-	"\tlsl.l #2,d0\r\n"
-	"\tlea $FD0000DC,a0\r\n"
-	"\tadd.l #$10000,(a0,d0.w)\r\n"
-	"\tmovem.l (sp)+,d0/a0\r\n"
 ;
 
 ACB *SafeGetACBPtr(register int n)
@@ -232,13 +224,6 @@ int SetImLevel(register int level)
 	return(x);
 }
 
-unsigned long GetSP() = "\tmove.l sp,d0\r\n";
-void SetSP(__reg("d0") unsigned long sp) = "\tmove.l d0,sp\r\n";
-
-void SetMMUAppid(__reg("d0") hACB h) =
-	"\tmove.l d0,$FDC02100\r\n"
-;
-
 // ----------------------------------------------------------------------------
 // Restore the task's context.
 //
@@ -250,8 +235,12 @@ void SetMMUAppid(__reg("d0") hACB h) =
 
 void SwapContext(register TCB *octx, register TCB *nctx)
 {
-	// Set the app's page directory in the MMU 
+	ACB* p;
+
 	SetMMUAppid(nctx->hApp);
+	// Set the app's page directory in the MMU 
+	p = ACBHandleToPointer(nctx->hApp);
+	SetMMUPD(p->is_system ? 1 : 0, (long)&p->pd);
 }
 
 // ----------------------------------------------------------------------------
@@ -260,7 +249,7 @@ void SwapContext(register TCB *octx, register TCB *nctx)
 
 static int invert;
 
-static hTCB SelectTaskToRunHelper(int nn)
+static hTCB SelectThreadToRunHelper(int nn)
 {
 	int kk;
   hTCB h, h1;
@@ -278,7 +267,7 @@ static hTCB SelectTaskToRunHelper(int nn)
    		q = TCBHandleToPointer(p->next);
     do {  
       if (!(q->status & TS_RUNNING)) {
-        if (q->affinity == getCPU()) {
+        if (q->affinity == getCPU() || q->affinity==63) {
         	h1 = TCBPointerToHandle(q);
 			  	readyQ[nn] = h1;
 			   	return (h1);
@@ -291,7 +280,7 @@ static hTCB SelectTaskToRunHelper(int nn)
 	return (-1);
 }
 
-static hTCB SelectTaskToRun()
+static hTCB SelectThreadToRun()
 {
 	int nn;
   hTCB h;
@@ -300,14 +289,14 @@ static hTCB SelectTaskToRun()
 	// Occasionally prioriies are inverted.
 	if ((invert & 31)==0) {
 		for (nn = 0; nn < 32; nn++) {
-			if ((h = SelectTaskToRunHelper(nn)) > 0)
+			if ((h = SelectThreadToRunHelper(nn)) > 0)
 				return (h);
 		}
 		return (GetRunningTCB());
 	}
 	// Search the queues from the highest to lowest priority.
 	for (nn = 31; nn >= 0; nn--) {
-		if ((h = SelectTaskToRunHelper(nn)) > 0)
+		if ((h = SelectThreadToRunHelper(nn)) > 0)
 			return (h);
 	}
 	return (GetRunningTCB());
@@ -320,7 +309,7 @@ static hTCB SelectTaskToRun()
 
 void TriggerTimerIRQ() =
 "\tmove.l #1,_reschedFlag\r\n"
-"\tmove.l #29,$FD260000+$18\r\n"	// PLIC
+"\tmove.l #29,$FD260000+$18\r\n"	// PIC
 ;
 
 void FMTK_Reschedule()
@@ -342,8 +331,8 @@ void FMTK_TimerIRQ()
   TCB *t, *ot, *tol;
 
   if (FMTK_Inited != FMTK_MAGIC) {
+		tickcnt++;
 		IRQFlag = 1;
-		DisplayTimerIRQLive();
 		return;
   }
 	ot = t = GetRunningTCBPtr();
@@ -355,7 +344,7 @@ void FMTK_TimerIRQ()
 		t->status |= TS_PREEMPT;
 		t->status &= ~TS_RUNNING;
 //		t->epc = t->epc + 1;  // advance the return address
-		SetRunningTCBPtr(TCBHandleToPointer(SelectTaskToRun()));
+		SetRunningTCBPtr(TCBHandleToPointer(SelectThreadToRun()));
 		GetRunningTCBPtr()->status |= TS_RUNNING;
 	}
 	// Timer tick interrupt
@@ -363,33 +352,36 @@ void FMTK_TimerIRQ()
 		// Timer will auto-reset, the following line should not be necessary.
 //		AckTimerIRQ();
 		// Set IRQ flag for interpreters
+		tickcnt++;
 		IRQFlag = 1;
-		DisplayTimerIRQLive();
 		// Allow tasks to run at least 3 ticks before switching.
 		if (1 || t->endTick - t->startTick > 3) {
 			// Try and lock the system semaphore, but not too hard.
-			if (LockSysSemaphore(20)) {
+			if (LockReadyQueue(100)) {
 				t->ticks = t->ticks + (t->endTick - t->startTick);
 				if (t->priority != 31) {
 					t->status |= TS_PREEMPT;
 					t->status &= ~TS_RUNNING;
-					while (TimeoutList > 0 && TimeoutList <= NR_TCB) {
-						tol = TCBHandleToPointer(TimeoutList);
-						if (tol->timeout <= 0)
-							TCBInsertIntoReadyQueue(TCBPopTimeoutList());
-						else {
-							tol->timeout = tol->timeout - missed_ticks - 1;
-							missed_ticks = 0;
-							break;
+					if (LockTimeoutList(1000)) {
+						while (TimeoutList > 0 && TimeoutList <= NR_TCB) {
+							tol = TCBHandleToPointer(TimeoutList);
+							if (tol->timeout <= 0)
+								TCBInsertIntoReadyQueue(TCBPopTimeoutList());
+							else {
+								tol->timeout = tol->timeout - missed_ticks - 1;
+								missed_ticks = 0;
+								break;
+							}
 						}
+						UnlockTImeoutList();
 					}
 					if (t->priority < 28)
-						SetRunningTCBPtr(TCBHandleToPointer(SelectTaskToRun()));
+						SetRunningTCBPtr(TCBHandleToPointer(SelectThreadToRun()));
 					GetRunningTCBPtr()->status |= TS_RUNNING;
 				}
 				else
 					missed_ticks++;
-				UnlockSysSemaphore();
+				UnlockReadyQueue();
 			}
 			else {
 				missed_ticks++;
@@ -437,7 +429,7 @@ long FMTK_ExceptionHandler(__reg("d0") long val, __reg("d1") long typ)
 {
 	if (typ==515) {
 		puts("Default exception handler: CTRL-C pressed.\r\n");
-		FMTK_ExitTask();
+		FMTK_ExitThread();
 	}
 	return (E_Ok);
 }
@@ -445,7 +437,7 @@ long FMTK_ExceptionHandler(__reg("d0") long val, __reg("d1") long typ)
 // ----------------------------------------------------------------------------
 // ----------------------------------------------------------------------------
 
-long FMTK_KillTask(__reg("d0") long taskno)
+long FMTK_KillThread(__reg("d0") long taskno)
 {
   hTCB ht, pht;
   hACB hApp;
@@ -493,9 +485,9 @@ long FMTK_KillTask(__reg("d0") long taskno)
 // ----------------------------------------------------------------------------
 // ----------------------------------------------------------------------------
 
-long FMTK_ExitTask()
+long FMTK_ExitThread()
 {
-  FMTK_KillTask(GetRunningTCB());
+  FMTK_KillThread(GetRunningTCB());
 	// The thread should not return from this reschedule because it's been
 	// killed.
 	while(1) {
@@ -506,87 +498,79 @@ long FMTK_ExitTask()
 
 
 // ----------------------------------------------------------------------------
+// Start a task.
+// Stacks are automatically allocated for the system and app.
+//
+//
+// Parameters:
+//		d0 = starting address
+//		d1 = pointer to parameter
+//		d2 = info
+//				bits 0 to 7 = priority
+//				bits 16 to 31 = affinity
+//
 // Returns:
 //	hTCB	positive number handle of thread started,
 //			or negative number error code
 // ----------------------------------------------------------------------------
 
-long FMTK_StartTask(
+long FMTK_StartThread(
 	__reg("d0") long StartAddr,
-	__reg("d1") long stacksize,
-	__reg("d2") long parm,
-	__reg("d3") long info,
-	__reg("d4") long affinity
+	__reg("d1") long parm,
+	__reg("d2") long priority,
+	__reg("d3") long affinity
 )
 {
   hTCB ht;
   TCB *t;
   int nn;
 	hACB hApp;
-	unsigned char priority;
 	short int *sp2;
 	unsigned long int* sp;
 
-	// These fields extracted from a single parameter as there can be only
-	// five register values passed to the function.	
-	hApp = info & 0xffL;
-	priority = (info >> 8) & 0xff;
+	DisplayStringCRLF("StartThread");
+	hApp = GetRunningAppid();
 
-  if (LockSysSemaphore(100000)) {
-    ht = FreeTCB;
-    if (ht <= 0 || ht > NR_TCB) {
-      UnlockSysSemaphore();
-    	return (-E_NoMoreTCBs);
-    }
-    FreeTCB = tcbs[ht-1].next;
-    UnlockSysSemaphore();
+  while (LockTCBList(-1)==0);
+	DisplayStringCRLF("Locked TCB list");
+  ht = FreeTCB;
+  if (ht <= 0 || ht > NR_TCB) {
+    UnlockTCBList();
+  	return (-E_NoMoreTCBs);
   }
-	else {
-		return (-E_Busy);
-	}
   t = TCBHandleToPointer(ht);
+  FreeTCB = t->next;
+  UnlockTCBList();
+	DisplayStringCRLF("Unlocked TCB list");
+
   t->affinity = affinity;
   t->priority = priority;
   t->hApp = hApp;
   // Insert into the job's list of tasks.
-  tcbs[ht-1].acbnext = hApp;
-  ACBPtrs[hApp]->task = ht;
-  t->regs[1] = parm;
-  // Allocate stacks
-  t->stack = (unsigned long*)mem_alloc(ht,stacksize,6);
-  // The following stacks are in the system address space
-  t->bios_stack = (unsigned long*)mem_alloc(1,1024,6);
-  t->sys_stack = (unsigned long*)mem_alloc(1,1024,6);
-  // Put ExitTask address on top of stack, when the task is finished then
-  // this address will be returned to.
-  t->stack[stacksize - 4] = (unsigned long)FMTK_ExitTask;
-  t->regs[14] = (unsigned long)t->stack + stacksize - 4;	// Set USP
-  // Setup system stack image to look as if a syscall were performed.
-  sp = &t->sys_stack[1024 - 4 - 18*4];
-  t->regs[16] = (unsigned long)sp;
-	sp[0] = (unsigned long)t->stack + stacksize - 4;	// USP
-	sp[1] = parm;				// d0 gets parameter
-  for (nn = 2; nn < 16; nn = nn + 1)
-  	sp[nn] = 0;
-  sp2 = (short int*)&sp[16];
-  *sp2 = 0x700;	// status register
-  sp2++;
-  sp = (unsigned long *)sp2;
-  *sp = (unsigned long)StartAddr;
-  sp[1] = (unsigned long)FMTK_ExitTask;
+  while (LockTCBList(-1)==0);
+	DisplayStringCRLF("Locked TCB list");
+	t->acbnext = ACBPtrs[hApp]->task;
+	ACBPtrs[hApp]->task = ht;
+	UnlockTCBList();
+	DisplayStringCRLF("Unlocked TCB list");
 
+  t->regs[0] = 0;
+  t->regs[1] = parm;
+  for (nn = 2; nn < 17; nn++)
+  	t->regs[nn] = 0;
+	t->pc = StartAddr;
+	t->sr = 0x22002200;
+	t->fmt = 0;
   t->startTick = GetTick();
   t->endTick = GetTick();
   t->ticks = 0;
   t->exception = 0;
   t->exceptionHandler = FMTK_ExceptionHandler;
-  if (LockSysSemaphore(100000)) {
-      TCBInsertIntoReadyQueue(ht);
-      UnlockSysSemaphore();
-  }
-	else {
-		return (-E_Busy);
-	}
+  while (LockReadyQueue(-1)==0);
+	DisplayStringCRLF("Locked RDQ");
+  TCBInsertIntoReadyQueue(ht);
+  UnlockReadyQueue();
+	DisplayStringCRLF("Unlocked RDQ");
   return (ht);
 }
 
@@ -601,10 +585,10 @@ long FMTK_Sleep(__reg("d0") long timeout)
 
 	while (timeout > 0) {
 		tick1 = GetTick();
-    if (LockSysSemaphore(100000)) {
+    if (LockTimeoutList(100000)) {
       ht = GetRunningTCB();
       TCBInsertIntoTimeoutList(ht, timeout);
-      UnlockSysSemaphore();
+      UnlockTImeoutList();
 			FMTK_Reschedule();
       break;
     }
@@ -619,30 +603,30 @@ long FMTK_Sleep(__reg("d0") long timeout)
 // ----------------------------------------------------------------------------
 // ----------------------------------------------------------------------------
 
-long FMTK_SetTaskPriority(__reg("d0") long ht, __reg("d1") long priority)
+long FMTK_SetThreadPriority(__reg("d0") long ht, __reg("d1") long priority)
 {
   TCB *t;
 
   if (priority > 31 || priority < 0)
    return (E_Arg);
-  if (LockSysSemaphore(-1)) {
-    t = &tcbs[ht];
-    if (t->status & (TS_RUNNING | TS_READY)) {
-      TCBRemoveFromReadyQueue(ht);
-      t->priority = priority;
-      TCBInsertIntoReadyQueue(ht);
-    }
-    else
-      t->priority = priority;
-    UnlockSysSemaphore();
+  while (LockReadyQueue(-1)==0);
+  t = TCBHandleToPointer(ht);
+  if (t->status & (TS_RUNNING | TS_READY)) {
+    TCBRemoveFromReadyQueue(ht);
+    t->priority = priority;
+    TCBInsertIntoReadyQueue(ht);
   }
+  else
+    t->priority = priority;
+  UnlockReadyQueue();
   return (E_Ok);
 }
 
 void SetVector(__reg("d0") unsigned long num, __reg("d1") unsigned long addr) = 
 	"\tmovem.l d0/a0,-(sp)\r\n"
 	"\tlsl.l #2,d0\r\n"
-	"\tmove.l d0,a0\r\n"
+	"\tmovec vbr,a0\r\n"
+	"\tadd.l d0,a0\r\n"
 	"\tmove.l d1,(a0)\r\n"
 	"\tmovem.l (sp)+,d0/a0\r\n"
 ;
@@ -672,15 +656,17 @@ long FMTK_Initialize()
 	// Delay 3s;
 	for (nn = 3000000; nn > 0; nn--)
 		DisplayLEDS(nn >> 16);
-	DBGClearScreen();
-	DBGDisplayStringCRLF("\r\nFMTK_Starting.");
+//	DBGClearScreen();
+	DisplayStringCRLF("\r\nFMTK_Starting.");
   SetupDevices();
+	DisplayStringCRLF("Setup devices");
 	DisplayLEDS(1);
 //    firstcall
   {
   	lev = SetImLevel(7);									// Do not allow interrupts
     SetVector(30,(unsigned long)FMTK_TimerIRQLaunchpad);	// Auto level 6
   	SetVector(33,(unsigned long)FMTK_Dispatch);					// TRAP #1
+		DisplayStringCRLF("Set vectors");
 		DisplayLEDS(2);
 
   	reschedFlag = 0;
@@ -700,10 +686,22 @@ long FMTK_Initialize()
     UnlockKbdSemaphore();
     UnlockMSGSemaphore();
     UnlockMBXSemaphore();
-    UnlockTOLSemaphore();
-    UnlockRDQSemaphore();
-    
+    UnlockTImeoutList();
+    UnlockReadyQueue();
+    UnlockTCBList();
+
+		DisplayStringCRLF("Unlocked lists");
 		DisplayLEDS(3);
+
+    for (nn = 0; nn < NR_MBX; nn++) {
+    	memset(&mailbox[nn],0,sizeof(MBX));
+      mailbox[nn].link = nn+2;
+    }
+    mailbox[127].link = 0;
+    freeMBX = 1;
+
+		DisplayStringCRLF("Setup mailboxes");
+
 		// Setting up message array
     for (nn = 0; nn < NR_MSG; nn++) {
       message[nn].link = nn+2;
@@ -711,16 +709,19 @@ long FMTK_Initialize()
     message[NR_MSG-1].link = 0;
     freeMSG = 1;
 
+		DisplayStringCRLF("Setup messages");
+
 		RQB_Initialize();
  		DisplayLEDS(4);
 
   	for (nn = 0; nn < 8; nn++)
   		readyQ[nn] = 0;
-  	for (nn = 0; nn < 128; nn++) {
+		DisplayStringCRLF("Setup readyQs");
+  	for (nn = 0; nn < NR_TCB; nn++) {
       tcbs[nn].number = nn;
       tcbs[nn].acbnext = 0;
   		tcbs[nn].next = nn+2;
-  		tcbs[nn].prev = 0;
+  		tcbs[nn].prev = nn;
   		tcbs[nn].status = 0;
   		tcbs[nn].priority = 15;
   		tcbs[nn].affinity = 0;
@@ -736,16 +737,29 @@ long FMTK_Initialize()
       }
       tcbs[nn].exception = 0;
   	}
-  	tcbs[127].next = 0;
+  	tcbs[NR_TCB-1].next = 0;
   	freeTCB = 2;
   	TimeoutList = 0;
   	
+		DisplayStringCRLF("Setup thread control blocks");
  		DisplayLEDS(4);
-    init_memory_management();
-
+//    init_memory_management();
   	for (nn = 0; nn < NR_ACB; nn++)
   		ACBPtrs[nn] = NULL;
   	ACBPtrs[0] = &SysAcb;
+
+		SetRunningAppid(1);
+
+		FMTK_StartThread(
+			(unsigned long)StartMon,
+			0,
+			15,
+			63
+		);
+
+		DisplayStringCRLF("Started thread");
+		DumpThreads();
+/*
 		asr.pagesize = 8;
 		asr.priority = 15;
 		asr.affinity = 2;
@@ -764,7 +778,7 @@ long FMTK_Initialize()
 			return (hAcb);
 		}
 		ACBPtrs[hAcb]->is_system = 1;
-	
+*/	
 		DisplayLEDS(5);
 /*
     	InsertIntoReadyList(0);
@@ -785,14 +799,17 @@ long FMTK_Initialize()
   	SetImLevelHelper(lev);								// Restore interrupts
 		DisplayLEDS(6);
   }
-	DBGDisplayStringCRLF("FMTK_Started.");
+	DisplayStringCRLF("FMTK_Started.");
 	hMbx = FMTK_AllocMbx();
+		
+	DisplayStringCRLF("Alloced Mailbox: ");
+	DisplayLEDS(hMbx);
 	if (hMbx > 0) {
 		for (nn = 0; nn < 10; nn++) {
 			FMTK_SendMsg(hMbx, 0xfffffff1, 0xfffffff1, 0xfffffff1);
-			DBGDisplayStringCRLF("Sent");
+			DisplayStringCRLF("Sent");
 			FMTK_WaitMsg(hMbx, (long)&d1, (long)&d2, (long)&d3, -1);
-			DBGDisplayStringCRLF("Received");
+			DisplayStringCRLF("Received");
 		}
 		FMTK_FreeMbx(hMbx);
 	}

@@ -121,7 +121,7 @@ long FMTK_StartApp(__reg("d0") long asrec, __reg("d1") long hParent)
 	DisplayLEDS(3);
 	
 	// Allocate memory for virtual video
-	pACB->pVirtVidMem = (uint32_t*)mem_alloc(h,8192,6);
+	pACB->pVirtVidMem = (uint32_t*)mem_alloc(h,16384,6);
 	if (pACB->pVirtVidMem == NULL) {
 		err = E_NoMem;
 		goto err1;
@@ -148,7 +148,7 @@ long FMTK_StartApp(__reg("d0") long asrec, __reg("d1") long hParent)
 	pACB->NormAttr = 0x87fc0000;
 
 	// Allocate storage space for code and copy
-	pCode = (uint16_t*)mem_alloc(h,asr->codesize+16383,5);
+	pCode = (uint16_t*)mem_alloc(h,asr->codesize,5);
 	if (pCode==NULL) {
 		err = E_NoMem;
 		goto err1;
@@ -159,7 +159,7 @@ long FMTK_StartApp(__reg("d0") long asrec, __reg("d1") long hParent)
 
 	// Allocate storage space for initialized data
 	// and copy from start-up record
-	pData = (char*)mem_alloc(h,asr->datasize+8191,6);
+	pData = (char*)mem_alloc(h,asr->datasize,6);
 	if (pData==NULL) {
 		err = E_NoMem;
 		goto err1;
@@ -182,9 +182,8 @@ long FMTK_StartApp(__reg("d0") long asrec, __reg("d1") long hParent)
 
 	// Start the startup thread
 	info = ((asr->priority & 0xff) << 8) | (h  & 0xff);
-	FMTK_StartTask(
+	FMTK_StartThread(
 		(long)pCode,			// start address
-		(long)nspages << 14,
 		(long)&pACB->commandLine[0],	// parameter
 		(long)info,
 		(long)asr->affinity

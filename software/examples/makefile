@@ -38,7 +38,8 @@ DRIVER_ASMS = \
 	../Femtiki/source/drivers/serial.x68 \
 	../Femtiki/source/drivers/random.x68 \
 	../Femtiki/source/drivers/rtc.x68 \
-	../Femtiki/source/drivers/pic.x68
+	../Femtiki/source/drivers/pic.x68 \
+	../Femtiki/source/drivers/pit.x68
 
 DRIVERS = \
 	../Femtiki/source/drivers/null.o \
@@ -51,7 +52,8 @@ DRIVERS = \
 	../Femtiki/source/drivers/serial.o \
 	../Femtiki/source/drivers/random.o \
 	../Femtiki/source/drivers/rtc.o \
-	../Femtiki/source/drivers/pic.o
+	../Femtiki/source/drivers/pic.o \
+	../Femtiki/source/drivers/pit.o
 
 #..\Femtiki\source\drivers\drivers.o: $(DRIVERS)
 #	$(AAX) $(AFLAGS) -L ../Femtiki/source/drivers/pic.lst ../Femtiki/source/drivers/pic.x68 -o ../Femtiki/source/drivers/pic.o
@@ -74,7 +76,8 @@ DRIVERS = \
 
 OUT = \
 	boot.o \
-	DumpTasks.o \
+	grDemo.o \
+	DumpThreads.o \
 	..\Femtiki\source\kernel\Femtiki_vars.o \
 	..\Femtiki\source\kernel\Femtiki_kern.o \
 	..\Femtiki\source\kernel\msg.o \
@@ -108,6 +111,7 @@ OUT = \
 	..\Femtiki\source\drivers\serial.o \
 	..\Femtiki\source\drivers\random.o \
 	..\Femtiki\source\drivers\pic.o \
+	..\Femtiki\source\drivers\pit.o \
 	..\Femtiki\source\kernel\femtiki_asm.o \
 	..\Femtiki\source\Femtiki2.o
 
@@ -120,6 +124,7 @@ $(OUT):	$(ASMS)
 	$(AAX) $(AFLAGS) ..\Femtiki\source\drivers\serial.x68 -L ..\Femtiki\source\drivers\serial.lst -o ..\Femtiki\source\drivers\serial.o
 	$(AAX) $(AFLAGS) ..\Femtiki\source\drivers\random.x68 -L ..\Femtiki\source\drivers\random.lst -o ..\Femtiki\source\drivers\random.o
 	$(AAX) $(AFLAGS) ..\Femtiki\source\drivers\pic.x68 -L ..\Femtiki\source\drivers\pic.lst -o ..\Femtiki\source\drivers\pic.o
+	$(AAX) $(AFLAGS) ..\Femtiki\source\drivers\pit.x68 -L ..\Femtiki\source\drivers\pit.lst -o ..\Femtiki\source\drivers\pit.o
 	$(AAX) $(AFLAGS) ..\Femtiki\source\mem_support.x68 -L ..\Femtiki\source\mem_support.lst -o ..\Femtiki\source\mem_support.o
 	
 	
@@ -137,6 +142,7 @@ BIOS:	$(OUT)
 #	cc64 $(CFLAGS) os_stub.c
 
 	$(CCX) $(CFLAGS) bootrom.c
+	vbccm68k grDemo.c -fpu=68881
 	vbccm68k gfx.c -fpu=68881
 	vbccm68k sieve.c
 #	vbccm68k prtflt.c -fpu=68881
@@ -146,6 +152,7 @@ BIOS:	$(OUT)
 	vasmrf68000_mot.exe -Fvobj -L bootrom.lst bootrom.asm -o bootrom.o -m68010 -m68881
 	vasmrf68000_mot.exe -Fvobj -L LEDTest.lst LEDTest.asm -o LEDTest.o
 	vasmrf68000_mot.exe -Fvobj -L cputest.lst cputest.asm -o cputest.o
+	vasmrf68000_mot.exe -Fvobj -L grDemo.lst grDemo.asm -o grDemo.o -m68010 -m68881
 	vasmrf68000_mot.exe -Fvobj -L boot.lst boot.x68 -o boot.o -m68010 -m68881
 	vasmrf68000_mot.exe -Fvobj -L TestFp.lst TestFp.x68 -o TestFp.o -m68010 -m68881
 #	vasmrfPhoenix_std_win32.exe -Fvobj -L add.lst add.asm -o add.o
@@ -153,8 +160,8 @@ BIOS:	$(OUT)
 #	vlink -T rom_bios.cmd -brawbin1 LEDTest.o -o LEDTest.bin
 #	vlink -T rom_bios.cmd -brawbin1 cputest.o -o cputest.bin
 
-	vbccm68k $(CFLAGS) DumpTasks.c
-	vasmrf68000_mot.exe -Fvobj -L DumpTasks.lst DumpTasks.asm -o DumpTasks.o -m68010 -m68881
+	vbccm68k $(CFLAGS) DumpThreads.c
+	vasmrf68000_mot.exe -Fvobj -L DumpThreads.lst DumpThreads.asm -o DumpThreads.o -m68010 -m68881
 	$(LLX) -MFemtiki.map -T ..\Femtiki\source\Femtiki.cmd -bsrec37 $(OUT) -o Femtiki.s37
 	$(LLX) -MFemtiki.map -T ..\Femtiki\source\Femtiki.cmd -brawbin1 $(OUT) -o Femtiki.bin
 
@@ -179,6 +186,7 @@ BIOS:	$(OUT)
 	$(AAX) $(AFLAGS) ..\Femtiki\source\drivers\serial.x68 -L ..\Femtiki\source\drivers\serial.lst -o ..\Femtiki\source\drivers\serial.o
 	$(AAX) $(AFLAGS) ..\Femtiki\source\drivers\random.x68 -L ..\Femtiki\source\drivers\random.lst -o ..\Femtiki\source\drivers\random.o
 	$(AAX) $(AFLAGS) ..\Femtiki\source\drivers\pic.x68 -L ..\Femtiki\source\drivers\pic.lst -o ..\Femtiki\source\drivers\pic.o
+	$(AAX) $(AFLAGS) ..\Femtiki\source\drivers\pit.x68 -L ..\Femtiki\source\drivers\pit.lst -o ..\Femtiki\source\drivers\pit.o
 	
 #	vlink -T ..\Femtiki\source\Femtiki.cmd -brawbin1 boot.o ..\Femtiki\source\Femtiki.o -o boot.bin
 	vlink -T ..\Femtiki\source\Femtiki.cmd -bsrec37 bootrom.o \
@@ -206,6 +214,7 @@ BIOS:	$(OUT)
 	..\Femtiki\source\drivers\serial.o \
 	..\Femtiki\source\drivers\random.o \
 	..\Femtiki\source\drivers\pic.o \
+	..\Femtiki\source\drivers\pit.o \
 	..\Femtiki\source\kernel\dbg_console.o \
 	..\Femtiki\source\kernel\semaphore.o \
 	..\Femtiki\source\kernel\tcb.o \
@@ -217,8 +226,9 @@ BIOS:	$(OUT)
 	..\crt\source\crt.o \
 	..\crt\source\lib.o \
 	..\Femtiki\source\Femtiki2.o \
-	DumpTasks.o \
+	DumpThreads.o \
 	boot.o \
+	grDemo.o \
 	gfx.o -o bootrom.s37
 
 #	vlink -T rom_bios.cmd -brawbin1 add.o -o add.bin

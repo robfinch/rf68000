@@ -230,7 +230,7 @@ _go:
 	dc.l		0
 	
 	; 30
-	dc.l		TickIRQ	;_FMTK_TimerIRQLaunchpad	;TickIRQ						; IRQ 30 - timer / keyboard
+	dc.l		_FMTK_TimerIRQLaunchpad	;TickIRQ						; IRQ 30 - timer / keyboard
 	dc.l		nmi_rout
 	dc.l		io_trap						; TRAP zero
 	dc.l		_FMTK_Dispatch		; OS
@@ -413,6 +413,7 @@ start:
 	move.b #1,leds
 	move.w #$2700,sr					; enable level 6 and higher interrupts
 	move.w #$2700,_regSR
+	move.b #2,_InTimerISR
 	move.l #_tcbs,a0
 	move.l a0,_RunningTCBPointer	; point to task #1's tcb
 	moveq #1,d0
@@ -485,6 +486,8 @@ start:
 	move.b #9,leds
 	move.l #_DeviceTable+9*DCB_SIZE,d0
 	jsr _setup_random
+	move.l #_DeviceTable+10*DCB_SIZE,d0
+	jsr _setup_pit
 	clr.l sys_switches
 	lea I2C2,a6
 	bsr i2c_setup
@@ -543,6 +546,7 @@ start:
 	jsr	setup_pic				; initialize interrupt controller
 ;	jsr __crt_start
 ;	move.l #-1,_go			; Let the other cores start up
+;	jsr _FMTK_Initialize
 	jmp	StartMon
 
 
@@ -572,7 +576,9 @@ start_other:
 	bsr			_DisplayString
 ;	bsr			FemtikiInitIRQ
 do_nothing:	
-	bra			StartMon
+;	bra			StartMon
+	nop
+	nop
 	bra			do_nothing
 
 ;==============================================================================
@@ -1555,16 +1561,16 @@ SimHardware:
 ;------------------------------------------------------------------------------
 ;
 GetTick:
-	move.l tickcnt,d1
+	move.l _tickcnt,d1
 	rts
 
 T15Wait100ths:
 	move.l d1,-(a7)
 	cmp.l #2,d1
 	bls.s .0002
-	add.l tickcnt,d1
+	add.l _tickcnt,d1
 .0001:
-	cmp.l tickcnt,d1
+	cmp.l _tickcnt,d1
 	bne.s .0001
 .0002:
 	move.l (a7)+,d1
@@ -2111,7 +2117,7 @@ cmdTable:
 	dc.l	cmdDumpApps
 	dc.l	cmdDisassemble
 	dc.l	cmdDumpRegs
-	dc.l	cmdDumpTasks
+	dc.l	cmdDumpThreads
 	dc.l	cmdDumpMemory
 	dc.l	cmdJump
 	dc.l	cmdEditMemory
@@ -2471,8 +2477,8 @@ cmdDumpApps:
 	jsr _DumpApps
 	bra Monitor
 
-cmdDumpTasks:
-	jsr _DumpTasks
+cmdDumpThreads:
+	jsr _DumpThreads
 	bra Monitor
 
 cmdTestFP:
@@ -4854,18 +4860,28 @@ InstallIRQ:
 
 TickIRQ:
 	move.w #$2600,sr					; disable lower level IRQs
+
+;	movem.l d0/d1/d2,-(a7)		;
+;	moveq #37,d0							; Lock Semaphore function
+;	moveq #TCB_SEMA,d1
+;	move.l #1000,d2
+;	trap #15
+;	tst.b d0
+;	beq .noLock
+;	movem.l (sp)+,d0/d1/d2		;
+
 	move.l a0,-(a7)						; push a0
 	move.l _RunningTCBPointer,a0		; a0 points to task control block
 	movem.l d0-d7/a1-a6,4(a0)	; save registers in task control block
 	move usp,a1								; save usp in TCB
 	move.l a1,60(a0)
 	move.l (sp)+,64(a0)				; pop a0 into TCB
-	move.w (sp)+,108(a0)			; status reg
-	move.l (sp)+,104(a0)			; program counter
-	move.w (sp)+,112(a0)			; and format word
+	move.w (sp)+,140(a0)			; status reg
+	move.l (sp)+,136(a0)			; program counter
+	move.w (sp)+,144(a0)			; and format word
 	move.l a7,68(a0)					; finally save a7
 
-	addi.l #1,tickcnt
+	addi.l #1,_tickcnt
 	move.b #1,IRQFlag					; tick interrupt indicator in local memory
 	movec	coreno,d1						; d1 = core number
 	move.l d1,d3
@@ -4874,15 +4890,12 @@ TickIRQ:
 	else
 		asl.l #3,d3								; 8 bytes per text cell
 	endif
-	move.l #$1D000000,PLIC+$14	; reset edge sense circuit
+	move.l #$1D000000,PIC+$14	; reset edge sense circuit
 	lea $FD000000+(TEXTCOL-10)*4,a0			; display field address
 	move.l 4(a0,d3.w),d2			; get char from screen
-;	rol.l #8,d2								; extract char field
-;	clr.b d2									; clear char field
-;	addi.b #'0',d1						; binary to ascii core number
-;	or.b	d1,d2								; insert core number
-;	ror.l #8,d2								; reposition to proper place
-;	addi.w #1,d2							; flashy colors
+	clr.b d2
+	addi.b #'0',d1						; binary to ascii core number
+	or.b	d1,d2								; insert core number
 	addi.l #$10000,d2
 	move.l d2,4(a0,d3.w)			; update onscreen IRQ flag
 ;	bsr	ReceiveMsg
@@ -4892,9 +4905,9 @@ TickIRQ:
 	move.l a1,usp
 	movem.l 4(a0),d0-d7/a1-a6	; restore register set
 	move.l 68(a0),a7					; restore a7
-	move.w 112(a0),-(sp)			; push format word
-	move.l 104(a0),-(sp)			; push program counter
-	move.w 108(a0),-(sp)			; push status reg
+	move.w 144(a0),-(sp)			; push format word
+	move.l 136(a0),-(sp)			; push program counter
+	move.w 140(a0),-(sp)			; push status reg
 	move.l 64(a0),a0					; restore a0
 	rte
 

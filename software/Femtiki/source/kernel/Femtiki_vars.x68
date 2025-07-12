@@ -1,15 +1,6 @@
 	section dram
 _PMT
 	ds.b	65536*16
-_message
-	ds.b	8192*32
-_message_end
-_mailbox
-	ds.b	8192*12
-_mailbox_end
-_request_block
-	ds.b	256*64
-_request_block_end
 _acbs
 	ds.b	32*32768
 _acbs_end
@@ -157,10 +148,19 @@ numwka
 ;EightPixels equ $40100000	; to $40200020
 
 	section gvars
+scratch_ram
 _tcbs
 	ds.b	256*128
 _tcbs_end
-scratch_ram
+_request_block
+	ds.b	256*64
+_request_block_end
+_message
+	ds.b	800*20
+_message_end
+_mailbox
+	ds.b	128*64
+_mailbox_end
 _sys_pd						; system page directory
 	ds.b	2048
 _kernel_pt
@@ -235,7 +235,9 @@ _hasUltraHighPriorityTasks
 	ds.b	1
 _iof_switch
 	ds.b	1
-
+_InTimerISR
+	ds.b	1
+	align 1
 SerTailRcv
 	ds.w	1
 SerHeadRcv
@@ -351,6 +353,7 @@ _FemtikiVars_end
 	global _missed_ticks
 	global _TimeoutList
 	global _readyQ
+	global _InTimerISR
 	global SerTailRcv
 	global SerHeadRcv
 	global SerRcvXon

@@ -21,6 +21,7 @@ void RQB_Initialize()
 {
 	int nn;
 	
+	DisplayStringCRLF("RQB Initialize");
 	DisplayLEDS(10);
 	for (nn = 0; nn < NR_RQB; nn++) {
 		memset(&request_block[nn],0,sizeof(RQB));
@@ -28,10 +29,12 @@ void RQB_Initialize()
 		request_block[nn].next = nn+2;
 	}	
 	DisplayLEDS(12);
+	DisplayStringCRLF("Setup request blocks");
 	for (nn = 0; nn < NR_SERVICE; nn++) {
 		memset(&service[nn],0,sizeof(service_t));
 		DisplayLEDS(13);
 	}
+	DisplayStringCRLF("Setup service blocks");
 	FreeRQB = 1;
 	nRequest = NR_RQB;
 	DisplayLEDS(14);
@@ -373,37 +376,37 @@ static MSG *DequeueMsg(MBX *mbx)
 		Mailbox is locked
 ---------------------------------------------------------------------------- */
 
-long DequeTaskFromMbx(MBX *mbx, TCB **task)
+long DequeueThreadFromMailbox(MBX *mbx, TCB **thread)
 {
-	if (task == NULL || mbx == NULL)
+	if (thread == NULL || mbx == NULL)
 		return (E_Arg);
 
 	if (mbx->tq_head == 0) {
-		*task = null;
+		*thread = null;
 		return (-E_NoTask);
 	}
 
 	mbx->tq_count--;
-	*task = TCBHandleToPointer(mbx->tq_head);
+	*thread = TCBHandleToPointer(mbx->tq_head);
 	mbx->tq_head = tcbs[mbx->tq_head-1].mbq_next;
 	if (mbx->tq_head > 0)
 		tcbs[mbx->tq_head-1].mbq_prev = 0;
 	else
 		mbx->tq_tail = 0;
 
-	// if task is also on the timeout list then
+	// if thread is also on the timeout list then
 	// remove from timeout list
-	// adjust succeeding task timeout if present
-	if ((*task)->status & TS_TIMEOUT) {
-		if (LockTOLSemaphore(-1)) {
-			TCBRemoveFromTimeoutList(TCBPointerToHandle(*task));
-			UnlockTOLSemaphore();
+	// adjust succeeding thread timeout if present
+	if ((*thread)->status & TS_TIMEOUT) {
+		if (LockTimeoutList(-1)) {
+			TCBRemoveFromTimeoutList(TCBPointerToHandle(*thread));
+			UnlockTImeoutList();
 		}
 	}
 
-	(*task)->mbq_prev = (*task)->mbq_next = 0;
-	(*task)->hWaitMbx = 0;	// no longer waiting at mailbox
-	(*task)->status &= ~TS_WAITMSG;
+	(*thread)->mbq_prev = (*thread)->mbq_next = 0;
+	(*thread)->hWaitMbx = 0;	// no longer waiting at mailbox
+	(*thread)->status &= ~TS_WAITMSG;
 	return (E_Ok);
 }
 
@@ -461,7 +464,7 @@ long FMTK_FreeMbx(__reg("d0") long hMbx)
 {
 	MBX *mbx;
 	MSG *msg;
-	TCB *task;
+	TCB *thread;
 	
 	if (hMbx <= 0 || hMbx > NR_MBX)
 		return (-E_Arg);
@@ -478,19 +481,19 @@ long FMTK_FreeMbx(__reg("d0") long hMbx)
 		// is now defunct Setting MsgPtr = null will cause any
 		// outstanding WaitMsg() to return E_NoMsg.
 		while(1) {
-			DequeTaskFromMbx(mbx, &task);
-			if (task == null)
+			DequeueThreadFromMailbox(mbx, &thread);
+			if (thread == null)
 				break;
-			task->msg.type = MT_NONE;
-			if (task->status & TS_TIMEOUT) {
-				if (LockTOLSemaphore(-1)) {
-					TCBRemoveFromTimeoutList(TCBPointerToHandle(task));
-					UnlockTOLSemaphore();
+			thread->msg.type = MT_NONE;
+			if (thread->status & TS_TIMEOUT) {
+				if (LockTimeoutList(-1)) {
+					TCBRemoveFromTimeoutList(TCBPointerToHandle(thread));
+					UnlockTImeoutList();
 				}
 			}
-			if (LockRDQSemaphore(-1)) {
-				TCBInsertIntoReadyQueue(TCBPointerToHandle(task));
-				UnlockRDQSemaphore();
+			if (LockReadyQueue(-1)) {
+				TCBInsertIntoReadyQueue(TCBPointerToHandle(thread));
+				UnlockReadyQueue();
 			}
 		}
 		mbx->link = freeMBX;
@@ -542,45 +545,42 @@ long FMTK_SendMsg(
 {
 	MBX *mbx;
 	MSG *msg;
-	TCB *task;
+	TCB *thread;
 
 	if (hMbx <= 0 || hMbx > NR_MBX)
 		return (-E_Arg);
 	mbx = MBXHandleToPointer(hMbx);
-	if (LockMBXSemaphore(-1)) {
-		// check for a mailbox owner which indicates the mailbox
-		// is active.
-		if (mbx->owner <= 0 || mbx->owner > NR_ACB) {
-	    UnlockMBXSemaphore();
-      return (-E_NotAlloc);
-    }
-		if (freeMSG <= 0 || freeMSG > NR_MSG) {
-	    UnlockMBXSemaphore();
-			return (-E_NoMoreMsgBlks);
-    }
-    msg = AllocMsg();
-		msg->dstadr = hMbx;
-		msg->type = MT_DATA;
-		msg->d1 = d1;
-		msg->d2 = d2;
-		msg->d3 = d3;
-		DequeTaskFromMbx(mbx, &task);
+	while (LockMBXSemaphore(-1)==0);
+	// check for a mailbox owner which indicates the mailbox
+	// is active.
+	if (mbx->owner <= 0 || mbx->owner > NR_ACB) {
     UnlockMBXSemaphore();
+    return (-E_NotAlloc);
   }
-	if (task == null)
+	if (freeMSG <= 0 || freeMSG > NR_MSG) {
+    UnlockMBXSemaphore();
+		return (-E_NoMoreMsgBlks);
+  }
+  msg = AllocMsg();
+	msg->dstadr = hMbx;
+	msg->type = MT_DATA;
+	msg->d1 = d1;
+	msg->d2 = d2;
+	msg->d3 = d3;
+	DequeueThreadFromMailbox(mbx, &thread);
+  UnlockMBXSemaphore();
+	if (thread == null)
 		return (QueueMsg(mbx, msg));
-	CopyMsg(&task->msg,msg);
+	CopyMsg(&thread->msg,msg);
   FreeMsg(msg);
-	if (task->status & TS_TIMEOUT) {
-		if (LockTOLSemaphore(-1)) {
-			TCBRemoveFromTimeoutList(TCBPointerToHandle(task));
-			UnlockTOLSemaphore();
-		}
+	if (thread->status & TS_TIMEOUT) {
+		while (LockTimeoutList(-1)==0);
+		TCBRemoveFromTimeoutList(TCBPointerToHandle(thread));
+		UnlockTImeoutList();
 	}
-	if (LockRDQSemaphore(-1)) {
-		TCBInsertIntoReadyQueue(TCBPointerToHandle(task));
-		UnlockRDQSemaphore();
-  }
+	while (LockReadyQueue(-1)==0);
+	TCBInsertIntoReadyQueue(TCBPointerToHandle(thread));
+	UnlockReadyQueue();
 	return (E_Ok);
 }
 
@@ -611,24 +611,23 @@ long FMTK_WaitMsg(
 {
 	MBX *mbx;
 	MSG *msg;
-	TCB *task;
-	hTCB hTask;
+	TCB *thread;
+	hTCB hThread;
 	TCB *rt;
 
 	if (hMbx == 0 || hMbx > NR_MBX)
 		return (-E_Arg);
 	// Switch to system address space
 	mbx = MBXHandleToPointer(hMbx);
-	if (LockMBXSemaphore(-1)) {
-  	// check for a mailbox owner which indicates the mailbox
-  	// is active.
-  	if (mbx->owner == 0 || mbx->owner > NR_ACB) {
-   	    UnlockMBXSemaphore();
-      	return (-E_NotAlloc);
-      }
-  	msg = DequeueMsg(mbx);
+	while (LockMBXSemaphore(-1)==0);
+	// check for a mailbox owner which indicates the mailbox
+	// is active.
+	if (mbx->owner == 0 || mbx->owner > NR_ACB) {
     UnlockMBXSemaphore();
+  	return (-E_NotAlloc);
   }
+	msg = DequeueMsg(mbx);
+  UnlockMBXSemaphore();
   // Return message right away if there is one available.
   if (msg) {
 		if (d1)
@@ -644,40 +643,37 @@ long FMTK_WaitMsg(
 	//-------------------------
 	// Queue thread at mailbox
 	//-------------------------
-	if (LockRDQSemaphore(-1)) {
-		task = GetRunningTCBPtr();
-		hTask = GetRunningTCB();
-		TCBRemoveFromReadyQueue(hTask);
-    UnlockRDQSemaphore();
-  }
-	task->status |= TS_WAITMSG;
-	task->hWaitMbx = hMbx;
-	task->mbq_next = 0;
-	if (LockMBXSemaphore(-1)) {
-		if (mbx->tq_head < 0) {
-			task->mbq_prev = 0;
-			mbx->tq_head = hTask;
-			mbx->tq_tail = hTask;
-			mbx->tq_count = 1;
-		}
-		else {
-			task->mbq_prev = mbx->tq_tail;
-			tcbs[mbx->tq_tail-1].mbq_next = hTask;
-			mbx->tq_tail = hTask;
-			mbx->tq_count++;
-		}
-    UnlockMBXSemaphore();
-  }
+	while (LockReadyQueue(-1)==0);
+	thread = GetRunningTCBPtr();
+	hThread = GetRunningTCB();
+	TCBRemoveFromReadyQueue(hThread);
+  UnlockReadyQueue();
+	thread->status |= TS_WAITMSG;
+	thread->hWaitMbx = hMbx;
+	thread->mbq_next = 0;
+	while (LockMBXSemaphore(-1)==0);
+	if (mbx->tq_head < 0) {
+		thread->mbq_prev = 0;
+		mbx->tq_head = hThread;
+		mbx->tq_tail = hThread;
+		mbx->tq_count = 1;
+	}
+	else {
+		thread->mbq_prev = mbx->tq_tail;
+		tcbs[mbx->tq_tail-1].mbq_next = hThread;
+		mbx->tq_tail = hThread;
+		mbx->tq_count++;
+	}
+  UnlockMBXSemaphore();
 	//---------------------------
 	// Is a timeout specified ?
 	if (timelimit) {
       //asm { ; Waitmsg here; }
-  	if (LockTOLSemaphore(-1)) {
-	    TCBInsertIntoTimeoutList(hTask, timelimit);
-	    UnlockTOLSemaphore();
-    }
+  	while (LockTimeoutList(-1)==0);
+    TCBInsertIntoTimeoutList(hThread, timelimit);
+    UnlockTImeoutList();
   }
-  // Reschedule will cause control to pass to another task.
+  // Reschedule will cause control to pass to another thread.
   FMTK_Reschedule();
 	// Control will return here as a result of a SendMsg or a
 	// timeout expiring
@@ -734,21 +730,20 @@ long FMTK_CheckMsg (
 	if (hMbx == 0 || hMbx > NR_MBX)
 		return (-E_Arg);
 	mbx = MBXHandleToPointer(hMbx);
- 	if (LockMBXSemaphore(-1)) {
-  	// check for a mailbox owner which indicates the mailbox
-  	// is active.
-  	if (mbx->owner == 0 || mbx->owner > NR_ACB) {
-  	  UnlockMBXSemaphore();
-  		return (-E_NotAlloc);
-    }
-  	if (qrmv)
-  		msg = DequeueMsg(mbx);
-  	else
-  		msg = MSGHandleToPointer(mbx->mq_head);
-    UnlockMBXSemaphore();
+ 	while (LockMBXSemaphore(-1)==0);
+	// check for a mailbox owner which indicates the mailbox
+	// is active.
+	if (mbx->owner == 0 || mbx->owner > NR_ACB) {
+	  UnlockMBXSemaphore();
+		return (-E_NotAlloc);
   }
+	if (qrmv)
+		msg = DequeueMsg(mbx);
+	else
+		msg = MSGHandleToPointer(mbx->mq_head);
+  UnlockMBXSemaphore();
 	if (msg == null)
-		return (E_NoMsg);
+		return (-E_NoMsg);
 	if (d1)
 		*(long*)d1 = msg->d1;
 	if (d2)
@@ -810,7 +805,7 @@ long FMTK_Request(
 		msg->dstadr = hMbx;
 		msg->type = MT_RQB;
 		msg->d1 = hRqb;
-		DequeTaskFromMbx(mbx, &task);
+		DequeueThreadFromMailbox(mbx, &task);
     UnlockMBXSemaphore();
   }
 	if (task == null)
@@ -818,14 +813,14 @@ long FMTK_Request(
 	CopyMsg(&task->msg,msg);
   FreeMsg(msg);
 	if (task->status & TS_TIMEOUT) {
-		if (LockTOLSemaphore(-1)) {
+		if (LockTimeoutList(-1)) {
 			TCBRemoveFromTimeoutList(TCBPointerToHandle(task));
-			UnlockTOLSemaphore();
+			UnlockTImeoutList();
 		}
 	}
-	if (LockRDQSemaphore(-1)) {
+	if (LockReadyQueue(-1)) {
 		TCBInsertIntoReadyQueue(TCBPointerToHandle(task));
-    UnlockRDQSemaphore();
+    UnlockReadyQueue();
   }
 	return (E_Ok);
 }
@@ -869,7 +864,7 @@ long FMTK_Respond(__reg("d0") long hRqb, __reg("d1") long stat)
 		msg->d1 = hRqb;
 		msg->d2 = stat;
 		msg->d3 = 0;
-		DequeTaskFromMbx(MBXHandleToPointer(rqb->response_mbx), &task);
+		DequeueThreadFromMailbox(MBXHandleToPointer(rqb->response_mbx), &task);
     UnlockMBXSemaphore();
 	}
 	if (task == null)
@@ -877,14 +872,14 @@ long FMTK_Respond(__reg("d0") long hRqb, __reg("d1") long stat)
 	CopyMsg(&task->msg,msg);
   FreeMsg(msg);
 	if (task->status & TS_TIMEOUT) {
-		if (LockTOLSemaphore(-1)) {
+		if (LockTimeoutList(-1)) {
 			TCBRemoveFromTimeoutList(TCBPointerToHandle(task));
-			UnlockTOLSemaphore();
+			UnlockTImeoutList();
 		}
 	}
-	if (LockRDQSemaphore(-1)) {
+	if (LockReadyQueue(-1)) {
 		TCBInsertIntoReadyQueue(TCBPointerToHandle(task));
-  	UnlockRDQSemaphore();
+  	UnlockReadyQueue();
   }
 	return (E_Ok);
 }

@@ -156,6 +156,7 @@ void TCBClearStatusBit(hTCB h, int bits)
 
 // ----------------------------------------------------------------------------
 // These routines called only from within the timer ISR.
+// Routine must be called with ready queue locked.
 // ----------------------------------------------------------------------------
 
 int TCBInsertIntoReadyQueue(register hTCB ht)
@@ -188,6 +189,7 @@ int TCBInsertIntoReadyQueue(register hTCB ht)
 }
 
 // ----------------------------------------------------------------------------
+// Must be called with the ready queue locked.
 // ----------------------------------------------------------------------------
 
 int TCBRemoveFromReadyQueue(register hTCB ht)

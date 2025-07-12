@@ -75,12 +75,37 @@ extern void* memsetT(void* ptr, long c, size_t n);
 PTE* GetPageTableEntryAddress(hACB ha, char* virtadr, int alloc);
 void *pt_alloc(int amt, int acr);
 
+extern void DisplayWyde(__reg("d1") val);
+extern void DisplayString(__reg("a1") char* str);
+extern void DisplayStringCRLF(__reg("a1") char* str);
+
 //unsigned __int32 *mmu_entries;
 extern unsigned long PAM[(NPAGES+1)/32];
 extern PMTE PMT[NPAGES];
 extern unsigned long* page_table;
 extern char *brks[512];
 extern unsigned long pebble[512];
+
+// wh=0 user
+// wh=1 system
+// wh=2 dma
+
+void SetMMUPD(__reg("d0") long wh, __reg("d1") long pd) =
+	"\tmovem.l d0/d1/a0,-(sp)\r\n"
+	"\tlea $FDC00040,a0\r\n"
+	"\tlsl.l #3,d0\r\n"
+	"\tadd.l d0,a0\r\n"
+	"\tmove.l d1,(a0)\r\n"
+	"\tmovem.l (sp)+,d0/d1/a0\r\n"
+;
+
+void SetMMUAppid(__reg("d0") long appid) =
+	"\tmove.l d0,$FDC00008\r\n"
+;
+
+void EnableMMU(__reg("d0") long en) =
+	"\tmove.l d0,$FDC00000\r\n"
+;
 
 static void ramtest1(long aa, long bb)
 {
@@ -89,11 +114,12 @@ static void ramtest1(long aa, long bb)
 	
 	errcount = 0;
 	DBGHideCursor(1);
-	puts("Writing code to ram\r");
+	DisplayStringCRLF("Writing code to ram");
 	for (p = (long*)0x60000000; (unsigned long)p < 0x7fffffe0; p += 2) {
 		if (((long)p & 0xfffff)==0) {
 //			putnum((unsigned long)p>>20,5,',',' ');
-			printf("%d MB\r", (unsigned long)p>>20);
+			DisplayWyde((unsigned long)p>>20);
+			DisplayString(" MB\r");
 //			putchar('M');
 //			putchar('B');
 //			putchar('\r');
@@ -101,11 +127,12 @@ static void ramtest1(long aa, long bb)
 		p[0] = aa;
 		p[1] = bb;
 	}
-	puts("\r\nReadback code from ram\r");
+	DisplayStringCRLF("\r\nReadback code from ram");
 	for (p = (long*)0x60000000; (unsigned long)p < 0x7fffffe0; p += 2) {
 		if (((long)p & 0xfffff)==0) {
 //			putnum((unsigned long)p>>20,5,',',' ');
-			printf("%d MB\r", (unsigned long)p>>20);
+			DisplayWyde((unsigned long)p>>20);
+			DisplayString(" MB\r");
 //			putchar('M');
 //			putchar('B');
 //			putchar('\r');
@@ -116,7 +143,9 @@ static void ramtest1(long aa, long bb)
 				break;
 		}
 	}
-	printf("\r\nerrors: %d\r\n", errcount);
+	DisplayString("\r\nerrors: ");
+	DisplayWyde(errcount);
+	DisplayStringCRLF("\r\n");
 //	putnum(errcount,5,',',' ');
 }
 
@@ -126,8 +155,8 @@ void ramtest()
 {
 	ramtest1(0x55555555L, 0xaaaaaaaaL);	
 	ramtest1(0xaaaaaaaaL, 0x55555555L);	
-	putchar('\r');
-	putchar('\n');
+	OutputChar('\r');
+	OutputChar('\n');
 	DBGHideCursor(0);
 }
 
@@ -425,7 +454,7 @@ long AddSystemPageTable()
 	}
 	// Could a PDE be allocated? If not no memory available.
 	if (ndx > 255)
-		return (E_NoMem);
+		return (-E_NoMem);
 	// Now, update the corresponding entry in each PD.
 	for (ha = 2; ha < 33; ha++) {
 		pa = ACBHandleToPointer(ha);
@@ -486,7 +515,7 @@ long AddUserPageTable()
 			return (E_Ok);
 		}
 	}
-	return (E_NoMem);
+	return (-E_NoMem);
 }
 
 /* -----------------------------------------------------------------------------
@@ -503,7 +532,7 @@ long FMTK_AllocSystemPages(__reg("d0") long num_pages, __reg("d1") long ppAddr)
 		return(E_Arg);
 	FMTK_WaitMsg(MemExch,(long)&d1,(long)&d2,(long)&d3,-1);
 	if (num_pages > nPagesFree) {
-		re = E_NoMem;
+		re = -E_NoMem;
 		goto j1;
 	}
 	do {
@@ -535,7 +564,7 @@ long FMTK_AllocPages(__reg("d0") long num_pages, __reg("d1") long ppAddr)
 		return(E_Arg);
 	FMTK_WaitMsg(MemExch,(long)&d1,(long)&d2,(long)&d3,-1);
 	if (num_pages > nPagesFree) {
-		re = E_NoMem;
+		re = -E_NoMem;
 		goto j1;
 	}
 	do {
@@ -759,16 +788,16 @@ void init_sys_page_tables()
 		MarkPage(nn);
 		kernel_pt[1][nn].l = 0x40000000 + (nn * MEM_PAGE_SIZE) +0x100f;
 	}
-	// Inter-CPU communication area
-	sys_pd[0x0c0].l = (long)&kernel_pt[2] + 0x100f;
-	sys_pd[0x1c0].l = 0xc0000000;
-	for (nn = 0; nn < 2048; nn++)
-		kernel_pt[2][nn].l = 0xC0000000 + (nn * MEM_PAGE_SIZE) +0x100f;
 	// Device discovery black-boxes
-	sys_pd[0x0d0].l = (long)&kernel_pt[3] + 0x100f;
-	sys_pd[0x1d0].l = 0xd0000000;
+	sys_pd[0x0f0].l = (long)&kernel_pt[2] + 0x100f;
+	sys_pd[0x1f0].l = 0xf0000000;
 	for (nn = 0; nn < 2048; nn++)
-		kernel_pt[3][nn].l = 0xD0000000 + (nn * MEM_PAGE_SIZE) +0x100f;
+		kernel_pt[2][nn].l = 0xF0000000 + (nn * MEM_PAGE_SIZE) +0x100f;
+	// Inter-CPU communication area
+	sys_pd[0x0f8].l = (long)&kernel_pt[3] + 0x100f;
+	sys_pd[0x1f8].l = 0xf8000000;
+	for (nn = 0; nn < 2048; nn++)
+		kernel_pt[3][nn].l = 0xF8000000 + (nn * MEM_PAGE_SIZE) +0x100f;
 	// IO devices
 	sys_pd[0x0fd].l = (long)&kernel_pt[4] + 0x100f;
 	sys_pd[0x1fd].l = 0xfd000000;
@@ -778,7 +807,9 @@ void init_sys_page_tables()
 	sys_pd[0x0ff].l = (long)&kernel_pt[5] + 0x100f;
 	sys_pd[0x1ff].l = 0xff000000;
 	for (nn = 0; nn < 2048; nn++)
-		kernel_pt[5][nn].l = 0xFD000000 + (nn * MEM_PAGE_SIZE) +0x100f;
+		kernel_pt[5][nn].l = 0xFF000000 + (nn * MEM_PAGE_SIZE) +0x100f;
+	SetMMUPD(0,(long)(&sys_pd));
+	SetMMUPD(1,(long)(&sys_pd));
 }
 
 // ----------------------------------------------------------------------------
@@ -802,8 +833,11 @@ void init_memory_management()
 	memset(PAM, 0, NPAGES/8);
 	
 	init_sys_page_tables();
+	// Page tables are setup, should be able to turn on MMU
+	EnableMMU(1);
 
 	// Send a dummy message to memory exchange.
+	MemExch = FMTK_AllocMbx();
 	FMTK_SendMsg(MemExch,0xfffffff1,0xfffffff1,0xfffffff1);
 	FMTK_AllocSystemPages(1, (long)&pNextPT);
 

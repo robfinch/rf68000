@@ -135,7 +135,7 @@ typedef struct tagMSG {
 	unsigned long d2;            // payload data 2
 	unsigned long d3;            // payload data 3
 } MSG;
-
+// 20 bytes
 
 typedef struct _tagRQB {
 	long magic;
@@ -221,7 +221,7 @@ typedef struct _tagACB
   int *templates[256];
 } ACB;
 
-struct tagMBX;
+//struct tagMBX;
 
 typedef struct _tagTCB {
 	unsigned long magic;	// 'TCB '
@@ -266,7 +266,7 @@ typedef struct tagMBX {
 	hMSG mq_head;
 	hMSG mq_tail;
 	char mq_strategy;
-	char resv[2];
+	char resv[3];
 	uint tq_count;
 	uint mq_size;
 	uint mq_count;

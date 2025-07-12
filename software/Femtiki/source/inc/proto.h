@@ -56,6 +56,23 @@ void SetRunningTCB(__reg("d0") hTCB h) =
 	"\tmovec.l d0,tr\r\n"
 ;
 
+// wh=0 user
+// wh=1 system
+// wh=2 dma
+
+void SetMMUPD(__reg("d0") long wh, __reg("d1") long pd) =
+	"\tmovem.l d0/d1/a0,-(sp)\r\n"
+	"\tlea $FDC00040,a0\r\n"
+	"\tlsl.l #3,d0\r\n"
+	"\tadd.l d0,a0\r\n"
+	"\tmove.l d1,(a0)\r\n"
+	"\tmovem.l (sp)+,d0/d1/a0\r\n"
+;
+
+void SetMMUAppid(__reg("d0") long appid) =
+	"\tmove.l d0,$FDC00008\r\n"
+;
+
 extern hACB GetRunningAppid();
 extern TCB *GetRunningTCBPtr();
 extern void SetRunningTCBPtr(TCB *p);
@@ -73,12 +90,12 @@ long FMTK_SendMsg(__reg("d0") long hMbx, __reg("d1") long d1, __reg("d2") long d
 long FMTK_WaitMsg(__reg("d0") long hMbx, __reg("d1") long d1, __reg("d2") long d2, __reg("d3") long d3, __reg("d4") long timelimit);
 long FMTK_PeekMsg(__reg("d0") long hMbx, __reg("d1") long d1, __reg("d2") long d2, __reg("d3") long d3);
 long FMTK_CheckMsg(__reg("d0") long hMbx, __reg("d1") long d1, __reg("d2") long d2, __reg("d3") long d3, __reg("d4") long qrmv);
-long FMTK_StartTask(__reg("d0") long pCode, __reg("d1") long stacksize, __reg("d2") long pCmd, __reg("d3") long info, __reg("d4") long affinity);
-long FMTK_ExitTask();
-long FMTK_KillTask(__reg("d0") long);
+long FMTK_StartThread(__reg("d0") long pCode, __reg("d1") long pCmd, __reg("d2") long priority, __reg("d3") long affinity);
+long FMTK_ExitThread();
+long FMTK_KillThread(__reg("d0") long);
 long FMTK_AllocMbx();
 long FMTK_FreeMbx(__reg("d0") long hMbx);
-long FMTK_SetTaskPriority(__reg("d0") long hTCB, __reg("d1") long pri);
+long FMTK_SetThreadPriority(__reg("d0") long hTCB, __reg("d1") long pri);
 long FMTK_StartApp(__reg("d0") long rec, __reg("d1") long hParent);
 long FMTK_RegisterService(__reg("d0") long pName);
 long FMTK_UnregisterService(__reg("d0") long pName);
@@ -119,8 +136,10 @@ long LockMMUSemaphore(long retries);
 long LockPMTSemaphore(long retries);
 long LockMSGSemaphore(long retries);
 long LockMBXSemaphore(long retries);
-long LockTOLSemaphore(long retries);
-long LockRDQSemaphore(long retries);
+long LockTimeoutList(long retries);
+long LockReadyQueue(long retries);
+long LockTCBList(long retries);
+long LockACBSemaphore(long retries);
 
 void UnlockSysSemaphore();
 void UnlockIOFSemaphore();
@@ -129,8 +148,10 @@ void UnlockMMUSemaphore();
 void UnlockPMTSemaphore();
 void UnlockMSGSemaphore();
 void UnlockMBXSemaphore();
-void UnlockTOLSemaphore();
-void UnlockRDQSemaphore();
+void UnlockTImeoutList();
+void UnlockReadyQueue();
+void UnlockTCBList();
+void UnlockACBSemaphore();
 
 // Restoring the interrupt level does not have a ramp, because the level is
 // being set back to enable interrupts, from a disabled state. Following the

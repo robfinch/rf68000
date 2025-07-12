@@ -71,5 +71,6 @@ extern short int video_bufs[][];
 extern hTCB TimeoutList;
 extern hMBX hFocusSwitchMbx;
 extern ACB SysAcb;
+extern int tickcnt;
 
 #endif

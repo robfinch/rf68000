@@ -130,6 +130,7 @@ enum {
 #define MSG_SEMA		12
 #define TOL_SEMA		13
 #define RDQ_SEMA		14
+#define ACB_SEMA		15
 
 /*
 ; the following constant is used to scramble device handles. The device handle
