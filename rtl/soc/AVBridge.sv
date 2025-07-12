@@ -146,7 +146,7 @@ always_comb
 
 reg s1_cyc;
 always_comb
-	s1_cyc = s1_cyc_i && ((s1_adr_i[31:24]==8'hFD && s1_adr_i[23:16]!=8'h20) || (s1_adr_i[31:28]==4'hD));
+	s1_cyc = s1_cyc_i && ((s1_adr_i[31:24]==8'hFD && s1_adr_i[23:16]!=8'h20) || (s1_adr_i[31:24]==8'hF0));
 
 reg cop_cs0;
 reg cop_cs1;
@@ -347,6 +347,13 @@ WAIT_ACK:
 	    m_dat_o <= s1_dat_i;
   	end
   	*/
+  	// Strobe may go inactive then active again for read-modify-write
+  	case(which)
+  	2'b00:	m_stb_o <= s1_stb_i;
+  	2'b01:	m_stb_o <= 1'b1;
+  	default:	;
+  	endcase
+
   	if (cop_sack) begin
   		s_ack <= 1'b1;
   		s1_dat_o <= cop_sdato;
@@ -406,8 +413,8 @@ WAIT_NACK:
 				cop_dati <= 32'h0;
 			end
 			// Read-modify-write cycle?
-			if (which!=2'b01 && s1_cyc_i)
-				state <= WAIT_ACK;
+			if (which!=2'b01 && (s1_cyc_i & s1_stb_i))
+				state <= WAIT_NACK;
 			else
 				state <= IDLE;
 		end

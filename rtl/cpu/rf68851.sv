@@ -93,7 +93,7 @@ typedef struct packed
 
 typedef struct packed
 {
-	logic [10:0] appid;
+	logic [15:0] appid;
 	logic [18:0] vpage;
 	pte_t pte;
 } atc_entry_t;
@@ -115,20 +115,20 @@ reg ack1d;
 reg cs_mmu;
 reg ack1,ack2;
 reg cs_root_ptr;
-reg atc_hit, atc_hit_r;
-reg mmu_act;
+reg atc_hit;
 reg [5:0] atc_ua;
 atc_entry_t atc [0:63];
 reg atc_err;
 reg [31:13] padr1;
 reg [31:0] adri_r;
 reg [31:0] dati_r;
-reg [31:10] root_ptro;
 reg mmu_en;
 reg [31:0] cdati;
 
-reg [9:0] appid;
-reg [31:10] root_adr;
+reg [15:0] appid;
+reg [31:13] sys_root;
+reg [31:13] user_root;
+reg [31:13] dma_root;
 pte_t pte;
 reg [31:0] page_fault_addr;
 reg mmu_access;
@@ -176,7 +176,7 @@ reg [9:0] mmu_state;
 //	kernel_as = cadr_i[31:28]==4'h0 || cadr_i[31:30]==2'b11 || cfc_i[2];
 
 always_comb
-	cs_mmu = cadr_i[31:14]==18'b1111_1101_1100_00 && ccyc_i && cstb_i;
+	cs_mmu = cadr_i[31:13]==19'b1111_1101_1100_0000_000 && ccyc_i && cstb_i;
 always_ff @(posedge clk_i)
 	ack2 <= cs_mmu;
 always_ff @(posedge clk_i)
@@ -187,32 +187,29 @@ always_ff @(posedge clk_i)
 always_ff @(posedge clk_i)
 	dati_r <= cdatr;
 
-(* ram_style="block" *)
-reg [31:10] root_ptr [0:1023];
-always_ff @(posedge clk_i)
-	if (cs_mmu && cwe_i && cadr_i[13:12]==2'b00) begin
-		root_ptr[cadr_i[11:2]] <= cdatr[31:10];
-	end
-always_ff @(posedge clk_i)
-	root_adr <= root_ptr[appid];
-always_ff @(posedge clk_i)
-	root_ptro <= root_ptr[adri_r];
-
 wire pe_wr, pe_rd, ne_mcyc;
 edge_det ued1 (.rst(rst_i), .clk(clk_i), .ce(1'b1), .i(cs_mmu &  cwe_i), .pe(pe_wr), .ne(), .ee());
 edge_det ued2 (.rst(rst_i), .clk(clk_i), .ce(1'b1), .i(cs_mmu & ~cwe_i), .pe(pe_rd), .ne(), .ee());
 
 always_ff @(posedge clk_i)
 if (rst_i) begin
-	appid <= 10'd0;
+	user_root <= 19'd0;
+	sys_root <= 19'd0;
+	dma_root <= 19'd0;
 end
 else begin
 if (cs_mmu & cwe_i)
 	casez(cadr_i[13:2])
-	12'b100000000000:	
+	12'b000000000000:	
 		mmu_en <= cdatr[0];
-	12'b100001000000:	
-		appid <= cdatr[9:0];
+	12'b000000000010:
+		appid <= cdatr[15:0];
+	12'b000000010000:	
+		user_root <= cdatr[31:13];
+	12'b000000010010:	
+		sys_root <= cdatr[31:13];
+	12'b000000010100:
+		dma_root <= cdatr[31:13];
 	default:	;
 	endcase
 end
@@ -220,17 +217,17 @@ end
 always_ff @(posedge clk_i)
 if (cs_mmu & ~cwe_i)
 	casez(adri_r[13:2])
-	12'b00??????????:	cdati <= root_ptro;
-	12'b100000000000:	
-		begin
-			cdati <= {31'd0,mmu_en};
-		end
-	12'b100001000000:
-		begin
-			cdati <= 32'd0;
-			cdati[9:0] <= appid;
-		end
-	12'b100001000001:
+	12'b000000000000:	
+		cdati <= {31'd0,mmu_en};
+	12'b000000000010:
+		cdati <= {16'd0,appid};
+	12'b000000010000:
+		cdati <= {user_root,13'd0};
+	12'b000000010010:
+		cdati <= {sys_root,13'd0};
+	12'b000000010100:
+		cdati <= {dma_root,13'd0};
+	12'b000000010110:
 		cdati <= page_fault_addr;
 	default:	cdati <= 32'd0;
 	endcase
@@ -239,6 +236,8 @@ else
 
 always_ff @(posedge clk_i)
 	ack1d <= cs_mmu ? ack1 : mack_i;
+always_ff @(posedge clk_i)
+	mvpa_id <= mvpa_i;
 
 always_comb
 begin
@@ -272,16 +271,13 @@ begin
 		end
 end
 
-always_comb
-	atc_hit_r = atc_hit || !mmu_en;
-always_comb
-	mmu_act = mmu_en;
-
-always_comb
+always_ff @(posedge clk_i)
 begin
-	if (mmu_act) begin
+	if (mmu_en) begin
 		if (atc_hit)
-			adr_i <= {padr1,cadr_i[13:0]};
+			adr_i <= {padr1,cadr_i[12:0]};
+		else
+			adr_i <= 32'h00000000;
 	end
 	// No translation if mmu not enabled.
 	else
@@ -289,8 +285,8 @@ begin
 end
 
 always_ff @(posedge clk_i) fc_i <= cfc_i;
-always_ff @(posedge clk_i) cyc_i <= ccyc_i & atc_hit_r;
-always_ff @(posedge clk_i) stb_i <= cstb_i & atc_hit_r;
+always_ff @(posedge clk_i) cyc_i <= ccyc_i & (atc_hit|~mmu_en);
+always_ff @(posedge clk_i) stb_i <= cstb_i & (atc_hit|~mmu_en);
 always_ff @(posedge clk_i) we_i <= cwe_i;
 always_ff @(posedge clk_i) sel_i <= csel_i;
 always_ff @(posedge clk_i) dat_o <= cdatr;
@@ -311,11 +307,11 @@ end
 else 
 begin
 	mfc_o = cfc_i;
-	mcyc_o = ccyc_i & atc_hit_r;
-	mstb_o = cstb_i & atc_hit_r;
+	mcyc_o = ccyc_i & (atc_hit|~mmu_en);
+	mstb_o = cstb_i & (atc_hit|~mmu_en);
 	cack_o = ack1d;
-	cerr_o = mmu_act ? atc_err|merr_i : merr_i;
-	cvpa_o = mvpa_i;
+	cerr_o = ack1d ? (mmu_en ? atc_err|merr_i : merr_i) : 1'd0;
+	cvpa_o = mvpa_id;
 	mwe_o = cwe_i;
 	msel_o = csel_i;
 	madr_o = cadr_i;
@@ -336,17 +332,17 @@ if (rst_i) begin
 	page_fault_o <= 1'b0;
 end
 else begin
-	if (cs_mmu & cwe_i && cadr_i[13:2]==12'b100001000001)
+	if (cs_mmu & cwe_i && cadr_i[13:2]==12'b000000010110)
 		page_fault_o <= 1'b0;
 	case(1'b1)
 	mmu_state[ST_WAIT_MISS]:
-		if (!atc_hit_r) begin
+		if (!atc_hit && mmu_en) begin
 			mmu_access <= 1'b1;
 			work_cyc <= 1'b1;
 			work_stb <= 1'b1;
 			work_we <= 1'b0;
 			work_sel <= 4'hF;
-			work_adr <= {root_adr,cadr_i[31:24],2'b00};
+			work_adr <= {cfc_i[2] ? sys_root : user_root,cadr_i[31:24],2'b00};
 		end
 	mmu_state[ST_ACCESS1]:
 		begin
@@ -355,7 +351,7 @@ else begin
 			work_stb <= 1'b1;
 			work_we <= 1'b0;
 			work_sel <= 4'hF;
-			work_adr <= {root_adr,cadr_i[31:24],2'b00};
+			work_adr <= {cfc_i[2] ? sys_root : user_root,cadr_i[31:24],2'b00};
 			if (mack_i) begin
 				work_cyc <= 1'b0;
 				work_stb <= 1'b0;
@@ -417,7 +413,7 @@ else begin
 	case(1'b1)
 
 	mmu_state[ST_WAIT_MISS]:
-		if (!atc_hit_r)
+		if (!atc_hit && mmu_en)
 			mmu_state[ST_ACCESS1] <= 1'b1;
 		else
 			mmu_state[ST_WAIT_MISS] <= 1'b1;

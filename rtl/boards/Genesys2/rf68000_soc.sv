@@ -70,6 +70,7 @@ parameter HAS_UART = 1'b1;
 parameter HAS_PS2KBD = 1'b1;
 parameter HAS_POWER_CPU = 1'b0;
 parameter SIM = 1'b0;
+parameter NCORES = 1;
 input cpu_reset_n;
 input sysclk_p;
 input sysclk_n;
@@ -219,6 +220,8 @@ wire [255:0] psgm_dato;
 wire kbd_ack;
 wire kbd_irq;
 wire [31:0] kbd_dato;
+reg pit_ack;
+reg [31:0] pit_dato;
 wire rand_ack;
 wire [31:0] rand_dato;
 wire sema_ack;
@@ -236,7 +239,7 @@ wire rtc_irq;
 reg spi1_ack;
 reg [31:0] spi1_dato;
 wire spi2_ack;
-wire [7:0] spi2_dato;
+wire [31:0] spi2_dato;
 wire plic_ack;
 wire [3:0] plic_irq;
 wire [31:0] plic_dato;
@@ -874,7 +877,9 @@ uart6551 #(
 	.pClkFreq(100),
 	.pClkDiv(24'd130),
 	.pReverseByteOrder(1'b1),
-	.pDevName("ACIA            ")
+	.pDevName("ACIA            "),
+	.CFG_BAR0(32'hFDFE0000),
+	.CFG_BAR0_MASK(32'hFFFFC000)
 )
 uuart
 (
@@ -992,11 +997,11 @@ assign br3_fta.resp.dat = 32'd0;
 always_ff @(posedge clk100)
 	case(cs_br3_leds)
 	1'b1:	br3_dati <= led;
-	1'b0:	br3_dati <= kbd_dato|rand_dato|acia_dato|rtc_dato|spi1_dato|{4{spi2_dato}};
+	1'b0:	br3_dati <= kbd_dato|rand_dato|acia_dato|rtc_dato|spi1_dato|spi2_dato|pit_dato;
 	endcase
 
 always_ff @(posedge clk100)
-	br3_ack <= leds_ack|kbd_ack|rand_ack|acia_ack|rtc_ack|rst_ack|spi1_ack|spi2_ack;
+	br3_ack <= leds_ack|kbd_ack|rand_ack|acia_ack|rtc_ack|rst_ack|spi1_ack|spi2_ack|pit_ack;
 
 assign leds_ack = cs_br3_leds;
 always_ff @(posedge clk100)
@@ -1047,6 +1052,9 @@ uspi1 (
   .spiDataOut(spiDataOut),
   .spiCS_n(spiCS_n)
 );
+
+assign spi2_ack = 1'b0;
+assign spi2_dato = 32'd0;
 
 wire calib_complete;
 wire [29:0] mem_addr;
@@ -1147,7 +1155,6 @@ umpmc1
 	.mem_ui_clk(mem_ui_clk),
 	.calib_complete(calib_complete || SIM),
 	.rstn(rstn),
-	.app_waddr(),
 	.app_rdy(mem_rdy),
 	.app_en(mem_en),
 	.app_cmd(mem_cmd),
@@ -1246,7 +1253,6 @@ mpmc10_wb umpmc1
 	.mem_ui_clk(mem_ui_clk),
 	.calib_complete(calib_complete),
 	.rstn(rstn),
-	.app_waddr(),
 	.app_rdy(mem_rdy),
 	.app_en(mem_en),
 	.app_cmd(mem_cmd),
@@ -1343,7 +1349,8 @@ packet_t [5:0] packet;
 packet_t [5:0] rpacket;
 ipacket_t [5:0] ipacket;
 
-// Generate 100Hz interrupt
+/*
+// Generate 33Hz interrupt per core
 reg [23:0] icnt;
 reg tmr_irq;
 
@@ -1358,13 +1365,58 @@ else begin
 		tmr_irq <= 1'b1;
 	else if (icnt==24'd200)
 		tmr_irq <= 1'b0;
-	else if (icnt==24'd1000000)
+	else if (icnt==24'd3000000/NCORES)
 		icnt <= 24'd1;
 end
+*/
+
+wb_cmd_request32_t pit_req;
+wb_cmd_response32_t pit_resp;
+always_comb
+begin
+	pit_req = {$bits(wb_cmd_request32_t){1'b0}};
+	pit_req.cyc = br3_cyc;
+	pit_req.stb = br3_stb;
+	pit_req.we = br3_we;
+	pit_req.sel = br3_sel;
+	pit_req.adr = br3_adr;
+	pit_req.dat = br3_dato;
+	pit_ack = pit_resp.ack;
+	pit_dato = pit_resp.dat;
+end
+
+rf68000_pit #(
+	.pReverseByteOrder(1'b1),
+	.pDevName("TIMER_BLOCK1    "),
+	.IO_ADDR(32'hFDFEC000),
+	.IO_ADDR_MASK(32'hFFFFC000)
+)
+upit1 (
+	.rst_i(rst),
+	.clk_i(node_clk),
+	.cs_i(cs_ddbb),
+	.irq_chain_i(16'h0),
+	.irq_chain_o(),
+	.wbs_req_i(pit_req),
+	.wbs_resp_o(pit_resp),
+	.clk0(1'b0),
+	.gate0(1'b0),
+	.out0(),
+	.clk1(1'b0),
+	.gate1(1'b0),
+	.out1(),
+	.clk2(1'b0),
+	.gate2(1'b0),
+	.out2(),
+	.clk3(1'b0),
+	.gate3(1'b0),
+	.out3(),
+	.irq_o(tmr_irq)
+);
 
 // PLIC needs to be able to detect INTA cycle where all address lines are high
 // except for a0 to a3.
-rf68000_plic uplic1
+rf68000_pic upic1
 (
 	.rst_i(rst),		// reset
 	.clk_i(node_clk),		// system clock
@@ -1717,6 +1769,8 @@ rf68000_node #(.SUPPORT_DECFLT(1'b1)) unode2
 	.id(5'd2),
 	.rst1(rst|rsts[4]),
 	.rst2(rst|rsts[5]),
+	.clken1(1'b1),
+	.clken2(1'b1),
 	.nic_rst(rst),
 	.clk(node_clk2),
 	.dfclk(dfclk),

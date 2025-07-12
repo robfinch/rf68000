@@ -1,3 +1,4 @@
+`timescale 1ns / 1ps
 // ============================================================================
 //        __
 //   \\__/ o\    (C) 2011-2025  Robert Finch, Waterloo
@@ -90,13 +91,16 @@
 //     return (m_z << 16) + m_w;  /* 32-bit result */
 // }
 //
+import wishbone_pkg::*;
+
 `define TRUE	1'b1
 `define FALSE	1'b0
 
-module random(rst_i, clk_i, cs_i, cyc_i, stb_i, ack_o, we_i, adr_i, dat_i, dat_o);
+module random(rst_i, clk_i, cs_i, cyc_i, stb_i, ack_o, we_i, adr_i, dat_i, dat_o,
+    irq_chain_i, irq_chain_o);
 input rst_i;
 input clk_i;
-input cs_i;
+input cs_i;				// ddbb circuit select
 input cyc_i;
 input stb_i;
 output reg ack_o;
@@ -104,25 +108,40 @@ input we_i;
 input [31:0] adr_i;
 input [31:0] dat_i;
 output reg [31:0] dat_o;
-parameter RAND_ADDR = 32'hFDFF4000;
+input [15:0] irq_chain_i;
+output [15:0] irq_chain_o;
+parameter IO_ADDR = 32'hFDFF4000;
+parameter IO_ADDR_MASK = 32'hFFFFC000;
 parameter pAckStyle = 1'b0;
+parameter pReverseByteOrder = 1'b0;
+parameter pDevName = "RANDOM\0\0\0\0\0\0\0\0\0\0";
 
+parameter CFG_BUS = 8'd0;
+parameter CFG_DEVICE = 5'd8;
+parameter CFG_FUNC = 3'd0;
+parameter CFG_VENDOR_ID	=	16'h0;
+parameter CFG_DEVICE_ID	=	16'h0;
+parameter CFG_SUBSYSTEM_VENDOR_ID	= 16'h0;
+parameter CFG_SUBSYSTEM_ID = 16'h0;
+parameter CFG_ROM_ADDR = 32'hFFFFFFF0;
+
+parameter CFG_REVISION_ID = 8'd0;
+parameter CFG_PROGIF = 8'd1;
+parameter CFG_SUBCLASS = 8'h00;					// 00 = non VGA compatiable unclassfied device
+parameter CFG_CLASS = 8'h00;						// 00 = unclassified
+parameter CFG_CACHE_LINE_SIZE = 8'd8;		// 32-bit units
+parameter CFG_MIN_GRANT = 8'h00;
+parameter CFG_MAX_LATENCY = 8'h00;
+parameter CFG_IRQ_LINE = 8'hFF;
+
+localparam CFG_HEADER_TYPE = 8'h00;			// 00 = a general device
+
+wire cs1;
 reg ack;
 reg cs;
 reg we;
 reg [13:0] adr;
 reg [31:0] dat,dato;
-always_ff @(posedge clk_i)
-	cs <= cs_i && RAND_ADDR[31:14]==adr_i[31:14] && cyc_i && stb_i;
-always_ff @(posedge clk_i)
-	we <= we_i;
-always_ff @(posedge clk_i)
-	adr <= adr_i[13:0];
-always_ff @(posedge clk_i)
-	dat <= dat_i;
-
-always_ff @(posedge clk_i)
-	ack_o <= cs & cs_i & cyc_i & stb_i;
 //always @*
 //	ack_o <= cs ? ack : pAckStyle;
 
@@ -135,6 +154,94 @@ reg [31:0] w=32'd3,z=32'd17;
 wire [31:0] m_zs;
 wire [31:0] m_ws;
 wire pe_we;
+
+wb_cmd_request32_t wbs_req;
+wb_cmd_response32_t ddbb_resp;
+
+always_comb
+begin
+	wbs_req = {$bits(wb_cmd_request32_t){1'b0}};
+	wbs_req.cyc = cyc_i;
+	wbs_req.stb = stb_i;
+	wbs_req.we = we_i;
+	wbs_req.sel = 4'hF;
+	wbs_req.adr = adr_i;
+	if (pReverseByteOrder) begin
+		wbs_req.dat = {dat_i[7:0],dat_i[15:8],dat_i[23:16],dat_i[31:24]};
+		dat_o = {dato[7:0],dato[15:8],dato[23:16],dato[31:24]};
+	end
+	else begin
+		wbs_req.dat = dat_i;
+		dat_o = dato;
+	end
+end
+
+always_ff @(posedge clk_i)
+	cs <= cs1;
+always_ff @(posedge clk_i)
+	we <= we_i;
+always_ff @(posedge clk_i)
+	adr <= adr_i[13:0];
+always_ff @(posedge clk_i)
+	dat <= wbs_req.dat;
+
+ack_gen #(
+	.READ_STAGES(2),
+	.WRITE_STAGES(1),
+	.REGISTER_OUTPUT(1)
+) uag1
+(
+	.rst_i(rst_i),
+	.clk_i(clk_i),
+	.ce_i(1'b1),
+	.rid_i('d0),
+	.wid_i('d0),
+	.i(cs & ~we),
+	.we_i(cs & we),
+	.o(ack),
+	.rid_o(),
+	.wid_o()
+);
+
+always_comb
+	ack_o = cs_i ? ddbb_resp.ack : cs ? ack : pAckStyle;
+
+ddbb32_config #(
+	.pDevName(pDevName),
+	.CFG_BUS(CFG_BUS),
+	.CFG_DEVICE(CFG_DEVICE),
+	.CFG_FUNC(CFG_FUNC),
+	.CFG_VENDOR_ID(CFG_VENDOR_ID),
+	.CFG_DEVICE_ID(CFG_DEVICE_ID),
+	.CFG_BAR0(IO_ADDR),
+	.CFG_BAR0_MASK(IO_ADDR_MASK),
+	.CFG_SUBSYSTEM_VENDOR_ID(CFG_SUBSYSTEM_VENDOR_ID),
+	.CFG_SUBSYSTEM_ID(CFG_SUBSYSTEM_ID),
+	.CFG_ROM_ADDR(CFG_ROM_ADDR),
+	.CFG_REVISION_ID(CFG_REVISION_ID),
+	.CFG_PROGIF(CFG_PROGIF),
+	.CFG_SUBCLASS(CFG_SUBCLASS),
+	.CFG_CLASS(CFG_CLASS),
+	.CFG_CACHE_LINE_SIZE(CFG_CACHE_LINE_SIZE),
+	.CFG_MIN_GRANT(CFG_MIN_GRANT),
+	.CFG_MAX_LATENCY(CFG_MAX_LATENCY),
+	.CFG_IRQ_LINE(CFG_IRQ_LINE)
+)
+ucfg1
+(
+	.rst_i(rst_i),
+	.clk_i(clk_i),
+	.irq_i(4'b0),
+	.irq_chain_i(irq_chain_i),
+	.irq_chain_o(irq_chain_o),
+	.cs_i(cs_i), 
+	.req_i(wbs_req),
+	.resp_o(ddbb_resp),
+	.cs_bar0_o(cs1),
+	.cs_bar1_o(),
+	.cs_bar2_o()
+);
+
 
 edge_det ued1 (.rst(rst_i), .clk(clk_i), .ce(1'b1), .i(we), .pe(pe_we), .ne(), .ee());
 rand_ram u1 (clk_i, wrw, stream, w, m_ws);
@@ -152,7 +259,9 @@ wire [31:0] strm = {22'h0,stream};
 // Register read path
 //
 always_ff @(posedge clk_i)
-if (cs)
+if (cs_i)
+	dato <= ddbb_resp.dat;
+else if (cs)
 	casez(adr)
 	14'b000000000000??:	dato <= num;
 	14'b000000000001??:	dato <= strm;
@@ -161,28 +270,12 @@ if (cs)
 //		3'd5:	dat_o <= m_z[15: 0];
 //		3'd6:	dat_o <= m_w[31:16];
 //		3'd7:	dat_o <= m_w[15: 0];
-	14'b000000000100??:	dato <= {num[7:0],num[15:8],num[23:16],num[31:24]};
-	14'b000000000101??:	dato <= {strm[7:0],strm[15:8],strm[23:16],strm[31:24]};
-	14'b111110000000??:	dato <= "DEV ";
-	14'b111110000001??:	dato <= "RAND";
-	14'b111110000010??:	dato <= "    ";
-	14'b111110000011??:	dato <= {8'h00,"   "};
-	14'b111111000000??:	dato <= " VED";
-	14'b111111000001??:	dato <= "DNAR";
-	14'b111111000010??:	dato <= "    ";
-	14'b111111000011??:	dato <= {"   ",8'h00};
 	14'b11111?????????:	dato <= 32'd0;	// dcb RAM
 	default:	dato <= 32'h0000;
 	endcase
 else
 	dato <= 32'h0;
 	
-always_comb
-    if (cs)
-        dat_o = dato;
-    else
-        dat_o = 32'd0;
-
 // Register write path
 //
 always_ff @(posedge clk_i)
@@ -192,8 +285,7 @@ begin
 	if (cs) begin
 		if (pe_we)
 			casez(adr)
-			14'b000000000000??,
-			14'b000000000100??:
+			14'b000000000000??:
 				begin
 					z <= next_m_z;
 					w <= next_m_w;
@@ -203,9 +295,6 @@ begin
 			14'b000000000001??:	stream <= dat[9:0];
 			14'b000000000010??:	begin z <= dat; wrz <= `TRUE; end
 			14'b000000000011??:	begin w <= dat; wrw <= `TRUE; end
-			14'b000000000101??: stream <= {dat[7:0],dat[15:8],dat[23:16],dat[31:24]};
-			14'b000000000110??:	begin z <= {dat[7:0],dat[15:8],dat[23:16],dat[31:24]}; wrz <= `TRUE; end
-			14'b000000000111??:	begin w <= {dat[7:0],dat[15:8],dat[23:16],dat[31:24]}; wrw <= `TRUE; end
 			default:	;
 			endcase
 	end

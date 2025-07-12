@@ -609,7 +609,7 @@ wire [31:0] pco;
 reg [15:0] pid_stack [0:15];
 reg [3:0] pid_sp;
 reg cf,vf,nf,zf,xf,sf,tf;
-reg otf;
+reg movemf;
 reg [2:0] im;
 reg [2:0] ccr57;
 reg [1:0] sr1112;
@@ -1534,7 +1534,7 @@ if (rst_i) begin
 	im <= 3'b111;
 	sf <= 1'b1;
 	tf <= 1'b0;
-	otf <= 1'b0;
+	movemf <= 1'b0;
 	fnanf <= 1'b0;
 	fzf <= 1'b0;
 	fnf <= 1'b0;
@@ -2190,7 +2190,7 @@ IFETCH:
 		fpcnt <= 12'd0;
 		fpiar <= pc;
 		ext_ir <= 1'b0;
-		otf <= tf;
+		movemf <= 1'b0;
 		if (!cyc_o) begin
 			is_nmi <= 1'b0;
 			is_irq <= 1'b0;
@@ -2610,10 +2610,13 @@ DECODE:
 				fs_data(mmm,rrr,FETCH_NOP_LWORD,D);
 			end
 		9'b1?001????:
-			if (ir[10])
-				call(FETCH_IMM16,MOVEM_s2Xn);
-			else
-				call(FETCH_IMM16,MOVEM_Xn2D);
+			begin
+				movemf <= 1'b1;
+				if (ir[10])
+					call(FETCH_IMM16,MOVEM_s2Xn);
+				else
+					call(FETCH_IMM16,MOVEM_Xn2D);
+			end
 		9'b???111???:
 			begin // LEA
 				lea <= 1'b1;	// ToDo: fix this, lea needs to be set one cycle before fs_data is called
@@ -5514,7 +5517,7 @@ TRAP:
     default:
     	begin
     		isr <= srx;
-    		tf <= 1'b0;
+//    		tf <= 1'b0;
     		sf <= 1'b1;
       	vecno <= `TRAP_VEC + ir[3:0];
     	end
@@ -7617,8 +7620,7 @@ begin
 	// TRAP will come back here for a second try at returning. If trace is on
 	// then a return is not done, instead flow goes to the TRAP sequence which
 	// will then do a ret(), but this time trace will be off.
-	if (state_stk1==IFETCH && otf) begin
-		otf <= 1'b0;
+	if (state_stk1==IFETCH && tf && ir != 16'h4E73) begin
 		is_trace <= 1'b1;
 		state <= TRAP;
 	end

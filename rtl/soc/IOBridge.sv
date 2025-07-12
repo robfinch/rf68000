@@ -114,7 +114,7 @@ else
 
 reg s1_cyc;
 always_comb
-	s1_cyc = s1_cyc_i && ((s1_adr_i[31:24]==8'hFD && s1_adr_i[23:20]!=4'h2) || (s1_adr_i[31:28]==4'hD));
+	s1_cyc = s1_cyc_i && ((s1_adr_i[31:24]==8'hFD && s1_adr_i[23:20]!=4'h2) || (s1_adr_i[31:24]==8'hF0));
 
 always @(posedge clk_i)
 if (rst_i) begin
@@ -237,6 +237,12 @@ WR_ACK2:
 // Wait for rising edge on m_ack_i or cycle abort
 WAIT_ACK:
 	begin
+		// The strobe signal may become active again, during a read-modify-write
+		case(which)
+		2'b00:	m_stb_o <= s1_stb_i;
+		2'b01:	m_stb_o <= s2_stb_i;
+		default:	;
+		endcase
 		// Repeat signal assertion in case of bus skew.
 		/*
     m_cyc_o <= 1'b1;

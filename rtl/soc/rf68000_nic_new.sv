@@ -554,7 +554,7 @@ begin
 				s_ack1 <= wr & ~SYNC_WRITE;
 			end
 		/* I/O area */
-		8'hD0,	// Discovery block
+		8'hF0,	// Discovery block
 		8'hFD,
 		8'h01:	// virtual address
 			begin
@@ -562,16 +562,16 @@ begin
 				s_ack1 <= (wr & ~SYNC_WRITE)|burst;
 			end
 		// Global broadcast
-		8'hDF:
+		8'hFC:
 			begin
 				packet_tx.did <= 6'd63;
 				packet_tx.age <= 6'd30;
 				s_ack1 <= (wr & ~SYNC_WRITE)|burst;
 			end
-		// C0xyyyyy
-		8'hC0:
+		// F8xyyyyy
+		8'hF8:
 			begin
-				if (adr!=32'hC0FFFFFC)
+				if (adr!=32'hF8FFFFFC)
 					packet_tx.did <= {2'd0,adr[23:20]};
 				s_ack1 <= (wr & ~SYNC_WRITE)|burst;
 			end

@@ -340,7 +340,8 @@ rf68851 ummu1
 (
 	.rst_i(rst1),
 	.clk_i(clk),
-	
+	.rbo_i(1'b0),
+
 	.cfc_i(fc1a),
 	.ccyc_i(cyc1a),
 	.cstb_i(stb1a),

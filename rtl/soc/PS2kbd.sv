@@ -137,7 +137,7 @@ module PS2kbd (
 	// WISHBONE/SoC bus interface 
 	input rst_i,
 	input clk_i,	// system clock
-	input cs_i,
+	input cs_i,		// ddbb circuit select
 	input cyc_i,
 	input stb_i,	// core select (active high)
 	output reg ack_o,	// bus transfer acknowledged
@@ -148,20 +148,46 @@ module PS2kbd (
 	output reg [31:0] dat_o,	// data out
 	inout tri [31:0] db,
 	//-------------
+	input [15:0] irq_chain_i,
+	output [15:0] irq_chain_o,
 	output irq,	// interrupt request (active high)
 	input kclk_i,	// keyboard clock from keyboard
 	output kclk_en,	// 1 = drive clock low
 	input kdat_i,	// keyboard data
 	output kdat_en	// 1 = drive data low
 );
-parameter pClkFreq = 50000000;
+parameter pClkFreq = 100000000;
 parameter pAckStyle = 1'b0;
 parameter KBD_TX = 1'b1;	// include transmitter
-parameter KBD_ADDR = 32'hFDFF8000;
+parameter pReverseByteOrder = 1'b0;
 localparam p5us = pClkFreq / 200000;		// number of clocks for 5us
 localparam p100us = pClkFreq / 10000;	// number of clocks for 100us
 
-wire cs = cs_i && adr_i[31:14]==KBD_ADDR[31:14] && cyc_i && stb_i;
+parameter pDevName = "PS2_KEYBOARD    ";
+parameter IO_ADDR = 32'hFDFF8000;
+parameter IO_ADDR_MASK = 32'hFFFFC000;
+
+parameter CFG_BUS = 8'd0;
+parameter CFG_DEVICE = 5'd30;
+parameter CFG_FUNC = 3'd0;
+parameter CFG_VENDOR_ID	=	16'h0;
+parameter CFG_DEVICE_ID	=	16'h0;
+parameter CFG_SUBSYSTEM_VENDOR_ID	= 16'h0;
+parameter CFG_SUBSYSTEM_ID = 16'h0;
+parameter CFG_ROM_ADDR = 32'hFFFFFFF0;
+
+parameter CFG_REVISION_ID = 8'd0;
+parameter CFG_PROGIF = 8'd1;
+parameter CFG_SUBCLASS = 8'h00;					// 00 = Keyboard
+parameter CFG_CLASS = 8'h09;						// 09 = input controller
+parameter CFG_CACHE_LINE_SIZE = 8'd8;		// 32-bit units
+parameter CFG_MIN_GRANT = 8'h00;
+parameter CFG_MAX_LATENCY = 8'h00;
+parameter CFG_IRQ_LINE = 8'hFF;
+
+localparam CFG_HEADER_TYPE = 8'h00;			// 00 = a general device
+
+wire cs; //= adr_i[31:14]==KBD_ADDR[31:14] && cyc_i && stb_i;
 
 // keyboard receive state
 typedef enum logic [1:0] {
@@ -207,61 +233,113 @@ reg tx_oe;			// transmitter output enable / shift enable
 //reg ack,ack1;
 //always @(posedge clk_i) begin ack <= cs; ack1 <= ack & cs; end
 always_ff @(posedge clk_i)
-	ack_o <= cs ? 1'b1 : pAckStyle;// ? (we_i ? 1'b1 : ack) : 1'b0;
+	ack_o <= cs_i ? ddbb_resp.ack : cs ? 1'b1 : pAckStyle;// ? (we_i ? 1'b1 : ack) : 1'b0;
 
 wire pe_cs;
 edge_det ed1 (.rst(rst_i), .clk(clk_i), .ce(1'b1), .i(cs), .pe(pe_cs), .ne(), .ee() );
 
+wb_cmd_request32_t wbs_req;
+wb_cmd_response32_t ddbb_resp;
+reg [31:0] dat;
+
+always_comb
+begin
+	wbs_req = {$bits(wb_cmd_request32_t){1'b0}};
+	wbs_req.cyc = cyc_i;
+	wbs_req.stb = stb_i;
+	wbs_req.we = we_i;
+	wbs_req.sel = sel_i;
+	wbs_req.adr = adr_i;
+	if (pReverseByteOrder) begin
+		wbs_req.dat = {dat_i[7:0],dat_i[15:8],dat_i[23:16],dat_i[31:24]};
+		dat_o = {dat[7:0],dat[15:8],dat[23:16],dat[31:24]};
+	end
+	else begin
+		wbs_req.dat = dat_i;
+		dat_o = dat;
+	end
+end
+
+ddbb32_config #(
+	.pDevName(pDevName),
+	.CFG_BUS(CFG_BUS),
+	.CFG_DEVICE(CFG_DEVICE),
+	.CFG_FUNC(CFG_FUNC),
+	.CFG_VENDOR_ID(CFG_VENDOR_ID),
+	.CFG_DEVICE_ID(CFG_DEVICE_ID),
+	.CFG_BAR0(IO_ADDR),
+	.CFG_BAR0_MASK(IO_ADDR_MASK),
+	.CFG_SUBSYSTEM_VENDOR_ID(CFG_SUBSYSTEM_VENDOR_ID),
+	.CFG_SUBSYSTEM_ID(CFG_SUBSYSTEM_ID),
+	.CFG_ROM_ADDR(CFG_ROM_ADDR),
+	.CFG_REVISION_ID(CFG_REVISION_ID),
+	.CFG_PROGIF(CFG_PROGIF),
+	.CFG_SUBCLASS(CFG_SUBCLASS),
+	.CFG_CLASS(CFG_CLASS),
+	.CFG_CACHE_LINE_SIZE(CFG_CACHE_LINE_SIZE),
+	.CFG_MIN_GRANT(CFG_MIN_GRANT),
+	.CFG_MAX_LATENCY(CFG_MAX_LATENCY),
+	.CFG_IRQ_LINE(CFG_IRQ_LINE)
+)
+ucfg1
+(
+	.rst_i(rst_i),
+	.clk_i(clk_i),
+	.irq_i(4'b0),
+	.irq_chain_i(irq_chain_i),
+	.irq_chain_o(irq_chain_o),
+	.cs_i(cs_i), 
+	.req_i(wbs_req),
+	.resp_o(ddbb_resp),
+	.cs_bar0_o(cs),
+	.cs_bar1_o(),
+	.cs_bar2_o()
+);
+
 // register read path
 always_ff @(posedge clk_i)
-if (cs)
+if (cs_i)
+	dat <= ddbb_resp.dat;
+else if (cs)
 	casez(adr_i[13:0])
-	14'b000000??????00:	dat_o <= {4{q[8:1]}};
+	14'b000000??????00:	dat <= {4{q[8:1]}};
 	14'b000000??????01:
 		begin
-			dat_o <= {4{~q[0],tc,~kack,4'b0,~^q[9:1]}};
+			dat <= {4{~q[0],tc,~kack,4'b0,~^q[9:1]}};
 			scbuf <= q[8:1];
 			statbuf <= {~q[0],tc,~kack,4'b0,~^q[9:1]};
 		end
-	14'b000000??????10:	dat_o <= {4{scbuf}};
-	14'b000000??????11:	dat_o <= {4{statbuf}};
-	14'b11110?????????:	dat_o <= dcb_ram[adr_i[7:2]];
-	14'b111110000000??:	dat_o <= "DEV ";
-	14'b111110000001??:	dat_o <= "KEYB";
-	14'b111110000010??:	dat_o <= "D   ";
-	14'b111110000011??:	dat_o <= {8'h00,"   "};
-	14'b111111000000??:	dat_o <= " VED";
-	14'b111111000001??:	dat_o <= "BYEK";
-	14'b111111000010??:	dat_o <= "   D";
-	14'b111111000011??:	dat_o <= {8'h00,"   "};
-	default:	dat_o <= 32'd0;
+	14'b000000??????10:	dat <= {4{scbuf}};
+	14'b000000??????11:	dat <= {4{statbuf}};
+	14'b11110?????????:	dat <= dcb_ram[adr_i[7:2]];
+	default:	dat <= 32'd0;
 	endcase
 else
-	dat_o <= 32'd0;
+	dat <= 32'd0;
 
 always_ff @(posedge clk_i)
 if (cs & we_i)
 	casez(adr_i[13:0])
 	14'b11111?????????:
 		begin
-			if (sel_i[0]) dcb_ram[adr_i[7:2]][ 7: 0] <= dat_i[ 7: 0];
-			if (sel_i[1]) dcb_ram[adr_i[7:2]][15: 8] <= dat_i[15: 8];
-			if (sel_i[2]) dcb_ram[adr_i[7:2]][23:16] <= dat_i[23:16];
-			if (sel_i[3]) dcb_ram[adr_i[7:2]][31:24] <= dat_i[31:24];
+			if (sel_i[0]) dcb_ram[adr_i[7:2]][ 7: 0] <= wbs_req.dat[ 7: 0];
+			if (sel_i[1]) dcb_ram[adr_i[7:2]][15: 8] <= wbs_req.dat[15: 8];
+			if (sel_i[2]) dcb_ram[adr_i[7:2]][23:16] <= wbs_req.dat[23:16];
+			if (sel_i[3]) dcb_ram[adr_i[7:2]][31:24] <= wbs_req.dat[31:24];
 			casez(adr_i)
 			14'b1111111101????:
 				begin
-					if (sel_i[0]) irq_vec[adr_i[3:2]][ 7: 0] <= dat_i[ 7: 0];
-					if (sel_i[1]) irq_vec[adr_i[3:2]][15: 8] <= dat_i[15: 8];
-					if (sel_i[2]) irq_vec[adr_i[3:2]][23:16] <= dat_i[23:16];
-					if (sel_i[3]) irq_vec[adr_i[3:2]][31:24] <= dat_i[31:24];
+					if (sel_i[0]) irq_vec[adr_i[3:2]][ 7: 0] <= wbs_req.dat[ 7: 0];
+					if (sel_i[1]) irq_vec[adr_i[3:2]][15: 8] <= wbs_req.dat[15: 8];
+					if (sel_i[2]) irq_vec[adr_i[3:2]][23:16] <= wbs_req.dat[23:16];
+					if (sel_i[3]) irq_vec[adr_i[3:2]][31:24] <= wbs_req.dat[31:24];
 				end
 			default:	;
 			endcase
 		end
 	endcase
 
-assign db = (cs & ~we_i) ? dat_o : {8{1'bz}};
+assign db = (cs & ~we_i) ? dat_o : {32{1'bz}};
 
 // Prohibit keyboard device from further transmits until
 // this character has been processed.
@@ -311,7 +389,7 @@ always_ff @(posedge clk_i) begin
 	else begin
 
 		// clear rx on write to status reg
-		if (cs && we_i && adr_i[13:0]==14'd1 && dat_i[7:0]==8'h00)
+		if (cs && we_i && adr_i[13:0]==14'd1 && wbs_req.dat[7:0]==8'h00)
 			q <= 11'h7FF;
 
 		// Receive state machine
@@ -422,7 +500,7 @@ always_ff @(posedge clk_i) begin
 			tc <= 0;
 		end
 		// write to status register clears transmit state
-		else if (cs && we_i && adr_i[13:0]==14'd1 && dat_i[7:0]==8'hFF) begin
+		else if (cs && we_i && adr_i[13:0]==14'd1 && wbs_req.dat[7:0]==8'hFF) begin
 			tc <= 1;
 			tx_oe <= 0;
 			klow <= 1'b0;
@@ -471,7 +549,7 @@ always_ff @(posedge clk_i)
 		t <= 11'd0;
 	else begin
 		if (load_tx)
-			t <= {~(^dat_i[7:0]),dat_i[7:0],2'b0};
+			t <= {~(^wbs_req.dat[7:0]),wbs_req.dat[7:0],2'b0};
 		else if (shift_tx)
 			t <= {1'b1,t[10:1]};
 	end
