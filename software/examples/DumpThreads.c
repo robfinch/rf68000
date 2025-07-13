@@ -14,31 +14,41 @@ extern void DisplayTetra(__reg("d1") long);
 void DumpThreads()
 {
 	int nn;
-
-	DisplayStringCRLF("\r\nthrd status owner pri stksz");
-	DisplayStringCRLF("---- ------ ----- --- -----");
-	for (nn = 0; nn < NR_TCB; nn++) {
-		if (tcbs[nn].hApp != 0 && tcbs[nn].status != 0) {
+	int im;
+	
+	im = SetImLevel(7);
+	DisplayStringCRLF("\r\nthrd next status    pc    owner pri affin");
+	DisplayStringCRLF(    "---- ---- ------ -------- ----- --- -----");
+	for (nn = 0; nn < 10;/*NR_TCB;*/ nn++) {
+//		if (tcbs[nn].hApp != 0 || tcbs[nn].status != 0)
+//		{
 			DisplayByte(nn);
 			OutputChar(' ');
+			DisplayByte(tcbs[nn].next);
+			OutputChar(' ');
 			DisplayByte(tcbs[nn].status);
+			OutputChar(' ');
+			DisplayTetra(tcbs[nn].pc);
 			OutputChar(' ');
 			DisplayByte(tcbs[nn].hApp);
 			OutputChar(' ');
 			DisplayByte(tcbs[nn].priority);
 			OutputChar(' ');
-			DisplayWyde(tcbs[nn].stacksize);
+			DisplayByte(tcbs[nn].affinity);
+			OutputChar(' ');
+//			DisplayWyde(tcbs[nn].stacksize);
 			OutputChar('\r');
 			OutputChar('\n');
-		}
+//		}
 	}
+	SetImLevelHelper(im);
 }
 
 void DumpApps()
 {
 	int nn;
 
-	DisplayStringCRLF("\r\napp code task");
+	DisplayStringCRLF("\r\napp code thread");
 	DisplayStringCRLF("--- ---- ----");
 	for (nn = 0; nn < NR_ACB; nn++) {
 		if (ACBPtrs[nn]) {
@@ -47,7 +57,7 @@ void DumpApps()
 				OutputChar(' ');
 				DisplayTetra((long)ACBPtrs[nn]->pCode);
 				OutputChar(' ');
-				DisplayByte(ACBPtrs[nn]->task);
+				DisplayByte(ACBPtrs[nn]->thread);
 				OutputChar(' ');
 				OutputChar('\r');
 				OutputChar('\n');

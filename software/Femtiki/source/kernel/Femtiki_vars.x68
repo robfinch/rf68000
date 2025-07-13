@@ -40,6 +40,15 @@ FemtikiVars_end	EQU	$00100400
 	section local_ram
 _DeviceTable
 	ds.b	3072			; room for 48 devices
+_readyQ
+	ds.w	32
+_readyQEnd
+_TimeoutList
+	ds.l	1
+_RunningTCBPointer
+	ds.l	1
+_RunningTCB
+	ds.w	1
 spi_buff
 	ds.b	512
 
@@ -152,6 +161,8 @@ scratch_ram
 _tcbs
 	ds.b	256*128
 _tcbs_end
+_TimerBlocks
+	ds.b	256*12
 _request_block
 	ds.b	256*64
 _request_block_end
@@ -161,6 +172,8 @@ _message_end
 _mailbox
 	ds.b	128*64
 _mailbox_end
+_FreeCBL
+	ds.l	2
 _sys_pd						; system page directory
 	ds.b	2048
 _kernel_pt
@@ -192,12 +205,11 @@ _ACBList
 	ds.l	1
 _ACBPtrs
 	ds.l	64
-_RunningTCBPointer
-	ds.l	1
-_RunningTCB
-	ds.w	1
-_FreeTCB
 _freeTCB
+	ds.w	1
+_TimerBlockList
+	ds.w	1
+_freeTBLK
 	ds.w	1
 _FreeACB
 	ds.w	1
@@ -214,11 +226,6 @@ _service
 	ds.b	64*64
 _missed_ticks
 	ds.l	1
-_TimeoutList
-	ds.l	1
-_readyQ
-	ds.w	32
-_readyQEnd
 
 _hSearchApp
 	ds.w	1
@@ -341,7 +348,6 @@ _FemtikiVars_end
 	global _DeviceTable
 	global _hDevMailbox
 	global _RunningTCB
-	global _FreeTCB
 	global _freeTCB
 	global _FreeACB
 	global _FreeMSG
@@ -384,6 +390,10 @@ _FemtikiVars_end
 	global _service
 	global _nPagesFree
 	global _MemExch
+	global _FreeCBL
+	global _TimerBlocks
+	global _freeTBLK
+	global _TimerBlockList
 
 ;gc_stack		rmb		512
 ;gc_pc				fcdw		0

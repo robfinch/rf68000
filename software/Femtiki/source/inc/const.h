@@ -5,6 +5,8 @@
 #define TRUE        1
 #define FALSE       0
 
+#define USERPD	0
+
 #define null        (void *)0
 //#define NULL				(void *)0
 #define MAX_UINT    0xFFFFFFFF

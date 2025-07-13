@@ -7,6 +7,7 @@ typedef short int hACB;
 typedef short int hMBX;
 typedef short int hMSG;
 typedef short int hRQB;
+typedef short int hTBLK;
 
 #define PTE_PRESENT		13
 #define PTE_ALIAS			12
@@ -167,6 +168,11 @@ typedef struct _tagService {
 	hMBX service_mbx;
 } service_t;
 
+typedef struct _tagCBL {
+	struct _tagCBL* next;
+	unsigned long func;
+} CBL;
+
 // Application control block
 typedef struct _tagACB
 {
@@ -217,7 +223,7 @@ typedef struct _tagACB
   unsigned short int KeybdBuffer[32];
   hACB number;
   hACB next;
-  hTCB task;
+  hTCB thread;
   int *templates[256];
 } ACB;
 
@@ -238,16 +244,17 @@ typedef struct _tagTCB {
 	hTCB prev;
 	hTCB mbq_next;
 	hTCB mbq_prev;
-	int stacksize;
-	long *stack;
-	long *sys_stack;
-	long *bios_stack;
+	int stack_size;
+	long stack;					// base address of user stack
+	long sys_stack;
+	long bios_stack;
 	int timeout;
 	MSG msg;
 	hMBX hMailboxes[4]; // handles of mailboxes owned by task
 	hMBX hWaitMbx;      // handle of mailbox task is waiting at
 	hTCB number;
 	hACB hApp;
+	CBL* callback;
 	unsigned char priority;
 	unsigned char status;
 	unsigned long affinity;
@@ -299,5 +306,12 @@ typedef struct tagAppStartupRec {
 	unsigned long* pUIData;
 	char hasGarbageCollector;
 } AppStartupRec;
+
+typedef struct _tagTBLK {
+	hTBLK next;
+	hACB appid;
+	unsigned long countdown;
+	void (*func)();	
+} TBLK;	// 12 bytes
 
 #endif

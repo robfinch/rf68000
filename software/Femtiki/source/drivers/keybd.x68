@@ -840,10 +840,10 @@ Wait300ms:
 KeybdIRQ:
 	; Disable lower interrupts. The IPL will be restored by the RTE at the
 	; end of this routine.
-	move.w #$2600,sr					
+	move.w #$2700,sr					
+	neg.l $FD000000						; update IRQ live indicator
 	movem.l	d0/d1/d2/a0/a3,-(a7)
 	move.l #keybd_vars,a3
-	neg.l $FD000000						; update IRQ live indicator
 	moveq	#0,d1								; check if keyboard IRQ
 	move.b KEYBD+1,d1					; get status reg
 	tst.b	d1

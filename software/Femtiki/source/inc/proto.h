@@ -43,6 +43,10 @@
 ACB *GetACBPtr();                   // get the ACB pointer of the running task
 extern ACB *GetRunningACBPtr();
 
+int getCPU() = 
+	"\tmovec coreno,d0\r\n"
+;
+
 hTCB GetRunningAppid() =
 	"\tmovec.l cpid,d0\r\n"
 ;
@@ -73,6 +77,8 @@ void SetMMUAppid(__reg("d0") long appid) =
 	"\tmove.l d0,$FDC00008\r\n"
 ;
 
+extern int SetImLevel(int level);
+extern void SetImLevelHelper(__reg("d0") int level);
 extern hACB GetRunningAppid();
 extern TCB *GetRunningTCBPtr();
 extern void SetRunningTCBPtr(TCB *p);
@@ -90,7 +96,7 @@ long FMTK_SendMsg(__reg("d0") long hMbx, __reg("d1") long d1, __reg("d2") long d
 long FMTK_WaitMsg(__reg("d0") long hMbx, __reg("d1") long d1, __reg("d2") long d2, __reg("d3") long d3, __reg("d4") long timelimit);
 long FMTK_PeekMsg(__reg("d0") long hMbx, __reg("d1") long d1, __reg("d2") long d2, __reg("d3") long d3);
 long FMTK_CheckMsg(__reg("d0") long hMbx, __reg("d1") long d1, __reg("d2") long d2, __reg("d3") long d3, __reg("d4") long qrmv);
-long FMTK_StartThread(__reg("d0") long pCode, __reg("d1") long pCmd, __reg("d2") long priority, __reg("d3") long affinity);
+long FMTK_StartThread(__reg("d0") long pCode, __reg("d1") long stack, __reg("d2") long pCmd, __reg("d3") long priority, __reg("d4") long affinity);
 long FMTK_ExitThread();
 long FMTK_KillThread(__reg("d0") long);
 long FMTK_AllocMbx();

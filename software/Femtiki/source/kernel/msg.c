@@ -378,6 +378,8 @@ static MSG *DequeueMsg(MBX *mbx)
 
 long DequeueThreadFromMailbox(MBX *mbx, TCB **thread)
 {
+	int im_level;
+
 	if (thread == NULL || mbx == NULL)
 		return (E_Arg);
 
@@ -398,10 +400,9 @@ long DequeueThreadFromMailbox(MBX *mbx, TCB **thread)
 	// remove from timeout list
 	// adjust succeeding thread timeout if present
 	if ((*thread)->status & TS_TIMEOUT) {
-		if (LockTimeoutList(-1)) {
-			TCBRemoveFromTimeoutList(TCBPointerToHandle(*thread));
-			UnlockTImeoutList();
-		}
+		im_level = SetImLevel(7);
+		TCBRemoveFromTimeoutList(TCBPointerToHandle(*thread));
+		SetImLevelHelper(im_level);
 	}
 
 	(*thread)->mbq_prev = (*thread)->mbq_next = 0;
@@ -425,17 +426,16 @@ long FMTK_AllocMbx()
 	MBX *mbx;
 	hMBX hMbx;
 
-	if (LockMBXSemaphore(-1)) {
-		if (freeMBX <= 0 || freeMBX > NR_MBX) {
-	    UnlockMBXSemaphore();
-			return (-E_NoMoreMbx);
-    }
-    hMbx = freeMBX;
-		mbx = MBXHandleToPointer(freeMBX);
-		freeMBX = mbx->link;
-		nMailbox--;
+	while (LockMBXSemaphore(-1)==0);
+	if (freeMBX <= 0 || freeMBX > NR_MBX) {
     UnlockMBXSemaphore();
+		return (-E_NoMoreMbx);
   }
+  hMbx = freeMBX;
+	mbx = MBXHandleToPointer(freeMBX);
+	freeMBX = mbx->link;
+	nMailbox--;
+  UnlockMBXSemaphore();
   // At system startup there may not be a running App. We want allocated
   // mailboxes to be owned by the system.
 	mbx->owner = GetRunningAppid();
@@ -465,42 +465,40 @@ long FMTK_FreeMbx(__reg("d0") long hMbx)
 	MBX *mbx;
 	MSG *msg;
 	TCB *thread;
+	int im_level;
 	
 	if (hMbx <= 0 || hMbx > NR_MBX)
 		return (-E_Arg);
 	mbx = MBXHandleToPointer(hMbx);
-	if (LockMBXSemaphore(-1)) {
-		if ((mbx->owner != GetRunningAppid()) && (GetRunningAppid() > 1)) {
-	    UnlockMBXSemaphore();
-			return (-E_NotOwner);
-    }
-		// Free up any queued messages
-		while (msg = DequeueMsg(mbx))
-			FreeMsg(msg);
-		// Send an indicator to any queued threads that the mailbox
-		// is now defunct Setting MsgPtr = null will cause any
-		// outstanding WaitMsg() to return E_NoMsg.
-		while(1) {
-			DequeueThreadFromMailbox(mbx, &thread);
-			if (thread == null)
-				break;
-			thread->msg.type = MT_NONE;
-			if (thread->status & TS_TIMEOUT) {
-				if (LockTimeoutList(-1)) {
-					TCBRemoveFromTimeoutList(TCBPointerToHandle(thread));
-					UnlockTImeoutList();
-				}
-			}
-			if (LockReadyQueue(-1)) {
-				TCBInsertIntoReadyQueue(TCBPointerToHandle(thread));
-				UnlockReadyQueue();
-			}
-		}
-		mbx->link = freeMBX;
-		freeMBX = mbx-mailbox;
-		nMailbox++;
+	while (LockMBXSemaphore(-1)==0);
+	if ((mbx->owner != GetRunningAppid()) && (GetRunningAppid() > 1)) {
     UnlockMBXSemaphore();
+		return (-E_NotOwner);
   }
+	// Free up any queued messages
+	while (msg = DequeueMsg(mbx))
+		FreeMsg(msg);
+	// Send an indicator to any queued threads that the mailbox
+	// is now defunct Setting MsgPtr = null will cause any
+	// outstanding WaitMsg() to return E_NoMsg.
+	while(1) {
+		DequeueThreadFromMailbox(mbx, &thread);
+		if (thread == null)
+			break;
+		thread->msg.type = MT_NONE;
+		if (thread->status & TS_TIMEOUT) {
+			im_level = SetImLevel(7);
+			TCBRemoveFromTimeoutList(TCBPointerToHandle(thread));
+			SetImLevelHelper(im_level);
+		}
+		im_level = SetImLevel(7);
+		TCBInsertIntoReadyQueue(TCBPointerToHandle(thread));
+		SetImLevelHelper(im_level);
+	}
+	mbx->link = freeMBX;
+	freeMBX = mbx-mailbox;
+	nMailbox++;
+  UnlockMBXSemaphore();
 	return (E_Ok);
 }
 
@@ -546,6 +544,7 @@ long FMTK_SendMsg(
 	MBX *mbx;
 	MSG *msg;
 	TCB *thread;
+	int im_level;
 
 	if (hMbx <= 0 || hMbx > NR_MBX)
 		return (-E_Arg);
@@ -574,13 +573,13 @@ long FMTK_SendMsg(
 	CopyMsg(&thread->msg,msg);
   FreeMsg(msg);
 	if (thread->status & TS_TIMEOUT) {
-		while (LockTimeoutList(-1)==0);
+		im_level = SetImLevel(7);
 		TCBRemoveFromTimeoutList(TCBPointerToHandle(thread));
-		UnlockTImeoutList();
+    SetImLevelHelper(im_level);
 	}
-	while (LockReadyQueue(-1)==0);
+	im_level = SetImLevel(7);
 	TCBInsertIntoReadyQueue(TCBPointerToHandle(thread));
-	UnlockReadyQueue();
+  SetImLevelHelper(im_level);
 	return (E_Ok);
 }
 
@@ -614,6 +613,7 @@ long FMTK_WaitMsg(
 	TCB *thread;
 	hTCB hThread;
 	TCB *rt;
+	int im_level;
 
 	if (hMbx == 0 || hMbx > NR_MBX)
 		return (-E_Arg);
@@ -643,11 +643,11 @@ long FMTK_WaitMsg(
 	//-------------------------
 	// Queue thread at mailbox
 	//-------------------------
-	while (LockReadyQueue(-1)==0);
+ 	im_level = SetImLevel(7);
 	thread = GetRunningTCBPtr();
 	hThread = GetRunningTCB();
 	TCBRemoveFromReadyQueue(hThread);
-  UnlockReadyQueue();
+  SetImLevelHelper(im_level);
 	thread->status |= TS_WAITMSG;
 	thread->hWaitMbx = hMbx;
 	thread->mbq_next = 0;
@@ -669,9 +669,9 @@ long FMTK_WaitMsg(
 	// Is a timeout specified ?
 	if (timelimit) {
       //asm { ; Waitmsg here; }
-  	while (LockTimeoutList(-1)==0);
+  	im_level = SetImLevel(7);
     TCBInsertIntoTimeoutList(hThread, timelimit);
-    UnlockTImeoutList();
+    SetImLevelHelper(im_level);
   }
   // Reschedule will cause control to pass to another thread.
   FMTK_Reschedule();

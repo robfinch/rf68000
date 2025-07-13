@@ -47,7 +47,6 @@
 extern long hasUltraHighPriorityTasks;
 extern void prtdbl(double);
 
-extern hTCB FreeTCB;
 extern TCB tcbs[];
 
 TCB* GetRunningTCBPtr()
@@ -89,26 +88,22 @@ static hTCB iAllocTCB()
 	TCB* p;
 	hTCB h;
 
-	if (FreeTCB<=0)
+	if (freeTCB<=0)
 		return (0);
-	h = FreeTCB;
-	p = TCBHandleToPointer(FreeTCB);
-	FreeTCB = p->next;
+	h = freeTCB;
+	p = TCBHandleToPointer(freeTCB);
+	freeTCB = p->next;
 	return (h);
 }
 
-hTCB AllocTCB(hTCB* ph)
+hTCB AllocTCB()
 {
 	hTCB h;
 
-	if (LockSysSemaphore(100000)) {
-		h = iAllocTCB();
-		UnlockSysSemaphore();
-		if (ph)
-			*ph = h;
-		return (E_Ok);
-	}
-	return (E_Busy);
+	while (LockTCBList(-1)==0);
+	h = iAllocTCB();
+	UnlockTCBList();
+	return (h);
 }
 
 static void iFreeTCB(hTCB h)
@@ -117,8 +112,8 @@ static void iFreeTCB(hTCB h)
 	
 	p = TCBHandleToPointer(h);
 	if (p) {
-		p->next = FreeTCB;
-		FreeTCB = h;
+		p->next = freeTCB;
+		freeTCB = h;
 	}
 }
 
@@ -159,7 +154,7 @@ void TCBClearStatusBit(hTCB h, int bits)
 // Routine must be called with ready queue locked.
 // ----------------------------------------------------------------------------
 
-int TCBInsertIntoReadyQueue(register hTCB ht)
+int TCBInsertIntoReadyQueue(hTCB ht)
 {
 	hTCB hq;
 	TCB *p, *q;
@@ -192,7 +187,7 @@ int TCBInsertIntoReadyQueue(register hTCB ht)
 // Must be called with the ready queue locked.
 // ----------------------------------------------------------------------------
 
-int TCBRemoveFromReadyQueue(register hTCB ht)
+int TCBRemoveFromReadyQueue(hTCB ht)
 {
 	TCB *t,* p, *q;
 
@@ -315,9 +310,25 @@ hTCB TCBPopTimeoutList()
 
 
 // ----------------------------------------------------------------------------
+// Pop the top entry from the callback list.
 // ----------------------------------------------------------------------------
 
-void DumpTaskList()
+unsigned long TCBPopCallbackList(TCB* t)
+{
+  unsigned long pcb;
+
+	if (t->callback) {
+		pcb = t->callback->func;
+		t->callback = t->callback->next;
+	}
+  return (pcb);
+}
+
+
+// ----------------------------------------------------------------------------
+// ----------------------------------------------------------------------------
+
+void DumpThreadList()
 {
    TCB *p, *q;
    int n;

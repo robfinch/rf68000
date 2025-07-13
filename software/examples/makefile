@@ -53,6 +53,7 @@ DRIVERS = \
 	../Femtiki/source/drivers/random.o \
 	../Femtiki/source/drivers/rtc.o \
 	../Femtiki/source/drivers/pic.o \
+	../Femtiki/source/drivers/pitc.o \
 	../Femtiki/source/drivers/pit.o
 
 #..\Femtiki\source\drivers\drivers.o: $(DRIVERS)
@@ -111,6 +112,7 @@ OUT = \
 	..\Femtiki\source\drivers\serial.o \
 	..\Femtiki\source\drivers\random.o \
 	..\Femtiki\source\drivers\pic.o \
+	..\Femtiki\source\drivers\pitc.o \
 	..\Femtiki\source\drivers\pit.o \
 	..\Femtiki\source\kernel\femtiki_asm.o \
 	..\Femtiki\source\Femtiki2.o
@@ -160,6 +162,8 @@ BIOS:	$(OUT)
 #	vlink -T rom_bios.cmd -brawbin1 LEDTest.o -o LEDTest.bin
 #	vlink -T rom_bios.cmd -brawbin1 cputest.o -o cputest.bin
 
+	vbccm68k $(CFLAGS) ..\Femtiki\source\drivers\pitc.c
+	vasmrf68000_mot.exe -Fvobj -L ..\Femtiki\source\drivers\pitc.lst ..\Femtiki\source\drivers\pitc.asm -o ..\Femtiki\source\drivers\pitc.o -m68010 -m68881
 	vbccm68k $(CFLAGS) DumpThreads.c
 	vasmrf68000_mot.exe -Fvobj -L DumpThreads.lst DumpThreads.asm -o DumpThreads.o -m68010 -m68881
 	$(LLX) -MFemtiki.map -T ..\Femtiki\source\Femtiki.cmd -bsrec37 $(OUT) -o Femtiki.s37
@@ -214,6 +218,7 @@ BIOS:	$(OUT)
 	..\Femtiki\source\drivers\serial.o \
 	..\Femtiki\source\drivers\random.o \
 	..\Femtiki\source\drivers\pic.o \
+	..\Femtiki\source\drivers\pitc.o \
 	..\Femtiki\source\drivers\pit.o \
 	..\Femtiki\source\kernel\dbg_console.o \
 	..\Femtiki\source\kernel\semaphore.o \

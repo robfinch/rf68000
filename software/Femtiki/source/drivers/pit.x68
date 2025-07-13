@@ -22,9 +22,9 @@ pit_setup:
 pit_init:
 init_pit:
 	lea	PIT,a0							; a0 points to PIT
-	move.l #1000000,$44(a0)	; setup for 100.0 Hz
-	move.l #50,$48(a0)			; on for 50 clocks
-	move.l #$87,$4C(a0)			; load,enable,auto-reload,internal clock,ignore gate,set
+	move.l #1000000,$84(a0)	; setup for 100.0 Hz
+	move.l #50,$88(a0)			; on for 50 clocks
+	move.l #$87,$8C(a0)			; load,enable,auto-reload,internal clock,ignore gate,set
 	move.l #16,$808(a0)			; enable timer #4 interrupts
 	rts
 
@@ -41,3 +41,31 @@ _reset_pit_irq:
 	rts
 
 	global _reset_pit_irq
+
+_pit_isr:
+	movem.l d0-d7/a0-a6,-(sp)
+	lea PIT,a0
+	move.l $800(a0),d0		; get underflow status
+	clr.l d2
+.0002
+	btst.l d2,d0
+	bne.s .0001
+	addq #1,d2
+	cmpi.b #32,d2
+	blo.s .0002
+	; no timer underflowed, just return
+	movem.l (sp)+,d0-d7/a0-a6
+	rte
+.0001
+	moveq #1,d1
+	lsl.l d2,d1
+	move.l d1,$800(a0)			; write to underflow to clear
+	lsl.l #5,d2							; d2 points to base timer reg
+	lea (a0,d2.w),a0				; a0 points to timer register set
+	jsr _pit_cisr
+	movem.l (sp)+,d0-d7/a0-a6
+	rte
+	
+	
+	
+	

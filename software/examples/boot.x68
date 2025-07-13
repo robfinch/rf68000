@@ -415,9 +415,9 @@ start:
 	move.w #$2700,_regSR
 	move.b #2,_InTimerISR
 	move.l #_tcbs,a0
-	move.l a0,_RunningTCBPointer	; point to task #1's tcb
+	move.l a0,_RunningTCBPointer	; point to thread #1's tcb
 	moveq #1,d0
-	movec d0,tr								; current task = 1
+	movec d0,tr								; current thread = 1
 	movec d0,cpid							; current app = 1
 	move.l #_SysAcb,a0
 	move.l a0,_ACBPtrs
@@ -546,7 +546,13 @@ start:
 	jsr	setup_pic				; initialize interrupt controller
 ;	jsr __crt_start
 ;	move.l #-1,_go			; Let the other cores start up
-;	jsr _FMTK_Initialize
+	jsr _FMTK_Initialize
+	move.l #StartMon,d0
+	move.l #0x4780A,d1
+	clr.l d2
+	move.l #15,d3
+	movec coreno,d4
+	jsr _FMTK_StartThread
 	jmp	StartMon
 
 
@@ -574,6 +580,12 @@ start_other:
 	bsr			DisplayByte
 	lea			msg_core_start,a1
 	bsr			_DisplayString
+	move.l #StartMon,d0
+	move.l #0x4780A,d1
+	clr.l d2
+	move.l #15,d3
+	movec coreno,d4
+;	jsr _FMTK_StartThread
 ;	bsr			FemtikiInitIRQ
 do_nothing:	
 ;	bra			StartMon
@@ -2176,7 +2188,7 @@ Monitor:
 	trap #15
 ;	bsr	UnlockSemaphore
 ;	clr.b KeybdEcho			; turn off keyboard echo
-	move.l #$70000,d7
+	move.l #$10000,d7		; was $70000
 	moveq #DEV_SET_ECHO,d6
 	moveq #0,d1
 	trap #0

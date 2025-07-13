@@ -4,6 +4,7 @@
 #define NR_MAPS	2048
 #define NR_ACB  32
 #define NR_TCB  256
+#define NR_TMRBLOCK	256
 #define NR_MBX  1024
 #define NR_MSG  800
 #define NR_RQB	256

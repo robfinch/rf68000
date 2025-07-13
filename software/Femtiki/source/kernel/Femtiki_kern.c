@@ -49,7 +49,7 @@ extern void DumpThreads();
 extern void DisplayString(__reg("a1") char *str);
 extern void ClearScreen();
 
-extern hTCB FreeTCB;
+extern hTCB freeTCB;
 
 extern long __interrupt FMTK_Dispatch(
 	__reg("d7") long,
@@ -74,6 +74,7 @@ extern int FMTK_Inited;
 extern ACB acbs[NR_ACB];
 extern ACB *ACBPtrs[NR_ACB];
 extern TCB tcbs[NR_TCB];
+extern TBLK TimerBlocks[NR_TMRBLOCK];
 extern hTCB readyQ[32];
 extern int sysstack[1024];
 extern int sys_stacks[NR_TCB][512];
@@ -85,8 +86,6 @@ extern MSG message[NR_MSG];
 extern int nMsgBlk;
 extern int nMailbox;
 extern hACB freeACB;
-extern hMSG freeMSG;
-extern hMBX freeMBX;
 extern hACB IOFocus;
 extern int iof_switch;
 extern long hasUltraHighPriorityTasks;
@@ -162,12 +161,13 @@ ACB* ACBHandleToPointer(hACB h)
 	return (ACBPtrs[h-1]);
 }
 
+TBLK* TBLKHandleToPointer(hTBLK h)
+{
+	return (&TimerBlocks[h-1]);
+}
+
 int GetRunningPID() =
 	"\tmovec.l cpid,d0\r\n"
-;
-
-int getCPU() = 
-	"\tmovec coreno,d0\r\n"
 ;
 
 int IsSystemApp(hACB h)
@@ -191,22 +191,6 @@ int GetImLevel() =
 ;
 
 // ----------------------------------------------------------------------------
-// Carefully done so that the IM level is not affected until the end. There is
-// no transient level.
-// ----------------------------------------------------------------------------
-
-void SetImLevelHelper(__reg("d0") int level) =
-"\tmove.l d1,-(sp)\r\n"
-"\tand.w #7,d0\r\n"
-"\tlsl.w #8,d0\r\n"
-"\tmove sr,d1\r\n"
-"\tand.w #$F8FF,d1\r\n"
-"\tor.w d1,d0\r\n"
-"\tmove.w d0,sr\r\n"
-"\tmove.l (sp)+,d1\r\n"
-;
-
-// ----------------------------------------------------------------------------
 // SetImLevel will only set the interrupt mask level to level higher than the
 // current one.
 //
@@ -214,7 +198,7 @@ void SetImLevelHelper(__reg("d0") int level) =
 //		int	- the previous interrupt level setting
 // ----------------------------------------------------------------------------
 
-int SetImLevel(register int level)
+int SetImLevel(int level)
 {
 	int x;
 
@@ -225,9 +209,9 @@ int SetImLevel(register int level)
 }
 
 // ----------------------------------------------------------------------------
-// Restore the task's context.
+// Restore the thread's context.
 //
-// The registers were stored on the task's IRQ stack when the timer ISR was
+// The registers were stored on the thread's IRQ stack when the timer ISR was
 // entered. They will automatically be restored from the IRQ stack when the
 // the ISR exits. The only thing required is to account for the other info
 // related to the context.
@@ -244,7 +228,7 @@ void SwapContext(register TCB *octx, register TCB *nctx)
 }
 
 // ----------------------------------------------------------------------------
-// Select a task to run.
+// Select a thread to run.
 // ----------------------------------------------------------------------------
 
 static int invert;
@@ -260,7 +244,7 @@ static hTCB SelectThreadToRunHelper(int nn)
 		p = TCBHandleToPointer(h);
     kk = 0;
     // Can run the head of a lower Q level if it's not the running
-    // task, otherwise look to the next task.
+    // thread, otherwise look to the next thread.
     if (h != GetRunningTCB())
    		q = p;
 		else
@@ -320,13 +304,13 @@ void FMTK_Reschedule()
 // ----------------------------------------------------------------------------
 // All cores will receive a timer interrupt.
 //
-// If timer interrupts are enabled during a priority #0 task, this routine
-// only updates the missed ticks and remains in the same task. No timeouts
-// are updated and no task switches will occur. The timer tick routine
+// If timer interrupts are enabled during a priority #0 thread, this routine
+// only updates the missed ticks and remains in the same thread. No timeouts
+// are updated and no thread switches will occur. The timer tick routine
 // basically has a fixed latency when priority #0 is present.
 // ----------------------------------------------------------------------------
 
-void FMTK_TimerIRQ()
+void FMTK_TimerTickIRQ()
 {
   TCB *t, *ot, *tol;
 
@@ -354,15 +338,15 @@ void FMTK_TimerIRQ()
 		// Set IRQ flag for interpreters
 		tickcnt++;
 		IRQFlag = 1;
-		// Allow tasks to run at least 3 ticks before switching.
+		// Allow threads to run at least 3 ticks before switching.
 		if (1 || t->endTick - t->startTick > 3) {
 			// Try and lock the system semaphore, but not too hard.
-			if (LockReadyQueue(100)) {
+	//		if (LockReadyQueue(100)) {
 				t->ticks = t->ticks + (t->endTick - t->startTick);
 				if (t->priority != 31) {
 					t->status |= TS_PREEMPT;
 					t->status &= ~TS_RUNNING;
-					if (LockTimeoutList(1000)) {
+//					if (LockTimeoutList(1000)) {
 						while (TimeoutList > 0 && TimeoutList <= NR_TCB) {
 							tol = TCBHandleToPointer(TimeoutList);
 							if (tol->timeout <= 0)
@@ -373,19 +357,19 @@ void FMTK_TimerIRQ()
 								break;
 							}
 						}
-						UnlockTImeoutList();
-					}
+//						UnlockTImeoutList();
+//					}
 					if (t->priority < 28)
 						SetRunningTCBPtr(TCBHandleToPointer(SelectThreadToRun()));
 					GetRunningTCBPtr()->status |= TS_RUNNING;
 				}
 				else
 					missed_ticks++;
-				UnlockReadyQueue();
-			}
-			else {
-				missed_ticks++;
-			}
+//				UnlockReadyQueue();
+//			}
+//			else {
+//				missed_ticks++;
+//			}
 		}
 	}
 	// If an exception was flagged (eg CTRL-C) return to the catch handler
@@ -398,9 +382,62 @@ void FMTK_TimerIRQ()
 		t->pc = (unsigned long)t->exceptionHandler;	// Now copy exception handler address
 	}
 	if (ot != t) {
-		t->startTick = GetTick();		// Only starting if context is switching to task.
+		t->startTick = GetTick();		// Only starting if context is switching to thread.
 		SwapContext(ot,t);
 	}
+}
+
+// We're getting a timer block IRQ because a count has reached zero. Call all
+// the callback functions with zero counts.
+
+void FMTK_TimerBlockIRQ()
+{
+	TBLK* tb;
+	hTBLK htb;
+	ACB* p;
+	hACB ha;
+	unsigned long pd;
+	unsigned long* PIT = (unsigned long*)0xFDFEC000;
+
+	// If the timer block list cannot be locked, there is likely a system call
+	// to allocate a timer block for use. It should be done is short order.
+	if (LockTimerBlockList(100)) {
+		// As long as the block list is a valid handle.
+		while (TimerBlockList > 0 && TimerBlockList <= NR_TMRBLOCK) {
+			htb = TimerBlockList;
+			tb = TBLKHandleToPointer(TimerBlockList);
+			// Get the current page directory	
+			ha = GetRunningAppid();
+			p = ACBHandleToPointer(ha);
+			pd = (unsigned long)&p->pd;
+			// Call the callback function.
+			while (tb->countdown==0) {
+				// Set page directory to callback space
+				ha = tb->appid;
+				p = ACBHandleToPointer(ha);
+				SetMMUPD(USERPD,(unsigned long)&p->pd);
+				// Call callback function
+				if (tb->func)
+					(*tb->func)();
+				htb = TimerBlockList;
+				TimerBlockList = tb->next;
+				tb->next = freeTBLK;
+				freeTBLK = htb;
+				tb = TBLKHandleToPointer(TimerBlockList);
+				if (TimerBlockList <= 0)
+					break;
+			}
+			// Restore page directory
+			SetMMUPD(USERPD,pd);
+		}
+		// Program the PIT for the next countdown.
+		if (TimerBlockList > 0) {
+			PIT[5*4+1] = tb->countdown;
+			PIT[5*4+2] = 5;			// pulse is 5 clocks wide
+			PIT[5*4+3] = 0x83;	//load,enable,no auto-reload,internal clock,ignore gate,set
+		}
+	}
+	UnlockTimerBlockList();
 }
 
 void panic(char *msg)
@@ -411,6 +448,8 @@ j1:  goto j1;
 
 // ----------------------------------------------------------------------------
 // ----------------------------------------------------------------------------
+
+long IdleStack[300];
 
 void IdleThread()
 {
@@ -437,14 +476,14 @@ long FMTK_ExceptionHandler(__reg("d0") long val, __reg("d1") long typ)
 // ----------------------------------------------------------------------------
 // ----------------------------------------------------------------------------
 
-long FMTK_KillThread(__reg("d0") long taskno)
+long FMTK_KillThread(__reg("d0") long threadno)
 {
   hTCB ht, pht;
   hACB hApp;
   int nn;
   ACB *j;
 
-  ht = taskno-1;
+  ht = threadno-1;
   if (LockSysSemaphore(-1)) {
     TCBRemoveFromReadyQueue(ht);
     TCBRemoveFromTimeoutList(ht);
@@ -453,17 +492,17 @@ long FMTK_KillThread(__reg("d0") long taskno)
         FMTK_FreeMbx(tcbs[ht].hMailboxes[nn]);
         tcbs[ht].hMailboxes[nn] = 0;
       }
-    // remove task from job's task list
+    // remove thread from job's thread list
     hApp = tcbs[ht].hApp;
     j = GetACBPtr(hApp);
-    ht = j->task;
-    if (ht==taskno)
-    	j->task = tcbs[ht].acbnext;
+    ht = j->thread;
+    if (ht==threadno)
+    	j->thread = tcbs[ht].acbnext;
     else {
     	while (ht > 0) {
     		pht = ht;
     		ht = tcbs[ht].acbnext - 1;
-    		if (ht==taskno-1) {
+    		if (ht==threadno-1) {
     			tcbs[pht].acbnext = tcbs[ht].acbnext;
     			break;
     		}
@@ -472,7 +511,7 @@ long FMTK_KillThread(__reg("d0") long taskno)
 		tcbs[ht].acbnext = 0;
     // If the job no longer has any threads associated with it, it is 
     // finished.
-    if (j->task == 0) {
+    if (j->thread == 0) {
     	j->magic = 0;
     	FreeACB(hApp);
     }
@@ -498,7 +537,7 @@ long FMTK_ExitThread()
 
 
 // ----------------------------------------------------------------------------
-// Start a task.
+// Start a thread.
 // Stacks are automatically allocated for the system and app.
 //
 //
@@ -516,9 +555,10 @@ long FMTK_ExitThread()
 
 long FMTK_StartThread(
 	__reg("d0") long StartAddr,
-	__reg("d1") long parm,
-	__reg("d2") long priority,
-	__reg("d3") long affinity
+	__reg("d1") long stack,
+	__reg("d2") long parm,
+	__reg("d3") long priority,
+	__reg("d4") long affinity
 )
 {
   hTCB ht;
@@ -527,30 +567,38 @@ long FMTK_StartThread(
 	hACB hApp;
 	short int *sp2;
 	unsigned long int* sp;
+	int im_level;
+	int stack_size;
 
 	DisplayStringCRLF("StartThread");
 	hApp = GetRunningAppid();
 
   while (LockTCBList(-1)==0);
-	DisplayStringCRLF("Locked TCB list");
-  ht = FreeTCB;
+	DisplayString("Locked TCB list, handle: ");
+  ht = freeTCB;
+  DisplayWyde(ht);
+  DisplayStringCRLF(" ");
   if (ht <= 0 || ht > NR_TCB) {
     UnlockTCBList();
+		DisplayStringCRLF("Unlocked TCB list - no more tcbs");
   	return (-E_NoMoreTCBs);
   }
   t = TCBHandleToPointer(ht);
-  FreeTCB = t->next;
+  freeTCB = t->next;
+  DisplayString("freeTCB=");
+  DisplayWyde(freeTCB);
+  DisplayStringCRLF(" ");
   UnlockTCBList();
 	DisplayStringCRLF("Unlocked TCB list");
 
   t->affinity = affinity;
   t->priority = priority;
   t->hApp = hApp;
-  // Insert into the job's list of tasks.
+  // Insert into the job's list of threads.
   while (LockTCBList(-1)==0);
 	DisplayStringCRLF("Locked TCB list");
-	t->acbnext = ACBPtrs[hApp]->task;
-	ACBPtrs[hApp]->task = ht;
+	t->acbnext = ACBPtrs[hApp-1]->thread;
+	ACBPtrs[hApp-1]->thread = ht;
 	UnlockTCBList();
 	DisplayStringCRLF("Unlocked TCB list");
 
@@ -566,10 +614,21 @@ long FMTK_StartThread(
   t->ticks = 0;
   t->exception = 0;
   t->exceptionHandler = FMTK_ExceptionHandler;
-  while (LockReadyQueue(-1)==0);
+	t->callback = 0;
+	if (stack) {
+		t->stack = (stack + 31) & 0xffffffe0UL;
+		t->stack_size = stack & 31;
+		t->regs[14] = t->stack + (1 << t->stack_size) - 32;
+	}
+	else {
+		t->stack = (unsigned long)mem_alloc(hApp,8180,6);
+		t->stack_size = 13;
+		t->regs[14] = t->stack + (1 << t->stack_size) - 32;
+	}
+  im_level = SetImLevel(7);
 	DisplayStringCRLF("Locked RDQ");
   TCBInsertIntoReadyQueue(ht);
-  UnlockReadyQueue();
+  SetImLevelHelper(im_level);
 	DisplayStringCRLF("Unlocked RDQ");
   return (ht);
 }
@@ -631,6 +690,43 @@ void SetVector(__reg("d0") unsigned long num, __reg("d1") unsigned long addr) =
 	"\tmovem.l (sp)+,d0/a0\r\n"
 ;
 
+void SetupTCBs()
+{
+	int nn;
+
+	for (nn = 0; nn < 8; nn++)
+		readyQ[nn] = 0;
+	DisplayStringCRLF("Setup readyQs");
+	if (getCPU()==2) {
+		DisplayStringCRLF("CPU 2");
+		for (nn = 0; nn < NR_TCB; nn++) {
+	    tcbs[nn].number = nn;
+	    tcbs[nn].acbnext = 0;
+			tcbs[nn].next = nn+2;
+			tcbs[nn].prev = nn;
+			tcbs[nn].status = 0;
+			tcbs[nn].priority = 15;
+			tcbs[nn].affinity = 63;
+			tcbs[nn].hApp = 0;
+			tcbs[nn].timeout = 0;
+			tcbs[nn].hMailboxes[0] = 0;
+			tcbs[nn].hMailboxes[1] = 0;
+			tcbs[nn].hMailboxes[2] = 0;
+			tcbs[nn].hMailboxes[3] = 0;
+			if (nn<2) {
+	      tcbs[nn].affinity = nn;
+	      tcbs[nn].priority = 30;
+	    }
+	    tcbs[nn].exception = 0;
+		}
+		tcbs[NR_TCB-1].next = 0;
+		freeTCB = 1;
+	}
+	TimeoutList = 0;
+	
+	DisplayStringCRLF("Setup thread control blocks");
+}
+
 // ----------------------------------------------------------------------------
 // Initialize FMTK global variables.
 // ----------------------------------------------------------------------------
@@ -644,9 +740,6 @@ long FMTK_Initialize()
 	hACB hAcb;
 	long d1, d2, d3;
 
-	// Lock up the other cores for now	
-	while (get_coreno() != 2);
-	
 	DisplayLEDS(0x21);
 
 	// Nothing is running ATM
@@ -686,8 +779,8 @@ long FMTK_Initialize()
     UnlockKbdSemaphore();
     UnlockMSGSemaphore();
     UnlockMBXSemaphore();
-    UnlockTImeoutList();
-    UnlockReadyQueue();
+//    UnlockTImeoutList();
+//    UnlockReadyQueue();
     UnlockTCBList();
 
 		DisplayStringCRLF("Unlocked lists");
@@ -717,31 +810,9 @@ long FMTK_Initialize()
   	for (nn = 0; nn < 8; nn++)
   		readyQ[nn] = 0;
 		DisplayStringCRLF("Setup readyQs");
-  	for (nn = 0; nn < NR_TCB; nn++) {
-      tcbs[nn].number = nn;
-      tcbs[nn].acbnext = 0;
-  		tcbs[nn].next = nn+2;
-  		tcbs[nn].prev = nn;
-  		tcbs[nn].status = 0;
-  		tcbs[nn].priority = 15;
-  		tcbs[nn].affinity = 0;
-  		tcbs[nn].hApp = 0;
-  		tcbs[nn].timeout = 0;
-  		tcbs[nn].hMailboxes[0] = 0;
-  		tcbs[nn].hMailboxes[1] = 0;
-  		tcbs[nn].hMailboxes[2] = 0;
-  		tcbs[nn].hMailboxes[3] = 0;
-  		if (nn<2) {
-        tcbs[nn].affinity = nn;
-        tcbs[nn].priority = 30;
-      }
-      tcbs[nn].exception = 0;
-  	}
-  	tcbs[NR_TCB-1].next = 0;
-  	freeTCB = 2;
+		SetupTCBs();
   	TimeoutList = 0;
   	
-		DisplayStringCRLF("Setup thread control blocks");
  		DisplayLEDS(4);
 //    init_memory_management();
   	for (nn = 0; nn < NR_ACB; nn++)
@@ -751,7 +822,8 @@ long FMTK_Initialize()
 		SetRunningAppid(1);
 
 		FMTK_StartThread(
-			(unsigned long)StartMon,
+			(unsigned long)IdleThread,
+			(((unsigned long)&IdleStack[0]) & 0xffffffe0UL) | 10,	// 256 lwords
 			0,
 			15,
 			63
@@ -759,6 +831,8 @@ long FMTK_Initialize()
 
 		DisplayStringCRLF("Started thread");
 		DumpThreads();
+/*
+*/
 /*
 		asr.pagesize = 8;
 		asr.priority = 15;
@@ -795,7 +869,7 @@ long FMTK_Initialize()
 //    	set_vector(2,(unsigned int)FMTK_SchedulerIRQ);
 		hKeybdMbx = 0;
 		hFocusSwitchMbx = 0;
-  	FMTK_Inited = FMTK_MAGIC;
+//  	FMTK_Inited = FMTK_MAGIC;
   	SetImLevelHelper(lev);								// Restore interrupts
 		DisplayLEDS(6);
   }
@@ -804,6 +878,7 @@ long FMTK_Initialize()
 		
 	DisplayStringCRLF("Alloced Mailbox: ");
 	DisplayLEDS(hMbx);
+	/*
 	if (hMbx > 0) {
 		for (nn = 0; nn < 10; nn++) {
 			FMTK_SendMsg(hMbx, 0xfffffff1, 0xfffffff1, 0xfffffff1);
@@ -813,5 +888,6 @@ long FMTK_Initialize()
 		}
 		FMTK_FreeMbx(hMbx);
 	}
+	*/
   return (E_Ok);
 }

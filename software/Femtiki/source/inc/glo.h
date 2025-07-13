@@ -57,6 +57,7 @@ extern int nMsgBlk;
 extern int nMailbox;
 extern hMSG freeMSG;
 extern hMBX freeMBX;
+extern CBL freeCBL;
 extern ACB *IOFocusNdx;
 extern int IOFocusTbl[];
 extern int iof_switch;
@@ -72,5 +73,7 @@ extern hTCB TimeoutList;
 extern hMBX hFocusSwitchMbx;
 extern ACB SysAcb;
 extern int tickcnt;
+extern hTBLK freeTBLK;
+extern hTBLK TimerBlockList;
 
 #endif
