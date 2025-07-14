@@ -1420,7 +1420,7 @@ case(ir[15:8])
 `BMI:	takb =  nf;
 `BGE:	takb = (nf & vf)|(!nf & !vf);
 `BLT:	takb = (nf & !vf)|(!nf & vf);
-`BGT:	takb = (nf & vf & !zf)|(!nf & !vf & zf);
+`BGT:	takb = (nf & vf & !zf)|(!nf & !vf & !zf);
 `BLE:	takb = zf | (nf & !vf) | (!nf & vf);
 `DBRA:	takb = 1'b1;
 `DBSR:	takb = 1'b0;
@@ -1436,7 +1436,7 @@ case(ir[15:8])
 `DBMI:	takb =  nf;
 `DBGE:	takb = ((nf & vf)|(!nf & !vf));
 `DBLT:	takb = ((nf & !vf)|(!nf & vf));
-`DBGT:	takb = ((nf & vf & !zf)|(!nf & !vf & zf));
+`DBGT:	takb = ((nf & vf & !zf)|(!nf & !vf & !zf));
 `DBLE:	takb = (zf | (nf & !vf) | (!nf & vf));
 default:	takb = 1'b1;
 endcase
