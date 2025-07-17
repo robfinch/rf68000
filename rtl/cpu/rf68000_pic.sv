@@ -82,8 +82,8 @@
 //            bits 8 to 11 = irq level to issue
 //            bit 16 = irq enable
 //            bit 17 = edge sensitivity
-//						bit 18 = respond to inta
-//						bit 19 = rotate through cores
+//						bit 18,19 = 00 = vpa, 01=respond to inta,10==no response
+//						bit 20 = rotate through cores
 //						bit 24 to 29 destination core
 //=============================================================================
 
@@ -129,7 +129,7 @@ reg [3:0] irq [0:31];
 reg [7:0] cause [0:31];
 reg [5:0] core [0:31];
 reg [5:0] core_min, core_max;
-reg [31:0] intar;
+reg [1:0] intar [0:31];
 integer n,n1,n2;
 
 wire cs = cyc_i && stb_i && cs_i;
@@ -140,8 +140,8 @@ assign clk = clk_i;
 //BUFH ucb1 (.I(clk_i), .O(clk));
 
 always_ff @(posedge clk)
-	rdy1 <= cs | (cs_inta & intar[irqenc]);
-assign ack_o = (cs | (cs_inta & intar[irqenc])) ? (wr_i ? 1'b1 : rdy1) : 1'b0;
+	rdy1 <= cs | (cs_inta & intar[irqenc]==2'b01);
+assign ack_o = (cs | (cs_inta & intar[irqenc]==2'b01)) ? (wr_i ? 1'b1 : rdy1) : 1'b0;
 
 // write registers	
 always_ff @(posedge clk)
@@ -151,8 +151,8 @@ always_ff @(posedge clk)
 		trig <= 32'h0;
 		es <= 32'hFFFFFFFF;
 		rste <= 32'h0;
-		intar <= 32'hFFFFFFFF;
 		for (n1 = 0; n1 < 32; n1 = n1 + 1) begin
+			intar[n1] <= 2'b01;
 			cause[n1] <= 8'h00;
 			irq[n1] <= 4'h8;
 			core[n1] <= 'd0;
@@ -187,8 +187,8 @@ always_ff @(posedge clk)
 			         irq[adr_i[6:2]] <= dat_i[11:8];
 			         ie[adr_i[6:2]] <= dat_i[16];
 			         es[adr_i[6:2]] <= dat_i[17];
-			         intar[adr_i[6:2]] <= dat_i[18];
-			         rot[adr_i[6:2]] <= dat_i[19];
+			         intar[adr_i[6:2]] <= dat_i[19:18];
+			         rot[adr_i[6:2]] <= dat_i[20];
 			         core[adr_i[6:2]] <= dat_i[29:24];
 			     end
 			endcase
@@ -228,7 +228,7 @@ begin
 		6'd7:	dat_o <= {18'd0,core_max,2'd0,core_min};
 		default:	dat_o <= ie;
 		endcase
-	else if (cs_inta & intar[irqenc]) begin
+	else if (cs_inta & intar[irqenc]==2'b01) begin
 		if (adr_i[3:1] <= irq[irqenc])
 			dat_o <= {4{cause[irqenc]}};
 		else
@@ -238,7 +238,7 @@ begin
 		dat_o <= 32'h0000;
 end
 always_ff @(posedge clk)
-	if (cs_inta & ~intar[irqenc])
+	if (cs_inta & intar[irqenc]==2'b00)
 		vpa_o <= 1'b1;
 	else
 		vpa_o <= 1'b0;

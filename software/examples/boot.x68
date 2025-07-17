@@ -230,7 +230,7 @@ _go:
 	dc.l		0
 	
 	; 30
-	dc.l		_FMTK_TimerIRQLaunchpad	;TickIRQ						; IRQ 30 - timer / keyboard
+	dc.l		_FMTK_TimerISRLaunchpad	;TickIRQ						; IRQ 30 - timer / keyboard
 	dc.l		nmi_rout
 	dc.l		io_trap						; TRAP zero
 	dc.l		_FMTK_Dispatch		; OS
@@ -460,6 +460,7 @@ start:
 	move.b #5,leds
 	move.l #$10000,_InputDevice			; select keyboard input
 	move.l #$20000,_OutputDevice		; select text screen output
+	bsr	InitSemaphores
 	move.l #_DeviceTable+2*DCB_SIZE,d0
 	jsr _setup_textvid
 	move.b #4,leds
@@ -484,8 +485,9 @@ start:
 	move.l #_DeviceTable+7*DCB_SIZE,d0
 	jsr _setup_gfxaccel
 	move.b #9,leds
-	move.l #_DeviceTable+9*DCB_SIZE,d0
+	move.l #_DeviceTable+30*DCB_SIZE,d0
 	jsr _setup_random
+	jsr _SetupFirstThread
 	move.l #_DeviceTable+10*DCB_SIZE,d0
 	jsr _setup_pit
 	clr.l sys_switches
@@ -503,7 +505,6 @@ start:
 		bsr InitMMU							; Can't access anything till this is done'
 	endif
 	bsr	InitIOPBitmap					; not going to get far without this
-	bsr	InitSemaphores
 ;	bsr	InitRand
 	jsr RandGetNum
 	andi.l #$FFFFFF00,d1
@@ -536,23 +537,26 @@ start:
 	moveq	#1,d1
 ;	bsr	UnlockSemaphore	; allow another cpu access
 	moveq #44,d0				; Force unlock semaphore
+	move.l #$2700,d2
 	trap #15
 	moveq	#BIOS_SEMA,d1
+	move.l #$2700,d2
 	trap #15
 	moveq	#KEYBD_SEMA,d1
+	move.l #$2700,d2
 	trap #15
 ;	bsr	UnlockSemaphore	; allow other cpus to proceed
 	move.w #$A4A4,leds			; diagnostics
+	jsr _FMTK_Initialize
 	jsr	setup_pic				; initialize interrupt controller
 ;	jsr __crt_start
 ;	move.l #-1,_go			; Let the other cores start up
-	jsr _FMTK_Initialize
-	move.l #StartMon,d0
-	move.l #0x4780A,d1
-	clr.l d2
-	move.l #15,d3
-	movec coreno,d4
-	jsr _FMTK_StartThread
+;	move.l #StartMon,d0
+;	move.l #0x4780A,d1
+;	clr.l d2
+;	move.l #15,d3
+;	movec coreno,d4
+;	jsr _FMTK_StartThread
 	jmp	StartMon
 
 
@@ -1161,54 +1165,26 @@ InitSemaphores:
 	rts
 
 ; -----------------------------------------------------------------------------
-; Parameters:
-;		d1 semaphore number
+; Lock a semaphore. Interrupts are masked by this function. Unlock semaphore
+; should be called with the status register value returned by this function
+; to restore interrupts.
 ;
-; Side Effects:
-;		increments semaphore, saturates at 255
+;	Stack:
+;		sr
+;		a0
+;		d0
+;		ret addr
+;	  d1
+;		d2
+;		a0
 ;
-; Returns:	
-; 	z flag set if semaphore was zero
-; -----------------------------------------------------------------------------
-
-;IncrementSemaphore:
-;	movem.l	d1/a0,-(a7)			; save registers
-;	lea			semamem,a0			; point to semaphore memory
-;	ext.w		d1							; make d1 word value
-;	asl.w		#4,d1						; align to memory
-;	tst.b		1(a0,d1.w)			; read (test) value for zero
-;	movem.l	(a7)+,a0/d1			; restore regs
-;	rts
-	
-; -----------------------------------------------------------------------------
-; Parameters:
-;		d1 semaphore number
-;
-; Side Effects:
-;		decrements semaphore, saturates at zero
-;
-; Returns:	
-; 	z flag set if semaphore was zero
-; -----------------------------------------------------------------------------
-
-;DecrementSemaphore:
-;	movem.l	d1/a0,-(a7)			; save registers
-;	lea			semamem,a0			; point to semaphore memory
-;	andi.w	#255,d1					; make d1 word value
-;	asl.w		#4,d1						; align to memory
-;	tst.b		1(a0,d1.w)			; read (test) value for zero
-;	movem.l	(a7)+,a0/d1			; restore regs
-;	rts
-
-; -----------------------------------------------------------------------------
-; Lock a semaphore
 ;
 ; Parameters:
 ;		d0 = key
 ;		d1 = semaphore number
-;		d2 = retry count
+;		d2 = retry count, 0 loops forever
 ;	Returns:
-;		d0 = -1 for success, 0 if failed
+;		d0 = -1 for failed, >= 0 status reg if successful
 ; -----------------------------------------------------------------------------
 
 LockSemaphore:
@@ -1217,12 +1193,26 @@ LockSemaphore:
 	andi.w #1023,d1					; make d1 word value
 	lsl.w	#2,d1							; align to memory
 .0001
+	move.w 24(sp),sr				; unlock for a moment
+	nop
+	nop
+	ori.w #$700,sr					; mask all interrupts
 	move.l d0,(a0,d1.w)			; try and write the semaphore
 	cmp.l (a0,d1.w),d0			; did it lock?
-	dbeq d2,.0001						; no, try again
-	seq d0									; d0
-	ext.w d0
-	ext.l d0
+	beq.s .0003							; yes, done
+	tst.l d2								; looping forever?
+	beq.s .0001
+	subq.l #1,d2						; decrement count
+	bne.s .0001							; try again
+	; Here lock was unsuccessful
+	moveq #-1,d0
+	movem.l	(a7)+,a0/d1/d2	; restore regs
+	rts
+.0003
+	; Here lock was successful, interrupts are masked
+	clr.l d0
+	move.w 24(sp),d0				; get old status register, returned
+	move.w sr,24(sp)				; update status on stack (im = 7)
 	movem.l	(a7)+,a0/d1/d2	; restore regs
 	rts
 	
@@ -1231,15 +1221,19 @@ LockSemaphore:
 ;
 ; Parameters:
 ;		d1.w semaphore number
+;		d2.w status register value to set
+; Returns:
+;		none
 ; -----------------------------------------------------------------------------
 
 ForceUnlockSemaphore:
-	movem.l	d1/a0,-(a7)				; save registers
+	movem.l	d1/d2/a0,-(a7)		; save registers
 	lea	semamem+$3000,a0			; point to semaphore memory read/write area
 	andi.w #1023,d1						; make d1 word value
 	lsl.w	#2,d1								; align to memory
 	clr.l	(a0,d1.w)						; write zero to unlock
-	movem.l	(a7)+,a0/d1				; restore regs
+	move.w d2,24(sp)					; restore status register (on stack)
+	movem.l	(a7)+,a0/d1/d2		; restore regs
 	rts
 
 ; -----------------------------------------------------------------------------
@@ -1252,15 +1246,26 @@ ForceUnlockSemaphore:
 ; Parameters:
 ;		d0 = key (task id)
 ;		d1 = semaphore number
+;		d2.w status register value to set
+; Returns:
+;		d0 = E_Ok, -E_NotOwner if unsuccessful
 ; -----------------------------------------------------------------------------
 
 UnlockSemaphore:
-	movem.l	d1/a0,-(a7)				; save registers
+	movem.l	d1/d2/a0,-(a7)		; save registers
 	lea	semamem+$1000,a0			; point to semaphore memory unlock area
 	andi.w #1023,d1						; make d1 word value
 	lsl.w	#2,d1								; align to memory
 	move.l d0,(a0,d1.w)				; write matching value to unlock
-	movem.l	(a7)+,a0/d1				; restore regs
+	tst.l (a0,d1.w)						; did it unlock?
+	bne.s .0001
+	move.w d2,24(sp)					; restore status register (on stack)
+	moveq #E_Ok,d0
+	movem.l	(a7)+,a0/d1/d2		; restore regs
+	rts
+.0001
+	moveq #-E_NotOwner,d0
+	movem.l	(a7)+,a0/d1/d2		; restore regs
 	rts
 
 ; -----------------------------------------------------------------------------
@@ -1278,7 +1283,6 @@ T15UnlockSemaphore:
 	bra UnlockSemaphore
 
 T15ForceUnlockSemaphore:
-	movec tr,d0
 	bra ForceUnlockSemaphore
 
 ; Parameters:
@@ -2185,6 +2189,7 @@ Monitor:
 	swap d0
 	moveq	#1,d1					; Unlock semaphore #1
 	moveq #38,d0
+	move.l #$2200,d2
 	trap #15
 ;	bsr	UnlockSemaphore
 ;	clr.b KeybdEcho			; turn off keyboard echo
@@ -5021,6 +5026,7 @@ brdisp_trap:
 illegal_trap:
 	addq		#2,sp						; get rid of sr
 	move.l	(sp)+,d1				; pop exception address
+	addq		#2,sp						; get rid of format word
 	bsr			DisplayTetra		; and display it
 	lea			msg_illegal,a1	; followed by message
 	bsr			_DisplayString
@@ -5047,7 +5053,7 @@ msg_core_start:
 msgAddrErr
 	dc.b	" address err",0
 msg_illegal:
-	dc.b	" illegal opcode",CR,LF,0
+	dc.b	" :illegal opcode",CR,LF,0
 msg_bad_branch_disp:
 	dc.b	" branch selfref: ",0
 msg_test_done:

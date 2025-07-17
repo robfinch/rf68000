@@ -40,9 +40,9 @@
 // ============================================================================
 
 module rf68851(rst_i, clk_i, rbo_i,
-	cfc_i, ccyc_i, cstb_i, cack_o, cerr_o, cvpa_o, cios_i,
+	cfc_i, ccyc_i, cstb_i, cack_o, cerr_o, cvpa_o, cvpa2_o, cios_i,
 	cwe_i, csel_i, cadr_i, cdat_i, cdat_o,
-	mfc_o, mcyc_o, mstb_o, mack_i, merr_i, mvpa_i, mwe_o, msel_o, madr_o,
+	mfc_o, mcyc_o, mstb_o, mack_i, merr_i, mvpa_i, mvpa2_i, mwe_o, msel_o, madr_o,
 	mdat_o, mdat_i, mios_o, page_fault_o);
 input rst_i;
 input clk_i;
@@ -53,6 +53,7 @@ input cstb_i;
 output reg cack_o;
 output reg cerr_o;
 output reg cvpa_o;
+output reg cvpa2_o;
 input cwe_i;
 input [3:0] csel_i;
 input [31:0] cadr_i;
@@ -65,6 +66,7 @@ output reg mstb_o;
 input mack_i;					// From system
 input merr_i;
 input mvpa_i;
+input mvpa2_i;
 output reg mwe_o;
 output reg [3:0] msel_o;
 output reg [31:0] madr_o;
@@ -106,7 +108,7 @@ reg [3:0] sel_i;
 reg [31:0] adr_i;
 reg [31:0] dat_o;
 reg ios_i;
-reg mack_id,merr_id,mvpa_id;
+reg mack_id,merr_id,mvpa_id,mvpa2_id;
 reg [31:0] mdat_id;
 reg work_cyc,work_stb,work_we;
 reg [3:0] work_sel;
@@ -238,6 +240,8 @@ always_ff @(posedge clk_i)
 	ack1d <= cs_mmu ? ack1 : mack_i;
 always_ff @(posedge clk_i)
 	mvpa_id <= mvpa_i;
+always_ff @(posedge clk_i)
+	mvpa2_id <= mvpa2_i;
 
 always_comb
 begin
@@ -299,6 +303,7 @@ if (mmu_access) begin
 	cack_o = 1'b0;
 	cerr_o = 1'b0;
 	cvpa_o = 1'b0;
+	cvpa2_o = 1'b0;
 	mwe_o = work_we;
 	msel_o = work_sel;
 	madr_o = work_adr;
@@ -312,6 +317,7 @@ begin
 	cack_o = ack1d;
 	cerr_o = ack1d ? (mmu_en ? atc_err|merr_i : merr_i) : 1'd0;
 	cvpa_o = mvpa_id;
+	cvpa2_o = mvpa2_id;
 	mwe_o = cwe_i;
 	msel_o = csel_i;
 	madr_o = cadr_i;

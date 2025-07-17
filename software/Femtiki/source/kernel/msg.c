@@ -148,10 +148,12 @@ static hMSG MSGPointerToHandle(MSG *m)
 	return (h);
 }
 
-static MBX* MBXHandleToPointer(hMBX h)
+MBX* MBXHandleToPointer(hMBX h)
 {
 	MBX* mbx;
-	
+
+	if (h <= 0 || h > NR_MBX)	
+		return (NULL);
 	mbx = &mailbox[h-1];
 	return (mbx);
 }
@@ -190,17 +192,17 @@ static void CopyMsg(MSG *dmsg, MSG *smsg)
 static MSG* AllocMsg()
 {
 	MSG* msg;
+	int stat;
 
-	if (LockMSGSemaphore(-1)) {
-		if (freeMSG==0) {
-			UnlockMSGSemaphore();
-			return (NULL);
-		}
-		msg = MSGHandleToPointer(freeMSG);
-		freeMSG = msg->link;
-		--nMsgBlk;
-		UnlockMSGSemaphore();
+	stat = LockMSGSemaphore(0);
+	if (freeMSG==0) {
+		UnlockMSGSemaphore(stat);
+		return (NULL);
 	}
+	msg = MSGHandleToPointer(freeMSG);
+	freeMSG = msg->link;
+	--nMsgBlk;
+	UnlockMSGSemaphore(stat);
 	msg->type = 0;
 	msg->retadr = GetRunningAppid();
 	msg->dstadr = 0;
@@ -214,17 +216,18 @@ static MSG* AllocMsg()
 
 static void FreeMsg(MSG *msg)
 {
+	int stat;
+
 	if (msg == NULL)
 		return;
   msg->type = MT_FREE;
   msg->retadr = 0;
   msg->dstadr = 0;
-  if (LockMSGSemaphore(-1)) {
-		msg->link = freeMSG;
-		freeMSG = (msg - message) + 1;
-		nMsgBlk++;
-		UnlockMSGSemaphore();
-	}
+  stat = LockMSGSemaphore(0);
+	msg->link = freeMSG;
+	freeMSG = (msg - message) + 1;
+	nMsgBlk++;
+	UnlockMSGSemaphore(stat);
 }
 
 /* ---------------------------------------------------------------
@@ -239,91 +242,98 @@ static void FreeMsg(MSG *msg)
 		PostMsg
 --------------------------------------------------------------- */
 
-static long QueueMsg(MBX *mbx, MSG *msg)
+static long QueueMsg(MBX *mbx, MSG *msg, int lock)
 {
   MSG *tmpmsg;
   hMSG htmp;
 	int rr = E_Ok;
+	int stat1,stat2;
 
-	if (LockMBXSemaphore(-1)) {
-		mbx->mq_count++;
-	
-		// handle potential queue overflows
-    switch (mbx->mq_strategy) {
-    
-    	// unlimited queing (do nothing)
-		case MQS_UNLIMITED:
-			break;
-			
-		// buffer newest
-		// if the queue is full then old messages are lost
-		// Older messages are at the head of the queue.
-		// loop incase message queing strategy was changed
-    case MQS_NEWEST:
-      while (mbx->mq_count > mbx->mq_size) {
-        // return outdated message to message pool
-        htmp = message[mbx->mq_head-1].link;
-        tmpmsg = MSGHandleToPointer(htmp);
-        FreeMsg(tmpmsg);
-				mbx->mq_count--;
-        mbx->mq_head = htmp;
-				if (mbx->mq_missed < MAX_UINT)
-					mbx->mq_missed++;
-				rr = E_QueFull;
+	// Lock MBX and MSG
+	if (lock==-1) {
+		stat1 = LockMBXSemaphore(0);
+		stat2 = LockMSGSemaphore(0);
+	}
+	else {
+		if ((stat1 = LockMBXSemaphore(lock)) >= 0) {
+			if ((stat2 = LockMSGSemaphore(lock)) < 0) {
+				UnlockMBXSemaphore(stat1);
+				return (-E_Busy);
 			}
-	    break;
-
-		// buffer oldest
-		// if the queue is full then new messages are lost
-		// loop incase message queing strategy was changed
-		case MQS_OLDEST:
-			// first return the passed message to free pool
-			if (mbx->mq_count > mbx->mq_size) {
-				// return new message to pool
-				FreeMsg(msg);
-				if (mbx->mq_missed < MAX_UINT)
-					mbx->mq_missed++;
-				rr = E_QueFull;
-				mbx->mq_count--;
-			}
-			// next if still over the message limit (which
-			// might happen if que strategy was changed), return
-			// messages to free pool
-			while (mbx->mq_count > mbx->mq_size) {
-				// locate the second last message on the que
-				if (LockMSGSemaphore(-1)) {
-					tmpmsg = MSGHandleToPointer(mbx->mq_head);
-					while (MSGPointerToHandle(tmpmsg) != mbx->mq_tail) {
-						msg = tmpmsg;
-						tmpmsg = MSGHandleToPointer(tmpmsg->link);
-					}
-					mbx->mq_tail = MSGPointerToHandle(msg);
-					UnlockMSGSemaphore();
-				}
-				FreeMsg(tmpmsg);
-				if (mbx->mq_missed < MAX_UINT)
-					mbx->mq_missed++;
-				mbx->mq_count--;
-				rr = E_QueFull;
-			}
-			if (rr == E_QueFull) {
-   	    UnlockMBXSemaphore();
-				return (-rr);
-      }
-      break;
 		}
-		// if there is a message in the queue
-		if (LockMSGSemaphore(-1)) {
-			if (mbx->mq_tail > 0)
-				message[mbx->mq_tail-1].link = MSGPointerToHandle(msg);
-			else
-				mbx->mq_head = MSGPointerToHandle(msg);
+	}
+
+	mbx->mq_count++;
+
+	// handle potential queue overflows
+  switch (mbx->mq_strategy) {
+  
+  	// unlimited queing (do nothing)
+	case MQS_UNLIMITED:
+		break;
+		
+	// buffer newest
+	// if the queue is full then old messages are lost
+	// Older messages are at the head of the queue.
+	// loop incase message queing strategy was changed
+  case MQS_NEWEST:
+    while (mbx->mq_count > mbx->mq_size) {
+      // return outdated message to message pool
+      htmp = message[mbx->mq_head-1].link;
+      tmpmsg = MSGHandleToPointer(htmp);
+      FreeMsg(tmpmsg);
+			mbx->mq_count--;
+      mbx->mq_head = htmp;
+			if (mbx->mq_missed < MAX_UINT)
+				mbx->mq_missed++;
+			rr = E_QueFull;
+		}
+    break;
+
+	// buffer oldest
+	// if the queue is full then new messages are lost
+	// loop incase message queing strategy was changed
+	case MQS_OLDEST:
+		// first return the passed message to free pool
+		if (mbx->mq_count > mbx->mq_size) {
+			// return new message to pool
+			FreeMsg(msg);
+			if (mbx->mq_missed < MAX_UINT)
+				mbx->mq_missed++;
+			rr = E_QueFull;
+			mbx->mq_count--;
+		}
+		// next if still over the message limit (which
+		// might happen if que strategy was changed), return
+		// messages to free pool
+		while (mbx->mq_count > mbx->mq_size) {
+			// locate the second last message on the que
+			tmpmsg = MSGHandleToPointer(mbx->mq_head);
+			while (MSGPointerToHandle(tmpmsg) != mbx->mq_tail) {
+				msg = tmpmsg;
+				tmpmsg = MSGHandleToPointer(tmpmsg->link);
+			}
 			mbx->mq_tail = MSGPointerToHandle(msg);
-			msg->link = 0;
-			UnlockMSGSemaphore();
+			FreeMsg(tmpmsg);
+			if (mbx->mq_missed < MAX_UINT)
+				mbx->mq_missed++;
+			mbx->mq_count--;
+			rr = E_QueFull;
 		}
-    UnlockMBXSemaphore();
-  }
+		if (rr == E_QueFull) 
+			goto j1;
+    break;
+	}
+	// if there is a message in the queue
+	if (mbx->mq_tail > 0)
+		message[mbx->mq_tail-1].link = MSGPointerToHandle(msg);
+	else
+		mbx->mq_head = MSGPointerToHandle(msg);
+	mbx->mq_tail = MSGPointerToHandle(msg);
+	msg->link = 0;
+j1:
+	UnlockMSGSemaphore(stat2);
+  UnlockMBXSemaphore(stat1);
 	return (-rr);
 }
 
@@ -346,20 +356,20 @@ static MSG *DequeueMsg(MBX *mbx)
 {
 	MSG *tmpmsg = null;
   hMSG hm;
+  int stat;
  
 	if (mbx->mq_count) {
 		mbx->mq_count--;
-		if (LockMSGSemaphore(-1)) {
-			hm = mbx->mq_head;
-			if (hm > 0) {	// should not be null
-			    tmpmsg = MSGHandleToPointer(hm);
-				mbx->mq_head = tmpmsg->link;
-				if (mbx->mq_head < 0)
-					mbx->mq_tail = 0;
-				tmpmsg->link = hm;
-			}
-			UnlockMSGSemaphore();
+		stat = LockMSGSemaphore(0);
+		hm = mbx->mq_head;
+		if (hm > 0) {	// should not be null
+	    tmpmsg = MSGHandleToPointer(hm);
+			mbx->mq_head = tmpmsg->link;
+			if (mbx->mq_head < 0)
+				mbx->mq_tail = 0;
+			tmpmsg->link = hm;
 		}
+		UnlockMSGSemaphore(stat);
 	}
 	return (tmpmsg);
 }
@@ -425,31 +435,40 @@ long FMTK_AllocMbx()
 {
 	MBX *mbx;
 	hMBX hMbx;
+	int stat;
 
-	while (LockMBXSemaphore(-1)==0);
+	DisplayStringCRLF("AllocMbx");
+	stat = LockMBXSemaphore(0);
+	DisplayStringCRLF("Locked MBXs");
 	if (freeMBX <= 0 || freeMBX > NR_MBX) {
-    UnlockMBXSemaphore();
+		DisplayStringCRLF("No more MBXs");
+    UnlockMBXSemaphore(stat);
 		return (-E_NoMoreMbx);
   }
   hMbx = freeMBX;
 	mbx = MBXHandleToPointer(freeMBX);
-	freeMBX = mbx->link;
-	nMailbox--;
-  UnlockMBXSemaphore();
-  // At system startup there may not be a running App. We want allocated
+	if (mbx) {
+		freeMBX = mbx->link;
+		nMailbox--;
+	}	
+  UnlockMBXSemaphore(stat);
+ 	DisplayStringCRLF("Unlocked MBXs");
+ // At system startup there may not be a running App. We want allocated
   // mailboxes to be owned by the system.
-	mbx->owner = GetRunningAppid();
-	if (mbx->owner==0)
-		mbx->owner = 1;
-	mbx->tq_head = 0;
-	mbx->tq_tail = 0;
-	mbx->mq_head = 0;
-	mbx->mq_tail = 0;
-	mbx->tq_count = 0;
-	mbx->mq_count = 0;
-	mbx->mq_missed = 0;
-	mbx->mq_size = 8;
-	mbx->mq_strategy = MQS_NEWEST;
+  if (mbx) {
+		mbx->owner = GetRunningAppid();
+		if (mbx->owner==0)
+			mbx->owner = 1;
+		mbx->tq_head = 0;
+		mbx->tq_tail = 0;
+		mbx->mq_head = 0;
+		mbx->mq_tail = 0;
+		mbx->tq_count = 0;
+		mbx->mq_count = 0;
+		mbx->mq_missed = 0;
+		mbx->mq_size = 8;
+		mbx->mq_strategy = MQS_NEWEST;
+	}
 	return (hMbx);
 }
 
@@ -465,14 +484,14 @@ long FMTK_FreeMbx(__reg("d0") long hMbx)
 	MBX *mbx;
 	MSG *msg;
 	TCB *thread;
-	int im_level;
+	int stat;
 	
 	if (hMbx <= 0 || hMbx > NR_MBX)
 		return (-E_Arg);
 	mbx = MBXHandleToPointer(hMbx);
-	while (LockMBXSemaphore(-1)==0);
+	stat = LockMBXSemaphore(0);
 	if ((mbx->owner != GetRunningAppid()) && (GetRunningAppid() > 1)) {
-    UnlockMBXSemaphore();
+    UnlockMBXSemaphore(stat);
 		return (-E_NotOwner);
   }
 	// Free up any queued messages
@@ -486,19 +505,15 @@ long FMTK_FreeMbx(__reg("d0") long hMbx)
 		if (thread == null)
 			break;
 		thread->msg.type = MT_NONE;
-		if (thread->status & TS_TIMEOUT) {
-			im_level = SetImLevel(7);
+		// Interrupts are already disabled at this point.
+		if (thread->status & TS_TIMEOUT)
 			TCBRemoveFromTimeoutList(TCBPointerToHandle(thread));
-			SetImLevelHelper(im_level);
-		}
-		im_level = SetImLevel(7);
 		TCBInsertIntoReadyQueue(TCBPointerToHandle(thread));
-		SetImLevelHelper(im_level);
 	}
 	mbx->link = freeMBX;
 	freeMBX = mbx-mailbox;
 	nMailbox++;
-  UnlockMBXSemaphore();
+  UnlockMBXSemaphore(stat);
 	return (E_Ok);
 }
 
@@ -510,28 +525,28 @@ long FMTK_FreeMbx(__reg("d0") long hMbx)
 long SetMbxMsgQueStrategy(hMBX hMbx, int qStrategy, int qSize)
 {
 	MBX *mbx;
+	int stat;
 
 	if (hMbx <= 0 || hMbx > NR_MBX)
 		return (-E_Arg);
 	if (qStrategy > 2)
 		return (-E_Arg);
 	mbx = MBXHandleToPointer(hMbx);
-	if (LockMBXSemaphore(-1)) {
-		if ((mbx->owner != GetRunningAppid()) && GetRunningAppid() > 1) {
-	    UnlockMBXSemaphore();
-			return (-E_NotOwner);
-    }
-		mbx->mq_strategy = qStrategy;
-		mbx->mq_size = qSize;
-    UnlockMBXSemaphore();
+	stat = LockMBXSemaphore(0);
+	if ((mbx->owner != GetRunningAppid()) && GetRunningAppid() > 1) {
+    UnlockMBXSemaphore(stat);
+		return (-E_NotOwner);
   }
+	mbx->mq_strategy = qStrategy;
+	mbx->mq_size = qSize;
+  UnlockMBXSemaphore(stat);
 	return (E_Ok);
 }
 
 
 /* ---------------------------------------------------------------
 	Description:
-		Send a message.
+		Send a message. May switch threads.
 --------------------------------------------------------------- */
 
 long FMTK_SendMsg(
@@ -545,41 +560,108 @@ long FMTK_SendMsg(
 	MSG *msg;
 	TCB *thread;
 	int im_level;
+	int stat,stat2;
 
 	if (hMbx <= 0 || hMbx > NR_MBX)
 		return (-E_Arg);
 	mbx = MBXHandleToPointer(hMbx);
-	while (LockMBXSemaphore(-1)==0);
+	stat = LockMBXSemaphore(0);
 	// check for a mailbox owner which indicates the mailbox
 	// is active.
 	if (mbx->owner <= 0 || mbx->owner > NR_ACB) {
-    UnlockMBXSemaphore();
+    UnlockMBXSemaphore(stat);
     return (-E_NotAlloc);
   }
+  stat2 = LockMSGSemaphore(0);
 	if (freeMSG <= 0 || freeMSG > NR_MSG) {
-    UnlockMBXSemaphore();
+    UnlockMSGSemaphore(stat2);
+    UnlockMBXSemaphore(stat);
 		return (-E_NoMoreMsgBlks);
   }
   msg = AllocMsg();
+  UnlockMSGSemaphore(stat2);
 	msg->dstadr = hMbx;
 	msg->type = MT_DATA;
 	msg->d1 = d1;
 	msg->d2 = d2;
 	msg->d3 = d3;
 	DequeueThreadFromMailbox(mbx, &thread);
-  UnlockMBXSemaphore();
+  UnlockMBXSemaphore(stat);
 	if (thread == null)
-		return (QueueMsg(mbx, msg));
+		return (QueueMsg(mbx, msg, -1));
 	CopyMsg(&thread->msg,msg);
   FreeMsg(msg);
-	if (thread->status & TS_TIMEOUT) {
-		im_level = SetImLevel(7);
+	im_level = SetImLevel7();
+	if (thread->status & TS_TIMEOUT)
 		TCBRemoveFromTimeoutList(TCBPointerToHandle(thread));
-    SetImLevelHelper(im_level);
-	}
-	im_level = SetImLevel(7);
 	TCBInsertIntoReadyQueue(TCBPointerToHandle(thread));
-  SetImLevelHelper(im_level);
+  RestoreSr(im_level);
+  FMTK_Reschedule();
+	return (E_Ok);
+}
+
+
+/* ---------------------------------------------------------------
+	Description:
+		Send a message from within an interrupt routine. Does not
+	switch threads. Does not wait very long for locks.
+--------------------------------------------------------------- */
+
+long FMTK_PostMsg(
+	__reg("d0") long hMbx,
+	__reg("d1") long d1,
+	__reg("d2") long d2,
+	__reg("d3") long d3
+)
+{
+	MBX *mbx;
+	MSG *msg;
+	TCB *thread;
+	int im_level;
+	int stat,stat2;
+
+	if (hMbx <= 0 || hMbx > NR_MBX)
+		return (-E_Arg);
+	mbx = MBXHandleToPointer(hMbx);
+	thread = null;
+	msg = null;
+	if ((stat = LockMBXSemaphore(50)) >= 0) {
+		// check for a mailbox owner which indicates the mailbox
+		// is active.
+		if (mbx->owner <= 0 || mbx->owner > NR_ACB) {
+	    UnlockMBXSemaphore(stat);
+	    return (-E_NotAlloc);
+	  }
+	  if ((stat2 = LockMSGSemaphore(50)) >= 0) {
+			if (freeMSG <= 0 || freeMSG > NR_MSG) {
+				UnlockMSGSemaphore(stat2);
+		    UnlockMBXSemaphore(stat);
+				return (-E_NoMoreMsgBlks);
+		  }
+		  msg = AllocMsg();
+			UnlockMSGSemaphore(stat2);
+			msg->dstadr = hMbx;
+			msg->type = MT_DATA;
+			msg->d1 = d1;
+			msg->d2 = d2;
+			msg->d3 = d3;
+		}
+		DequeueThreadFromMailbox(mbx, &thread);
+	  UnlockMBXSemaphore(stat);
+	}
+	if (thread == null) {
+		if (msg)
+			return (QueueMsg(mbx, msg, 50));
+		else 
+			return (-E_Busy);
+	}
+	CopyMsg(&thread->msg,msg);
+  FreeMsg(msg);
+	im_level = SetImLevel7();
+	if (thread->status & TS_TIMEOUT)
+		TCBRemoveFromTimeoutList(TCBPointerToHandle(thread));
+	TCBInsertIntoReadyQueue(TCBPointerToHandle(thread));
+  RestoreSr(im_level);
 	return (E_Ok);
 }
 
@@ -614,20 +696,21 @@ long FMTK_WaitMsg(
 	hTCB hThread;
 	TCB *rt;
 	int im_level;
+	int stat;
 
 	if (hMbx == 0 || hMbx > NR_MBX)
 		return (-E_Arg);
 	// Switch to system address space
 	mbx = MBXHandleToPointer(hMbx);
-	while (LockMBXSemaphore(-1)==0);
+	stat = LockMBXSemaphore(0);
 	// check for a mailbox owner which indicates the mailbox
 	// is active.
 	if (mbx->owner == 0 || mbx->owner > NR_ACB) {
-    UnlockMBXSemaphore();
+    UnlockMBXSemaphore(stat);
   	return (-E_NotAlloc);
   }
 	msg = DequeueMsg(mbx);
-  UnlockMBXSemaphore();
+  UnlockMBXSemaphore(stat);
   // Return message right away if there is one available.
   if (msg) {
 		if (d1)
@@ -643,15 +726,15 @@ long FMTK_WaitMsg(
 	//-------------------------
 	// Queue thread at mailbox
 	//-------------------------
- 	im_level = SetImLevel(7);
+ 	im_level = SetImLevel7();
 	thread = GetRunningTCBPtr();
 	hThread = GetRunningTCB();
 	TCBRemoveFromReadyQueue(hThread);
-  SetImLevelHelper(im_level);
+  RestoreSr(im_level);
 	thread->status |= TS_WAITMSG;
 	thread->hWaitMbx = hMbx;
 	thread->mbq_next = 0;
-	while (LockMBXSemaphore(-1)==0);
+	stat = LockMBXSemaphore(0);
 	if (mbx->tq_head < 0) {
 		thread->mbq_prev = 0;
 		mbx->tq_head = hThread;
@@ -664,14 +747,14 @@ long FMTK_WaitMsg(
 		mbx->tq_tail = hThread;
 		mbx->tq_count++;
 	}
-  UnlockMBXSemaphore();
+  UnlockMBXSemaphore(stat);
 	//---------------------------
 	// Is a timeout specified ?
 	if (timelimit) {
       //asm { ; Waitmsg here; }
-  	im_level = SetImLevel(7);
+  	im_level = SetImLevel7();
     TCBInsertIntoTimeoutList(hThread, timelimit);
-    SetImLevelHelper(im_level);
+    RestoreSr(im_level);
   }
   // Reschedule will cause control to pass to another thread.
   FMTK_Reschedule();
@@ -726,22 +809,23 @@ long FMTK_CheckMsg (
 {
 	MBX *mbx;
 	MSG *msg;
+	int stat;
 
 	if (hMbx == 0 || hMbx > NR_MBX)
 		return (-E_Arg);
 	mbx = MBXHandleToPointer(hMbx);
- 	while (LockMBXSemaphore(-1)==0);
+ 	stat = LockMBXSemaphore(0);
 	// check for a mailbox owner which indicates the mailbox
 	// is active.
 	if (mbx->owner == 0 || mbx->owner > NR_ACB) {
-	  UnlockMBXSemaphore();
+	  UnlockMBXSemaphore(stat);
 		return (-E_NotAlloc);
   }
 	if (qrmv)
 		msg = DequeueMsg(mbx);
 	else
 		msg = MSGHandleToPointer(mbx->mq_head);
-  UnlockMBXSemaphore();
+  UnlockMBXSemaphore(stat);
 	if (msg == null)
 		return (-E_NoMsg);
 	if (d1)
@@ -772,6 +856,7 @@ long FMTK_Request(
 	hMSG hm;
 	TCB* task;
 	hRQB hRqb;
+	int stat;
 
 	if (pRequest==0)
 		return (-E_Arg);
@@ -788,40 +873,34 @@ long FMTK_Request(
 
 //	hs = GetServiceMbx(req->svcname);
 	mbx = MBXHandleToPointer(hMbx);
-	if (LockMBXSemaphore(-1)) {
-		// check for a mailbox owner which indicates the mailbox
-		// is active.
-		if (mbx->owner == 0 || mbx->owner > NR_ACB) {
-			FreeRqb(hRqb);
-	    UnlockMBXSemaphore();
-      return (-E_NotAlloc);
-    }
-		if (freeMSG == 0 || freeMSG > NR_MSG) {
-			FreeRqb(hRqb);
-	    UnlockMBXSemaphore();
-			return (-E_NoMoreMsgBlks);
-    }
-		msg = AllocMsg();
-		msg->dstadr = hMbx;
-		msg->type = MT_RQB;
-		msg->d1 = hRqb;
-		DequeueThreadFromMailbox(mbx, &task);
-    UnlockMBXSemaphore();
+	stat = LockMBXSemaphore(0);
+	// check for a mailbox owner which indicates the mailbox
+	// is active.
+	if (mbx->owner == 0 || mbx->owner > NR_ACB) {
+		FreeRqb(hRqb);
+    UnlockMBXSemaphore(stat);
+    return (-E_NotAlloc);
   }
+	if (freeMSG == 0 || freeMSG > NR_MSG) {
+		FreeRqb(hRqb);
+    UnlockMBXSemaphore(stat);
+		return (-E_NoMoreMsgBlks);
+  }
+	msg = AllocMsg();
+	msg->dstadr = hMbx;
+	msg->type = MT_RQB;
+	msg->d1 = hRqb;
+	DequeueThreadFromMailbox(mbx, &task);
+  UnlockMBXSemaphore(stat);
 	if (task == null)
-		return (QueueMsg(mbx, msg));
+		return (QueueMsg(mbx, msg, -1));
 	CopyMsg(&task->msg,msg);
   FreeMsg(msg);
-	if (task->status & TS_TIMEOUT) {
-		if (LockTimeoutList(-1)) {
-			TCBRemoveFromTimeoutList(TCBPointerToHandle(task));
-			UnlockTImeoutList();
-		}
-	}
-	if (LockReadyQueue(-1)) {
-		TCBInsertIntoReadyQueue(TCBPointerToHandle(task));
-    UnlockReadyQueue();
-  }
+  stat = SetImLevel7();
+	if (task->status & TS_TIMEOUT)
+		TCBRemoveFromTimeoutList(TCBPointerToHandle(task));
+	TCBInsertIntoReadyQueue(TCBPointerToHandle(task));
+	RestoreSr(stat);
 	return (E_Ok);
 }
 
@@ -835,6 +914,7 @@ long FMTK_Respond(__reg("d0") long hRqb, __reg("d1") long stat)
 	hMSG hMsg;
 	MSG *msg;
 	TCB* task;
+	int st;
 	
 	if (hRqb==0 || hRqb > NR_RQB)
 		return (-E_Arg);
@@ -849,37 +929,144 @@ long FMTK_Respond(__reg("d0") long hRqb, __reg("d1") long stat)
 		return (E_Ok);
 	}
 	if (rqb->owner != GetRunningAppid()) {
-		if (LockSysSemaphore(-1)) {
+		if ((st = LockSysSemaphore(-1)) >= 0) {
 			if (rqb->pData1 && rqb->cbData1)
 				FMTK_DeAliasMem(rqb->owner, (long)rqb->pData1, rqb->cbData1);
 			if (rqb->pData2 && rqb->cbData2)
 				FMTK_DeAliasMem(rqb->owner, (long)rqb->pData2, rqb->cbData2);
-	    UnlockSysSemaphore();
+	    UnlockSysSemaphore(st);
 		}
 	}
-	if (LockMBXSemaphore(-1)) {
-		msg = AllocMsg();
-		msg->dstadr = rqb->response_mbx;
-		msg->type = MT_RESP;
-		msg->d1 = hRqb;
-		msg->d2 = stat;
-		msg->d3 = 0;
-		DequeueThreadFromMailbox(MBXHandleToPointer(rqb->response_mbx), &task);
-    UnlockMBXSemaphore();
-	}
+	st = LockMBXSemaphore(0);
+	msg = AllocMsg();
+	msg->dstadr = rqb->response_mbx;
+	msg->type = MT_RESP;
+	msg->d1 = hRqb;
+	msg->d2 = stat;
+	msg->d3 = 0;
+	DequeueThreadFromMailbox(MBXHandleToPointer(rqb->response_mbx), &task);
+  UnlockMBXSemaphore(st);
 	if (task == null)
-		return (QueueMsg(MBXHandleToPointer(rqb->response_mbx), msg));
+		return (QueueMsg(MBXHandleToPointer(rqb->response_mbx), msg, -1));
 	CopyMsg(&task->msg,msg);
   FreeMsg(msg);
-	if (task->status & TS_TIMEOUT) {
-		if (LockTimeoutList(-1)) {
-			TCBRemoveFromTimeoutList(TCBPointerToHandle(task));
-			UnlockTImeoutList();
+  st = SetImLevel7();
+	if (task->status & TS_TIMEOUT)
+		TCBRemoveFromTimeoutList(TCBPointerToHandle(task));
+	TCBInsertIntoReadyQueue(TCBPointerToHandle(task));
+	RestoreSr(st);
+	return (E_Ok);
+}
+
+/*
+		All alarm to list of alarms. The list is sorted by the soonest alarm.
+		Called during Alarm ISR to repeat a recurring alarm.
+*/
+/*
+long ISRAddAlarm(hALARM ha)
+{
+	hALARM ha, hl;
+	ALARM* p, *pl, *ppl;
+	int stat;
+	unsigned long* PIT = (unsigned long*)0xFDFEC000;
+	unsigned long timeout;
+
+	p = AlarmHandleToPointer(h);
+	p->hMbx = hMbx;
+	timeout = p->BaseTimeout;
+	p->timeout = timeout;
+	pl = NULL;
+	ppl = NULL;
+	for (hl = p->next; hl > 0; hl = pl->next) {
+		pl = AlarmHandleToPointer(hl);
+		// Add somewhere in the middle.
+		if (p->timeout < pl->timeout) {
+			pl->timeout -= p->timeout;
+			if (ppl)
+				ppl->next = ha;
+			else
+				AlarmList = ha; 
+			p->next = hl;
+			goto j1;
+		}
+		else {
+			ppl = pl;
+			p->timeout -= pl->timeout;
 		}
 	}
-	if (LockReadyQueue(-1)) {
-		TCBInsertIntoReadyQueue(TCBPointerToHandle(task));
-  	UnlockReadyQueue();
-  }
-	return (E_Ok);
+	// Add at end of list
+	if (AlarmList) {
+		if (pl)
+			pl->next = ha;
+	}
+	else
+		AlarmList = ha;
+	p->next = 0;
+j1:
+	return (ha);
+}
+*/
+
+long FMTK_AddAlarm(__reg("d0") long hMbx, __reg("d1") long callback, __reg("d2") long timeout)
+{
+	hALARM ha, hl;
+	ALARM* p, *pl, *ppl;
+	int stat;
+	unsigned long* PIT = (unsigned long*)0xFDFEC000;
+
+	stat = LockAlarmList(0);
+	ha = freeAlarm;
+	if (ha <= 0) {
+		UnlockAlarmList(stat);
+		return (-E_NoMoreAlarms);
+	}
+	p = AlarmHandleToPointer(ha);
+	freeAlarm = p->next;
+
+	p->hMbx = hMbx;
+	p->BaseTimeout = timeout;
+	p->timeout = timeout;
+//	p->func = (void (*)())callback;
+	ppl = null;
+	for (hl = AlarmList; hl > 0; hl = pl->next) {
+		pl = AlarmHandleToPointer(hl);
+		// Check timeout at head of list. This timeout will be located in the 
+		// current count register of the timer itself.
+		if (hl==AlarmList) {
+			// 30 is a guess at the number of CPU clocks required to update the
+			// timeout in the PIT.
+			if (p->timeout < (volatile)PIT[5*4+0] + 30) {
+				pl->timeout = (volatile)PIT[5*4+0] - p->timeout;	// current count remaining
+				// Re-program PIT with new sooner timeout.
+				PIT[5*4+1] = p->timeout;
+				PIT[5*4+2] = 5;			// pulse is 5 clocks wide
+				PIT[5*4+3] = 0x83;	//load,enable,no auto-reload,internal clock,ignore gate,set
+				p->next = AlarmList;
+				AlarmList = ha;
+				goto j1;
+			}	
+			ppl = pl;
+			p->timeout -= (volatile)PIT[5*40+0];
+		}
+		// Add somewhere in the middle.
+		else if (p->timeout < pl->timeout) {
+			pl->timeout -= p->timeout;
+			ppl->next = ha;
+			p->next = hl;
+			goto j1;
+		}
+		else {
+			ppl = pl;
+			p->timeout -= pl->timeout;
+		}
+	}
+	// Add at end of list
+	if (AlarmList)
+		pl->next = ha;
+	else
+		AlarmList = ha;
+	p->next = 0;
+j1:
+	UnlockAlarmList(stat);
+	return (ha);
 }

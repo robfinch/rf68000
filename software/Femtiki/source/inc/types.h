@@ -1,13 +1,17 @@
 #ifndef TYPES_H
 #define TYPES_H
 
+#include <stdint.h>
+
 typedef unsigned int uint;
+
 typedef short int hTCB;
 typedef short int hACB;
 typedef short int hMBX;
 typedef short int hMSG;
 typedef short int hRQB;
 typedef short int hTBLK;
+typedef short int hALARM;
 
 #define PTE_PRESENT		13
 #define PTE_ALIAS			12
@@ -15,6 +19,16 @@ typedef short int hTBLK;
 #define PTE_READ			2
 #define PTE_WRITE			1
 #define PTE_EXECUTE		0
+
+typedef struct _tagPIT {
+	long long count;		// current count
+	long long maxcount;	// maximum count (starting count)
+	long long ontime;		// pulse width of time on
+	uint8_t ctrl;				// timer control bits
+	uint8_t iack;				// interrupt acknowledge bit
+	hMBX hMbx;					// mailbox to notify
+	long pad2;
+} pitreg_t;
 
 typedef struct _tagPTE {
 	unsigned int x : 1;
@@ -130,7 +144,7 @@ typedef struct _tagHeap {
 typedef struct tagMSG {
 	hMSG link;
 	unsigned short int retadr;    // return address
-	unsigned short int dstadr;    // target address
+	unsigned short int dstadr;    // destination address
 	unsigned short int type;
 	unsigned long d1;            // payload data 1
 	unsigned long d2;            // payload data 2
@@ -250,8 +264,8 @@ typedef struct _tagTCB {
 	long bios_stack;
 	int timeout;
 	MSG msg;
-	hMBX hMailboxes[4]; // handles of mailboxes owned by task
-	hMBX hWaitMbx;      // handle of mailbox task is waiting at
+	hMBX hMailboxes[4]; // handles of mailboxes owned by thread
+	hMBX hWaitMbx;      // handle of mailbox thread is waiting at
 	hTCB number;
 	hACB hApp;
 	CBL* callback;
@@ -281,14 +295,16 @@ typedef struct tagMBX {
 } MBX;
 
 typedef struct tagALARM {
-	struct tagALARM *next;
-	struct tagALARM *prev;
-	MBX *mbx;
-	MSG *msg;
-	uint BaseTimeout;
-	uint timeout;
-	uint repeat;
-	char resv[8];		// padding to 64 bytes
+	hALARM next;
+	hALARM prev;
+	hMBX hMbx;
+	hMSG msg;
+	void (*func)();
+	unsigned long BaseTimeout;
+	unsigned long timeout;
+	hACB appid;
+	char repeat;
+	char resv;			// padding to 24 bytes
 } ALARM;
 
 typedef struct tagAppStartupRec {
@@ -307,11 +323,6 @@ typedef struct tagAppStartupRec {
 	char hasGarbageCollector;
 } AppStartupRec;
 
-typedef struct _tagTBLK {
-	hTBLK next;
-	hACB appid;
-	unsigned long countdown;
-	void (*func)();	
-} TBLK;	// 12 bytes
+
 
 #endif

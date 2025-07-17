@@ -2,10 +2,13 @@
 ; PIT - programmable interval timer
 ;
 ; Reg. Offs.
-;	00 = curent count, read-only
-; 04 = max count
-;	08 = on time
-; 0C = control
+;	00 = current count bits 0 to 31, read-only
+;	04 = current count bits 32 to 47
+; 08 = max count bits 0 to 31
+;	0C = max count bits 32 to 47
+;	10 = on time bits 0 to 31
+;	14 = on time bits 32 to 47
+; 18 = control
 ;		bit in control byte
 ;		0 = 1 = load, automatically clears
 ;	  1 = 1 = enable counting, 0 = disable counting
@@ -13,6 +16,8 @@
 ;		3 = 1 = use external clock, 0 = internal clk_i
 ;   4 = 1 = use gate to enable count, 0 = ignore gate
 ;		7 = 1 = set registers immediately, 0 = wait for sync
+;		16 to 31 = mailbox
+; 1C = vector
 ;==============================================================================
 
 	include "..\Femtiki\source\inc\device.x68"
@@ -22,10 +27,15 @@ pit_setup:
 pit_init:
 init_pit:
 	lea	PIT,a0							; a0 points to PIT
-	move.l #1000000,$84(a0)	; setup for 100.0 Hz
-	move.l #50,$88(a0)			; on for 50 clocks
-	move.l #$87,$8C(a0)			; load,enable,auto-reload,internal clock,ignore gate,set
-	move.l #16,$808(a0)			; enable timer #4 interrupts
+	move.l #31250,$88(a0)		; setup for 100.0 Hz
+	clr.l $8C(a0)						; maxcount bits 32 to 47
+	move.l #50,$90(a0)			; on for 50 clocks
+	clr.l $94(a0)						; on time bits 32 to 47
+	move.l #$87,$98(a0)			; load,enable,auto-reload,internal clock,ignore gate,set
+	move.l #16,$1000(a0)		; enable timer #4 interrupts
+	move.l #192,$1040(a0)		; set base vector
+	jsr _SetupAlarmISRs
+	move.l #_FMTK_TimerISRLaunchpad,(192+4)*4	; override default for system tick timer
 	rts
 
 	global _setup_pit

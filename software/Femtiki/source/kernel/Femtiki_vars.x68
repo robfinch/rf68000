@@ -40,6 +40,8 @@ FemtikiVars_end	EQU	$00100400
 	section local_ram
 _DeviceTable
 	ds.b	3072			; room for 48 devices
+_hDevMailbox
+	ds.w	96
 _readyQ
 	ds.w	32
 _readyQEnd
@@ -161,7 +163,7 @@ scratch_ram
 _tcbs
 	ds.b	256*128
 _tcbs_end
-_TimerBlocks
+_Alarms
 	ds.b	256*12
 _request_block
 	ds.b	256*64
@@ -194,8 +196,6 @@ _nMessage
 	ds.l	1
 _nMailbox
 	ds.l	1
-_hDevMailbox
-	ds.w	64
 _nRequest
 	ds.l	1
 _MemExch
@@ -207,9 +207,9 @@ _ACBPtrs
 	ds.l	64
 _freeTCB
 	ds.w	1
-_TimerBlockList
+_AlarmList
 	ds.w	1
-_freeTBLK
+_freeAlarm
 	ds.w	1
 _FreeACB
 	ds.w	1
@@ -391,9 +391,9 @@ _FemtikiVars_end
 	global _nPagesFree
 	global _MemExch
 	global _FreeCBL
-	global _TimerBlocks
-	global _freeTBLK
-	global _TimerBlockList
+	global _Alarms
+	global _freeAlarm
+	global _AlarmList
 
 ;gc_stack		rmb		512
 ;gc_pc				fcdw		0

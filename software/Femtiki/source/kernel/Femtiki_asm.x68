@@ -23,6 +23,23 @@ macUnlockSemaphore macro wh
 	trap #15
 endm
 
+; ----------------------------------------------------------------------------
+; Carefully done so that the IM level is not affected until the end. There is
+; no transient level.
+; ----------------------------------------------------------------------------
+
+_SetImLevelHelper:
+	move.l d1,-(sp)
+	and.w #7,d0
+	lsl.w #8,d0
+	move sr,d1
+	and.w #$F8FF,d1
+	or.w d1,d0
+	move.w d0,sr
+	move.l (sp)+,d1
+	rts
+	global _SetImLevelHelper
+
 ;------------------------------------------------------------------------------
 ; Initialize the Femtiki OS.
 ;------------------------------------------------------------------------------
@@ -33,7 +50,7 @@ FemtikiInit:
 ;	bsr TCBInit
 ;	clr.b QueueCycle
 FemtikiInitIRQ:
-	lea _FMTK_TimerIRQ,a1						; Set timer IRQ vector to Femtiki
+	lea _FMTK_TimerTickISR,a1					; Set timer IRQ vector to Femtiki
 	movec vbr,a0
 	move.l a1,30*4(a0)								; vector #30
 	rts
@@ -62,6 +79,7 @@ OSCallTable:
 	macOSCallAddr	_FMTK_Sleep
 	macOSCallAddr	_FMTK_WaitMsg
 	macOSCallAddr	_FMTK_SendMsg
+	macOSCallAddr	_FMTK_PostMsg
 	macOSCallAddr	_FMTK_PeekMsg
 	macOSCallAddr	_FMTK_CheckMsg
 	macOSCallAddr	_FMTK_AllocMbx
@@ -74,6 +92,7 @@ OSCallTable:
 	macOSCallAddr	_FMTK_AllocPages
 	macOSCallAddr	_FMTK_AliasMem
 	macOSCallAddr	_FMTK_DeAliasMem
+	macOSCallAddr	_FMTK_AddAlarm
 
 
 	even
@@ -112,13 +131,13 @@ _FMTK_Dispatch:
 ; issue that might arise if if the timer ISR takes too long and overlaps with
 ; the next one. This should not happen unless the tick interval is set too short.
 ;
-_FMTK_TimerIRQLaunchpad:
+_FMTK_TimerISRLaunchpad:
 	move.w #$2700,sr						; disable lower interrupts
-	move.l d0,-(sp)
-	movec.l coreno,d0
-	cmp.b _InTimerISR,d0				; Is it core's turn to process?
-	bne .0002										; no, just return
-	move.l (sp)+,d0
+;	move.l d0,-(sp)
+;	movec.l coreno,d0
+;	cmp.b _InTimerISR,d0				; Is it core's turn to process?
+;	bne .0002										; no, just return
+;	move.l (sp)+,d0
 ;	bset #0,_InTimerISR					; Just in case, do not allow re-entry
 ;	bne .busy
 
@@ -136,8 +155,8 @@ _FMTK_TimerIRQLaunchpad:
 
 	; Reset timer IRQ	
 	lea PIT,a0
-	move.l $800(a0),d0					; read underflow register
-	move.l d0,$800(a0)					; write it back
+	move.l $1020(a0),d3					; read underflow register
+;	move.l d3,$800(a0)					; write it back
 	move.l #$1D000000,$FD260014	; reset edge sense circuit
 
 	; Display IRQ Live indicator
@@ -152,8 +171,32 @@ _FMTK_TimerIRQLaunchpad:
 	move.l d1,(a0,d0.w)					; move to screen
 
 	; Call 'C' interrupt handler
-	jsr _FMTK_TimerIRQ					; call the IRQ routine
-
+;	btst #5,d3
+;	beq.s .0004
+;	movec coreno,d0
+;	cmpi.b #2,d0
+;	bne.s .0004
+;	move.l d3,-(sp)
+;	move.l #32,d0
+;	jsr _FMTK_AlarmISR
+;	move.l (sp)+,d3
+.0004
+;	btst #6,d3
+;	beq.s .0003
+;	movec coreno,d0
+;	cmpi.b #3,d0
+;	bne.s .0003
+;	move.l d3,-(sp)
+;	move.l #64,d0
+;	jsr _FMTK_AlarmISR
+;	move.l (sp)+,d3
+.0003
+	btst #4,d3									; Was it the Tick IRQ?
+	beq.s .0005
+	move.l #16,d3
+	move.l d3,$800(a0)					; write it back
+	jsr _FMTK_TimerTickISR			; call the IRQ routine
+.0005
 	; Restore register context from TCB. Note that a different context may be
 	; restored than the one saved.
 	move.l _RunningTCBPointer,a0	; a0 points to task control block
@@ -167,16 +210,36 @@ _FMTK_TimerIRQLaunchpad:
 	move.l 64(a0),a0						; restore a0
 ;	clr.b _InTimerISR
 ;	addi.b #1,_InTimerISR
-;	cmpi.b #3,_InTimerISR
+;	cmpi.b #2,_InTimerISR
 ;	bls.s .0001
-	move.b #2,_InTimerISR
+;	move.b #2,_InTimerISR
 .0001
 	rte
 .0002
 	move.l (sp)+,d0
 	rte
 
-	global _FMTK_TimerIRQLaunchpad
+	global _FMTK_TimerISRLaunchpad
+
+macAlarmISR macro
+	move.l #_FMTK_AlarmISRLaunchpad\@,REPTN*4+$300
+	bra.s _FMTK_NextAlarmISR\@
+_FMTK_AlarmISRLaunchpad\@:
+	move.w #$2700,sr						; disable interrupts
+	movem.l d0-d7/a0-a6,-(sp)
+	move.l #REPTN,d0
+	jsr _FMTK_AlarmISR
+	movem.l (sp)+,d0-d7/a0-a6
+	rte
+_FMTK_NextAlarmISR\@
+	endm
+
+_SetupAlarmISRs:
+	rept 64
+	macAlarmISR
+	endr	
+	rts
+	global _SetupAlarmISRs
 
 ;------------------------------------------------------------------------------
 ; Get a pointer to the currently running TCB.

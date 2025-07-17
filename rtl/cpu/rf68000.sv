@@ -140,7 +140,7 @@
 // 2 MULTS
 // 8 BRAMs
 
-module rf68000(coreno_i, clken_i, rst_i, rst_o, clk_i, dfclk_i, nmi_i, ipl_i, vpa_i,
+module rf68000(coreno_i, clken_i, rst_i, rst_o, clk_i, dfclk_i, nmi_i, ipl_i, vpa_i, vpa2_i,
 	lock_o, cyc_o, stb_o, ack_i, err_i, rty_i, we_o, sel_o, fc_o, 
 	asid_o, mmus_o, ios_o, iops_o, adr_o, dat_i, dat_o);
 parameter SUPPORT_DECFLT = 1'b1;
@@ -501,6 +501,7 @@ input clk_i;
 input dfclk_i;
 input nmi_i;
 input vpa_i;
+input vpa2_i;
 input [2:0] ipl_i;
 output lock_o;
 reg lock_o;
@@ -800,6 +801,7 @@ reg is_irq, is_trace, is_priv, is_illegal;
 reg is_adr_err;
 reg is_rst;
 reg is_bus_err;
+reg is_vpa2;
 reg use_dfc, use_sfc;
 reg [4:0] rst_cnt;
 reg [2:0] shift_op;
@@ -1563,6 +1565,7 @@ if (rst_i) begin
 	is_trace <= 1'b0;
 	is_priv <= 1'b0;
 	is_illegal <= 1'b0;
+	is_vpa2 <= 1'b0;
 	vbr <= 'd0;
 	sfc <= 'd0;
 	dfc <= 'd0;
@@ -2202,7 +2205,7 @@ IFETCH:
 			end
 			else 
 			*/
-			if (ipl_i > im) begin
+			if (ipl_i > im || ipl_i==3'd7) begin
 				is_irq <= 1'b1;
 				gosub(TRAP);
 			end
@@ -5531,14 +5534,22 @@ INTA:
     sel_o <= 4'b1111;
     adr_o <= {28'hFFFFFFF,ipl_i,1'b0};
   end
-  else if (ack_i|err_i|vpa_i) begin
+  else if (ack_i|err_i|vpa_i|vpa2_i) begin
     cyc_o <= `LOW;
     stb_o <= `LOW;
     sel_o <= 4'b0;
-    if (err_i)
+    if (err_i) begin
     	vecno <= `SPURIOUS_VEC;
-    else if (!vpa_i)
+	  	is_vpa2 <= 1'b0;
+	  end
+    else if (vpa2_i) begin
+    	vector <= dat_i;
+    	is_vpa2 <= 1'b1;
+    end
+    else if (!vpa_i) begin
     	vecno <= iri[7:0];
+	  	is_vpa2 <= 1'b0;
+    end
     goto (TRAP3);
   end
 TRAP3:
@@ -5682,13 +5693,20 @@ TRAP7:
 	begin
 		sp <= s;
 		ssp <= s;
-		ea <= {vbr[31:2]+vecno,2'b00};
-		ds <= S;
-		call (FETCH_LWORD, TRAP7a);
+		if (is_vpa2)
+			goto (TRAP7a);
+		else begin
+			ea <= {vbr[31:2]+vecno,2'b00};
+			ds <= S;
+			call (FETCH_LWORD, TRAP7a);
+		end
 	end
 TRAP7a:
 	begin
-		pc <= s;
+		if (is_vpa2)
+			pc <= vector;
+		else
+			pc <= s;
 		ret();
 	end
 

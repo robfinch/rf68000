@@ -602,13 +602,13 @@ KeybdGetCharWait:
 
 KeybdGetChar:
 	movem.l	d0/d2/d3/a0,-(a7)
-.0003:
+.0003
 	moveq	#KEYBD_SEMA,d1
 	moveq #37,d0						; Lock semaphore
 	move.l #100000,d2				; wait this long
 	trap #15
-	tst.b d0
-;	beq.s .lockFailed
+	tst.l d0
+	bmi.s .lockFailed
 	move.b _KeybdCnt(a3),d2		; get count of buffered scan codes
 	beq.s	.0015								;
 	move.b _KeybdHead(a3),d2		; d2 = buffer head
@@ -620,16 +620,18 @@ KeybdGetChar:
 	andi.b #31,d2						; and wrap around at buffer size
 	move.b d2,_KeybdHead(a3)
 	subi.b #1,_KeybdCnt(a3)	; decrement count of scan codes in buffer
-	exg	d1,d2								; save scancode value in d2
+	exg	d1,d3								; save scancode value in d2
+	move.l d0,d2						; d2 = sr value
 	moveq	#KEYBD_SEMA,d1
 	moveq #38,d0						; unlock semaphore
 	trap #15
-	exg	d2,d1								; restore scancode value
+	exg	d3,d1								; restore scancode value
 	bra	.0001								; go process scan code
 .0014:
 	bsr	_KeybdGetStatus			; check keyboard status for key available
 	bmi	.0006								; yes, go process
 .0015:
+	move.l d0,d2						; restore sr value
 	moveq	#KEYBD_SEMA,d1
 	moveq #38,d0						; unlock semaphore
 	trap #15
@@ -639,6 +641,7 @@ KeybdGetChar:
 	movem.l	(a7)+,d0/d2/d3/a0
 	moveq #-1,d1						; flag no char available
 	rts
+
 .0006:
 	bsr	_KeybdGetScancode
 	bsr _KeybdClearIRQ
@@ -668,7 +671,7 @@ KeybdGetChar:
 	bne	.0003					; ignore key up
 	cmp.b #SC_TAB,d1
 	beq .doTab
-.0013:
+.0013
 	move.b _KeyState2(a3),d2
 	bpl	.0010							; is it extended code ?
 	and.b	#$7F,d2					; clear extended bit
@@ -677,27 +680,28 @@ KeybdGetChar:
 	lea	_keybdExtendedCodes,a0
 	move.b (a0,d1.w),d1
 	bra	.0008
-.0010:
+.0010
 	btst #2,d2					; is it CTRL code ?
 	beq	.0009
 	and.w	#$7F,d1
 	lea	_keybdControlCodes,a0
 	move.b (a0,d1.w),d1
 	bra	.0008
-.0009:
+.0009
 	btst #0,d2					; is it shift down ?
 	beq .0007
 	lea	_shiftedScanCodes,a0
 	move.b (a0,d1.w),d1
 	bra .0008
-.0007:
+.0007
 	lea	_unshiftedScanCodes,a0
 	move.b (a0,d1.w),d1
 	move.w #$0202,leds
-.0008:
+.0008
 	move.w #$0303,leds
 	movem.l	(a7)+,d0/d2/d3/a0
 	rts
+
 .doKeyup:
 	move.b #-1,_KeyState1(a3)
 	bra .0003
@@ -850,10 +854,11 @@ KeybdIRQ:
 	bpl	.0001									; branch if not keyboard
 	moveq	#KEYBD_SEMA,d1
 	moveq #37,d0							; lock semaphore
-	move.l #1000,d2
+	move.l #100,d2
 	trap #15
-;	tst.b d0									; was the semaphore locked?
-;	beq .lockFailed						; nope, return
+	tst.l d0									; was the semaphore locked?
+	bmi .lockFailed						; nope, return
+	move.l d0,d2							; d2 = sr value
 	move.b KEYBD,d1						; get scan code
 	clr.b KEYBD+1							; clear status register (clears IRQ AND scancode)
 	btst #1,_KeyState2(a3)		; Is Alt down?
@@ -892,7 +897,7 @@ KeybdIRQ:
 	move.b d0,_KeybdTail(a3)	; update tail index
 	addi.b #1,_KeybdCnt(a3)		; increment buffer count
 .0002
-	moveq	#KEYBD_SEMA,d1
+	moveq	#KEYBD_SEMA,d1			; d2 = sr value
 	moveq #38,d0							; unlock semaphore
 	trap #15
 .lockFailed

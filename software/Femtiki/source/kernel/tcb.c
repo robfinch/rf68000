@@ -46,8 +46,8 @@
 
 extern long hasUltraHighPriorityTasks;
 extern void prtdbl(double);
-
-extern TCB tcbs[];
+extern DisplayString(__reg("a1") char*str);
+extern DisplayWyde(__reg("d1") val);
 
 TCB* GetRunningTCBPtr()
 {
@@ -99,10 +99,11 @@ static hTCB iAllocTCB()
 hTCB AllocTCB()
 {
 	hTCB h;
+	int stat;
 
-	while (LockTCBList(-1)==0);
+	stat = LockTCBList(0);
 	h = iAllocTCB();
-	UnlockTCBList();
+	UnlockTCBList(stat);
 	return (h);
 }
 
@@ -119,9 +120,11 @@ static void iFreeTCB(hTCB h)
 
 int fnFreeTCB(hTCB h)
 {
-	if (LockSysSemaphore(100000)) {
+	int stat;
+
+	if ((stat=LockTCBList(100000)) > 0) {
 		iFreeTCB(h);	
-		UnlockSysSemaphore();
+		UnlockTCBList(stat);
 		return (E_Ok);
 	}
 	return (E_Busy);

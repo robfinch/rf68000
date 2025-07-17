@@ -77,6 +77,15 @@ void SetMMUAppid(__reg("d0") long appid) =
 	"\tmove.l d0,$FDC00008\r\n"
 ;
 
+int SetImLevel7() =
+	"\tmove sr,d0\r\n"
+	"\tori #$700,sr\r\n"
+;
+
+void RestoreSr(__reg("d0") int sr) = 
+	"\tmove d0,sr\r\n"
+;
+
 extern int SetImLevel(int level);
 extern void SetImLevelHelper(__reg("d0") int level);
 extern hACB GetRunningAppid();
@@ -86,6 +95,8 @@ extern hACB ACBPointerToHandle(ACB* ptr);
 extern ACB* ACBHandleToPointer(hACB h);
 extern TCB* TCBHandleToPointer(hTCB h);
 extern hTCB TCBPointerToHandle(TCB* p);
+extern MBX* MBXHandleToPointer(hMBX h);
+extern ALARM* AlarmHandleToPointer(hALARM h);
 extern unsigned long get_tick();
 extern int IsSystemApp(hACB);
 
@@ -93,6 +104,7 @@ void FMTK_Reschedule();
 long FMTK_Initialize();
 long FMTK_Sleep(__reg("d0") long);
 long FMTK_SendMsg(__reg("d0") long hMbx, __reg("d1") long d1, __reg("d2") long d2, __reg("d3") long d3);
+long FMTK_PostMsg(__reg("d0") long hMbx, __reg("d1") long d1, __reg("d2") long d2, __reg("d3") long d3);
 long FMTK_WaitMsg(__reg("d0") long hMbx, __reg("d1") long d1, __reg("d2") long d2, __reg("d3") long d3, __reg("d4") long timelimit);
 long FMTK_PeekMsg(__reg("d0") long hMbx, __reg("d1") long d1, __reg("d2") long d2, __reg("d3") long d3);
 long FMTK_CheckMsg(__reg("d0") long hMbx, __reg("d1") long d1, __reg("d2") long d2, __reg("d3") long d3, __reg("d4") long qrmv);
@@ -110,6 +122,7 @@ long FMTK_AllocSystemPages(__reg("d0") long numpage, __reg("d0") long ppAddr);
 long FMTK_AllocPages(__reg("d0") long numpage, __reg("d0") long ppAddr);
 long FMTK_AliasMem(__reg("d0") long pMem,__reg("d1") long cbMem,__reg("d2") long hApp,__reg("d3") long ppAliasRet);
 long FMTK_DeAliasMem(__reg("d0") long hACB, __reg("d1") long pMem, __reg("d2") long len);
+long FMTK_AddAlarm(__reg("d0") long hMbx, __reg("d1") long callback, __reg("d2") long timeout);
 void RequestIOFocus(ACB *);
 
 int chkTCB(TCB *p);
@@ -133,31 +146,33 @@ void outc(unsigned int, int);
 void outh(unsigned int, int);
 void outw(unsigned int, int);
 int LockSemaphore(long sema, int retries);
-void UnlockSemaphore(long sema);
+void UnlockSemaphore(long sema, int stat);
 
-long LockSysSemaphore(long retries);
-long LockIOFSemaphore(long retries);
-long LockKbdSemaphore(long retries);
-long LockMMUSemaphore(long retries);
-long LockPMTSemaphore(long retries);
-long LockMSGSemaphore(long retries);
-long LockMBXSemaphore(long retries);
-long LockTimeoutList(long retries);
-long LockReadyQueue(long retries);
-long LockTCBList(long retries);
-long LockACBSemaphore(long retries);
+int LockSysSemaphore(long retries);
+int LockIOFSemaphore(long retries);
+int LockKbdSemaphore(long retries);
+int LockMMUSemaphore(long retries);
+int LockPMTSemaphore(long retries);
+int LockMSGSemaphore(long retries);
+int LockMBXSemaphore(long retries);
+int LockTimeoutList(long retries);
+int LockReadyQueue(long retries);
+int LockTCBList(long retries);
+int LockACBSemaphore(long retries);
+int LockAlarmList(long retries);
 
-void UnlockSysSemaphore();
-void UnlockIOFSemaphore();
-void UnlockKbdSemaphore();
-void UnlockMMUSemaphore();
-void UnlockPMTSemaphore();
-void UnlockMSGSemaphore();
-void UnlockMBXSemaphore();
-void UnlockTImeoutList();
-void UnlockReadyQueue();
-void UnlockTCBList();
-void UnlockACBSemaphore();
+void UnlockSysSemaphore(int);
+void UnlockIOFSemaphore(int);
+void UnlockKbdSemaphore(int);
+void UnlockMMUSemaphore(int);
+void UnlockPMTSemaphore(int);
+void UnlockMSGSemaphore(int);
+void UnlockMBXSemaphore(int);
+void UnlockTimeoutList(int);
+void UnlockReadyQueue(int);
+void UnlockTCBList(int);
+void UnlockACBSemaphore(int);
+void UnlockAlarmList(int);
 
 // Restoring the interrupt level does not have a ramp, because the level is
 // being set back to enable interrupts, from a disabled state. Following the

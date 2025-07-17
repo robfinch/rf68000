@@ -164,10 +164,13 @@ random_is_removeable:
 InitRand:
 RandInit:
 	movem.l	d0/d1/d2,-(a7)
-	moveq #37,d0								; lock semaphore
-	moveq	#RAND_SEMA,d1
-	moveq #-1,d2								; retry count
-	trap #15
+;	moveq #37,d0								; lock semaphore
+;	moveq	#RAND_SEMA,d1
+;	moveq #-1,d2								; retry count
+;	trap #15
+;	tst.l d0										; locked?
+;	bmi.s .0002									; no, exit
+	move.l d0,d2
 	move.w #1023,d0							; 1024 streams
 .0001
 	move.l d0,RAND_STRM					; select the stream
@@ -175,9 +178,10 @@ RandInit:
 	move.l #$98765432,RAND_MW
 	move.l #777777777,RAND_NUM	; generate first number
 	dbra d0,.0001
-	moveq #38,d0								; unlock semaphore
-	moveq	#RAND_SEMA,d1
-	trap #15
+;	moveq #38,d0								; unlock semaphore
+;	moveq	#RAND_SEMA,d1					; d2 = status!
+;	trap #15
+.0002
 	movem.l	(a7)+,d0/d1/d2
 	rts
 	global InitRand
