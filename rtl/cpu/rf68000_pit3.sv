@@ -48,6 +48,7 @@
 //		2 = 1 = auto-reload on terminal count, 0 = no reload
 //		3 = 1 = use external clock, 0 = internal clk_i
 //    4 = 1 = use gate to enable count, 0 = ignore gate
+//		5 = 1 = irq during on time
 //		7 = 1 = set registers immediately, 0 = wait for sync
 //	010 callback address
 //	014	callback pid
@@ -167,17 +168,20 @@ reg [NTIMER-1:0] arh;
 reg [NTIMER-1:0] geh;
 reg [NTIMER-1:0] xch;
 reg [NTIMER-1:0] ieh;
+reg [NTIMER-1:0] otih;
 reg [NTIMER-1:0] ld;
 reg [NTIMER-1:0] ce;
 reg [NTIMER-1:0] ar;
 reg [NTIMER-1:0] ge;
 reg [NTIMER-1:0] xc;
 reg [NTIMER-1:0] ie;
+reg [NTIMER-1:0] oti;
 reg [NTIMER-1:0] out;
 reg [NTIMER-1:0] underflow;
 reg [NTIMER-1:0] tmp;
 reg [NTIMER-1:0] irqf;
 reg [2:0] irq_level;
+wire irq1_o, irq2_o;
 
 wb_cmd_request32_t wbs_req;
 wb_cmd_response32_t ddbb_resp;
@@ -220,7 +224,7 @@ begin
 		else
 			wbs_resp_o.dat = ddbb_resp.dat;
 	end
-	else if (cs) begin
+	else if (cs|cs_inta) begin
 		wbs_resp_o = 1000'd0;
 		wbs_resp_o.ack = ack_o;
 		if (pReverseByteOrder)

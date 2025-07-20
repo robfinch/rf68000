@@ -27,14 +27,15 @@ pit_setup:
 pit_init:
 init_pit:
 	lea	PIT,a0							; a0 points to PIT
-	move.l #31250,$88(a0)		; setup for 100.0 Hz
+	move.l #93750,$88(a0)		; setup for 33.3 Hz
 	clr.l $8C(a0)						; maxcount bits 32 to 47
 	move.l #50,$90(a0)			; on for 50 clocks
 	clr.l $94(a0)						; on time bits 32 to 47
-	move.l #$87,$98(a0)			; load,enable,auto-reload,internal clock,ignore gate,set
-	move.l #16,$1000(a0)		; enable timer #4 interrupts
+	move.l #$27,$98(a0)			; load,enable,auto-reload,internal clock,ignore gate,set,oti
+	move.l #$80,$98(a0)			; load,enable,auto-reload,internal clock,ignore gate,set
 	move.l #192,$1040(a0)		; set base vector
 	jsr _SetupAlarmISRs
+	move.l #16,$1000(a0)		; enable timer #4 interrupts
 	move.l #_FMTK_TimerISRLaunchpad,(192+4)*4	; override default for system tick timer
 	rts
 

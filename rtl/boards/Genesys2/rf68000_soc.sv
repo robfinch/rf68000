@@ -170,6 +170,7 @@ wire [31:0] cpu_dato;
 reg ack;
 reg [2:0] err;
 wire vpa;
+wire vpa2;
 wire [3:0] cpu_sel;
 reg [31:0] dati;
 wire [31:0] dato;
@@ -441,7 +442,7 @@ wire cs_rand  	 = cpu_adr[31:14]==18'b1111_1101_1111_1111_01 && ch7req.stb && cs
 wire cs_br3_rand = br3_adr[31:14]==18'b1111_1101_1111_1111_01 && br3_stb && cs_io2;
 wire cs_leds 		 = cpu_adr[31:14]==18'b1111_1101_1111_1111_11 && ch7req.stb && cs_io2;
 wire cs_br3_leds = br3_adr[31:14]==18'b1111_1101_1111_1111_11 && br3_stb && cs_io2;
-wire cs_sema 		 = cpu_adr[31:16]==16'hFD30 && cpu_stb && cs_io2;
+wire cs_sema 		 = cpu_adr[31:16]==16'b1111_1101_0011_0000 && cpu_stb && cs_io2;
 wire cs_acia 		 = cpu_adr[31:14]==18'b1111_1101_1111_1110_00 && cpu_stb && cs_io2;
 wire cs_br3_acia = br3_adr[31:14]==18'b1111_1101_1111_1110_00 && br3_stb && cs_io2;
 wire cs_br3_i2c2 = br3_adr[31:14]==18'b1111_1101_1111_1110_01 && br3_stb && cs_io2;
@@ -1307,6 +1308,20 @@ binary_semamem usema1
 	.dat_o(sema_dato)
 );
 
+binary_semamem usema2
+(
+	.rst_i(rst),
+	.clk_i(node_clk),
+	.cs_i(cs_sema2),
+	.cyc_i(cpu_cyc),
+	.stb_i(cpu_stb),
+	.ack_o(sema2_ack),
+	.we_i(cpu_we),
+	.adr_i(cpu_adr[13:0]),
+	.dat_i(cpu_dato),
+	.dat_o(sema2_dato)
+);
+
 scratchmem uscr1
 (
 	.rst_i(rst),
@@ -1385,7 +1400,7 @@ begin
 	pit_dato = pit_resp.dat;
 end
 
-rf68000_pit #(
+rf68000_pit3 #(
 	.pReverseByteOrder(1'b1),
 	.pDevName("TIMER_BLOCK1    "),
 	.IO_ADDR(32'hFDFEC000),
@@ -1393,12 +1408,14 @@ rf68000_pit #(
 )
 upit1 (
 	.rst_i(rst),
-	.clk_i(node_clk),
+	.clk_i(clk200),
 	.cs_i(cs_ddbb),
 	.irq_chain_i(16'h0),
 	.irq_chain_o(),
+	.fc_i(cpu_fc),
 	.wbs_req_i(pit_req),
 	.wbs_resp_o(pit_resp),
+	.vpa2_o(vpa2),
 	.clk0(1'b0),
 	.gate0(1'b0),
 	.out0(),
@@ -1433,7 +1450,7 @@ rf68000_pic upic1
 	.vol_o(),		// volatile register selected
 	.i1(1'b0),
 	.i2(1'b0),
-	.i3(1'b0),
+	.i3(1'b0),				// rescheduler interrupt
 	.i4(io_irq),
 	.i5(1'b0),
 	.i6(1'b0),
@@ -1458,9 +1475,9 @@ rf68000_pic upic1
 	.i25(1'b0),
 	.i26(1'b0),
 	.i27(1'b0),
-	.i28(1'b0),
+	.i28(kbd_irq),
 	.i29(tmr_irq),
-	.i30(kbd_irq),
+	.i30(1'b0),
 	.i31(btnu_db),
 	.irqo(plic_irq),	// normally connected to the processor irq
 	.nmii(1'b0),		// nmi input connected to nmi requester
@@ -1570,6 +1587,7 @@ rf68000_nic unic1
 	.s_rty_o(),
 	.s_err_o(),
 	.s_vpa_o(),
+	.s_vpa2_o(),
 	.s_we_i(1'b0),
 	.s_sel_i(4'h0),
 	.s_fc_i(3'd0),
@@ -1585,6 +1603,7 @@ rf68000_nic unic1
 	.m_ack_i(ack),
 	.m_err_i(cs_dram?(dram_err!=fta_bus_pkg::OKAY):bus_err),
 	.m_vpa_i(vpa),
+	.m_vpa2_i(vpa2),
 	.m_we_o(cpu_we),
 	.m_sel_o(cpu_sel),
 	.m_asid_o(asid),
@@ -1634,14 +1653,14 @@ ila_0 uila1 (
 	.probe2(unode1.ack1),//umpmc1.req_fifoo.req.we), // input wire [0:0]  probe2
 	.probe3(unode1.we1),
 	.probe4(uuart.cs),
-	.probe5(cs_scr),
-	.probe6(kbd_ack),
-	.probe7(kbd_irq),
-	.probe8(uuart.dat_o),
+	.probe5(tmr_irq),
+	.probe6(pit_resp.ack),
+	.probe7(upit1.cs_inta),
+	.probe8(unode1.ucpu1.ipl_i),
 	.probe9(mem_rd_data_valid),
 	.probe10(cs_dram),
 //	.probe11({unode1.ram1_we[3:0],cpu_if.req.cmd}),
-	.probe11(uuart.rx_do),
+	.probe11(dati),
 /*
 	.probe11({
 		br1_stall,
@@ -1678,10 +1697,11 @@ ila_0 uila1 (
 	.probe15(umpmc1.app_rdy),
 	.probe16(umpmc1.app_en),
 	.probe17({ugfx1.rasterizer0.clip_ack_i,ugfx1.rasterizer0.clip_write_o,ugfx1.rasterizer0.raster_state}),
-	.probe18(unode1.dato1),
+	.probe18(dati),
 	.probe19(1'b0),
-	.probe20(unode1.ucpu1.state),//uframebuf1.state)
-	.probe21(umpmc1.req_fifoo.port)
+//	.probe20(unode1.ucpu1.state),//uframebuf1.state)
+	.probe20(plic_core),
+	.probe21(plic_irq)
 );
 
 /*

@@ -72,7 +72,8 @@ enum {
      E_NoMoreMbx = 0x40,
      E_NoMoreMsgBlks,
      // 30
-     E_NoMoreAlarmBlks,
+     E_NoMoreAlarms,
+     E_NoMoreTimers,
      E_NoMoreACBs,
      E_NoMoreTCBs,
      E_NoMem,
@@ -128,11 +129,13 @@ enum {
 #define OSSEMA			8
 #define IOFSEMA			9
 #define PMT_SEMA 		10
-#define MBX_SEMA		11
+#define MBXLIST_SEMA	11
 #define MSG_SEMA		12
 #define TOL_SEMA		13
 #define RDQ_SEMA		14
 #define ACB_SEMA		15
+#define ALARM_SEMA	16
+#define MBX_SEMA		1024
 
 /*
 ; the following constant is used to scramble device handles. The device handle

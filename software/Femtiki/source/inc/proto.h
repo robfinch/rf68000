@@ -55,6 +55,7 @@ void SetRunningAppid(__reg("d0") hACB h) =
 ;
 hTCB GetRunningTCB() =
 	"\tmovec.l tr,d0\r\n"
+	"\tbclr #31,d0\r\n"
 ;
 void SetRunningTCB(__reg("d0") hTCB h) =
 	"\tmovec.l d0,tr\r\n"
@@ -86,11 +87,21 @@ void RestoreSr(__reg("d0") int sr) =
 	"\tmove d0,sr\r\n"
 ;
 
+// ----------------------------------------------------------------------------
+// FMTK primitives need to re-schedule threads in a couple of places.
+// ----------------------------------------------------------------------------
+
+void FMTK_Reschedule() =
+	"\tmove.l #$03000000,$FD260018\r\n"	// trigger IRQ in PIC
+	"\tstop #$2000\r\n"					// wait for the interrupt
+;
+
 extern int SetImLevel(int level);
 extern void SetImLevelHelper(__reg("d0") int level);
 extern hACB GetRunningAppid();
 extern TCB *GetRunningTCBPtr();
 extern void SetRunningTCBPtr(TCB *p);
+extern void ISetRunningTCBPtr(TCB *p);
 extern hACB ACBPointerToHandle(ACB* ptr);
 extern ACB* ACBHandleToPointer(hACB h);
 extern TCB* TCBHandleToPointer(hTCB h);
@@ -153,8 +164,9 @@ int LockIOFSemaphore(long retries);
 int LockKbdSemaphore(long retries);
 int LockMMUSemaphore(long retries);
 int LockPMTSemaphore(long retries);
-int LockMSGSemaphore(long retries);
-int LockMBXSemaphore(long retries);
+int LockMSGList(long retries);
+int LockMBX(long hMbx, long retries);
+int LockMBXList(long retries);
 int LockTimeoutList(long retries);
 int LockReadyQueue(long retries);
 int LockTCBList(long retries);
@@ -166,8 +178,9 @@ void UnlockIOFSemaphore(int);
 void UnlockKbdSemaphore(int);
 void UnlockMMUSemaphore(int);
 void UnlockPMTSemaphore(int);
-void UnlockMSGSemaphore(int);
-void UnlockMBXSemaphore(int);
+void UnlockMSGList(int);
+void UnlockMBX(hMBX,int);
+void UnlockMBXList(int);
 void UnlockTimeoutList(int);
 void UnlockReadyQueue(int);
 void UnlockTCBList(int);

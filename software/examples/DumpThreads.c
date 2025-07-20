@@ -1,10 +1,14 @@
 #include "..\Femtiki\source\inc\const.h"
 #include "..\Femtiki\source\inc\config.h"
 #include "..\Femtiki\source\inc\types.h"
+#include "..\Femtiki\source\inc\proto.h"
+
 
 extern TCB tcbs[NR_TCB];
 extern ACB* ACBPtrs[NR_ACB];
+extern hTCB readyQ[32];
 
+extern void DisplayString(__reg("a1") char *);
 extern void DisplayStringCRLF(__reg("a1") char *);
 extern void OutputChar(char);
 extern void DisplayByte(__reg("d1") long);
@@ -20,9 +24,9 @@ void DumpThreads()
 	DisplayStringCRLF("\r\nthrd next status    pc    owner pri affin");
 	DisplayStringCRLF(    "---- ---- ------ -------- ----- --- -----");
 	for (nn = 0; nn < 10;/*NR_TCB;*/ nn++) {
-//		if (tcbs[nn].hApp != 0 || tcbs[nn].status != 0)
-//		{
-			DisplayByte(nn);
+		if (tcbs[nn].hApp != 0 || tcbs[nn].status != 0)
+		{
+			DisplayByte(nn+1);
 			OutputChar(' ');
 			DisplayByte(tcbs[nn].next);
 			OutputChar(' ');
@@ -39,9 +43,44 @@ void DumpThreads()
 //			DisplayWyde(tcbs[nn].stacksize);
 			OutputChar('\r');
 			OutputChar('\n');
-//		}
+		}
 	}
 	SetImLevelHelper(im);
+}
+
+void DumpReadyQueue()
+{
+	int nn;
+	int sr;
+	int thd,fst;
+	TCB* p;
+	
+	sr = SetImLevel7();
+	for (nn = 0; nn < 32; nn++) {
+		if (readyQ[nn] > 0 && readyQ[nn] <= NR_TCB) {
+			DisplayString("\r\nQueue: ");
+			DisplayByte(nn);
+			DisplayStringCRLF(" ");
+			DisplayStringCRLF("\r\nthrd next status ");
+			DisplayStringCRLF(    "---- ---- ------ ");
+			fst = readyQ[nn];
+			for (thd = fst; thd > 0 && thd <= NR_TCB; ) {
+				p = TCBHandleToPointer(thd);
+				DisplayByte(thd);
+				OutputChar(' ');
+				DisplayByte(p->next);
+				OutputChar(' ');
+				DisplayByte(p->status);
+				OutputChar(' ');
+				thd = p->next;
+				OutputChar('\r');
+				OutputChar('\n');
+				if (thd==fst)
+					break;
+			}
+		}
+	}
+	RestoreSr(sr);
 }
 
 void DumpApps()

@@ -49,6 +49,7 @@ reg [NTIMER-1:0] ce,ceh;
 reg [NTIMER-1:0] ar,arh;
 reg [NTIMER-1:0] ge,geh;
 reg [NTIMER-1:0] xc,xch;
+reg [NTIMER-1:0] oti,otih;
 reg [NTIMER-1:0] underflow;
 reg [NTIMER-1:0] gate;
 reg [NTIMER-1:0] pulse;
@@ -130,6 +131,7 @@ else begin
 					ar[adr_i[11:5]] <= arh[adr_i[11:5]];
 					xc[adr_i[11:5]] <= xch[adr_i[11:5]];
 					ge[adr_i[11:5]] <= geh[adr_i[11:5]];
+					oti[adr_i[11:5]] <= otih[adr_i[11:5]];
 					maxcount[adr_i[11:5]] <= maxcounth[adr_i[11:5]];
 					ontime[adr_i[11:5]] <= ontimeh[adr_i[11:5]];
 				end
@@ -139,6 +141,7 @@ else begin
 					arh[adr_i[11:5]] <= dat_i[2];
 					xch[adr_i[11:5]] <= dat_i[3];
 					geh[adr_i[11:5]] <= dat_i[4];
+					otih[adr_i[11:5]] <= dat_i[5];
 				end
 				mailbox[adr_i[11:5]] <= dat_i[31:16];
 			end
@@ -147,15 +150,25 @@ else begin
 		11'b10000000001:	ie[63:32] <= dat_i;
 //		11'b10000000010:	ie[95:64] <= dat_i;
 //		11'b10000000011:	ie[127:96] <= dat_i;
-		11'b10000000100:	irqf[31:0] <= irqf[31:0] & ~dat_i;
-		11'b10000000101:	irqf[63:32] <= irqf[63:32] & ~dat_i;
+		11'b10000000100:
+			begin
+				ie[31:0] <= ie[31:0] & (~(underflow[31:0] & dat_i) | ar[31:0]);
+				irqf[31:0] <= irqf[31:0] & ~dat_i;
+				underflow[31:0] <= underflow[31:0] & ~dat_i;
+			end
+		11'b10000000101:
+			begin
+				ie[63:32] <= ie[63:32] & (~(underflow[63:32] & dat_i) | ar[63:32]);
+				irqf[63:32] <= irqf[63:32] & ~dat_i;
+				underflow[63:32] <= underflow[63:32] & ~dat_i;
+			end
 //		11'b10000000110:	irqf[95:64] <= irqf[95:64] & ~dat_i;
 //		11'b10000000111:	irqf[127:96] <= irqf[127:96] & ~dat_i;
 		11'b10000001000:	underflow[31:0] <= underflow[31:0] & ~dat_i;
 		11'b10000001001:	underflow[63:32] <= underflow[63:32] & ~dat_i;
 //		11'b10000001010:	underflow[95:64] <= underflow[95:64] & ~dat_i;
 //		11'b10000001011:	underflow[127:96] <= underflow[127:96] & ~dat_i;
-		11'b10000010000:	vector <= dat_i[7:0];
+		11'b10000010000:	vector <= {24'd0,dat_i[7:0]};
 //		11'b10000100000:	ce[31:0] <= dat_i;
 //		11'b10000100001:	ce[63:32] <= dat_i;
 //		11'b10000100100:	ce[31:0] <= ce[31:0] | dat_i;
@@ -179,7 +192,10 @@ else begin
 				dat_o[0] <= 1'b0;
 				dat_o[1] <= ceh[adr_i[11:5]];
 				dat_o[2] <= arh[adr_i[11:5]];
-				dat_o[15:3] <= 29'd0;
+				dat_o[3] <= xch[adr_i[11:5]];
+				dat_o[4] <= geh[adr_i[11:5]];
+				dat_o[5] <= otih[adr_i[11:5]];
+				dat_o[15:4] <= 12'd0;
 				dat_o[31:16] <= mailbox[adr_i[11:5]];
 			end
 //		11'b0???????111:	dat_o <= vector[adr_i[11:5]];
@@ -199,7 +215,7 @@ else begin
 		default:	dat_o <= 32'd0;
 		endcase
 	else if (iack_i) begin
-		dat_o <= vector + irqn;
+		dat_o <= {4{vector[7:0] + irqn}};
 	end
 	else
 		dat_o <= 32'd0;
@@ -212,9 +228,13 @@ else begin
 		count[cntr] <= count[cntr] - 48'd1;
 	if (count[cntr] == ontime[cntr])
 		out[cntr] <= 1'b1;
+	if (count[cntr] == ontime[cntr] && oti[cntr])
+		irqf[cntr] <= ie[cntr];
 	if (count[cntr]==48'd0) begin
 		count[cntr] <= maxcount[cntr];
-		if (ie[cntr])
+		if (oti[cntr])
+			irqf[cntr] <= 1'b0;
+		else if (ie[cntr])
 			irqf[cntr] <= 1'b1;
 		underflow[cntr] <= 1'b1;
  		out[cntr] <= 1'b0;

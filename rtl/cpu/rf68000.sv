@@ -423,6 +423,7 @@ typedef enum logic [7:0] {
 	FMUL2,
 	FDIV,
 	FDIV1,
+	// 210
 	FDIV2,
 	FDIV3,
 	FNEG,
@@ -433,6 +434,7 @@ typedef enum logic [7:0] {
 	I2DF2,
 	DF2I1,
 	DF2I2,
+	// 220
 	FTST,
 	FTST1,
 	FBCC,
@@ -444,6 +446,7 @@ typedef enum logic [7:0] {
 
 	FETCH_HEXI1,
 	FETCH_HEXI2,
+	// 230
 	FETCH_HEXI3,
 	FETCH_HEXI4,
 	FETCH_NOP_HEXI,
@@ -456,6 +459,7 @@ typedef enum logic [7:0] {
 
 	FETCH_IMM96,
 	FETCH_IMM96b,
+	// 240
 	FETCH_IMM96c,
 	FETCH_IMM96d,
 	
@@ -470,6 +474,7 @@ typedef enum logic [7:0] {
 
 	STORE_OCTA,
 	STORE_OCTA1,
+	// 250
 	STORE_OCTA2,
 	
 	FETCH_IMM64,
@@ -813,6 +818,8 @@ reg bcdsub, bcdneg;
 reg fmovem;
 reg [31:0] dati_buf;	// input data from bus error
 reg [31:0] dato_buf;
+reg [2:0] ie_cntdwn;
+reg [2:0] ie_val;
 
 // CSR's
 reg [31:0] tick;	// FF0
@@ -1584,6 +1591,8 @@ if (rst_i) begin
 		fetchbuf_tag[n] <= 32'hFFFFFFFF;
 	end
 `endif
+	ie_cntdwn <= 3'd0;
+	ie_val <= 3'd7;
 end
 else begin
 
@@ -2194,6 +2203,10 @@ IFETCH:
 		fpiar <= pc;
 		ext_ir <= 1'b0;
 		movemf <= 1'b0;
+		if (ie_cntdwn != 3'd0)
+			ie_cntdwn <= ie_cntdwn - 3'd1;
+		if (ie_cntdwn==3'd1)
+			im <= ie_val;
 		if (!cyc_o) begin
 			is_nmi <= 1'b0;
 			is_irq <= 1'b0;
@@ -3407,15 +3420,7 @@ BCD4:
 //-----------------------------------------------------------------------------
 STOP:
 	begin
-		if (!sf) begin
-  		isr <= srx;
-  		tf <= 1'b0;
-  		sf <= 1'b1;
-			vecno <= `PRIV_VEC;
-			goto (TRAP3);
-		end
-		else
-			call (FETCH_IMM16, STOP1);
+		call (FETCH_IMM16, STOP1);
 	end
 STOP1:
 	begin
@@ -3429,7 +3434,7 @@ STOP1:
 		im[2] <= imm[10];
 		sf <= imm[13];
 		tf <= imm[15];
-		if (ipl_i > imm[10:8] || ipl_i==3'd7)
+		if (ipl_i > imm[10:8] || ipl_i==3'd7 || imm[15])
 			ret();
 	end
 
@@ -5848,9 +5853,11 @@ RTE2:
 		xf <= s[4];
 		ccr57 <= s[7:5];
 		if (!rtr) begin
-			im[0] <= s[8];
-			im[1] <= s[9];
-			im[2] <= s[10];
+			ie_cntdwn <= 3'd3;
+			ie_val <= s[10:8];
+			//im[0] <= s[8];
+			//im[1] <= s[9];
+			//im[2] <= s[10];
 			sr1112 <= s[12:11];
 			sf <= s[13];
 			sr14 <= s[14];

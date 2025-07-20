@@ -59,7 +59,7 @@ TCB* GetRunningTCBPtr()
 
 TCB* TCBHandleToPointer(hTCB handle)
 {
-	if (handle <= 0)
+	if (handle <= 0 || handle > NR_TCB)
 		return (TCB*)0;
 	return (&tcbs[handle-1]);
 }
@@ -81,6 +81,15 @@ void SetRunningTCBPtr(TCB* p)
 	h = TCBPointerToHandle(p);	
 	if (h > 0 && h <= NR_TCB)
 		SetRunningTCB(h);
+}
+
+void ISetRunningTCBPtr(TCB* p)
+{
+	hTCB h;
+
+	h = TCBPointerToHandle(p);	
+	if (h > 0 && h <= NR_TCB)
+		SetRunningTCB(h|0x80000000UL);
 }
 
 static hTCB iAllocTCB()

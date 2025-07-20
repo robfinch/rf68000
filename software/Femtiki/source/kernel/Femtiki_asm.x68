@@ -124,6 +124,44 @@ _FMTK_Dispatch:
 
 	global _FMTK_Dispatch
 
+_FMTK_RescheduleISRLaunchpad:
+	move.w #$2700,sr						; disable lower interrupts
+	; Save register context in TCB
+	move.l a0,-(a7)							; push a0
+	move.l _RunningTCBPointer,a0		; a0 points to task control block
+	movem.l d0-d7/a1-a6,4(a0)		; save registers in task control block
+	move usp,a1									; save usp in TCB
+	move.l a1,60(a0)
+	move.l (sp)+,64(a0)					; pop a0 into TCB
+	move.w (sp)+,140(a0)				; status reg
+	move.l (sp)+,136(a0)				; program counter
+	move.w (sp)+,144(a0)				; and format word
+	move.l a7,68(a0)						; finally save a7
+	; Reset rescheduler IRQ	
+	move.l #$03000000,$FD260014	; reset edge sense circuit
+	; Call 'C' interrupt handler
+	movec tr,d3
+	bset #31,d3
+	movec d3,tr
+	jsr _FMTK_RescheduleISR			; call the ISR routine
+	movec tr,d3
+	bclr #31,d3
+	movec d3,tr
+	; Restore register context from TCB. Note that a different context may be
+	; restored than the one saved.
+	move.l _RunningTCBPointer,a0	; a0 points to task control block
+	move.l 60(a0),a1						; restore usp
+	move.l a1,usp
+	movem.l 4(a0),d0-d7/a1-a6		; restore register set
+	move.l 68(a0),a7						; restore a7
+	move.w 144(a0),-(sp)				; push format word
+	move.l 136(a0),-(sp)				; push program counter
+	move.w 140(a0),-(sp)				; push status reg
+	move.l 64(a0),a0						; restore a0
+	rte
+
+	global _FMTK_RescheduleISRLaunchpad
+
 ; Timer ISR
 ;
 ; The only code modifying the register context is in the timer IRQ. That means
@@ -138,8 +176,6 @@ _FMTK_TimerISRLaunchpad:
 ;	cmp.b _InTimerISR,d0				; Is it core's turn to process?
 ;	bne .0002										; no, just return
 ;	move.l (sp)+,d0
-;	bset #0,_InTimerISR					; Just in case, do not allow re-entry
-;	bne .busy
 
 	; Save register context in TCB
 	move.l a0,-(a7)							; push a0
@@ -154,9 +190,10 @@ _FMTK_TimerISRLaunchpad:
 	move.l a7,68(a0)						; finally save a7
 
 	; Reset timer IRQ	
+	; We know which irq it must have been, would not be in this routine unless
+	; it was the right one.
 	lea PIT,a0
-	move.l $1020(a0),d3					; read underflow register
-;	move.l d3,$800(a0)					; write it back
+;	move.l #16,$1010(a0)				; write flag value to negate irq,underflow flags
 	move.l #$1D000000,$FD260014	; reset edge sense circuit
 
 	; Display IRQ Live indicator
@@ -171,31 +208,13 @@ _FMTK_TimerISRLaunchpad:
 	move.l d1,(a0,d0.w)					; move to screen
 
 	; Call 'C' interrupt handler
-;	btst #5,d3
-;	beq.s .0004
-;	movec coreno,d0
-;	cmpi.b #2,d0
-;	bne.s .0004
-;	move.l d3,-(sp)
-;	move.l #32,d0
-;	jsr _FMTK_AlarmISR
-;	move.l (sp)+,d3
-.0004
-;	btst #6,d3
-;	beq.s .0003
-;	movec coreno,d0
-;	cmpi.b #3,d0
-;	bne.s .0003
-;	move.l d3,-(sp)
-;	move.l #64,d0
-;	jsr _FMTK_AlarmISR
-;	move.l (sp)+,d3
-.0003
-	btst #4,d3									; Was it the Tick IRQ?
-	beq.s .0005
-	move.l #16,d3
-	move.l d3,$800(a0)					; write it back
+	movec tr,d3
+	bset #31,d3
+	movec d3,tr
 	jsr _FMTK_TimerTickISR			; call the IRQ routine
+	movec tr,d3
+	bclr #31,d3
+	movec d3,tr
 .0005
 	; Restore register context from TCB. Note that a different context may be
 	; restored than the one saved.

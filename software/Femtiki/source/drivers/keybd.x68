@@ -603,6 +603,8 @@ KeybdGetCharWait:
 KeybdGetChar:
 	movem.l	d0/d2/d3/a0,-(a7)
 .0003
+	move sr,d0
+	ori #$700,sr
 	moveq	#KEYBD_SEMA,d1
 	moveq #37,d0						; Lock semaphore
 	move.l #100000,d2				; wait this long
@@ -621,6 +623,7 @@ KeybdGetChar:
 	move.b d2,_KeybdHead(a3)
 	subi.b #1,_KeybdCnt(a3)	; decrement count of scan codes in buffer
 	exg	d1,d3								; save scancode value in d2
+	move d0,sr
 	move.l d0,d2						; d2 = sr value
 	moveq	#KEYBD_SEMA,d1
 	moveq #38,d0						; unlock semaphore
@@ -631,6 +634,7 @@ KeybdGetChar:
 	bsr	_KeybdGetStatus			; check keyboard status for key available
 	bmi	.0006								; yes, go process
 .0015:
+	move d0,sr
 	move.l d0,d2						; restore sr value
 	moveq	#KEYBD_SEMA,d1
 	moveq #38,d0						; unlock semaphore
@@ -852,12 +856,18 @@ KeybdIRQ:
 	move.b KEYBD+1,d1					; get status reg
 	tst.b	d1
 	bpl	.0001									; branch if not keyboard
+	; Set MSB of thread register to make the semaphore key different for the 
+	; ISR than it is in the running program.
+	movec tr,d1								
+	bset #31,d1
+	movec d1,tr
 	moveq	#KEYBD_SEMA,d1
 	moveq #37,d0							; lock semaphore
 	move.l #100,d2
 	trap #15
 	tst.l d0									; was the semaphore locked?
 	bmi .lockFailed						; nope, return
+	move.b #1,leds
 	move.l d0,d2							; d2 = sr value
 	move.b KEYBD,d1						; get scan code
 	clr.b KEYBD+1							; clear status register (clears IRQ AND scancode)
@@ -897,11 +907,16 @@ KeybdIRQ:
 	move.b d0,_KeybdTail(a3)	; update tail index
 	addi.b #1,_KeybdCnt(a3)		; increment buffer count
 .0002
-	moveq	#KEYBD_SEMA,d1			; d2 = sr value
+	moveq	#KEYBD_SEMA,d1			; d2 = sr value (above)
 	moveq #38,d0							; unlock semaphore
 	trap #15
 .lockFailed
+	; clear the bit that was previously set
+	movec tr,d1
+	bclr #31,d1
+	movec d1,tr
 .0001
+	move.b #2,leds
 	movem.l	(a7)+,d0/d1/d2/a0/a3		; return
 	rte
 

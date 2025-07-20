@@ -130,7 +130,7 @@ reg [7:0] cause [0:31];
 reg [5:0] core [0:31];
 reg [5:0] core_min, core_max;
 reg [1:0] intar [0:31];
-integer n,n1,n2;
+integer n,n1,n2,n3;
 
 wire cs = cyc_i && stb_i && cs_i;
 wire cs_inta = cyc_i && stb_i && adr_i[31:24]=={8{1'b1}} && fc_i==3'b111;
@@ -211,8 +211,8 @@ begin
 	irqenc <= 5'd0;
 	for (n2 = 31; n2 > 0; n2 = n2 - 1)
 		if ((es[n2] ? iedge[n2] : i[n2])) begin
-			irqenc <= n2;
-			break;
+            irqenc <= n2;
+            break;
 		end
 end
 

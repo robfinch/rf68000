@@ -98,7 +98,7 @@ macRbo macro arg1
 	rol.w #8,\1
 endm
 
-NCORES equ 4
+NCORES equ 2
 
 	extrn _setup_textvid
 
@@ -262,7 +262,7 @@ _go:
 	dc.l		0
 	dc.l		0
 	dc.l		0
-	dc.l		0
+	dc.l		_FMTK_RescheduleISRLaunchpad
 	dc.l		io_irq
 
 	; 60
@@ -547,8 +547,8 @@ start:
 	trap #15
 ;	bsr	UnlockSemaphore	; allow other cpus to proceed
 	move.w #$A4A4,leds			; diagnostics
-	jsr _FMTK_Initialize
 	jsr	setup_pic				; initialize interrupt controller
+	jsr _FMTK_Initialize
 ;	jsr __crt_start
 ;	move.l #-1,_go			; Let the other cores start up
 ;	move.l #StartMon,d0
@@ -846,7 +846,6 @@ TRAP15:
 	lsl.w #2,d0
 	move.l (a0,d0.w),d0
 	move.l d0,a0
-	move.b #$B2,leds
 	jsr (a0)
 	movem.l (a7)+,d0/a0
 	rte
@@ -1174,9 +1173,10 @@ InitSemaphores:
 ;		a0
 ;		d0
 ;		ret addr
-;	  d1
+;	  a0
+;	  d3
 ;		d2
-;		a0
+;		d1
 ;
 ;
 ; Parameters:
@@ -1188,12 +1188,15 @@ InitSemaphores:
 ; -----------------------------------------------------------------------------
 
 LockSemaphore:
-	movem.l	d1/d2/a0,-(a7)	; save registers
-	lea	semamem,a0					; point to semaphore memory lock area
-	andi.w #1023,d1					; make d1 word value
+	movem.l	d1-d3/a0,-(a7)	; save registers
+	cmpi.l #2047,d1					; limit of 2048 semaphores
+	bhi.s .0005
 	lsl.w	#2,d1							; align to memory
+.0004
+	lea	semamem,a0					; point to semaphore memory lock area
+	move.l #500000,d3				; max wait time
 .0001
-	move.w 24(sp),sr				; unlock for a moment
+	move.w 28(sp),sr				; enable interrupts for a moment
 	nop
 	nop
 	ori.w #$700,sr					; mask all interrupts
@@ -1201,21 +1204,31 @@ LockSemaphore:
 	cmp.l (a0,d1.w),d0			; did it lock?
 	beq.s .0003							; yes, done
 	tst.l d2								; looping forever?
-	beq.s .0001
+	beq.s .0002
 	subq.l #1,d2						; decrement count
 	bne.s .0001							; try again
+.0005
 	; Here lock was unsuccessful
-	moveq #-1,d0
-	movem.l	(a7)+,a0/d1/d2	; restore regs
+	move.l #-1,20(sp)				; will be popped into d0 later
+	movem.l	(a7)+,a0/d1-d3	; restore regs
 	rts
+.0002
+	subq.l #1,d3						; looping forever really looping 500000 times
+	bne .0001
+	; Here the semaphore is still locked after a very long time.
+	; Force unlock it and try again.
+	lea	semamem+$6000,a0		; point to semaphore memory read/write area
+	clr.l	(a0,d1.w)					; write zero to unlock
+	bra .0004								; try again
 .0003
 	; Here lock was successful, interrupts are masked
 	clr.l d0
-	move.w 24(sp),d0				; get old status register, returned
-	move.w sr,24(sp)				; update status on stack (im = 7)
-	movem.l	(a7)+,a0/d1/d2	; restore regs
+	move.w 28(sp),d0				; get old status register, returned
+	move.l d0,20(sp)				; return d0
+	move.w sr,28(sp)				; update status on stack (im = 7)
+	movem.l	(a7)+,a0/d1-d3	; restore regs
 	rts
-	
+
 ; -----------------------------------------------------------------------------
 ; Unlocks a semaphore even if not the owner.
 ;
@@ -1228,8 +1241,8 @@ LockSemaphore:
 
 ForceUnlockSemaphore:
 	movem.l	d1/d2/a0,-(a7)		; save registers
-	lea	semamem+$3000,a0			; point to semaphore memory read/write area
-	andi.w #1023,d1						; make d1 word value
+	lea	semamem+$6000,a0			; point to semaphore memory read/write area
+	andi.w #2047,d1						; make d1 word value
 	lsl.w	#2,d1								; align to memory
 	clr.l	(a0,d1.w)						; write zero to unlock
 	move.w d2,24(sp)					; restore status register (on stack)
@@ -1253,8 +1266,8 @@ ForceUnlockSemaphore:
 
 UnlockSemaphore:
 	movem.l	d1/d2/a0,-(a7)		; save registers
-	lea	semamem+$1000,a0			; point to semaphore memory unlock area
-	andi.w #1023,d1						; make d1 word value
+	lea	semamem+$2000,a0			; point to semaphore memory unlock area
+	andi.w #2047,d1						; make d1 word value
 	lsl.w	#2,d1								; align to memory
 	move.l d0,(a0,d1.w)				; write matching value to unlock
 	tst.l (a0,d1.w)						; did it unlock?
@@ -2094,6 +2107,7 @@ cmdString:
 	dc.b	'B','R'+$80				; BR breakpoint
 	dc.b	'D','A'+$80				; DA dump applications
 	dc.b	'D','I'+$80				; DI disassemble
+	dc.b	"DR",'Q'+$80			; DRQ dump ready queue
 	dc.b	'D','R'+$80				; DR dump registers
 	dc.b	'D','T'+$80				; DT dump tasks
 	dc.b	'D'+$80						; D dump memory
@@ -2132,6 +2146,7 @@ cmdTable:
 	dc.l	cmdBreakpoint
 	dc.l	cmdDumpApps
 	dc.l	cmdDisassemble
+	dc.l	cmdDRQ
 	dc.l	cmdDumpRegs
 	dc.l	cmdDumpThreads
 	dc.l	cmdDumpMemory
@@ -2175,7 +2190,7 @@ _StartMon:
 	global _StartMon
 StartMon:
 	clr.b _tracemd
-	move.w #$2200,_regSR			; setup with level 2 and higher interrupts
+	move.w #$2000,_regSR			; setup with level 2 and higher interrupts
 	clr.w	NumSetBreakpoints
 	bsr	ClearBreakpointList
 cmdMonitor:
@@ -2184,12 +2199,12 @@ Monitor:
 	; Reset the stack pointer on each entry into the monitor
 	move.l #$47FFC,sp		; reset core's stack
 	pea Monitor					; Cause any RTS to go here
-	move.w #$2200,sr		; enable level 2 and higher interrupts
+	move.w #$2000,sr		; enable level 2 and higher interrupts
 	movec	coreno,d0
 	swap d0
 	moveq	#1,d1					; Unlock semaphore #1
-	moveq #38,d0
-	move.l #$2200,d2
+	moveq #44,d0
+	move.l #$2000,d2
 	trap #15
 ;	bsr	UnlockSemaphore
 ;	clr.b KeybdEcho			; turn off keyboard echo
@@ -2496,6 +2511,10 @@ cmdDumpApps:
 
 cmdDumpThreads:
 	jsr _DumpThreads
+	bra Monitor
+
+cmdDRQ:
+	jsr _DumpReadyQueue
 	bra Monitor
 
 cmdTestFP:
