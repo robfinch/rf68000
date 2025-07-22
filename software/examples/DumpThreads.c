@@ -7,6 +7,8 @@
 extern TCB tcbs[NR_TCB];
 extern ACB* ACBPtrs[NR_ACB];
 extern hTCB readyQ[32];
+extern hTCB TimeoutList;
+extern hMBX hIdleMbx;
 
 extern void DisplayString(__reg("a1") char *);
 extern void DisplayStringCRLF(__reg("a1") char *);
@@ -21,8 +23,8 @@ void DumpThreads()
 	int im;
 	
 	im = SetImLevel(7);
-	DisplayStringCRLF("\r\nthrd next status    pc    owner pri affin");
-	DisplayStringCRLF(    "---- ---- ------ -------- ----- --- -----");
+	DisplayStringCRLF("\r\nthrd next stat    pc       sp    owner pri affin");
+	DisplayStringCRLF(    "---- ---- ---- -------- -------- ----- --- -----");
 	for (nn = 0; nn < 10;/*NR_TCB;*/ nn++) {
 		if (tcbs[nn].hApp != 0 || tcbs[nn].status != 0)
 		{
@@ -33,6 +35,8 @@ void DumpThreads()
 			DisplayByte(tcbs[nn].status);
 			OutputChar(' ');
 			DisplayTetra(tcbs[nn].pc);
+			OutputChar(' ');
+			DisplayTetra(tcbs[nn].regs[16]);
 			OutputChar(' ');
 			DisplayByte(tcbs[nn].hApp);
 			OutputChar(' ');
@@ -46,6 +50,31 @@ void DumpThreads()
 		}
 	}
 	SetImLevelHelper(im);
+}
+
+void DumpTOL()
+{
+	int sr;
+	hTCB ht;
+	TCB* p;
+
+	DisplayStringCRLF("\r\nTimeout List ");
+	DisplayStringCRLF("thrd next timeout ");
+	DisplayStringCRLF("---- ---- ------- ");
+	sr = SetImLevel7();
+	for (ht = TimeoutList; ht; ) {
+		p = TCBHandleToPointer(ht);
+		if (p == (TCB*)0)
+			break;
+		DisplayByte(ht);
+		OutputChar(' ');
+		DisplayByte(p->next);
+		OutputChar(' ');
+		DisplayTetra(p->timeout);
+		DisplayStringCRLF(" ");
+		ht = p->next;
+	}
+	RestoreSr(sr);
 }
 
 void DumpReadyQueue()
@@ -103,4 +132,12 @@ void DumpApps()
 			}
 		}
 	}
+}
+
+void SendIdle()
+{
+	static int kk = 0;
+	
+	FMTK_SendMsg(hIdleMbx, 0xfffffff1, 0xfffffff1, kk);
+	kk++;
 }

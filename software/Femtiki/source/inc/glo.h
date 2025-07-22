@@ -42,7 +42,7 @@
 extern int irq_stack[];
 extern int FMTK_Inited;
 extern ACB *ACBPtrs[NR_ACB];
-extern TCB tcbs[];
+extern TCB tcbs[NR_TCB];
 extern hTCB readyQ[32];
 extern hTCB freeTCB;
 extern int sysstack[];
@@ -57,6 +57,7 @@ extern int nMsgBlk;
 extern int nMailbox;
 extern hMSG freeMSG;
 extern hMBX freeMBX;
+extern hALARM freeAlarm;
 extern CBL freeCBL;
 extern ACB *IOFocusNdx;
 extern int IOFocusTbl[];
@@ -70,10 +71,10 @@ extern long hasUltraHighPriorityTasks;
 extern int missed_ticks;
 extern short int video_bufs[][];
 extern hTCB TimeoutList;
+extern hALARM AlarmList;
 extern hMBX hFocusSwitchMbx;
 extern ACB SysAcb;
 extern int tickcnt;
-extern hTBLK freeTBLK;
-extern hTBLK TimerBlockList;
+extern TCB* RunningTCBPointer;
 
 #endif

@@ -61,6 +61,14 @@ void SetRunningTCB(__reg("d0") hTCB h) =
 	"\tmovec.l d0,tr\r\n"
 ;
 
+void SetRunningTCBPtr(__reg("d0") TCB* p) =
+	"\tmovec.l d0,tcba\r\n"
+;
+
+TCB* GetRunningTCBPtr() =
+	"\tmovec.l tcba,d0\r\n"
+;
+
 // wh=0 user
 // wh=1 system
 // wh=2 dma

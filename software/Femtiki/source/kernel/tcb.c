@@ -48,15 +48,18 @@ extern long hasUltraHighPriorityTasks;
 extern void prtdbl(double);
 extern DisplayString(__reg("a1") char*str);
 extern DisplayWyde(__reg("d1") val);
+extern DisplayTetra(__reg("d1") val);
 
+/*
 TCB* GetRunningTCBPtr()
 {
+	return (RunningTCBPointer);
 	if (GetRunningTCB() > 0 && GetRunningTCB() <= NR_TCB)
 		return (&tcbs[GetRunningTCB()-1]);
 	else
 		return (NULL);
 }
-
+*/
 TCB* TCBHandleToPointer(hTCB handle)
 {
 	if (handle <= 0 || handle > NR_TCB)
@@ -70,18 +73,30 @@ hTCB TCBPointerToHandle(TCB* ptr)
 
 	if (ptr==NULL)
 		return (0);	
+	if (ptr < &tcbs[0])
+		return (0);
 	h = ptr - &tcbs[0];
 	return (h+1);	
 }
 
+/*
+		The following should be called with interrupts disabled.
+*/
+/*
 void SetRunningTCBPtr(TCB* p)
 {
 	hTCB h;
 	
 	h = TCBPointerToHandle(p);	
-	if (h > 0 && h <= NR_TCB)
+	if (h > 0 && h <= NR_TCB) {
+		RunningTCBPointer = p;
+		OutputChar(' ');
+		DisplayTetra((long)p);
+		OutputChar(' ');
 		SetRunningTCB(h);
+	}	
 }
+*/
 
 void ISetRunningTCBPtr(TCB* p)
 {
@@ -116,7 +131,7 @@ hTCB AllocTCB()
 	return (h);
 }
 
-static void iFreeTCB(hTCB h)
+void iFreeTCB(hTCB h)
 {
 	TCB* p;
 	
@@ -177,7 +192,7 @@ int TCBInsertIntoReadyQueue(hTCB ht)
 		return (E_BadPriority);
 	if (p->priority > 28)
 	   hasUltraHighPriorityTasks |= (1 << p->priority);
-	TCBSetStatusBit(ht, TS_READY);
+	p->status |= TS_READY;
 	hq = readyQ[p->priority];
 	// Ready list empty ?
 	if (hq <= 0) {
@@ -188,8 +203,13 @@ int TCBInsertIntoReadyQueue(hTCB ht)
 	}
 	// Insert at tail of list
 	q = TCBHandleToPointer(hq);
+	// If not on a list already
+	if (p == q || p->next!=0 || p->prev!=0) 
+		panic("InsertIntoReadyQueue: thread on a list already");
 	p->next = hq;
 	p->prev = q->prev;
+	if (q->prev <= 0)
+		panic("ReadyQueue corrupt");
 	TCBHandleToPointer(q->prev)->next = ht;
 	q->prev = ht;
 	return (E_Ok);
@@ -202,6 +222,7 @@ int TCBInsertIntoReadyQueue(hTCB ht)
 int TCBRemoveFromReadyQueue(hTCB ht)
 {
 	TCB *t,* p, *q;
+	hTCB hq;
 
 	//    __check(ht >=0 && ht < NR_TCB);
 	t = TCBHandleToPointer(ht);
@@ -209,20 +230,30 @@ int TCBRemoveFromReadyQueue(hTCB ht)
 		return (E_Ok);
 	if (t->priority > 31)
 		return (E_BadPriority);
-	if (ht==readyQ[t->priority])
-		readyQ[t->priority] = t->next;
-	if (ht==readyQ[t->priority])
-		readyQ[t->priority] = 0;
-	p = TCBHandleToPointer(t->next);
-	if (p)
-		p->prev = t->prev;
-	q = TCBHandleToPointer(t->prev);
-	if (q)
-		q->next = t->next;
-	t->next = -1;
-	t->prev = -1;
+	hq=readyQ[t->priority];
+	p = TCBHandleToPointer(hq);
+	// Thread pointing to self?
+	if (t->next==ht) {
+		if (ht==hq)	// Removed head and only one.
+			readyQ[t->priority] = 0;
+	}
+	else {
+		// Removing head?
+		if (ht==hq)
+			readyQ[t->priority] = p->next;
+		// Double link list remove
+		p = TCBHandleToPointer(t->next);
+		if (p)
+			p->prev = t->prev;
+		q = TCBHandleToPointer(t->prev);
+		if (q)
+			q->next = t->next;
+	}
+	// Clear handles
+	t->next = 0;
+	t->prev = 0;
 	// clear all the status bits
-	TCBClearStatusBit(ht, -1);
+	t->status = TS_NONE;
 	return (E_Ok);
 }
 
@@ -235,29 +266,37 @@ int TCBInsertIntoTimeoutList(register hTCB ht, register int to)
 	TCB *p, *q, *t;
 
 	//    __check(ht >=0 && ht < NR_TCB);
+	if (TimeoutList==ht)
+		panic("InsertIntoTimeoutList: thread is already head of timeout list.");
 	t = TCBHandleToPointer(ht);
 	if (t == NULL)
 		return (E_Ok);
+	if (t->next != 0 || t->prev != 0)
+		panic("InsertIntoTimeoutList: thread is still on a list.");
 	if (TimeoutList <= 0) {
 		t->timeout = to;
 		TimeoutList = ht;
-		t->next = -1;
-		t->prev = -1;
 		return (E_Ok);
 	}
 
-	q = null;
+	q = NULL;
 	p = TCBHandleToPointer(TimeoutList);
 
 	if (p) {
 		while (to > p->timeout) {
 			to -= p->timeout;
 			q = p;
+			if (p->next==ht)	// Already on list
+				panic("InsertIntoTimeoutList: thread is already on timeout list.");
 			p = TCBHandleToPointer(p->next);
+			if (p == NULL)
+				break;
 		}
 	}
+	// Double link list insert
 	t->next = TCBPointerToHandle(p);
 	t->prev = TCBPointerToHandle(q);
+	t->status |= TS_TIMEOUT;
 	if (p) {
 		p->timeout -= to;
 		p->prev = ht;
@@ -266,7 +305,6 @@ int TCBInsertIntoTimeoutList(register hTCB ht, register int to)
 		q->next = ht;
 	else
 		TimeoutList = ht;
-	TCBSetStatusBit(ht, TS_TIMEOUT);
 	return (E_Ok);
 }
 
@@ -281,7 +319,8 @@ int TCBRemoveFromTimeoutList(hTCB ht)
   t = TCBHandleToPointer(ht);
   if (t == NULL)
   	return(E_Ok);
-  if (t->next) {
+  // Double link list remove
+  if (t->next > 0) {
   	nxt = TCBHandleToPointer(t->next);
   	if (nxt) {
 			nxt->prev = t->prev;
@@ -292,10 +331,13 @@ int TCBRemoveFromTimeoutList(hTCB ht)
   	prv = TCBHandleToPointer(t->prev);
 		prv->next = t->next;
 	}
+	// removing head of list?
+	if (ht == TimeoutList)
+		TimeoutList = t->next;
 	// clear all the status bits
-	TCBClearStatusBit(ht, -1);
-  t->next = -1;
-  t->prev = -1;
+	t->status = TS_NONE;
+  t->next = 0;
+  t->prev = 0;
   return (E_Ok);
 }
 
@@ -314,7 +356,7 @@ hTCB TCBPopTimeoutList()
     TimeoutList = p->next;
     if (TimeoutList > 0 && TimeoutList <= NR_TCB) {
 	  	p = TCBHandleToPointer(TimeoutList);
-      p->prev = -1;
+      p->prev = 0;
     }
   }
   return (h);

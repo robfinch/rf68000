@@ -415,7 +415,8 @@ start:
 	move.w #$2700,_regSR
 	move.b #2,_InTimerISR
 	move.l #_tcbs,a0
-	move.l a0,_RunningTCBPointer	; point to thread #1's tcb
+;	move.l a0,_RunningTCBPointer	; point to thread #1's tcb
+	movec.l a0,tcba
 	moveq #1,d0
 	movec d0,tr								; current thread = 1
 	movec d0,cpid							; current app = 1
@@ -2109,7 +2110,8 @@ cmdString:
 	dc.b	'D','I'+$80				; DI disassemble
 	dc.b	"DR",'Q'+$80			; DRQ dump ready queue
 	dc.b	'D','R'+$80				; DR dump registers
-	dc.b	'D','T'+$80				; DT dump tasks
+	dc.b	"DTO",'L'+$80			; DTOL dump timeout list
+	dc.b	'D','T'+$80				; DT dump threads
 	dc.b	'D'+$80						; D dump memory
 	dc.b	'J'+$80						; J jump to code
 	dc.b	'E'+$80						; : edit memory
@@ -2124,6 +2126,7 @@ cmdString:
 	dc.b	'T','R'+$80				; TR test serial receive
 	dc.b	'TSC','D'+$80			; Test SD card
 	dc.b	'T'+$80						; T test CPU
+	dc.b	'S','I'+$80				; SI send idle
 	dc.b	'S'+$80						; S send serial
 	dc.b	"RESE",'T'+$80		; RESET <n>
 	dc.b	"CLOC",'K'+$80		; CLOCK <n>
@@ -2148,6 +2151,7 @@ cmdTable:
 	dc.l	cmdDisassemble
 	dc.l	cmdDRQ
 	dc.l	cmdDumpRegs
+	dc.l	cmdDTOL
 	dc.l	cmdDumpThreads
 	dc.l	cmdDumpMemory
 	dc.l	cmdJump
@@ -2163,6 +2167,7 @@ cmdTable:
 	dc.l	cmdTestSerialReceive
 	dc.l	cmdTestSD
 	dc.l	cmdTestCPU
+	dc.l 	cmdSI
 	dc.l	cmdSendSerial
 	dc.l	cmdReset
 	dc.l	cmdClock
@@ -2515,6 +2520,14 @@ cmdDumpThreads:
 
 cmdDRQ:
 	jsr _DumpReadyQueue
+	bra Monitor
+
+cmdDTOL:
+	jsr _DumpTOL
+	bra Monitor
+
+cmdSI:
+	jsr _SendIdle
 	bra Monitor
 
 cmdTestFP:

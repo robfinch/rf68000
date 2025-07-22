@@ -367,7 +367,7 @@ static long QueueMsg(MBX *mbx, MSG *msg, int lock)
 
 static MSG *DequeueMsg(MBX *mbx)
 {
-	MSG *tmpmsg = null;
+	MSG *tmpmsg = NULL;
   hMSG hm;
  
 	if (mbx->mq_count) {
@@ -376,7 +376,7 @@ static MSG *DequeueMsg(MBX *mbx)
 		if (hm > 0) {	// should not be null
 	    tmpmsg = MSGHandleToPointer(hm);
 			mbx->mq_head = tmpmsg->link;
-			if (mbx->mq_head < 0)
+			if (mbx->mq_head <= 0)
 				mbx->mq_tail = 0;
 			tmpmsg->link = hm;
 		}
@@ -401,7 +401,7 @@ long DequeueThreadFromMailbox(MBX *mbx, TCB **thread)
 	int sr;
 
 	if (thread == NULL || mbx == NULL)
-		return (E_Arg);
+		return (-E_Arg);
 
 	if (mbx->tq_head <= 0 || mbx->tq_head > NR_TCB) {
 		*thread = NULL;
@@ -582,7 +582,7 @@ long FMTK_SendMsg(
 	int stat,stat2;
 	int rr;
 
-	if (hMbx <= 0 || hMbx > NR_MBX)
+ 	if (hMbx <= 0 || hMbx > NR_MBX)
 		return (-E_Arg);
 	mbx = MBXHandleToPointer(hMbx);
 	do {
@@ -613,6 +613,7 @@ long FMTK_SendMsg(
 	msg->d1 = d1;
 	msg->d2 = d2;
 	msg->d3 = d3;
+	// Dequeue will remove thread from timeout list
 	DequeueThreadFromMailbox(mbx, &thread);
 	if (thread == NULL) {
 		rr = QueueMsg(mbx, msg);
@@ -625,8 +626,6 @@ long FMTK_SendMsg(
 	UnlockMSGList(stat2);
   UnlockMBX(hMbx,stat);
 	sr = SetImLevel7();
-	if (thread->status & TS_TIMEOUT)
-		TCBRemoveFromTimeoutList(TCBPointerToHandle(thread));
 	TCBInsertIntoReadyQueue(TCBPointerToHandle(thread));
   RestoreSr(sr);
   FMTK_Reschedule();
@@ -702,8 +701,6 @@ long FMTK_PostMsg(
   UnlockMBX(hMbx,stat);
   
 	im_level = SetImLevel7();
-	if (thread->status & TS_TIMEOUT)
-		TCBRemoveFromTimeoutList(TCBPointerToHandle(thread));
 	TCBInsertIntoReadyQueue(TCBPointerToHandle(thread));
   RestoreSr(im_level);
 	return (E_Ok);
@@ -743,6 +740,7 @@ long FMTK_WaitMsg(
 	int stat,st2;
 
 //	DisplayStringCRLF("Waitmsg()");
+	OutputChar('W');
 	if (hMbx == 0 || hMbx > NR_MBX)
 		return (-E_Arg);
 	mbx = MBXHandleToPointer(hMbx);
@@ -757,7 +755,9 @@ long FMTK_WaitMsg(
 		if ((st2 = LockMSGList(50)) < 0)
 			UnlockMBX(hMbx,stat);
 	} while (st2 < 0);
+	OutputChar('L');
 	msg = DequeueMsg(mbx);
+	OutputChar('D');
   // Return message right away if there is one available.
   if (msg) {
 		if (d1)
@@ -770,6 +770,7 @@ long FMTK_WaitMsg(
  		FreeMsg(msg);
 	  UnlockMSGList(st2);
   	UnlockMBX(hMbx,stat);
+		OutputChar('M');
 		return (E_Ok);
 	}
   UnlockMSGList(st2);
@@ -780,6 +781,7 @@ long FMTK_WaitMsg(
 	thread = GetRunningTCBPtr();
 	hThread = GetRunningTCB();
 	TCBRemoveFromReadyQueue(hThread);
+	OutputChar('R');
 	thread->status |= TS_WAITMSG;
 	thread->hWaitMbx = hMbx;
 	thread->mbq_next = 0;
@@ -796,21 +798,28 @@ long FMTK_WaitMsg(
 		mbx->tq_count++;
 	}
   UnlockMBX(hMbx,stat);
+	OutputChar('U');
 	//---------------------------
 	// Is a timeout specified ?
 	if (timelimit) {
       //asm { ; Waitmsg here; }
   	sr = SetImLevel7();
+		OutputChar('V');
     TCBInsertIntoTimeoutList(hThread, timelimit);
+		OutputChar('W');
     RestoreSr(sr);
+		OutputChar('T');
   }
   // Reschedule will cause control to pass to another thread.
   FMTK_Reschedule();
+	OutputChar('S');
 	// Control will return here as a result of a SendMsg or a
 	// timeout expiring
 	rt = GetRunningTCBPtr(); 
-	if (rt->msg.type == MT_NONE)
-		return (E_NoMsg);
+	if (rt->msg.type == MT_NONE) {
+		OutputChar('N');
+		return (-E_NoMsg);
+	}
 	// rip up the envelope
 	rt->msg.type = MT_NONE;
 	rt->msg.dstadr = 0;
@@ -821,6 +830,7 @@ long FMTK_WaitMsg(
 		*(long*)d2 = rt->msg.d2;
 	if (d3)
 		*(long*)d3 = rt->msg.d3;
+	OutputChar('O');
 	return (E_Ok);
 }
 

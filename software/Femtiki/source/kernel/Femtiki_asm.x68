@@ -128,7 +128,7 @@ _FMTK_RescheduleISRLaunchpad:
 	move.w #$2700,sr						; disable lower interrupts
 	; Save register context in TCB
 	move.l a0,-(a7)							; push a0
-	move.l _RunningTCBPointer,a0		; a0 points to task control block
+	movec.l tcba,a0							; a0 points to task control block
 	movem.l d0-d7/a1-a6,4(a0)		; save registers in task control block
 	move usp,a1									; save usp in TCB
 	move.l a1,60(a0)
@@ -140,16 +140,10 @@ _FMTK_RescheduleISRLaunchpad:
 	; Reset rescheduler IRQ	
 	move.l #$03000000,$FD260014	; reset edge sense circuit
 	; Call 'C' interrupt handler
-	movec tr,d3
-	bset #31,d3
-	movec d3,tr
 	jsr _FMTK_RescheduleISR			; call the ISR routine
-	movec tr,d3
-	bclr #31,d3
-	movec d3,tr
 	; Restore register context from TCB. Note that a different context may be
 	; restored than the one saved.
-	move.l _RunningTCBPointer,a0	; a0 points to task control block
+	movec.l tcba,a0							; a0 points to task control block
 	move.l 60(a0),a1						; restore usp
 	move.l a1,usp
 	movem.l 4(a0),d0-d7/a1-a6		; restore register set
@@ -179,7 +173,7 @@ _FMTK_TimerISRLaunchpad:
 
 	; Save register context in TCB
 	move.l a0,-(a7)							; push a0
-	move.l _RunningTCBPointer,a0		; a0 points to task control block
+	movec.l tcba,a0							; a0 points to task control block
 	movem.l d0-d7/a1-a6,4(a0)		; save registers in task control block
 	move usp,a1									; save usp in TCB
 	move.l a1,60(a0)
@@ -193,7 +187,7 @@ _FMTK_TimerISRLaunchpad:
 	; We know which irq it must have been, would not be in this routine unless
 	; it was the right one.
 	lea PIT,a0
-;	move.l #16,$1010(a0)				; write flag value to negate irq,underflow flags
+	move.l #16,$1010(a0)				; write flag value to negate irq,underflow flags
 	move.l #$1D000000,$FD260014	; reset edge sense circuit
 
 	; Display IRQ Live indicator
@@ -208,17 +202,11 @@ _FMTK_TimerISRLaunchpad:
 	move.l d1,(a0,d0.w)					; move to screen
 
 	; Call 'C' interrupt handler
-	movec tr,d3
-	bset #31,d3
-	movec d3,tr
 	jsr _FMTK_TimerTickISR			; call the IRQ routine
-	movec tr,d3
-	bclr #31,d3
-	movec d3,tr
-.0005
+
 	; Restore register context from TCB. Note that a different context may be
 	; restored than the one saved.
-	move.l _RunningTCBPointer,a0	; a0 points to task control block
+	movec.l tcba,a0							; a0 points to task control block
 	move.l 60(a0),a1						; restore usp
 	move.l a1,usp
 	movem.l 4(a0),d0-d7/a1-a6		; restore register set

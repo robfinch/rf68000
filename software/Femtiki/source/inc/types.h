@@ -271,12 +271,14 @@ typedef struct _tagTCB {
 	CBL* callback;
 	unsigned char priority;
 	unsigned char status;
+	char pad1[2];
 	unsigned long affinity;
 	unsigned long startTick;
 	unsigned long endTick;
 	unsigned long ticks;
 	unsigned long exception;
 	unsigned short int* exceptionHandler;
+	char pad2[4];		// makes struct 256 bytes
 } TCB;
 
 typedef struct tagMBX {

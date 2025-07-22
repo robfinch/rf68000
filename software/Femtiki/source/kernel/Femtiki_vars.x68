@@ -50,7 +50,7 @@ _TimeoutList
 _RunningTCBPointer
 	ds.l	1
 _RunningTCB
-	ds.w	1
+	ds.l	1
 spi_buff
 	ds.b	512
 

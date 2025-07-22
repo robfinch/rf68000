@@ -700,22 +700,14 @@ dcx11:
 	beq.s dclf
 
 	; regular char
-	move.l #$FFFFFFFF,leds
 	bsr	CalcScreenLoc			; a0 = screen location
-	move.l #$FFFFFFFE,leds
 	move.l d1,d2					; d2 = char
 	bsr get_screen_color	; d0,d1 = color
 	or.l d2,d0						; d0 = char + color
-;	rol.w	#8,d0						; swap bytes - text controller expects little endian data
-;	swap d0								; swap halfs
-;	rol.w	#8,d0						; swap remaining bytes
 	if (SCREEN_FORMAT==1)
 		move.l d0,(a0)+
 	else
 		move.l d0,(a0)+
-;		rol.w	#8,d1					; swap bytes
-;		swap d1							; swap halfs
-;		rol.w	#8,d1					; swap remaining bytes
 		move.l d1,(a0)
 	endif
 	bsr	IncCursorPos

@@ -31,7 +31,7 @@ init_pit:
 	clr.l $8C(a0)						; maxcount bits 32 to 47
 	move.l #50,$90(a0)			; on for 50 clocks
 	clr.l $94(a0)						; on time bits 32 to 47
-	move.l #$27,$98(a0)			; load,enable,auto-reload,internal clock,ignore gate,set,oti
+	move.l #$07,$98(a0)			; load,enable,auto-reload,internal clock,ignore gate,set
 	move.l #$80,$98(a0)			; load,enable,auto-reload,internal clock,ignore gate,set
 	move.l #192,$1040(a0)		; set base vector
 	jsr _SetupAlarmISRs

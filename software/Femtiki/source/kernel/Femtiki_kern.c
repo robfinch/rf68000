@@ -48,11 +48,13 @@
 extern void DumpThreads();
 extern void DisplayString(__reg("a1") char *str);
 extern void DisplayStringCRLF(__reg("a1") char *str);
+extern void DisplayByte(__reg("d1") long val);
 extern void DisplayWyde(__reg("d1") long val);
 extern void DisplayTetra(__reg("d1") long val);
 extern void ClearScreen();
 
 extern hTCB freeTCB;
+hMBX hIdleMbx;
 
 extern long __interrupt FMTK_Dispatch(
 	__reg("d7") long,
@@ -67,6 +69,7 @@ extern void RQB_Initialize();
 extern int GetRand(register int stream);
 extern int shell();
 extern int StartMon();
+extern void iFreeTCB(hTCB h);
 MEMORY memoryList[NR_MEMORY];
 
 //int interrupt_table[512];
@@ -215,6 +218,22 @@ int SetImLevel(int level)
 	return(x);
 }
 
+void SetTrb31() =
+"\tmove.l d0,-(sp)\r\n"
+"\tmovec tr,d0\r\n"
+"\tbset #31,d0\r\n"
+"\tmovec d0,tr\r\n"
+"\tmove.l (sp)+,d0\r\n"
+;
+
+void ClearTrb31() =
+"\tmove.l d0,-(sp)\r\n"
+"\tmovec tr,d0\r\n"
+"\tbclr #31,d0\r\n"
+"\tmovec d0,tr\r\n"
+"\tmove.l (sp)+,d0\r\n"
+;
+
 // ----------------------------------------------------------------------------
 // Restore the thread's context.
 //
@@ -240,36 +259,41 @@ void SwapContext(register TCB *octx, register TCB *nctx)
 
 static int invert;
 
+static void flash3()=
+	"\tneg.l $FD00000C\r\n"
+;
+
 static hTCB SelectThreadToRunHelper(int nn)
 {
 	int kk;
-  hTCB h, h1;
+  hTCB h,h1;
 	TCB *p, *q;
  
 	h = readyQ[nn];
 	if (h > 0 && h <= NR_TCB) {
+		h1 = h;
 		p = TCBHandleToPointer(h);
     kk = 0;
-    // Can run the head of a lower Q level if it's not the running
-    // thread, otherwise look to the next thread.
-    if (h != GetRunningTCB())
-   		q = p;
-		else
-   		q = TCBHandleToPointer(p->next);
     do {  
-      if (!(q->status & TS_RUNNING)) {
-        if (q->affinity == getCPU() || q->affinity==63) {
-        	h1 = TCBPointerToHandle(q);
-			  	readyQ[nn] = h1;
-			   	return (h1);
-        }
+      if (p->affinity == getCPU() || p->affinity==63) {
+		  	readyQ[nn] = p->next;
+		   	return (h1);
       }
-      q = TCBHandleToPointer(q->next);
+      h1 = p->next;
+      p = TCBHandleToPointer(h1);
       kk = kk + 1;
-    } while (q != p && kk < NR_TCB);
+    } while (p && h1 != h && kk < NR_TCB);
   }
 	return (-1);
 }
+
+static void flash()=
+	"\tneg.l $FD000004\r\n"
+;
+
+static void flash2()=
+	"\tneg.l $FD000008\r\n"
+;
 
 static hTCB SelectThreadToRun()
 {
@@ -302,34 +326,50 @@ void FMTK_RescheduleISR()
 {
   TCB *t, *ot;
 	unsigned long tdif;
+	hTCB ht;
 
+	OutputChar('R');
   if (FMTK_Inited != FMTK_MAGIC)
 		return;
 	ot = t = GetRunningTCBPtr();
-	t->endTick = GetTick();
-	if (t->endTick < t->startTick)
-		tdif = t->endTick + (0xffffffffUL - t->startTick);
-	else
-		tdif = t->endTick - t->startTick;
-	t->ticks = t->ticks + tdif;
-	t->status |= TS_PREEMPT;
-	t->status &= ~TS_RUNNING;
-	ISetRunningTCBPtr(TCBHandleToPointer(SelectThreadToRun()));
-	GetRunningTCBPtr()->status |= TS_RUNNING;
+	OutputChar('P');
+	if (t) {
+		t->endTick = GetTick();
+		if (t->endTick < t->startTick)
+			tdif = t->endTick + (0xffffffffUL - t->startTick);
+		else
+			tdif = t->endTick - t->startTick;
+		t->ticks = t->ticks + tdif;
+		t->status |= TS_PREEMPT;
+		t->status &= ~TS_RUNNING;
+	}
+	OutputChar('S');
+	ht = SelectThreadToRun();
+	t = TCBHandleToPointer(ht);
+	if (t) {
+		SetRunningTCBPtr(t);
+		t->status |= TS_RUNNING;
+		t->status &= ~TS_PREEMPT;
+		OutputChar('s');
 
-	// If an exception was flagged (eg CTRL-C) return to the catch handler
-	// not the interrupted code.
-	t = GetRunningTCBPtr();
-	if (t->exception) {
-		t->regs[1] = t->exception;				// d1 = exception value
-		t->regs[2] = 45;									// d2 = exception type
-		t->pc = (unsigned long)t->exceptionHandler;	// Now copy exception handler address
+		// If an exception was flagged (eg CTRL-C) return to the catch handler
+		// not the interrupted code.
+		/*
+		if (t->exception) {
+			OutputChar('x');
+			t->regs[1] = t->exception;				// d1 = exception value
+			t->regs[2] = 45;									// d2 = exception type
+			t->pc = (unsigned long)t->exceptionHandler;	// Now copy exception handler address
+		}
+		*/
 	}
 	if (ot != t) {
+		OutputChar('X');
 		t->startTick = GetTick();		// Only starting if context is switching to thread.
 		SwapContext(ot,t);
-		SetTr(TCBPointerToHandle(t));
+		SetTr(ht);
 	}
+	OutputChar('E');
 }
 
 // ----------------------------------------------------------------------------
@@ -365,24 +405,28 @@ void FMTK_TimerTickISR()
 			t->status &= ~TS_RUNNING;
 			while (TimeoutList > 0 && TimeoutList <= NR_TCB) {
 				tol = TCBHandleToPointer(TimeoutList);
-				if (tol->timeout <= 0)
-					TCBInsertIntoReadyQueue(TCBPopTimeoutList());
+				if (tol->timeout <= 0) {
+					TCBInsertIntoReadyQueue(TimeoutList);
+					TCBPopTimeoutList();
+				}
 				else {
 					tol->timeout = tol->timeout - missed_ticks - 1;
 					missed_ticks = 0;
 					break;
 				}
 			}
-			if (t->priority < 28)
-				ISetRunningTCBPtr(TCBHandleToPointer(SelectThreadToRun()));
-			GetRunningTCBPtr()->status |= TS_RUNNING;
+			if (t->priority < 28) {
+				t = TCBHandleToPointer(SelectThreadToRun());
+				SetRunningTCBPtr(t);
+			}
+			t->status |= TS_RUNNING;
+			t->status &= ~TS_PREEMPT;
 		}
 		else
 			missed_ticks++;
 	}
 	// If an exception was flagged (eg CTRL-C) return to the catch handler
 	// not the interrupted code.
-	t = GetRunningTCBPtr();
 	if (t->exception) {
 		t->regs[1] = t->exception;				// d1 = exception value
 		t->regs[2] = 45;									// d2 = exception type
@@ -461,18 +505,24 @@ void FMTK_AlarmISR(__reg("d0") long ndx)
 		PIT[0x204] = (1 << ndx);
 	h = PITREG[ndx].hMbx;
 	if (h > 0 && h <= NR_MBX) {
+		SetTrb31();
 		mbx = MBXHandleToPointer(h);
 		if (mbx->owner==GetRunningAppid())
 			FMTK_PostMsg(h,0xffffffff,0xffffffff,0xffffffff);
 //		else
 //			Priv_Error();
+		ClearTrb31();
 	}
 }
 
+static void panic_stop() = 
+	"\tstop #$2700\r\n"
+;
+
 void panic(char *msg)
 {
-//     putstr(msg);
-j1:  goto j1;
+	DisplayStringCRLF(msg);
+	panic_stop();
 }
 
 // ----------------------------------------------------------------------------
@@ -482,15 +532,37 @@ long IdleStack[300];
 
 void IdleThread()
 {
-   int ii;
-   unsigned long *screen = (unsigned long *)0xFD000000L;
+	int ii, rr;
+	unsigned long *screen = (unsigned long *)0xFD000000L;
+	long d1, d2, d3;
 
-   while(1) {
-     ii++;
-     if (get_coreno()==2) {
-       screen[47] = 0x000F0000L|ii;
-		 }
-   }
+	hIdleMbx = FMTK_AllocMbx();
+		
+	while(1) {
+		ii++;
+		flash();
+//     screen[47] = -screen[47];
+//	DisplayLEDS(hMbx);
+	
+		if (hIdleMbx > 0) {
+			
+			DisplayStringCRLF("Idle WaitMsg() ");
+			rr = FMTK_WaitMsg(hIdleMbx, (long)&d1, (long)&d2, (long)&d3, 200L);
+			if (rr == E_Ok) {
+				DisplayStringCRLF("Idle Received: ");
+				DisplayTetra(d1);
+				OutputChar(' ');
+				DisplayTetra(d2);
+				OutputChar(' ');
+				DisplayTetra(d3);
+				OutputChar('\r');
+				OutputChar('\n');
+			}
+			else if (rr==-E_NoMsg)
+				DisplayStringCRLF("Idle: no msg");
+//		FMTK_FreeMbx(hMbx);
+		}
+	}
 }
 
 long FMTK_ExceptionHandler(__reg("d0") long val, __reg("d1") long typ)
@@ -545,6 +617,7 @@ long FMTK_KillThread(__reg("d0") long threadno)
   	j->magic = 0;
   	FreeACB(hApp);
   }
+  iFreeTCB(ht);
   RestoreSr(stat);
   return (E_Ok);
 }
@@ -617,6 +690,7 @@ long FMTK_StartThread(
   freeTCB = t->next;
   UnlockTCBList(stat);
 
+	t->next = t->prev = 0;	// not on free list anymore
   t->affinity = affinity;
   t->priority = priority;
   t->hApp = hApp;
@@ -650,6 +724,7 @@ long FMTK_StartThread(
 		t->regs[14] = t->stack + (1 << t->stack_size) - 32;
 	}
 	t->regs[16] = 0x47c00;
+	t->status = TS_NONE;
   stat = SetImLevel7();
   TCBInsertIntoReadyQueue(ht);
   RestoreSr(stat);
@@ -769,7 +844,6 @@ long FMTK_Initialize()
 	int nn,jj;
 	int sr;
 	AppStartupRec asr;
-	hMBX hMbx;
 	hACB hAcb;
 	long d1, d2, d3;
 
@@ -910,33 +984,9 @@ long FMTK_Initialize()
 		DisplayLEDS(6);
   }
 	DisplayStringCRLF("Femtiki Started.");
-	hMbx = FMTK_AllocMbx();
-		
-	DisplayStringCRLF("Alloced Mailbox: ");
-//	DisplayLEDS(hMbx);
 	
 	// Enable all interrupts
 	RestoreSr(0x2000);
-	if (hMbx > 0) {
-		
-		for (nn = 0; nn < 10; nn++) {
-			FMTK_SendMsg(hMbx, 0xfffffff1, 0xfffffff2, 0xfffffff3);
-			
-			DisplayStringCRLF("Sent");
-			FMTK_WaitMsg(hMbx, (long)&d1, (long)&d2, (long)&d3, -1);
-			DisplayStringCRLF("Received");
-			DisplayTetra(d1);
-			OutputChar(' ');
-			DisplayTetra(d2);
-			OutputChar(' ');
-			DisplayTetra(d3);
-			OutputChar('\r');
-			OutputChar('\n');
-			
-		}
-		
-//		FMTK_FreeMbx(hMbx);
-	}
 	
   return (E_Ok);
 }
