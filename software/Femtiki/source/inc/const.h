@@ -41,7 +41,7 @@ enum {
      E_BadMbx,
      E_QueFull,
      // 10
-     E_NoTask,
+     E_NoThread,
      E_NotAlloc,
      E_NoMsg,
      E_Timeout,
@@ -77,11 +77,12 @@ enum {
      E_NoMoreACBs,
      E_NoMoreTCBs,
      E_NoMem,
-     E_TooManyTasks,
+     E_TooManyThreads,
      E_NoMoreRbqs
 };
 
 #define OBJ_MAGIC	(('O') | ('B' << 8) | ('J' << 16) | ('\0' << 24))
+#define TCB_MAGIC	(('T') | ('C' << 8) | ('B' << 16) | ('\0' << 24))
 #define ACB_MAGIC	(('A') | ('C' << 8) | ('B' << 16) | ('\0' << 24))
 #define FMTK_MAGIC	(('F') | ('M' << 8) | ('T' << 16) | ('K' << 24))
 
@@ -135,7 +136,7 @@ enum {
 #define RDQ_SEMA		14
 #define ACB_SEMA		15
 #define ALARM_SEMA	16
-#define MBX_SEMA		1024
+//#define MBX_SEMA		1024
 
 /*
 ; the following constant is used to scramble device handles. The device handle

@@ -27,7 +27,7 @@ pit_setup:
 pit_init:
 init_pit:
 	lea	PIT,a0							; a0 points to PIT
-	move.l #93750,$88(a0)		; setup for 33.3 Hz
+	move.l #31250,$88(a0)		; setup for 100.0 Hz
 	clr.l $8C(a0)						; maxcount bits 32 to 47
 	move.l #50,$90(a0)			; on for 50 clocks
 	clr.l $94(a0)						; on time bits 32 to 47

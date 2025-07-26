@@ -153,4 +153,6 @@ XOFF	EQU		$13
 EOT		EQU		$04
 BLANK EQU		$20
 
+TCB_MAGIC	equ $00424354
+
 	endif

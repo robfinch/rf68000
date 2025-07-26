@@ -271,7 +271,8 @@ typedef struct _tagTCB {
 	CBL* callback;
 	unsigned char priority;
 	unsigned char status;
-	char pad1[2];
+	char lock;
+	char pad1;
 	unsigned long affinity;
 	unsigned long startTick;
 	unsigned long endTick;
@@ -289,7 +290,8 @@ typedef struct tagMBX {
 	hMSG mq_head;
 	hMSG mq_tail;
 	char mq_strategy;
-	char resv[3];
+	char lock;
+	char resv[2];
 	uint tq_count;
 	uint mq_size;
 	uint mq_count;

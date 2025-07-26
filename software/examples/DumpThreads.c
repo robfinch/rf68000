@@ -28,19 +28,30 @@ void DumpThreads()
 	for (nn = 0; nn < 10;/*NR_TCB;*/ nn++) {
 		if (tcbs[nn].hApp != 0 || tcbs[nn].status != 0)
 		{
+			OutputChar(' ');
 			DisplayByte(nn+1);
+			OutputChar(' ');
+			OutputChar(' ');
 			OutputChar(' ');
 			DisplayByte(tcbs[nn].next);
 			OutputChar(' ');
+			OutputChar(' ');
+			OutputChar(' ');
 			DisplayByte(tcbs[nn].status);
+			OutputChar(' ');
 			OutputChar(' ');
 			DisplayTetra(tcbs[nn].pc);
 			OutputChar(' ');
-			DisplayTetra(tcbs[nn].regs[16]);
+			DisplayTetra(tcbs[nn].regs[14]);
+			OutputChar(' ');
+			OutputChar(' ');
 			OutputChar(' ');
 			DisplayByte(tcbs[nn].hApp);
 			OutputChar(' ');
+			OutputChar(' ');
+			OutputChar(' ');
 			DisplayByte(tcbs[nn].priority);
+			OutputChar(' ');
 			OutputChar(' ');
 			DisplayByte(tcbs[nn].affinity);
 			OutputChar(' ');

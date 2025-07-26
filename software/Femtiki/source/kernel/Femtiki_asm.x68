@@ -137,10 +137,14 @@ _FMTK_RescheduleISRLaunchpad:
 	move.l (sp)+,136(a0)				; program counter
 	move.w (sp)+,144(a0)				; and format word
 	move.l a7,68(a0)						; finally save a7
+
+	move.l #$47FFC,a7						; setup sp
+
 	; Reset rescheduler IRQ	
 	move.l #$03000000,$FD260014	; reset edge sense circuit
 	; Call 'C' interrupt handler
 	jsr _FMTK_RescheduleISR			; call the ISR routine
+
 	; Restore register context from TCB. Note that a different context may be
 	; restored than the one saved.
 	movec.l tcba,a0							; a0 points to task control block
@@ -164,7 +168,7 @@ _FMTK_RescheduleISRLaunchpad:
 ; the next one. This should not happen unless the tick interval is set too short.
 ;
 _FMTK_TimerISRLaunchpad:
-	move.w #$2700,sr						; disable lower interrupts
+	move.w #$2700,sr						; disable interrupts
 ;	move.l d0,-(sp)
 ;	movec.l coreno,d0
 ;	cmp.b _InTimerISR,d0				; Is it core's turn to process?
@@ -182,6 +186,8 @@ _FMTK_TimerISRLaunchpad:
 	move.l (sp)+,136(a0)				; program counter
 	move.w (sp)+,144(a0)				; and format word
 	move.l a7,68(a0)						; finally save a7
+
+	move.l #$47FFC,a7						; setup sp
 
 	; Reset timer IRQ	
 	; We know which irq it must have been, would not be in this routine unless
@@ -215,7 +221,7 @@ _FMTK_TimerISRLaunchpad:
 	move.l 136(a0),-(sp)				; push program counter
 	move.w 140(a0),-(sp)				; push status reg
 	move.l 64(a0),a0						; restore a0
-;	clr.b _InTimerISR
+
 ;	addi.b #1,_InTimerISR
 ;	cmpi.b #2,_InTimerISR
 ;	bls.s .0001

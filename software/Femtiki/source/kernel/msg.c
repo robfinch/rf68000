@@ -405,7 +405,7 @@ long DequeueThreadFromMailbox(MBX *mbx, TCB **thread)
 
 	if (mbx->tq_head <= 0 || mbx->tq_head > NR_TCB) {
 		*thread = NULL;
-		return (-E_NoTask);
+		return (-E_NoThread);
 	}
 
 	mbx->tq_count--;
@@ -444,11 +444,8 @@ long FMTK_AllocMbx()
 	hMBX hMbx;
 	int stat;
 
-	DisplayStringCRLF("AllocMbx");
 	stat = LockMBXList(0);
-	DisplayStringCRLF("Locked MBXs");
 	if (freeMBX <= 0 || freeMBX > NR_MBX) {
-		DisplayStringCRLF("No more MBXs");
     UnlockMBXList(stat);
 		return (-E_NoMoreMbx);
   }
@@ -459,7 +456,6 @@ long FMTK_AllocMbx()
 		nMailbox--;
 	}	
   UnlockMBXList(stat);
- 	DisplayStringCRLF("Unlocked MBXs");
  // At system startup there may not be a running App. We want allocated
   // mailboxes to be owned by the system.
   if (mbx) {
@@ -630,6 +626,15 @@ long FMTK_SendMsg(
   RestoreSr(sr);
   FMTK_Reschedule();
 	return (E_Ok);
+	/*
+	if (thread)
+		TCBInsertIntoReadyQueue(TCBPointerToHandle(thread));
+	rr = QueueMsg(mbx, msg);
+	UnlockMSGList(stat2);
+	UnlockMBX(hMbx,stat);
+	FMTK_Reschedule();
+	return (-rr);
+	*/
 }
 
 
@@ -704,6 +709,17 @@ long FMTK_PostMsg(
 	TCBInsertIntoReadyQueue(TCBPointerToHandle(thread));
   RestoreSr(im_level);
 	return (E_Ok);
+/*
+	if (thread)
+		TCBInsertIntoReadyQueue(TCBPointerToHandle(thread));
+	if (msg)
+		rr = QueueMsg(mbx, msg);
+	else
+		rr = E_NoMoreMsgBlks;
+	UnlockMSGList(stat2);
+	UnlockMBX(hMbx,stat);
+	return (-rr);
+*/
 }
 
 
@@ -733,17 +749,17 @@ long FMTK_WaitMsg(
 {
 	MBX *mbx;
 	MSG *msg;
-	TCB *thread;
+	volatile TCB *thread;
 	hTCB hThread;
 	TCB *rt;
 	int sr;
 	int stat,st2;
 
 //	DisplayStringCRLF("Waitmsg()");
-	OutputChar('W');
 	if (hMbx == 0 || hMbx > NR_MBX)
 		return (-E_Arg);
 	mbx = MBXHandleToPointer(hMbx);
+	OutputChar('W');
 	do {
 		stat = LockMBX(hMbx,0);
 		// Check for a mailbox owner which indicates the mailbox
@@ -806,12 +822,15 @@ long FMTK_WaitMsg(
   	sr = SetImLevel7();
 		OutputChar('V');
     TCBInsertIntoTimeoutList(hThread, timelimit);
-		OutputChar('W');
     RestoreSr(sr);
 		OutputChar('T');
   }
-  // Reschedule will cause control to pass to another thread.
-  FMTK_Reschedule();
+	//  // Reschedule will cause control to pass to another thread.
+	//  FMTK_Reschedule();
+		// Nothing to do until a message arrives.
+ 	FMTK_Reschedule();
+		// Control will return here as a result of a SendMsg
+		// The SendMsg() should have put the thread back in the ready queue.
 	OutputChar('S');
 	// Control will return here as a result of a SendMsg or a
 	// timeout expiring
@@ -832,6 +851,25 @@ long FMTK_WaitMsg(
 		*(long*)d3 = rt->msg.d3;
 	OutputChar('O');
 	return (E_Ok);
+/*
+	rt = GetRunningTCBPtr(); 
+	if (rt->msg.type == MT_NONE) {
+		OutputChar('N');
+		return (-E_NoMsg);
+	}
+	// rip up the envelope
+	rt->msg.type = MT_NONE;
+	rt->msg.dstadr = 0;
+	rt->msg.retadr = 0;
+	if (d1)
+		*(long*)d1 = rt->msg.d1;
+	if (d2)
+		*(long*)d2 = rt->msg.d2;
+	if (d3)
+		*(long*)d3 = rt->msg.d3;
+	OutputChar('O');
+	return (E_Ok);
+*/
 }
 
 // ----------------------------------------------------------------------------

@@ -250,10 +250,14 @@ SerialInit:
 ;------------------------------------------------------------------------------
 
 SerialGetChar:
-	move.l d2,-(a7)
+	move.l d2,-(sp)
+	moveq #37,d0
 	move.l #100000,d2
 	moveq	#SERIAL_SEMA,d1
-	bsr	_LockSemaphore
+	trap #15
+	tst.l d0
+	bmi .nolock
+	move.l d0,d2
 	bsr				SerialRcvCount			; check number of chars in receive buffer
 	cmpi.w		#8,d0								; less than 8?
 	bhi				.sgc2
@@ -274,14 +278,20 @@ SerialGetChar:
 	andi.l		#$FF,d1
 	bra				.Xit
 .NoChars
-	moveq			#-1,d1
+	moveq	#-1,d1
 .Xit
-	exg				d1,d2
-	moveq			#SERIAL_SEMA,d1
-	bsr				_UnlockSemaphore
-	exg				d2,d1
-	move.l		(a7)+,d2
+	move.l d1,-(sp)
+	moveq #38,d0
+	moveq	#SERIAL_SEMA,d1
+	trap #15
+	move.l (sp)+,d1
+	move.l (sp)+,d2
 	rts
+.nolock
+	moveq #-1,d1
+	move.l (sp)+,d2
+	rts
+	
 	global SerialGetChar
 
 ;------------------------------------------------------------------------------
@@ -445,11 +455,13 @@ SerialIRQ:
 	move.l (a0),d2						; get char from screen
 	eori.l #$0000FFFF,d2
 	move.l d2,(a0)						; update onscreen IRQ flag
+	moveq #37,d0								; lock semaphore
 	move.l #200,d2
 	moveq	#SERIAL_SEMA,d1
-	jsr	_LockSemaphore				; can semaphore be locked?
+	trap #15										; can semaphore be locked?
 	tst.l d0
 	bmi sirqexit
+	move.l d0,d2								; d2 = sr value
 sirqNxtByte
 	move.l ACIA+ACIA_STAT,d1		; check the status
 	btst #27,d1									; bit 3 = rx full
@@ -501,8 +513,9 @@ sirq0002
 sirqXmitOff
 sirqTxEmpty
 notTxInt
-	moveq	#SERIAL_SEMA,d1
-	jsr	_UnlockSemaphore
+	moveq #38,d0								; unlock semaphore
+	moveq	#SERIAL_SEMA,d1				; d2 = sr value (above)
+	trap #15
 sirqexit
 	movem.l	(a7)+,d0/d1/d2/a0
 	rte

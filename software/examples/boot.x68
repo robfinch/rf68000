@@ -586,7 +586,7 @@ start_other:
 	lea			msg_core_start,a1
 	bsr			_DisplayString
 	move.l #StartMon,d0
-	move.l #0x4780A,d1
+	move.l #$4740A,d1
 	clr.l d2
 	move.l #15,d3
 	movec coreno,d4
@@ -1155,11 +1155,11 @@ RandWait:
 InitSemaphores:
 	movem.l	d1/a0,-(a7)
 	lea	semamem,a0
-	move.l #$20000,$2000(a0)	; lock the first semaphore for core #2, thread #0
+	move.l #$20000,$6000(a0)	; lock the first semaphore for core #2, thread #0
 	move.w #1022,d1
 .0001:
 	lea	4(a0),a0
-	clr.l	$2000(a0)						; write zeros to unlock
+	clr.l	$6000(a0)						; write zeros to unlock
 	dbra d1,.0001
 	movem.l	(a7)+,d1/a0
 	rts
@@ -1182,7 +1182,7 @@ InitSemaphores:
 ;
 ; Parameters:
 ;		d0 = key
-;		d1 = semaphore number
+;		d1 = semaphore address
 ;		d2 = retry count, 0 loops forever
 ;	Returns:
 ;		d0 = -1 for failed, >= 0 status reg if successful
@@ -1190,20 +1190,22 @@ InitSemaphores:
 
 LockSemaphore:
 	movem.l	d1-d3/a0,-(a7)	; save registers
-	cmpi.l #2047,d1					; limit of 2048 semaphores
-	bhi.s .0005
-	lsl.w	#2,d1							; align to memory
+;	cmpi.l #2047,d1					; limit of 2048 semaphores
+;	bhi.s .0005
+;	lsl.w	#2,d1							; align to memory
 .0004
-	lea	semamem,a0					; point to semaphore memory lock area
+;	lea	semamem,a0					; point to semaphore memory lock area
+	move.l d1,a0
 	move.l #500000,d3				; max wait time
 .0001
 	move.w 28(sp),sr				; enable interrupts for a moment
 	nop
 	nop
 	ori.w #$700,sr					; mask all interrupts
-	move.l d0,(a0,d1.w)			; try and write the semaphore
-	cmp.l (a0,d1.w),d0			; did it lock?
-	beq.s .0003							; yes, done
+	tas (a0)								; try and write the semaphore
+;	move.l d0,(a0,d1.w)			; try and write the semaphore
+;	cmp.l (a0,d1.w),d0			; did it lock?
+	bpl.s .0003							; yes, done
 	tst.l d2								; looping forever?
 	beq.s .0002
 	subq.l #1,d2						; decrement count
@@ -1217,10 +1219,10 @@ LockSemaphore:
 	subq.l #1,d3						; looping forever really looping 500000 times
 	bne .0001
 	; Here the semaphore is still locked after a very long time.
-	; Force unlock it and try again.
-	lea	semamem+$6000,a0		; point to semaphore memory read/write area
-	clr.l	(a0,d1.w)					; write zero to unlock
-	bra .0004								; try again
+	lsr.l #2,d1
+	jsr DisplayWyde
+	move.l #msgLockedSemaphore,-(sp)
+	jmp _panic
 .0003
 	; Here lock was successful, interrupts are masked
 	clr.l d0
@@ -1230,24 +1232,33 @@ LockSemaphore:
 	movem.l	(a7)+,a0/d1-d3	; restore regs
 	rts
 
+
+msgLockedSemaphore
+	dc.b " :Panic: semaphore locked\r\n",0
+
+	even
+
 ; -----------------------------------------------------------------------------
 ; Unlocks a semaphore even if not the owner.
 ;
 ; Parameters:
-;		d1.w semaphore number
+;		d1.w semaphore address
 ;		d2.w status register value to set
 ; Returns:
 ;		none
 ; -----------------------------------------------------------------------------
 
 ForceUnlockSemaphore:
-	movem.l	d1/d2/a0,-(a7)		; save registers
-	lea	semamem+$6000,a0			; point to semaphore memory read/write area
-	andi.w #2047,d1						; make d1 word value
-	lsl.w	#2,d1								; align to memory
-	clr.l	(a0,d1.w)						; write zero to unlock
-	move.w d2,24(sp)					; restore status register (on stack)
-	movem.l	(a7)+,a0/d1/d2		; restore regs
+	movem.l	d1/a0,-(a7)				; save registers
+;	lea	semamem+$6000,a0			; point to semaphore memory read/write area
+;	andi.w #2047,d1						; make d1 word value
+;	lsl.w	#2,d1								; align to memory
+;	clr.l	(a0,d1.w)						; write zero to unlock
+	move.l d1,a0
+	clr.b (a0)
+	move.w d2,20(sp)					; restore status register (on stack)
+	moveq #E_Ok,d0
+	movem.l	(a7)+,a0/d1				; restore regs
 	rts
 
 ; -----------------------------------------------------------------------------
@@ -1259,27 +1270,29 @@ ForceUnlockSemaphore:
 ;
 ; Parameters:
 ;		d0 = key (task id)
-;		d1 = semaphore number
+;		d1 = semaphore address
 ;		d2.w status register value to set
 ; Returns:
 ;		d0 = E_Ok, -E_NotOwner if unsuccessful
 ; -----------------------------------------------------------------------------
 
 UnlockSemaphore:
-	movem.l	d1/d2/a0,-(a7)		; save registers
-	lea	semamem+$2000,a0			; point to semaphore memory unlock area
-	andi.w #2047,d1						; make d1 word value
-	lsl.w	#2,d1								; align to memory
-	move.l d0,(a0,d1.w)				; write matching value to unlock
-	tst.l (a0,d1.w)						; did it unlock?
-	bne.s .0001
-	move.w d2,24(sp)					; restore status register (on stack)
+	movem.l	d1/a0,-(a7)				; save registers
+;	lea	semamem+$2000,a0			; point to semaphore memory unlock area
+;	andi.w #2047,d1						; make d1 word value
+;	lsl.w	#2,d1								; align to memory
+;	move.l d0,(a0,d1.w)				; write matching value to unlock
+;	tst.l (a0,d1.w)						; did it unlock?
+;	bne.s .0001
+	move.l d1,a0
+	clr.b (a0)
+	move.w d2,20(sp)					; restore status register (on stack)
 	moveq #E_Ok,d0
-	movem.l	(a7)+,a0/d1/d2		; restore regs
+	movem.l	(a7)+,a0/d1				; restore regs
 	rts
 .0001
 	moveq #-E_NotOwner,d0
-	movem.l	(a7)+,a0/d1/d2		; restore regs
+	movem.l	(a7)+,a0/d1				; restore regs
 	rts
 
 ; -----------------------------------------------------------------------------
@@ -2067,14 +2080,14 @@ select_iofocus:
 ;------------------------------------------------------------------------------
 
 rotate_iofocus:
-	move.l IOFocus,d0					; d0 = focus, we can trash d0
+	move.l _IOFocus,d0				; d0 = focus, we can trash d0
 	addq.l #1,d0							; increment the focus
 	cmp.l	#NCORES+1,d0				; limit to 2 to 9
 	bls.s	.0001
 	move.l #2,d0
 .0001:
 select_focus1:
-	move.l d0,IOFocus				;	 set IO focus
+	move.l d0,_IOFocus				;	 set IO focus
 	; reset keyboard processor to focus core
 ;	move.l #$3C060500,d0			; core=??,level sensitive,enabled,irq6,inta
 ;	or.b IOFocus,d0
@@ -2200,9 +2213,9 @@ StartMon:
 	bsr	ClearBreakpointList
 cmdMonitor:
 Monitor:
-	move.l #2,IOFocus					; Set the IO focus in global memory
+;	move.l #2,IOFocus					; Set the IO focus in global memory
 	; Reset the stack pointer on each entry into the monitor
-	move.l #$47FFC,sp		; reset core's stack
+	move.l #$47BFC,sp		; reset core's stack
 	pea Monitor					; Cause any RTS to go here
 	move.w #$2000,sr		; enable level 2 and higher interrupts
 	movec	coreno,d0
@@ -2230,7 +2243,8 @@ PromptLn:
 ; Get characters until a CR is keyed
 ;
 Prompt3:
-	move.l #2,IOFocus					; Set the IO focus in global memory
+	move.l #2,_IOFocus				; Set the IO focus in global memory
+	neg.l $FD000018						; flash
 	move.l #$10000,d7					; keyboard
 	moveq #DEV_GETCHAR,d6
 	trap #0
@@ -5037,6 +5051,7 @@ addr_err:
 	lea			msgAddrErr,a1	; followed by message
 	bsr			_DisplayStringCRLF
 .0001:
+	nop
 	bra			.0001
 	bra			Monitor
 	
@@ -5063,6 +5078,7 @@ illegal_trap:
 	lea			msg_illegal,a1	; followed by message
 	bsr			_DisplayString
 .0001:
+	nop
 	bra			.0001
 	bra			Monitor
 	

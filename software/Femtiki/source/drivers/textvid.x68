@@ -955,7 +955,7 @@ HomeCursor:
 SyncCursor:
 	movem.l	d0/d1/d2,-(a7)
 	movec.l	coreno,d0
-	cmp.l	IOFocus,d0
+	cmp.l	_IOFocus,d0
 ;	cmp.l #2,d0
 	bne.s .0001
 	move.w tv_outpos_x(a3),d0

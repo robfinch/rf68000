@@ -204,7 +204,9 @@ int TCBInsertIntoReadyQueue(hTCB ht)
 	// Insert at tail of list
 	q = TCBHandleToPointer(hq);
 	// If not on a list already
-	if (p == q || p->next!=0 || p->prev!=0) 
+	if (p == q) 
+		panic("InsertIntoReadyQueue: thread at head already");
+	if (p->next!=0 || p->prev!=0) 
 		panic("InsertIntoReadyQueue: thread on a list already");
 	p->next = hq;
 	p->prev = q->prev;
@@ -239,8 +241,12 @@ int TCBRemoveFromReadyQueue(hTCB ht)
 	}
 	else {
 		// Removing head?
-		if (ht==hq)
-			readyQ[t->priority] = p->next;
+		if (ht==hq) {
+			if (p->next==hq)
+				readyQ[t->priority] = 0;
+			else
+				readyQ[t->priority] = p->next;
+		}
 		// Double link list remove
 		p = TCBHandleToPointer(t->next);
 		if (p)
@@ -249,11 +255,9 @@ int TCBRemoveFromReadyQueue(hTCB ht)
 		if (q)
 			q->next = t->next;
 	}
-	// Clear handles
+	t->status = TS_NONE;
 	t->next = 0;
 	t->prev = 0;
-	// clear all the status bits
-	t->status = TS_NONE;
 	return (E_Ok);
 }
 
@@ -275,6 +279,7 @@ int TCBInsertIntoTimeoutList(register hTCB ht, register int to)
 		panic("InsertIntoTimeoutList: thread is still on a list.");
 	if (TimeoutList <= 0) {
 		t->timeout = to;
+		t->status |= TS_TIMEOUT;
 		TimeoutList = ht;
 		return (E_Ok);
 	}
@@ -293,7 +298,7 @@ int TCBInsertIntoTimeoutList(register hTCB ht, register int to)
 				break;
 		}
 	}
-	// Double link list insert
+	// Double link list insert before p and after q
 	t->next = TCBPointerToHandle(p);
 	t->prev = TCBPointerToHandle(q);
 	t->status |= TS_TIMEOUT;
@@ -320,17 +325,14 @@ int TCBRemoveFromTimeoutList(hTCB ht)
   if (t == NULL)
   	return(E_Ok);
   // Double link list remove
-  if (t->next > 0) {
-  	nxt = TCBHandleToPointer(t->next);
-  	if (nxt) {
-			nxt->prev = t->prev;
-			nxt->timeout += t->timeout;
-		}
-  }
-  if (t->prev > 0) {
-  	prv = TCBHandleToPointer(t->prev);
-		prv->next = t->next;
+	nxt = TCBHandleToPointer(t->next);
+	if (nxt) {
+		nxt->prev = t->prev;
+		nxt->timeout += t->timeout;
 	}
+	prv = TCBHandleToPointer(t->prev);
+	if (prv)
+		prv->next = t->next;
 	// removing head of list?
 	if (ht == TimeoutList)
 		TimeoutList = t->next;
@@ -354,6 +356,7 @@ hTCB TCBPopTimeoutList()
   if (TimeoutList > 0 && TimeoutList <= NR_TCB) {
   	p = TCBHandleToPointer(TimeoutList);
     TimeoutList = p->next;
+    p->next = p->prev = 0;
     if (TimeoutList > 0 && TimeoutList <= NR_TCB) {
 	  	p = TCBHandleToPointer(TimeoutList);
       p->prev = 0;

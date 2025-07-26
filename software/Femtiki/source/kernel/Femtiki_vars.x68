@@ -160,6 +160,8 @@ numwka
 
 	section gvars
 scratch_ram
+_semaphores
+	ds.b	256
 _tcbs
 	ds.b	256*128
 _tcbs_end
@@ -240,8 +242,8 @@ _hFocusSwitchMbx
 
 _hasUltraHighPriorityTasks
 	ds.b	1
-_iof_switch
-	ds.b	1
+;_iof_switch
+;	ds.b	1
 _InTimerISR
 	ds.b	1
 	align 1
@@ -281,6 +283,7 @@ _PAMEnd
 _FemtikiVars_end
 
 	global scratch_ram
+	global _semaphores
 	global _sys_pd
 	global _kernel_pt
 	global IOFocus
@@ -378,7 +381,7 @@ _FemtikiVars_end
 	global _PAM
 	global _PAMEnd
 	global _hasUltraHighPriorityTasks
-	global _iof_switch
+;	global _iof_switch
 
 	global _hSearchApp
 	global _hFreeApp

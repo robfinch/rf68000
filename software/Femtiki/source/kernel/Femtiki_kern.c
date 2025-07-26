@@ -92,7 +92,7 @@ extern int nMsgBlk;
 extern int nMailbox;
 extern hACB freeACB;
 extern hACB IOFocus;
-extern int iof_switch;
+//extern int iof_switch;
 extern long hasUltraHighPriorityTasks;
 extern int missed_ticks;
 extern int8_t hSearchApp;
@@ -136,8 +136,9 @@ ACB *GetACBPtr(int n)
   return (ACBPtrs[n-1]);
 }
 
-void SetTr(__reg("d0") long tr) =
-	"\tmovec d0,tr\r\n"
+static void SetTr(__reg("d0") long tr, __reg("d1") long tcba) =
+	"\tmovec.l d0,tr\r\n"
+	"\tmovec.l d1,tcba\r\n"
 ;
 
 /*
@@ -262,6 +263,10 @@ static int invert;
 static void flash3()=
 	"\tneg.l $FD00000C\r\n"
 ;
+static void flash4()=
+	"\tneg.l $FD000010\r\n"
+;
+
 
 static hTCB SelectThreadToRunHelper(int nn)
 {
@@ -328,48 +333,38 @@ void FMTK_RescheduleISR()
 	unsigned long tdif;
 	hTCB ht;
 
-	OutputChar('R');
   if (FMTK_Inited != FMTK_MAGIC)
 		return;
 	ot = t = GetRunningTCBPtr();
-	OutputChar('P');
-	if (t) {
-		t->endTick = GetTick();
-		if (t->endTick < t->startTick)
-			tdif = t->endTick + (0xffffffffUL - t->startTick);
-		else
-			tdif = t->endTick - t->startTick;
-		t->ticks = t->ticks + tdif;
-		t->status |= TS_PREEMPT;
-		t->status &= ~TS_RUNNING;
-	}
-	OutputChar('S');
+	if (t == NULL)
+		panic("RescheduleISR: NULL running thread");
+	t->endTick = GetTick();
+	if (t->endTick < t->startTick)
+		tdif = t->endTick + (0xffffffffUL - t->startTick);
+	else
+		tdif = t->endTick - t->startTick;
+	t->ticks = t->ticks + tdif;
+	t->status |= TS_PREEMPT;
+	t->status &= ~TS_RUNNING;
 	ht = SelectThreadToRun();
 	t = TCBHandleToPointer(ht);
 	if (t) {
-		SetRunningTCBPtr(t);
 		t->status |= TS_RUNNING;
 		t->status &= ~TS_PREEMPT;
-		OutputChar('s');
 
 		// If an exception was flagged (eg CTRL-C) return to the catch handler
 		// not the interrupted code.
-		/*
 		if (t->exception) {
-			OutputChar('x');
 			t->regs[1] = t->exception;				// d1 = exception value
 			t->regs[2] = 45;									// d2 = exception type
 			t->pc = (unsigned long)t->exceptionHandler;	// Now copy exception handler address
 		}
-		*/
+		if (ot != t) {
+			t->startTick = GetTick();		// Only starting if context is switching to thread.
+			SwapContext(ot,t);
+			SetTr(ht,(long)t);
+		}
 	}
-	if (ot != t) {
-		OutputChar('X');
-		t->startTick = GetTick();		// Only starting if context is switching to thread.
-		SwapContext(ot,t);
-		SetTr(ht);
-	}
-	OutputChar('E');
 }
 
 // ----------------------------------------------------------------------------
@@ -383,8 +378,10 @@ void FMTK_RescheduleISR()
 
 void FMTK_TimerTickISR()
 {
-  TCB *t, *ot, *tol;
+  TCB *t, *ot, *tol, *t1;
   unsigned long tdif;
+  hTCB ht;
+  int changeThread;
 
 	tickcnt++;
 	// Set IRQ flag for interpreters
@@ -392,6 +389,8 @@ void FMTK_TimerTickISR()
   if (FMTK_Inited != FMTK_MAGIC)
 		return;
 	ot = t = GetRunningTCBPtr();
+	if (t == NULL)
+		panic("TimerTickISR: NULL running thread");
 	t->endTick = GetTick();
 	if (t->endTick < t->startTick)
 		tdif = t->endTick + (0xffffffffUL - t->startTick);
@@ -406,8 +405,9 @@ void FMTK_TimerTickISR()
 			while (TimeoutList > 0 && TimeoutList <= NR_TCB) {
 				tol = TCBHandleToPointer(TimeoutList);
 				if (tol->timeout <= 0) {
-					TCBInsertIntoReadyQueue(TimeoutList);
+					ht = TimeoutList;
 					TCBPopTimeoutList();
+					TCBInsertIntoReadyQueue(ht);
 				}
 				else {
 					tol->timeout = tol->timeout - missed_ticks - 1;
@@ -416,8 +416,10 @@ void FMTK_TimerTickISR()
 				}
 			}
 			if (t->priority < 28) {
-				t = TCBHandleToPointer(SelectThreadToRun());
-				SetRunningTCBPtr(t);
+				ht = SelectThreadToRun();
+				t1 = TCBHandleToPointer(ht);
+				if (t1)
+					t = t1;
 			}
 			t->status |= TS_RUNNING;
 			t->status &= ~TS_PREEMPT;
@@ -435,7 +437,7 @@ void FMTK_TimerTickISR()
 	if (ot != t) {
 		t->startTick = GetTick();		// Only starting if context is switching to thread.
 		SwapContext(ot,t);
-		SetTr(TCBPointerToHandle(t));
+		SetTr(TCBPointerToHandle(t),(long)t);
 	}
 }
 
@@ -532,7 +534,7 @@ long IdleStack[300];
 
 void IdleThread()
 {
-	int ii, rr;
+	int ii, rr = E_Ok;
 	unsigned long *screen = (unsigned long *)0xFD000000L;
 	long d1, d2, d3;
 
@@ -540,16 +542,16 @@ void IdleThread()
 		
 	while(1) {
 		ii++;
-		flash();
+		flash4();
 //     screen[47] = -screen[47];
 //	DisplayLEDS(hMbx);
 	
 		if (hIdleMbx > 0) {
-			
-			DisplayStringCRLF("Idle WaitMsg() ");
-			rr = FMTK_WaitMsg(hIdleMbx, (long)&d1, (long)&d2, (long)&d3, 200L);
+		
+			rr = FMTK_WaitMsg(hIdleMbx, (long)&d1, (long)&d2, (long)&d3, 500L);
 			if (rr == E_Ok) {
-				DisplayStringCRLF("Idle Received: ");
+				DisplayStringCRLF("Idle thread: ");
+				
 				DisplayTetra(d1);
 				OutputChar(' ');
 				DisplayTetra(d2);
@@ -557,6 +559,7 @@ void IdleThread()
 				DisplayTetra(d3);
 				OutputChar('\r');
 				OutputChar('\n');
+				
 			}
 			else if (rr==-E_NoMsg)
 				DisplayStringCRLF("Idle: no msg");
@@ -677,14 +680,20 @@ long FMTK_StartThread(
 	hApp = GetRunningAppid();
 
   stat = LockTCBList(0);
+  if (stat < 0) {
+		DisplayStringCRLF("StartThread: Failed to lock");
+  	return (-E_Busy);
+  }
   ht = freeTCB;
   if (ht <= 0 || ht > NR_TCB) {
     UnlockTCBList(stat);
+		DisplayStringCRLF("StartThread: no more TCBs");
   	return (-E_NoMoreTCBs);
   }
   t = TCBHandleToPointer(ht);
   if (t==NULL) {
 	  UnlockTCBList(stat);
+		DisplayStringCRLF("StartThread: no more TCBs");
   	return (-E_NoMoreTCBs);
   }
   freeTCB = t->next;
@@ -696,6 +705,10 @@ long FMTK_StartThread(
   t->hApp = hApp;
   // Insert into the job's list of threads.
   stat = LockTCBList(0);
+  if (stat < 0) {
+		DisplayStringCRLF("StartThread: Failed to lock2");
+  	return (-E_Busy);
+  }
 	t->acbnext = ACBPtrs[hApp-1]->thread;
 	ACBPtrs[hApp-1]->thread = ht;
 	UnlockTCBList(stat);
@@ -723,7 +736,12 @@ long FMTK_StartThread(
 		t->stack_size = 13;
 		t->regs[14] = t->stack + (1 << t->stack_size) - 32;
 	}
-	t->regs[16] = 0x47c00;
+	switch(ht) {
+	case 1:	t->regs[16] = 0x47bfc;
+	case 2:	t->regs[16] = 0x477fc;
+	case 3:	t->regs[16] = 0x473fc;
+	}
+	
 	t->status = TS_NONE;
   stat = SetImLevel7();
   TCBInsertIntoReadyQueue(ht);
@@ -743,6 +761,7 @@ long FMTK_Sleep(__reg("d0") long timeout)
 
 	stat = SetImLevel7();
   ht = GetRunningTCB();
+  TCBRemoveFromReadyQueue(ht);
   TCBInsertIntoTimeoutList(ht, timeout);
   RestoreSr(stat);
 	FMTK_Reschedule();
@@ -874,18 +893,17 @@ long FMTK_Initialize()
     missed_ticks = 0;
 
     IOFocus = 2;
-    iof_switch = 0;
+//    iof_switch = 0;
     hSearchApp = 0;
     hFreeApp = 0;
 
-//		SetRunningTCBPtr(0);
     im_save = 7;
     // BIOS force unlocks all semaphores. This is a bit redundant.
     UnlockSysSemaphore(0x2700);
     UnlockIOFSemaphore(0x2700);
     UnlockKbdSemaphore(0x2700);
     UnlockMSGList(0x2700);
-    UnlockMBX(0x2700);
+    UnlockMBXList(0x2700);
 //    UnlockTimeoutList();
 //    UnlockReadyQueue();
     UnlockTCBList(0x2700);
@@ -923,6 +941,7 @@ long FMTK_Initialize()
 
 		SetRunningAppid(1);
 		SetRunningTCB(1);
+		SetTr(1,(long)&tcbs[0]);
   	RestoreSr(sr);								// Restore interrupts
 
 		FMTK_StartThread(
@@ -935,13 +954,14 @@ long FMTK_Initialize()
 
 		FMTK_StartThread(
 			(unsigned long)StartMon,
-			(unsigned long)0x4780A,
+			(unsigned long)0x4700A,
 			0,
 			15,
 			2
 		);
 
 		DumpThreads();
+		DumpReadyQueue();
 /*
 */
 /*

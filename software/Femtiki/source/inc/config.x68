@@ -6,7 +6,7 @@ LOG_TCBSZ	EQU		8
 LOG_PGSZ	EQU		13
 LOG_ACBSZ EQU   13
 OSPAGES		EQU		16			; pages of memory dedicated to OS
-PAGESZ    EQU   16384  	; size of a page of memory
+PAGESZ    EQU   8192  	; size of a page of memory
 MEMSZ     EQU   131072   ; pages
 MBX_BLOCKPTR_BUFSZ  EQU   8 ; number of block pointer entries
 NR_MSG		EQU		800		; number of messages available

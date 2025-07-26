@@ -21,17 +21,17 @@ pic_init:
 init_pic:
 	lea	PIC,a0							; a0 points to PIC
 	lea	$80+4*3(a0),a1			; point to rescheduler registers (3)
-	move.l #$3A01073F,(a1)	; initialize, core=2,edge sensitive,enabled,irq1,inta
+	move.l #$3A010702,(a1)	; initialize, core=2,edge sensitive,enabled,irq1,inta
 ;	move.l #$02050000,$1c(a0)	; set min/max core number for rotate
-	lea	$80+4*28(a0),a1			; point to keyboard registers (28)
-	move.l #$3C050502,(a1)	; core=2,level sensitive,enabled,irq5,inta
+	lea	$80+4*16(a0),a1			; point to keyboard registers (28)
+	move.l #$3C030502,(a1)	; core=2,level sensitive,enabled,irq3,inta
 	lea	$80+4*29(a0),a1			; point to timer registers (29)
 	move.l #$00060B02,(a1)	; initialize, core=2,edge sensitive,enabled,irq6,inta
 ;	move.l #$00060302,(a1)	; initialize, core=2,edge sensitive,disabled,irq6,vpa2
 	lea	$80+4*31(a0),a1			; point to nmi button register (31)
 	move.l #$00070302,(a1)	; initialize, core=2,edge sensitive,enabled,irq7,vpa
-	lea	$80+4*16(a0),a1			; a1 points to ACIA register
-	move.l #$3D030502,(a1)	; core=2,level sensitive,enabled,irq3,inta	
+	lea	$80+4*28(a0),a1			; a1 points to ACIA register
+	move.l #$3D050502,(a1)	; core=2,level sensitive,enabled,irq5,inta	
 ;	lea	$80+4*4(a0),a1			; a1 points to io_bitmap irq
 ;	move.l #$3B060702,(a1)	; core=2,edge sensitive,enabled,irq6,inta	
 	rts

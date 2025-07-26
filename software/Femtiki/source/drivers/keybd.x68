@@ -20,6 +20,9 @@
 	include "..\Femtiki\source\inc\device.x68"
 	include "..\Femtiki\source\inc\const.x68"
 
+WM_KEYDOWN	equ	$100
+WM_KEYUP		equ	$101
+
 	section local_ram
 keybd_vars	equ	*
 kbd_dimen_x equ *-keybd_vars
@@ -38,6 +41,8 @@ kbd_obufptr equ *-keybd_vars
 KeybdLEDs equ *-keybd_vars
 	ds.b	1
 _KeyState1 equ *-keybd_vars
+	ds.b	1
+_PrevKeyState2 equ *-keybd_vars
 	ds.b	1
 _KeyState2 equ *-keybd_vars
 	ds.b	1
@@ -60,8 +65,14 @@ _KeybdBuf equ *-keybd_vars
 	ds.b	32
 _KeybdOBuf equ *-keybd_vars
 	ds.b	32
-;_KeyState
-;	ds.b	256
+_PrevScanCode equ *-keybd_vars
+	ds.b	1
+_ScanCode equ *-keybd_vars
+	ds.b	1
+_VirtKey equ *-keybd_vars
+	ds.b	1
+_KeyState equ *-keybd_vars
+	ds.b	256
 	code
 	even
 
@@ -218,11 +229,18 @@ keybd_is_removeable:
 
 	align 2
 keybd_clear:
+	move.l a3,-(sp)
 	clr.b _KeybdHead(a3)
 	clr.b _KeybdTail(a3)
 	clr.b _KeybdCnt(a3)
 	clr.b _KeyState1(a3)
 	clr.b _KeyState2(a3)
+	moveq #127,d0
+	lea _KeyState(a3),a3
+.0001
+	clr.b (a3,d0.w)
+	dbra d0,.0001
+	move.l (sp)+,a3
 	moveq #E_Ok,d0
 	rts
 
@@ -543,7 +561,7 @@ keybd_get_inpos:
 
 GetKey:
 	move.l d0,-(a7)						; push d0
-	move.l IOFocus,d1					; Check if the core has the IO focus
+	move.l _IOFocus,d1				; Check if the core has the IO focus
 	movec.l	coreno,d0
 	cmp.l	d0,d1
 	bne.s	.0004								; go return no key available, if not in focus
@@ -592,6 +610,8 @@ CheckForCtrlC:
 ;------------------------------------------------------------------------------
 ;------------------------------------------------------------------------------
 
+	
+
 	align 2
 KeybdGetCharNoWait:
 	clr.b	KeybdWaitFlag(a3)
@@ -603,9 +623,8 @@ KeybdGetCharWait:
 KeybdGetChar:
 	movem.l	d0/d2/d3/a0,-(a7)
 .0003
-	move sr,d0
-	ori #$700,sr
-	moveq	#KEYBD_SEMA,d1
+	neg.l $FD00001C
+	move.l #KEYBD_SEMA+_semaphores,d1
 	moveq #37,d0						; Lock semaphore
 	move.l #100000,d2				; wait this long
 	trap #15
@@ -623,20 +642,20 @@ KeybdGetChar:
 	move.b d2,_KeybdHead(a3)
 	subi.b #1,_KeybdCnt(a3)	; decrement count of scan codes in buffer
 	exg	d1,d3								; save scancode value in d2
-	move d0,sr
 	move.l d0,d2						; d2 = sr value
-	moveq	#KEYBD_SEMA,d1
+	move.l #KEYBD_SEMA+_semaphores,d1
 	moveq #38,d0						; unlock semaphore
 	trap #15
 	exg	d3,d1								; restore scancode value
 	bra	.0001								; go process scan code
+	; Dead code
 .0014:
 	bsr	_KeybdGetStatus			; check keyboard status for key available
 	bmi	.0006								; yes, go process
+	; Live code
 .0015:
-	move d0,sr
 	move.l d0,d2						; restore sr value
-	moveq	#KEYBD_SEMA,d1
+	move.l #KEYBD_SEMA+_semaphores,d1
 	moveq #38,d0						; unlock semaphore
 	trap #15
 	tst.b	KeybdWaitFlag(a3)	; are we willing to wait for a key ?
@@ -646,9 +665,11 @@ KeybdGetChar:
 	moveq #-1,d1						; flag no char available
 	rts
 
+	; Dead code
 .0006:
 	bsr	_KeybdGetScancode
 	bsr _KeybdClearIRQ
+	; Live code
 .0001:
 	move.w #1,leds
 	cmp.b	#SC_KEYUP,d1
@@ -849,24 +870,19 @@ KeybdIRQ:
 	; Disable lower interrupts. The IPL will be restored by the RTE at the
 	; end of this routine.
 	move.w #$2700,sr					
-	neg.l $FD000000						; update IRQ live indicator
 	movem.l	d0/d1/d2/a0/a3,-(a7)
 	move.l #keybd_vars,a3
 	moveq	#0,d1								; check if keyboard IRQ
 	move.b KEYBD+1,d1					; get status reg
 	tst.b	d1
 	bpl	.0001									; branch if not keyboard
-	; Set MSB of thread register to make the semaphore key different for the 
-	; ISR than it is in the running program.
-	movec tr,d1								
-	bset #31,d1
-	movec d1,tr
-	moveq	#KEYBD_SEMA,d1
+	move.l #KEYBD_SEMA+_semaphores,d1
 	moveq #37,d0							; lock semaphore
 	move.l #100,d2
 	trap #15
 	tst.l d0									; was the semaphore locked?
 	bmi .lockFailed						; nope, return
+	neg.l $FD000000						; update IRQ live indicator
 	move.b #1,leds
 	move.l d0,d2							; d2 = sr value
 	move.b KEYBD,d1						; get scan code
@@ -907,14 +923,10 @@ KeybdIRQ:
 	move.b d0,_KeybdTail(a3)	; update tail index
 	addi.b #1,_KeybdCnt(a3)		; increment buffer count
 .0002
-	moveq	#KEYBD_SEMA,d1			; d2 = sr value (above)
+	move.l #KEYBD_SEMA+_semaphores,d1			; d2 = sr value (above)
 	moveq #38,d0							; unlock semaphore
 	trap #15
 .lockFailed
-	; clear the bit that was previously set
-	movec tr,d1
-	bclr #31,d1
-	movec d1,tr
 .0001
 	move.b #2,leds
 	movem.l	(a7)+,d0/d1/d2/a0/a3		; return
