@@ -136,6 +136,7 @@ enum {
 #define RDQ_SEMA		14
 #define ACB_SEMA		15
 #define ALARM_SEMA	16
+#define TMR_SEMA		17
 //#define MBX_SEMA		1024
 
 /*
@@ -176,4 +177,28 @@ enum {
 ;22
 ;23
 */
+#define FM_KEYDOWN	0x100
+#define FM_KEYUP		0x101
+#define FM_QUERY_KEYBD	0x102
+#define FM_TIMER		0x0113
+#define FM_ABORT		0xfff0
+#define FM_IRQ			0xffff
+
+#define SC_F12      0x07
+#define SC_C        0x21
+#define SC_T        0x2C
+#define SC_Z        0x1A
+#define SC_KEYUP			0xF0
+#define SC_EXTEND   		0xE0
+#define SC_CTRL				0x14
+#define SC_RSHIFT			0x59
+#define SC_NUMLOCK			0x77
+#define SC_SCROLLLOCK		0x7E
+#define SC_CAPSLOCK			0x58
+#define SC_ALT				0x11
+#define SC_LSHIFT			0x12
+#define SC_DEL				0x71		// extend
+#define SC_LCTRL			0x58
+#define SC_TAB      		0x0D
+
 #endif

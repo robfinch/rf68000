@@ -142,3 +142,13 @@ void UnlockAlarmList(int im)
 	UnlockSemaphore(ALARM_SEMA+(long)&semaphores, im);
 }
 
+int LockTMRSemaphore(long retries)
+{
+	return(LockSemaphore(TMR_SEMA+(long)&semaphores,retries));
+}
+
+void UnlockTMRSemaphore(int im)
+{
+	UnlockSemaphore(TMR_SEMA+(long)&semaphores, im);
+}
+

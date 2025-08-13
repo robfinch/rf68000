@@ -52,9 +52,12 @@ extern void DisplayByte(__reg("d1") long val);
 extern void DisplayWyde(__reg("d1") long val);
 extern void DisplayTetra(__reg("d1") long val);
 extern void ClearScreen();
+extern void KeybdTranslateThread();
+extern unsigned long KeybdTranslateThreadStack[260];
 
 extern hTCB freeTCB;
 hMBX hIdleMbx;
+extern hMBX sysmbx;
 
 extern long __interrupt FMTK_Dispatch(
 	__reg("d7") long,
@@ -115,8 +118,6 @@ void FMTK_NopRamp() =
 	"\tnop\r\n"
 	"\tendr\r\n"
 ;
-
-static unsigned long GetTick() = "\tmovec.l tick,d0\r\n";
 
 // Reset timer edge sense circuit
 void AckTimerIRQ() =
@@ -382,6 +383,7 @@ void FMTK_TimerTickISR()
   unsigned long tdif;
   hTCB ht;
   int changeThread;
+  MSG msg;
 
 	tickcnt++;
 	// Set IRQ flag for interpreters
@@ -396,37 +398,55 @@ void FMTK_TimerTickISR()
 		tdif = t->endTick + (0xffffffffUL - t->startTick);
 	else
 		tdif = t->endTick - t->startTick;
-	// Allow threads to run at least 3 ticks before switching.
-	if (tdif > 3) {
-		t->ticks = t->ticks + tdif;
-		if (t->priority != 31) {
-			t->status |= TS_PREEMPT;
-			t->status &= ~TS_RUNNING;
-			while (TimeoutList > 0 && TimeoutList <= NR_TCB) {
-				tol = TCBHandleToPointer(TimeoutList);
-				if (tol->timeout <= 0) {
-					ht = TimeoutList;
+	t->ticks = t->ticks + tdif;
+	if (t->priority != 31) {
+		t->status |= TS_PREEMPT;
+		t->status &= ~TS_RUNNING;
+		while (TimeoutList > 0 && TimeoutList <= NR_TCB) {
+			tol = TCBHandleToPointer(TimeoutList);
+			if (tol->timeout <= 0) {
+				ht = TimeoutList;
+				// If waiting for a messsage when timed out, send a timeout message,
+				// to move the thread from the mailbox to the ready queue.
+				if (tol->status & TS_WAITMSG) {
+					if (tol->hWaitMbx > 0 && tol->hWaitMbx <= NR_TCB) {
+						msg.d1 = FM_TIMER;
+						msg.d2 = 0xffffffffUL;
+						msg.d3 = 0xffffffffUL;
+						FMTK_PostMsg(tol->hWaitMbx, (long)&msg);
+					}						
+					// Mailbox not valid, flag as not waiting for message.
+					else {
+						tol->status &= ~TS_WAITMSG; 
+						TCBPopTimeoutList();
+						TCBInsertIntoReadyQueue(ht);
+					}
+				}
+				// A timeout without a WAITMSG must have been a sleep() call.
+				// Just move to ready queue.
+				else {
 					TCBPopTimeoutList();
 					TCBInsertIntoReadyQueue(ht);
 				}
-				else {
-					tol->timeout = tol->timeout - missed_ticks - 1;
-					missed_ticks = 0;
-					break;
-				}
 			}
-			if (t->priority < 28) {
-				ht = SelectThreadToRun();
-				t1 = TCBHandleToPointer(ht);
-				if (t1)
-					t = t1;
+			else {
+				tol->timeout = tol->timeout - missed_ticks - 1;
+				missed_ticks = 0;
+				break;
 			}
-			t->status |= TS_RUNNING;
-			t->status &= ~TS_PREEMPT;
 		}
-		else
-			missed_ticks++;
+		// Allow threads to run at least 3 ticks before switching.
+		if (t->priority < 28 && tdif > 3) {
+			ht = SelectThreadToRun();
+			t1 = TCBHandleToPointer(ht);
+			if (t1)
+				t = t1;
+		}
+		t->status |= TS_RUNNING;
+		t->status &= ~TS_PREEMPT;
 	}
+	else
+		missed_ticks++;
 	// If an exception was flagged (eg CTRL-C) return to the catch handler
 	// not the interrupted code.
 	if (t->exception) {
@@ -490,31 +510,149 @@ void FMTK_AlarmISR(__reg("d0") long underflow)
 }
 */
 
-// Acknowledge the interrupt and send messsage.
+extern long timer_pool[8];
+
+// The first four timers are special in that they have external signals
+// available for clock, gate and output.
+// The first timer using only internal signals, timer #4, is reserved for use
+// by the system.
+
+long FMTK_AllocTimer()
+{
+	int nn;
+	int pool, bit;
+	int sr;
+	
+	sr = LockTMRSemaphore(0);
+	if (sr < 0)
+		return (-E_Busy);
+	for (nn = 0; nn < NR_TMR; nn++) {
+		// Timer #4 is permanently allocated for the system
+		if (nn > 4) {
+			pool = nn >> 5;
+			bit = nn & 31;
+			if (((timer_pool[pool] >> bit) & 1)==0) {
+				timer_pool[pool] |= (1 << bit);
+				tmrs[nn].owner = GetRunningAppid();
+				UnlockTMRSemaphore(sr);
+				return (nn+1);
+			}
+		}
+	}
+	UnlockTMRSemaphore(sr);
+	return (-E_NoMoreTimers);
+}
+
+long FMTK_FreeTimer(__reg("d0") long ht)
+{
+	int pool, bit;
+	int sr;
+
+	if (ht <= 0 || ht > NR_TMR)
+		return (-E_Arg);
+	ht--;
+	if (tmrs[ht].owner != GetRunningAppid() && GetRunningAppid() != 1)
+		return (-E_NotOwner);
+	if (ht < 5)
+		return (-E_NotOwner);
+	sr = LockTMRSemaphore(0);
+	if (sr < 0)
+		return (-E_Busy);
+	FMTK_KillAlarm(ht+1);
+	tmrs[ht].owner = 0;
+	pool = ht >> 5;
+	bit = ht & 31;
+	timer_pool[pool] &= ~(1 << bit);
+	UnlockTMRSemaphore(sr);
+	return (E_Ok);
+}
+
+// Acknowledge the interrupt(s) and send messsage.
 //
 // Parameter:
-//		ndx = the number of the timer causing the interrupt
+//		ndx = the number of the timer group causing the interrupts
 
 void FMTK_AlarmISR(__reg("d0") long ndx)
 {
+	MSG msg;
 	MBX* mbx;
 	hMBX h;
+	unsigned long nn,jj;
 	unsigned long *PIT = (unsigned long*)0xFDFEC000;
 	
-	if (ndx > 31)
-		PIT[0x205] = (1 << (ndx-32));
-	else
-		PIT[0x204] = (1 << ndx);
-	h = PITREG[ndx].hMbx;
-	if (h > 0 && h <= NR_MBX) {
-		SetTrb31();
-		mbx = MBXHandleToPointer(h);
-		if (mbx->owner==GetRunningAppid())
-			FMTK_PostMsg(h,0xffffffff,0xffffffff,0xffffffff);
-//		else
-//			Priv_Error();
-		ClearTrb31();
+	PITREG = (pitreg_t*)0xFDFEC000;
+	jj = PIT[0x808+ndx];	// jj = which timers timed out
+	PIT[0x808+ndx] = jj;	// acknowledge interrupt
+	msg.d1 = FM_TIMER;
+	msg.d2 = 0xfffffffUL;
+	msg.d3 = 0xfffffffUL;
+	SetTrb31();
+	for (nn = 0; jj != 0; jj >>= 1, nn++) {
+		if (jj & 1) {
+			h = PITREG[(ndx<<5)|nn].ctrl >> 16;
+			while (h > 0 && h <= NR_MBX) {
+				mbx = MBXHandleToPointer(h);
+				if (mbx->owner==GetRunningAppid())
+					FMTK_PostMsg(h,(long)&msg);
+				h = mbx->link;
+			}
+		}
 	}
+	ClearTrb31();
+}
+
+long FMTK_SetAlarm(
+	__reg("d0") long hTmr,
+	__reg("d1") long hMbx,
+	__reg("d2") long ticklo,
+	__reg("d3") long tickhi,
+	__reg("d4") long opt				// 4=auto reload
+)
+{
+	hTMR ht;
+	int ndx;
+	unsigned long *PIT = (unsigned long*)0xFDFEC000;
+	
+	if (hTmr <= 0 || hTmr > NR_TMR)
+		return (-E_Arg);
+	ht = hTmr - 1;
+	if (tmrs[ht].owner != GetRunningAppid() && GetRunningAppid() != 1)
+		return (-E_NotOwner);
+	PITREG = (pitreg_t*)0xFDFEC000;
+	PITREG[ht].maxcountLo = ticklo;
+	PITREG[ht].maxcountHi = tickhi;
+	PITREG[ht].ontimeLo = 5;
+	PITREG[ht].ontimeHi = 0;
+	PITREG[ht].ctrl = (hMbx << 16) | ((192+(ht >> 5)) << 8) | 3 | (opt & 4);
+	// set interrupt enable
+	ndx = ht >> 5;
+	PIT[0x800+ndx] |= (1 << (ht & 31));
+	PITREG[ht].ctrl = 0x80;
+}
+
+long FMTK_KillAlarm(
+	__reg("d0") long hTmr
+)
+{
+	hTMR ht;
+	int ndx;
+	unsigned long *PIT = (unsigned long*)0xFDFEC000;
+	
+	if (hTmr <= 0 || hTmr > NR_TMR)
+		return (-E_Arg);
+	ht = hTmr - 1;
+	if (tmrs[ht].owner != GetRunningAppid() && GetRunningAppid() != 1)
+		return (-E_NotOwner);
+	PITREG = (pitreg_t*)0xFDFEC000;
+	PITREG[ht].maxcountLo = 0xffffffffUL;
+	PITREG[ht].maxcountHi = 0xffffUL;
+	PITREG[ht].ontimeLo = 5;
+	PITREG[ht].ontimeHi = 0;
+	PITREG[ht].ctrl = 0x01;		// mbx = 0, vector = 0
+	// clear interrupt enable
+	ndx = ht >> 5;
+	PIT[0x800+ndx] &= ~(1 << (ht & 31));
+	PITREG[ht].ctrl = 0x80;
 }
 
 static void panic_stop() = 
@@ -536,7 +674,7 @@ void IdleThread()
 {
 	int ii, rr = E_Ok;
 	unsigned long *screen = (unsigned long *)0xFD000000L;
-	long d1, d2, d3;
+	MSG msg;
 
 	hIdleMbx = FMTK_AllocMbx();
 		
@@ -548,15 +686,16 @@ void IdleThread()
 	
 		if (hIdleMbx > 0) {
 		
-			rr = FMTK_WaitMsg(hIdleMbx, (long)&d1, (long)&d2, (long)&d3, 500L);
+			rr = FMTK_WaitMsg(hIdleMbx, (long)&msg, 500L);
 			if (rr == E_Ok) {
-				DisplayStringCRLF("Idle thread: ");
-				
-				DisplayTetra(d1);
+				DisplayString("Idle thread: ");
+				if ((msg.d1 & 0xffffL)==FM_TIMER)
+					DisplayString("timedout: ");
+				DisplayTetra(msg.d1);
 				OutputChar(' ');
-				DisplayTetra(d2);
+				DisplayTetra(msg.d2);
 				OutputChar(' ');
-				DisplayTetra(d3);
+				DisplayTetra(msg.d3);
 				OutputChar('\r');
 				OutputChar('\n');
 				
@@ -740,8 +879,9 @@ long FMTK_StartThread(
 	case 1:	t->regs[16] = 0x47bfc;
 	case 2:	t->regs[16] = 0x477fc;
 	case 3:	t->regs[16] = 0x473fc;
+	case 4:	t->regs[16] = 0x46ffc;
 	}
-	
+
 	t->status = TS_NONE;
   stat = SetImLevel7();
   TCBInsertIntoReadyQueue(ht);
@@ -933,6 +1073,9 @@ long FMTK_Initialize()
 		SetupTCBs();
   	TimeoutList = 0;
   	
+  	for (nn = 0; nn < 8; nn++)
+  		timer_pool[nn] = 0;
+
  		DisplayLEDS(4);
 //    init_memory_management();
   	for (nn = 0; nn < NR_ACB; nn++)
@@ -944,9 +1087,21 @@ long FMTK_Initialize()
 		SetTr(1,(long)&tcbs[0]);
   	RestoreSr(sr);								// Restore interrupts
 
+		hKeybdIRQMbx = FMTK_AllocMbx();
+		ACBPtrs[0]->hMailbox = FMTK_AllocMbx();
+		sysmbx = ACBPtrs[0]->hMailbox;
+
 		FMTK_StartThread(
 			(unsigned long)IdleThread,
 			(((unsigned long)&IdleStack[0]) & 0xffffffe0UL) | 10,	// 256 lwords
+			0,
+			15,
+			2
+		);
+
+		FMTK_StartThread(
+			(unsigned long)KeybdTranslateThread,
+			(((unsigned long)&KeybdTranslateThreadStack[0]) & 0xffffffe0UL) | 10,	// 256 lwords
 			0,
 			15,
 			2

@@ -47,6 +47,10 @@ int getCPU() =
 	"\tmovec coreno,d0\r\n"
 ;
 
+unsigned long GetTick() =
+	"\tmovec.l tick,d0\r\n"
+;
+
 hTCB GetRunningAppid() =
 	"\tmovec.l cpid,d0\r\n"
 ;
@@ -59,10 +63,6 @@ hTCB GetRunningTCB() =
 ;
 void SetRunningTCB(__reg("d0") hTCB h) =
 	"\tmovec.l d0,tr\r\n"
-;
-
-void SetRunningTCBPtr(__reg("d0") TCB* p) =
-	"\tmovec.l d0,tcba\r\n"
 ;
 
 TCB* GetRunningTCBPtr() =
@@ -99,6 +99,10 @@ void RestoreSr(__reg("d0") int sr) =
 // FMTK primitives need to re-schedule threads in a couple of places.
 // ----------------------------------------------------------------------------
 
+void FMTK_Stop() = 
+	"\tstop #$2000\r\n"					// wait for 1interrupt
+;
+
 void FMTK_Reschedule() =
 	"\tmove.l #$03000000,$FD260018\r\n"	// trigger IRQ in PIC
 	"\tstop #$2000\r\n"					// wait for the interrupt
@@ -122,11 +126,11 @@ extern int IsSystemApp(hACB);
 void FMTK_Reschedule();
 long FMTK_Initialize();
 long FMTK_Sleep(__reg("d0") long);
-long FMTK_SendMsg(__reg("d0") long hMbx, __reg("d1") long d1, __reg("d2") long d2, __reg("d3") long d3);
-long FMTK_PostMsg(__reg("d0") long hMbx, __reg("d1") long d1, __reg("d2") long d2, __reg("d3") long d3);
-long FMTK_WaitMsg(__reg("d0") long hMbx, __reg("d1") long d1, __reg("d2") long d2, __reg("d3") long d3, __reg("d4") long timelimit);
-long FMTK_PeekMsg(__reg("d0") long hMbx, __reg("d1") long d1, __reg("d2") long d2, __reg("d3") long d3);
-long FMTK_CheckMsg(__reg("d0") long hMbx, __reg("d1") long d1, __reg("d2") long d2, __reg("d3") long d3, __reg("d4") long qrmv);
+long FMTK_SendMsg(__reg("d0") long hMbx, __reg("d1") long pMsg);
+long FMTK_PostMsg(__reg("d0") long hMbx, __reg("d1") long pMsg);
+long FMTK_WaitMsg(__reg("d0") long hMbx, __reg("d1") long pMsg, __reg("d2") long timelimit);
+long FMTK_PeekMsg(__reg("d0") long hMbx, __reg("d1") long pMsg);
+long FMTK_CheckMsg(__reg("d0") long hMbx, __reg("d1") long pMsg, __reg("d2") long qrmv);
 long FMTK_StartThread(__reg("d0") long pCode, __reg("d1") long stack, __reg("d2") long pCmd, __reg("d3") long priority, __reg("d4") long affinity);
 long FMTK_ExitThread();
 long FMTK_KillThread(__reg("d0") long);
@@ -141,7 +145,17 @@ long FMTK_AllocSystemPages(__reg("d0") long numpage, __reg("d0") long ppAddr);
 long FMTK_AllocPages(__reg("d0") long numpage, __reg("d0") long ppAddr);
 long FMTK_AliasMem(__reg("d0") long pMem,__reg("d1") long cbMem,__reg("d2") long hApp,__reg("d3") long ppAliasRet);
 long FMTK_DeAliasMem(__reg("d0") long hACB, __reg("d1") long pMem, __reg("d2") long len);
-long FMTK_AddAlarm(__reg("d0") long hMbx, __reg("d1") long callback, __reg("d2") long timeout);
+long FMTK_AllocTimer();
+long FMTK_FreeTimer(__reg("d0") long ht);
+long FMTK_SetAlarm(
+	__reg("d0") long hTmr,
+	__reg("d1") long hMbx,
+	__reg("d2") long ticklo,
+	__reg("d3") long tickhi,
+	__reg("d4") long opt
+);
+long FMTK_KillAlarm(__reg("d0") long hTmr);
+
 void RequestIOFocus(ACB *);
 
 int chkTCB(TCB *p);
@@ -180,6 +194,7 @@ int LockReadyQueue(long retries);
 int LockTCBList(long retries);
 int LockACBSemaphore(long retries);
 int LockAlarmList(long retries);
+int LockTMRSemaphore(long retries);
 
 void UnlockSysSemaphore(int);
 void UnlockIOFSemaphore(int);
@@ -194,6 +209,7 @@ void UnlockReadyQueue(int);
 void UnlockTCBList(int);
 void UnlockACBSemaphore(int);
 void UnlockAlarmList(int);
+void UnlockTMRSemaphore(int);
 
 // Restoring the interrupt level does not have a ramp, because the level is
 // being set back to enable interrupts, from a disabled state. Following the

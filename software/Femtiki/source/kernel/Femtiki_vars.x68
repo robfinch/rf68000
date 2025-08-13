@@ -171,11 +171,15 @@ _request_block
 	ds.b	256*64
 _request_block_end
 _message
-	ds.b	800*20
+	ds.b	512*32
 _message_end
 _mailbox
 	ds.b	128*64
 _mailbox_end
+_tmrs
+	ds.b	256*2
+_timer_pool
+	ds.l	8
 _FreeCBL
 	ds.l	2
 _sys_pd						; system page directory
@@ -184,6 +188,10 @@ _kernel_pt
 	ds.b	8192*6
 IOFocus
 _IOFocus
+	ds.l	1
+_IOFocusList
+	ds.l	1
+_IOFocusNdx
 	ds.l	1
 memend
 	ds.l	1
@@ -237,7 +245,11 @@ _im_save
 	ds.l	1
 _hKeybdMbx
 	ds.w	1
+_hKeybdIRQMbx
+	ds.w	1
 _hFocusSwitchMbx
+	ds.w	1
+_sysmbx
 	ds.w	1
 
 _hasUltraHighPriorityTasks
@@ -288,6 +300,8 @@ _FemtikiVars_end
 	global _kernel_pt
 	global IOFocus
 	global _IOFocus
+	global _IOFocusList
+	global _IOFocusNdx
 	global memend
 	global TextRows
 	global TextCols
@@ -387,6 +401,7 @@ _FemtikiVars_end
 	global _hFreeApp
 	global _im_save
 	global _hKeybdMbx
+	global _hKeybdIRQMbx
 	global _hFocusSwitchMbx
 
 	global __C0environ
@@ -397,6 +412,9 @@ _FemtikiVars_end
 	global _Alarms
 	global _freeAlarm
 	global _AlarmList
+	global _sysmbx
+	global _timer_pool
+	global _tmrs
 
 ;gc_stack		rmb		512
 ;gc_pc				fcdw		0

@@ -148,7 +148,12 @@ void DumpApps()
 void SendIdle()
 {
 	static int kk = 0;
-	
-	FMTK_SendMsg(hIdleMbx, 0xfffffff1, 0xfffffff1, kk);
+	MSG msg;
+
+	msg.timestamp = GetTick();
+	msg.d1 = 0xfffffff1UL;
+	msg.d2 = 0xfffffff1UL;
+	msg.d3 = kk;
+	FMTK_SendMsg(hIdleMbx, (long)&msg);
 	kk++;
 }

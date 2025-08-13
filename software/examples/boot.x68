@@ -190,6 +190,14 @@ endm
 	section gvars
 _go:
 	ds.l	1
+_sysmsg
+	ds.b	32
+_sysd1
+	ds.l	1
+_sysd2
+	ds.l	1
+_sysd3
+	ds.l	1
 
 	data
 	org 0
@@ -2243,11 +2251,20 @@ PromptLn:
 ; Get characters until a CR is keyed
 ;
 Prompt3:
+.0001
 	move.l #2,_IOFocus				; Set the IO focus in global memory
 	neg.l $FD000018						; flash
-	move.l #$10000,d7					; keyboard
-	moveq #DEV_GETCHAR,d6
-	trap #0
+	clr.l d0
+	move.w _sysmbx,d0
+	move.l #_sysmsg,d1				;
+	move.l #$7fffffff,d2			; d2=MAX_INT
+	jsr _FMTK_WaitMsg
+	cmp.w #FM_KEYDOWN,_sysmsg+22
+	bne.s .0001
+	move.l _sysmsg+28,d1
+;	move.l #$10000,d7					; keyboard
+;	moveq #DEV_GETCHAR,d6
+;	trap #0
 ;	jsr	GetKey
 	cmpi.w #-1,d1
 	beq.s	Prompt3

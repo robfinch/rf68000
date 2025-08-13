@@ -12,6 +12,7 @@ typedef short int hMSG;
 typedef short int hRQB;
 typedef short int hTBLK;
 typedef short int hALARM;
+typedef short int hTMR;
 
 #define PTE_PRESENT		13
 #define PTE_ALIAS			12
@@ -20,14 +21,17 @@ typedef short int hALARM;
 #define PTE_WRITE			1
 #define PTE_EXECUTE		0
 
+// The PIT regs are only 32-bit accessible.
+
 typedef struct _tagPIT {
-	long long count;		// current count
-	long long maxcount;	// maximum count (starting count)
-	long long ontime;		// pulse width of time on
-	uint8_t ctrl;				// timer control bits
-	uint8_t iack;				// interrupt acknowledge bit
-	hMBX hMbx;					// mailbox to notify
-	long pad2;
+	long countLo;				// current count
+	long countHi;
+	long maxcountLo;		// maximum count (starting count)
+	long maxcountHi;
+	long ontimeLo;			// pulse width of time on
+	long ontimeHi;
+	long ctrl;					// timer control bits, vector, mailbox
+	long pad;
 } pitreg_t;
 
 typedef struct _tagPTE {
@@ -143,14 +147,18 @@ typedef struct _tagHeap {
 
 typedef struct tagMSG {
 	hMSG link;
-	unsigned short int retadr;    // return address
-	unsigned short int dstadr;    // destination address
 	unsigned short int type;
+//	unsigned short int retadr;    // return address
+//	unsigned short int dstadr;    // destination address
+	unsigned long timestamp;
+	unsigned long x;								// cursor position
+	unsigned long y;								//
+	unsigned long z;
 	unsigned long d1;            // payload data 1
 	unsigned long d2;            // payload data 2
 	unsigned long d3;            // payload data 3
 } MSG;
-// 20 bytes
+// 32 bytes
 
 typedef struct _tagRQB {
 	long magic;
@@ -217,6 +225,7 @@ typedef struct _tagACB
 	struct _tagObject *objectList;
 	struct _tagObject *garbage_list;
 	HEAP Heap;
+	hMBX hMailbox;
   struct _tagACB *iof_next;
   struct _tagACB *iof_prev;
   char UserName[32];
@@ -296,7 +305,11 @@ typedef struct tagMBX {
 	uint mq_size;
 	uint mq_count;
 	uint mq_missed;
-} MBX;
+} MBX;	// 32 bytes
+
+typedef struct tagTMR {
+	hACB owner;
+} TMR;
 
 typedef struct tagALARM {
 	hALARM next;

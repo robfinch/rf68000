@@ -39,7 +39,8 @@ DRIVER_ASMS = \
 	../Femtiki/source/drivers/random.x68 \
 	../Femtiki/source/drivers/rtc.x68 \
 	../Femtiki/source/drivers/pic.x68 \
-	../Femtiki/source/drivers/pit.x68
+	../Femtiki/source/drivers/pit.x68 \
+	../Femtiki/source/drivers/KeybdTranslateThread.asm
 
 DRIVERS = \
 	../Femtiki/source/drivers/null.o \
@@ -54,7 +55,8 @@ DRIVERS = \
 	../Femtiki/source/drivers/rtc.o \
 	../Femtiki/source/drivers/pic.o \
 	../Femtiki/source/drivers/pitc.o \
-	../Femtiki/source/drivers/pit.o
+	../Femtiki/source/drivers/pit.o \
+	../Femtiki/source/drivers/KeybdTranslateThread.o
 
 #..\Femtiki\source\drivers\drivers.o: $(DRIVERS)
 #	$(AAX) $(AFLAGS) -L ../Femtiki/source/drivers/pic.lst ../Femtiki/source/drivers/pic.x68 -o ../Femtiki/source/drivers/pic.o
@@ -114,6 +116,7 @@ OUT = \
 	..\Femtiki\source\drivers\pic.o \
 	..\Femtiki\source\drivers\pitc.o \
 	..\Femtiki\source\drivers\pit.o \
+	..\Femtiki\source\drivers\KeybdTranslateThread.o \
 	..\Femtiki\source\kernel\femtiki_asm.o \
 	..\Femtiki\source\Femtiki2.o
 
@@ -144,6 +147,8 @@ BIOS:	$(OUT)
 #	cc64 $(CFLAGS) os_stub.c
 
 	$(CCX) $(CFLAGS) bootrom.c
+	$(CCX) $(CFLAGS) ..\Femtiki\source\drivers\KeybdTranslateThread.c
+	$(AAX) $(AFLAGS) ..\Femtiki\source\drivers\KeybdTranslateThread.asm -L ..\Femtiki\source\drivers\KeybdTranslateThread.lst -o ..\Femtiki\source\drivers\KeybdTranslateThread.o
 	vbccm68k grDemo.c -fpu=68881
 	vbccm68k gfx.c -fpu=68881
 	vbccm68k sieve.c
@@ -191,6 +196,7 @@ BIOS:	$(OUT)
 	$(AAX) $(AFLAGS) ..\Femtiki\source\drivers\random.x68 -L ..\Femtiki\source\drivers\random.lst -o ..\Femtiki\source\drivers\random.o
 	$(AAX) $(AFLAGS) ..\Femtiki\source\drivers\pic.x68 -L ..\Femtiki\source\drivers\pic.lst -o ..\Femtiki\source\drivers\pic.o
 	$(AAX) $(AFLAGS) ..\Femtiki\source\drivers\pit.x68 -L ..\Femtiki\source\drivers\pit.lst -o ..\Femtiki\source\drivers\pit.o
+	$(AAX) $(AFLAGS) ..\Femtiki\source\drivers\KeybdTranslateThread.asm -L ..\Femtiki\source\drivers\KeybdTranslateThread.lst -o ..\Femtiki\source\drivers\KeybdTranslateThread.o
 	
 #	vlink -T ..\Femtiki\source\Femtiki.cmd -brawbin1 boot.o ..\Femtiki\source\Femtiki.o -o boot.bin
 	vlink -T ..\Femtiki\source\Femtiki.cmd -bsrec37 bootrom.o \
@@ -222,6 +228,7 @@ BIOS:	$(OUT)
 	..\Femtiki\source\drivers\pit.o \
 	..\Femtiki\source\kernel\dbg_console.o \
 	..\Femtiki\source\kernel\semaphore.o \
+	..\Femtiki\source\drivers\KeybdTranslateThread.o \
 	..\Femtiki\source\kernel\tcb.o \
 	..\Femtiki\source\kernel\msg.o \
 	..\Femtiki\source\kernel\Femtiki_vars.o \

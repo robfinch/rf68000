@@ -18,7 +18,6 @@
 
 	include "..\Femtiki\source\inc\const.x68"
 	include "..\Femtiki\source\inc\device.x68"
-	include "..\Femtiki\source\inc\const.x68"
 
 WM_KEYDOWN	equ	$100
 WM_KEYUP		equ	$101
@@ -73,6 +72,8 @@ _VirtKey equ *-keybd_vars
 	ds.b	1
 _KeyState equ *-keybd_vars
 	ds.b	256
+_KeybdMsg
+	ds.b	32
 	code
 	even
 
@@ -870,7 +871,7 @@ KeybdIRQ:
 	; Disable lower interrupts. The IPL will be restored by the RTE at the
 	; end of this routine.
 	move.w #$2700,sr					
-	movem.l	d0/d1/d2/a0/a3,-(a7)
+	movem.l	d0-d7/a0-a6,-(a7)
 	move.l #keybd_vars,a3
 	moveq	#0,d1								; check if keyboard IRQ
 	move.b KEYBD+1,d1					; get status reg
@@ -885,8 +886,21 @@ KeybdIRQ:
 	neg.l $FD000000						; update IRQ live indicator
 	move.b #1,leds
 	move.l d0,d2							; d2 = sr value
+	clr.l d1
 	move.b KEYBD,d1						; get scan code
 	clr.b KEYBD+1							; clear status register (clears IRQ AND scancode)
+	movem.l d1-d3,-(sp)
+	move.l _FMTK_Inited,d0
+	cmp.l #FMTK_MAGIC,d0
+	bne.s .0005
+	move.l d1,d3							; d3 = scan code
+	move.l _hKeybdIRQMbx,d0
+	move.l #_KeybdMsg,d1
+	move.l #$ffff,_KeybdMsg+20	; msg->d1 = IRQ message
+	move.l #-1,_KeybdMsg+24			; msg->d2 = -1
+	jsr _FMTK_PostMsg
+.0005
+	movem.l (sp)+,d1-d3
 	btst #1,_KeyState2(a3)		; Is Alt down?
 	beq.s	.0003
 	cmpi.b #SC_TAB,d1					; is Alt-Tab?
@@ -929,10 +943,35 @@ KeybdIRQ:
 .lockFailed
 .0001
 	move.b #2,leds
-	movem.l	(a7)+,d0/d1/d2/a0/a3		; return
+	movem.l	(a7)+,d0-d7/a0-a6		; return
+	rte
+	global KeybdIRQ
+
+KeybdIRQ2:
+	move.w #$2700,sr					
+	neg.l $FD000000						; update IRQ live indicator
+	movem.l	d0-d7/a0-a6,-(a7)
+	move.l _FMTK_Inited,d0
+	cmp.l #FMTK_MAGIC,d0
+	beq.s .0001
+	move.b KEYBD,d3						; get scan code
+	clr.b KEYBD+1							; clear status register (clears IRQ AND scancode)
+	movem.l	(a7)+,d0-d7/a0-a6
+	rte
+.0001
+	move.l _hKeybdIRQMbx,d0
+	move.l #_KeybdMsg,d1
+	move.l #$ffff,_KeybdMsg+20	; msg->d1 = IRQ message
+	move.l #-1,_KeybdMsg+24			; msg->d2 = -1
+	clr.l d3
+	move.b KEYBD,d3						; get scan code
+	clr.b KEYBD+1							; clear status register (clears IRQ AND scancode)
+	move.l d3,_KeybdMsg+28		; msg->d3 = scancode
+	jsr _FMTK_PostMsg
+	movem.l	(a7)+,d0-d7/a0-a6
 	rte
 
-	global KeybdIRQ
+	global KeybdIRQ2
 
 ;--------------------------------------------------------------------------
 ; PS2 scan codes to ascii conversion tables.
@@ -1048,3 +1087,7 @@ _keybdExtendedCodes:
 	dc.b	$98,$99,$92,$2e,$91,$90,$2e,$2e
 	dc.b	$2e,$2e,$97,$2e,$2e,$96,$2e,$2e
 
+	global _keybdExtendedCodes
+	global _keybdControlCodes
+	global _unshiftedScanCodes
+	global _shiftedScanCodes

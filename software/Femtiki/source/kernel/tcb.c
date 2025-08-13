@@ -275,11 +275,11 @@ int TCBInsertIntoTimeoutList(register hTCB ht, register int to)
 	t = TCBHandleToPointer(ht);
 	if (t == NULL)
 		return (E_Ok);
+	t->status |= TS_TIMEOUT;
 	if (t->next != 0 || t->prev != 0)
 		panic("InsertIntoTimeoutList: thread is still on a list.");
 	if (TimeoutList <= 0) {
 		t->timeout = to;
-		t->status |= TS_TIMEOUT;
 		TimeoutList = ht;
 		return (E_Ok);
 	}
@@ -301,7 +301,7 @@ int TCBInsertIntoTimeoutList(register hTCB ht, register int to)
 	// Double link list insert before p and after q
 	t->next = TCBPointerToHandle(p);
 	t->prev = TCBPointerToHandle(q);
-	t->status |= TS_TIMEOUT;
+	t->timeout = to;
 	if (p) {
 		p->timeout -= to;
 		p->prev = ht;
@@ -355,7 +355,8 @@ hTCB TCBPopTimeoutList()
   h = TimeoutList;
   if (TimeoutList > 0 && TimeoutList <= NR_TCB) {
   	p = TCBHandleToPointer(TimeoutList);
-    TimeoutList = p->next;
+   	TimeoutList = p->next;
+  	p->status = TS_NONE;
     p->next = p->prev = 0;
     if (TimeoutList > 0 && TimeoutList <= NR_TCB) {
 	  	p = TCBHandleToPointer(TimeoutList);

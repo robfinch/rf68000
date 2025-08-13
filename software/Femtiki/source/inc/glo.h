@@ -59,7 +59,8 @@ extern hMSG freeMSG;
 extern hMBX freeMBX;
 extern hALARM freeAlarm;
 extern CBL freeCBL;
-extern ACB *IOFocusNdx;
+extern int IOFocusNdx;
+extern unsigned long IOFocusList;
 extern int IOFocusTbl[];
 extern int iof_switch;
 extern int BIOS1_sema;
@@ -73,8 +74,11 @@ extern short int video_bufs[][];
 extern hTCB TimeoutList;
 extern hALARM AlarmList;
 extern hMBX hFocusSwitchMbx;
+extern hMBX hKeybdMbx;
+extern hMBX hKeybdIRQMbx;
 extern ACB SysAcb;
 extern int tickcnt;
 extern TCB* RunningTCBPointer;
+extern TMR tmrs[NR_TMR];
 
 #endif

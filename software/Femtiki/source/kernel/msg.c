@@ -13,6 +13,7 @@ extern service_t service[NR_SERVICE];
 extern hRQB FreeRQB;
 extern long nRequest;
 
+
 /*
 		Initialize request blocks and services.
 */
@@ -168,30 +169,34 @@ static RQB* RQBHandleToPointer(hRQB h)
 
 /* ---------------------------------------------------------------
 	Description:
-		Copy a message.
+		Copy a message. Dead code
 --------------------------------------------------------------- */
 
 static void CopyMsg(MSG *dmsg, MSG *smsg)
 {
-	dmsg->type = smsg->type;
-	dmsg->retadr = smsg->retadr;
-	dmsg->dstadr = smsg->dstadr;
 	dmsg->link = 0;
+	dmsg->type = smsg->type;
+//	dmsg->retadr = smsg->retadr;
+//	dmsg->dstadr = smsg->dstadr;
+	dmsg->timestamp = smsg->timestamp;
+	dmsg->x = smsg->x;
+	dmsg->y = smsg->y;
+	dmsg->z = smsg->z;
 	dmsg->d1 = smsg->d1;
 	dmsg->d2 = smsg->d2;
 	dmsg->d3 = smsg->d3;
 }
 
-/* ---------------------------------------------------------------
+/* -----------------------------------------------------------------------------
 	Description:
 		Allocate a message from the free list.
 	Assumptions:
 		Message list is locked.
 	Returns:
 		msg*:	pointer to message
---------------------------------------------------------------- */
+----------------------------------------------------------------------------- */
 
-static MSG* AllocMsg()
+static MSG* AllocMsg(short int typ, long d1, long d2, long d3)
 {
 	MSG* msg;
 
@@ -200,9 +205,16 @@ static MSG* AllocMsg()
 	msg = MSGHandleToPointer(freeMSG);
 	freeMSG = msg->link;
 	--nMsgBlk;
-	msg->type = 0;
-	msg->retadr = GetRunningAppid();
-	msg->dstadr = 0;
+	msg->type = typ;
+//	msg->retadr = GetRunningAppid();
+//	msg->dstadr = 0;
+	msg->timestamp = GetTick();
+	msg->x = 0;
+	msg->y = 0;
+	msg->z = 0;
+	msg->d1 = d1;
+	msg->d2 = d2;
+	msg->d3 = d3;
 	return (msg);
 }
 
@@ -217,15 +229,26 @@ static MSG* AllocMsg()
 static void FreeMsg(MSG *msg)
 {
 	int stat;
+	hMSG h;
 
 	if (msg == NULL)
 		return;
-  msg->type = MT_FREE;
-  msg->retadr = 0;
-  msg->dstadr = 0;
-	msg->link = freeMSG;
-	freeMSG = (msg - message) + 1;
-	nMsgBlk++;
+	h = (msg - message) + 1;
+	if (h > 0 && h <= NR_MSG) {
+	  msg->type = MT_FREE;
+//  msg->retadr = 0;
+//  msg->dstadr = 0;
+		msg->link = freeMSG;
+		msg->timestamp = 0;
+		msg->x = 0;
+		msg->y = 0;
+		msg->z = 0;
+		msg->d1 = 0;
+		msg->d2 = 0;
+		msg->d3 = 0;
+		freeMSG = h;
+		nMsgBlk++;
+	}
 }
 
 /* ---------------------------------------------------------------
@@ -241,11 +264,12 @@ static void FreeMsg(MSG *msg)
 		PostMsg
 --------------------------------------------------------------- */
 
-static long QueueMsg(MBX *mbx, MSG *msg)
+static long MBXQueueMsg(MBX *mbx, MSG *msg)
 {
   MSG *tmpmsg;
   hMSG htmp;
 	int rr = E_Ok;
+	unsigned short int repcnt;
 
 	mbx->mq_count++;
 
@@ -309,8 +333,20 @@ static long QueueMsg(MBX *mbx, MSG *msg)
     break;
 	}
 	// if there is a message in the queue
-	if (mbx->mq_tail > 0)
+	if (mbx->mq_tail > 0) {
+		// Check for a repeated message. For a repeated message increment the message
+		// repeat count. Free the incoming message.
+		if ((msg->d1 & 0xffffL)==(message[mbx->mq_tail-1].d1 & 0xffffL)) {
+			if (msg->d2 == message[mbx->mq_tail-1].d2 && msg->d3==message[mbx->mq_tail-1].d3) {
+				if ((unsigned long)message[mbx->mq_tail-1].d1 < 0xffff0000UL) {
+					message[mbx->mq_tail-1].d1 += 0x10000L;
+					FreeMsg(msg);
+					return (rr);
+				}
+			}
+		}
 		message[mbx->mq_tail-1].link = MSGPointerToHandle(msg);
+	}
 	else
 		mbx->mq_head = MSGPointerToHandle(msg);
 	mbx->mq_tail = MSGPointerToHandle(msg);
@@ -319,7 +355,7 @@ j1:
 	return (rr);
 }
 /*
-static long QueueMsg(MBX *mbx, MSG *msg, int lock)
+static long MBXQueueMsg(MBX *mbx, MSG *msg, int lock)
 {
   MSG *tmpmsg;
   hMSG htmp;
@@ -343,7 +379,7 @@ static long QueueMsg(MBX *mbx, MSG *msg, int lock)
 		}
 	}
 	
-	rr = QueueMsgHelper(mbx, msg);
+	rr = MBXQueueMsgHelper(mbx, msg);
 
 	UnlockMSGList(stat2);
   UnlockMBX(stat1);
@@ -365,7 +401,7 @@ static long QueueMsg(MBX *mbx, MSG *msg, int lock)
 		CheckMsg-	"
 ----------------------------------------------------------------------------- */
 
-static MSG *DequeueMsg(MBX *mbx)
+static MSG *MBXDequeueMsg(MBX *mbx)
 {
 	MSG *tmpmsg = NULL;
   hMSG hm;
@@ -387,6 +423,46 @@ static MSG *DequeueMsg(MBX *mbx)
 
 /* ----------------------------------------------------------------------------
 	Description:
+
+	Assumptions:
+		Mailbox parameter is valid.
+		Mailbox is locked
+---------------------------------------------------------------------------- */
+
+static void MBXQueueThread(hMBX hMbx, hTCB hThread)
+{
+	TCB* thread;
+	MBX* mbx;
+
+	thread = TCBHandleToPointer(hThread);
+	if (thread==NULL)
+		panic("MBXQueueThread:: thread is NULL");
+	mbx = MBXHandleToPointer(hMbx);
+	if (mbx==NULL)
+		panic("MBXQueueThread:: mbx is NULL");
+	if (thread->mbq_next > 0 || thread->mbq_prev > 0)
+		panic("Waitmsg: thread already queued at a mailbox");
+	thread->status |= TS_WAITMSG;
+	thread->hWaitMbx = hMbx;
+	thread->mbq_next = 0;
+	// Insert at head if no list yet
+	if (mbx->tq_head <= 0) {
+		thread->mbq_prev = 0;
+		mbx->tq_head = hThread;
+		mbx->tq_tail = hThread;
+		mbx->tq_count = 1;
+	}
+	// Insert at end of list
+	else {
+		thread->mbq_prev = mbx->tq_tail;
+		tcbs[mbx->tq_tail-1].mbq_next = hThread;
+		mbx->tq_tail = hThread;
+		mbx->tq_count++;
+	}
+}
+
+/* ----------------------------------------------------------------------------
+	Description:
 		Dequeues a thread from a mailbox. The thread will also be removed from
 	the timeout list (if it's present there), and	the timeout list will be
 	adjusted accordingly. The mailbox list must be locked already.
@@ -396,12 +472,12 @@ static MSG *DequeueMsg(MBX *mbx)
 		Mailbox is locked
 ---------------------------------------------------------------------------- */
 
-long DequeueThreadFromMailbox(MBX *mbx, TCB **thread)
+long MBXDequeueThread(MBX *mbx, TCB **thread)
 {
 	int sr;
 
 	if (thread == NULL || mbx == NULL)
-		return (-E_Arg);
+		panic("MBXDequeueThread: argument NULL");
 
 	if (mbx->tq_head <= 0 || mbx->tq_head > NR_TCB) {
 		*thread = NULL;
@@ -508,14 +584,14 @@ long FMTK_FreeMbx(__reg("d0") long hMbx)
 	  }
 	} while (st2 < 0 || st3 < 0);
 	// Free up any queued messages
-	while (msg = DequeueMsg(mbx))
+	while (msg = MBXDequeueMsg(mbx))
 		FreeMsg(msg);
 	UnlockMSGList(st2);
 	// Send an indicator to any queued threads that the mailbox
 	// is now defunct Setting MsgPtr = null will cause any
 	// outstanding WaitMsg() to return E_NoMsg.
 	while(1) {
-		DequeueThreadFromMailbox(mbx, &thread);
+	MBXDequeueThread(mbx, &thread);
 		if (thread == null)
 			break;
 		thread->msg.type = MT_NONE;
@@ -559,20 +635,19 @@ long SetMbxMsgQueStrategy(hMBX hMbx, int qStrategy, int qSize)
 }
 
 
-/* ---------------------------------------------------------------
+/* -----------------------------------------------------------------------------
 	Description:
-		Send a message. May switch threads.
---------------------------------------------------------------- */
+		Send a message. May switch threads. Blocks until the message can be
+	sent.
+---------------------------------------------------------------------------- */
 
 long FMTK_SendMsg(
 	__reg("d0") long hMbx,
-	__reg("d1") long d1,
-	__reg("d2") long d2,
-	__reg("d3") long d3
+	__reg("d1") long pMsg
 )
 {
 	MBX *mbx;
-	MSG *msg;
+	MSG *msg, *pMsg2;
 	TCB *thread;
 	int sr;
 	int stat,stat2;
@@ -603,38 +678,38 @@ long FMTK_SendMsg(
 		  }
 		}
 	} while(stat2 < 0);
-  msg = AllocMsg();
- 	msg->dstadr = hMbx;
-	msg->type = MT_DATA;
-	msg->d1 = d1;
-	msg->d2 = d2;
-	msg->d3 = d3;
+	// If an alarm mailbox, keep dequeuing threads until there are none-left at
+	// the mailbox.
 	// Dequeue will remove thread from timeout list
-	DequeueThreadFromMailbox(mbx, &thread);
+	MBXDequeueThread(mbx, &thread);
+	pMsg2 = (MSG*)pMsg;
 	if (thread == NULL) {
-		rr = QueueMsg(mbx, msg);
+	  msg = AllocMsg(MT_DATA,pMsg2->d1,pMsg2->d2,pMsg2->d3);
+		if (msg)
+			rr = MBXQueueMsg(mbx, msg);
+		else
+			rr = E_NoMoreMsgBlks; 
 		UnlockMSGList(stat2);
   	UnlockMBX(hMbx,stat);
 		return (-rr);
 	}
-	CopyMsg(&thread->msg,msg);
-  FreeMsg(msg);
-	UnlockMSGList(stat2);
-  UnlockMBX(hMbx,stat);
-	sr = SetImLevel7();
+	if (thread->status & TS_TIMEOUT)
+		TCBRemoveFromTimeoutList(TCBPointerToHandle(thread));
 	TCBInsertIntoReadyQueue(TCBPointerToHandle(thread));
-  RestoreSr(sr);
+//	thread->msg.dstadr = hMbx;
+	thread->msg.link = 0;
+	thread->msg.type = MT_DATA;
+	thread->msg.timestamp = GetTick();
+	thread->msg.x = 0;
+	thread->msg.y = 0;
+	thread->msg.z = 0;
+	thread->msg.d1 = pMsg2->d1;
+	thread->msg.d2 = pMsg2->d2;
+	thread->msg.d3 = pMsg2->d3;
+ 	UnlockMSGList(stat2);
+  UnlockMBX(hMbx,stat);
   FMTK_Reschedule();
 	return (E_Ok);
-	/*
-	if (thread)
-		TCBInsertIntoReadyQueue(TCBPointerToHandle(thread));
-	rr = QueueMsg(mbx, msg);
-	UnlockMSGList(stat2);
-	UnlockMBX(hMbx,stat);
-	FMTK_Reschedule();
-	return (-rr);
-	*/
 }
 
 
@@ -642,13 +717,17 @@ long FMTK_SendMsg(
 	Description:
 		Send a message from within an interrupt routine. Does not switch threads.
 	Does not wait very long for locks.
+	
+	Returns:
+		E_Busy if semaphores cannot be locked
+		E_NotAlloc if mailbox has no owner
+		E_NoMoreMgsBlks if there are no more message blocks.
+		E_Ok if successful		
 ----------------------------------------------------------------------------- */
 
 long FMTK_PostMsg(
 	__reg("d0") long hMbx,
-	__reg("d1") long d1,
-	__reg("d2") long d2,
-	__reg("d3") long d3
+	__reg("d1") long pMsg
 )
 {
 	MBX *mbx;
@@ -657,6 +736,7 @@ long FMTK_PostMsg(
 	int im_level;
 	int stat,stat2;
 	int rr;
+	MSG* pMsg2;
 
 	if (hMbx <= 0 || hMbx > NR_MBX)
 		return (-E_Arg);
@@ -680,16 +760,12 @@ long FMTK_PostMsg(
     UnlockMBX(hMbx,stat);
 		return (-E_NoMoreMsgBlks);
   }
-  msg = AllocMsg();
-	msg->dstadr = hMbx;
-	msg->type = MT_DATA;
-	msg->d1 = d1;
-	msg->d2 = d2;
-	msg->d3 = d3;
-	DequeueThreadFromMailbox(mbx, &thread);
+	MBXDequeueThread(mbx, &thread);
+	pMsg2 = (MSG*)pMsg;
 	if (thread == null) {
+	  msg = AllocMsg(MT_DATA,pMsg2->d1,pMsg2->d2,pMsg2->d3);
 		if (msg) {
-			rr = QueueMsg(mbx, msg);
+			rr = MBXQueueMsg(mbx, msg);
 			UnlockMSGList(stat2);
   		UnlockMBX(hMbx,stat);
  			return (-rr);
@@ -697,29 +773,33 @@ long FMTK_PostMsg(
 		else {
 			UnlockMSGList(stat2);
   		UnlockMBX(hMbx,stat);
-			return (-E_Busy);
+			return (-E_NoMoreMsgBlks);
 		}
 	}
-	CopyMsg(&thread->msg,msg);
-  FreeMsg(msg);
+	if (thread->status & TS_TIMEOUT)
+		TCBRemoveFromTimeoutList(TCBPointerToHandle(thread));
+	TCBInsertIntoReadyQueue(TCBPointerToHandle(thread));
+//	thread->msg.dstadr = hMbx;
+	thread->msg.link = 0;
+	thread->msg.type = MT_DATA;
+	thread->msg.timestamp = GetTick();
+	thread->msg.x = 0;
+	thread->msg.y = 0;
+	thread->msg.z = 0;
+	DisplayString("PostMsg(): ");
+	DisplayTetra(pMsg2->d1);
+	OutputChar(' ');
+	DisplayTetra(pMsg2->d2);
+	OutputChar(' ');
+	DisplayTetra(pMsg2->d3);
+	OutputChar('\r');
+	OutputChar('\n');
+	thread->msg.d1 = pMsg2->d1;
+	thread->msg.d2 = pMsg2->d2;
+	thread->msg.d3 = pMsg2->d3;
 	UnlockMSGList(stat2);
   UnlockMBX(hMbx,stat);
-  
-	im_level = SetImLevel7();
-	TCBInsertIntoReadyQueue(TCBPointerToHandle(thread));
-  RestoreSr(im_level);
 	return (E_Ok);
-/*
-	if (thread)
-		TCBInsertIntoReadyQueue(TCBPointerToHandle(thread));
-	if (msg)
-		rr = QueueMsg(mbx, msg);
-	else
-		rr = E_NoMoreMsgBlks;
-	UnlockMSGList(stat2);
-	UnlockMBX(hMbx,stat);
-	return (-rr);
-*/
 }
 
 
@@ -730,21 +810,19 @@ long FMTK_PostMsg(
 		The app's address space will be the active one. The message block is
 	available in the app's address space, as the kernel address space is mapped
 	into it.
+		If calling WaitMsg() on an alarm mailbox, the message is *not* dequeued,
+	but instead a copy of the message is returned.
 	
 	Parameters:
 		d0 = handle of mailbox to wait at
-		d1 = pointer into app's address space to store d1
-		d2 = pointer into app's address space to store d2
-		d3 = pointer into app's address space to store d3
-		d4 = time limit to wait for message
+		d1 = pointer into app's address space to store message
+		d2 = time limit to wait for message
 ----------------------------------------------------------------------------- */
 
 long FMTK_WaitMsg(
 	__reg("d0") long hMbx,
-	__reg("d1") long d1,			// Pointer to where to store d1
-	__reg("d2") long d2,			// pointer to where to store d2
-	__reg("d3") long d3,			// pointer to where to store d3
-	__reg("d4") long timelimit
+	__reg("d1") long pMsg,		// Pointer to where to store message
+	__reg("d2") long timelimit
 )
 {
 	MBX *mbx;
@@ -759,7 +837,6 @@ long FMTK_WaitMsg(
 	if (hMbx == 0 || hMbx > NR_MBX)
 		return (-E_Arg);
 	mbx = MBXHandleToPointer(hMbx);
-	OutputChar('W');
 	do {
 		stat = LockMBX(hMbx,0);
 		// Check for a mailbox owner which indicates the mailbox
@@ -771,22 +848,23 @@ long FMTK_WaitMsg(
 		if ((st2 = LockMSGList(50)) < 0)
 			UnlockMBX(hMbx,stat);
 	} while (st2 < 0);
-	OutputChar('L');
-	msg = DequeueMsg(mbx);
-	OutputChar('D');
+	msg = MBXDequeueMsg(mbx);
   // Return message right away if there is one available.
   if (msg) {
+  	if (pMsg)
+  		CopyMsg((MSG*)pMsg,msg);
+  	/*
 		if (d1)
 			*(long*)d1 = msg->d1;
 		if (d2)
 			*(long*)d2 = msg->d2;
 		if (d3)
 			*(long*)d3 = msg->d3;
+		*/
 		// MoveLongToAppAddressSpace() will set the address space to
- 		FreeMsg(msg);
+		FreeMsg(msg);
 	  UnlockMSGList(st2);
   	UnlockMBX(hMbx,stat);
-		OutputChar('M');
 		return (E_Ok);
 	}
   UnlockMSGList(st2);
@@ -794,82 +872,38 @@ long FMTK_WaitMsg(
 	// Queue thread at mailbox
 	// Interrupts are disabled at this point.
 	//----------------------------------------
-	thread = GetRunningTCBPtr();
 	hThread = GetRunningTCB();
 	TCBRemoveFromReadyQueue(hThread);
-	OutputChar('R');
-	thread->status |= TS_WAITMSG;
-	thread->hWaitMbx = hMbx;
-	thread->mbq_next = 0;
-	if (mbx->tq_head <= 0) {
-		thread->mbq_prev = 0;
-		mbx->tq_head = hThread;
-		mbx->tq_tail = hThread;
-		mbx->tq_count = 1;
-	}
-	else {
-		thread->mbq_prev = mbx->tq_tail;
-		tcbs[mbx->tq_tail-1].mbq_next = hThread;
-		mbx->tq_tail = hThread;
-		mbx->tq_count++;
-	}
+	MBXQueueThread(hMbx, hThread);
   UnlockMBX(hMbx,stat);
-	OutputChar('U');
 	//---------------------------
 	// Is a timeout specified ?
-	if (timelimit) {
+	if (timelimit > 0) {
       //asm { ; Waitmsg here; }
   	sr = SetImLevel7();
-		OutputChar('V');
     TCBInsertIntoTimeoutList(hThread, timelimit);
     RestoreSr(sr);
-		OutputChar('T');
   }
 	//  // Reschedule will cause control to pass to another thread.
 	//  FMTK_Reschedule();
 		// Nothing to do until a message arrives.
  	FMTK_Reschedule();
+ 	DisplayStringCRLF("Waitmsg() after reschdule");
 		// Control will return here as a result of a SendMsg
 		// The SendMsg() should have put the thread back in the ready queue.
-	OutputChar('S');
 	// Control will return here as a result of a SendMsg or a
 	// timeout expiring
+ 	sr = SetImLevel7();
 	rt = GetRunningTCBPtr(); 
 	if (rt->msg.type == MT_NONE) {
-		OutputChar('N');
+    RestoreSr(sr);
+	 	DisplayStringCRLF("Waitmsg() no msg");
 		return (-E_NoMsg);
 	}
-	// rip up the envelope
+	CopyMsg((MSG*)pMsg,&rt->msg);
 	rt->msg.type = MT_NONE;
-	rt->msg.dstadr = 0;
-	rt->msg.retadr = 0;
-	if (d1)
-		*(long*)d1 = rt->msg.d1;
-	if (d2)
-		*(long*)d2 = rt->msg.d2;
-	if (d3)
-		*(long*)d3 = rt->msg.d3;
-	OutputChar('O');
+  RestoreSr(sr);
 	return (E_Ok);
-/*
-	rt = GetRunningTCBPtr(); 
-	if (rt->msg.type == MT_NONE) {
-		OutputChar('N');
-		return (-E_NoMsg);
-	}
-	// rip up the envelope
-	rt->msg.type = MT_NONE;
-	rt->msg.dstadr = 0;
-	rt->msg.retadr = 0;
-	if (d1)
-		*(long*)d1 = rt->msg.d1;
-	if (d2)
-		*(long*)d2 = rt->msg.d2;
-	if (d3)
-		*(long*)d3 = rt->msg.d3;
-	OutputChar('O');
-	return (E_Ok);
-*/
 }
 
 // ----------------------------------------------------------------------------
@@ -880,12 +914,10 @@ long FMTK_WaitMsg(
 
 long FMTK_PeekMsg (
 	__reg("d0") long hMbx,
-	__reg("d1") long d1,
-	__reg("d2") long d2,
-	__reg("d3") long d3
+	__reg("d1") long pMsg
 )
 {
-  return (FMTK_CheckMsg(hMbx, d1, d2, d3, 0));
+  return (FMTK_CheckMsg(hMbx, pMsg, 0));
 }
 
 /* ----------------------------------------------------------------------------
@@ -897,10 +929,8 @@ long FMTK_PeekMsg (
 
 long FMTK_CheckMsg (
 	__reg("d0") long hMbx,
-	__reg("d1") long d1,		// where to put d1
-	__reg("d2") long d2,		// where to put d2
-	__reg("d3") long d3,		// where to put d3
-	__reg("d4") long qrmv
+	__reg("d1") long pMsg,	// where to put message
+	__reg("d2") long qrmv
 )
 {
 	MBX *mbx;
@@ -923,20 +953,18 @@ long FMTK_CheckMsg (
 		return (-E_NotAlloc);
   }
 	if (qrmv)
-		msg = DequeueMsg(mbx);
+		msg = MBXDequeueMsg(mbx);
 	else
 		msg = MSGHandleToPointer(mbx->mq_head);
-	if (msg == null)
+	if (msg == null) {
+	  UnlockMSGList(st2);
+  	UnlockMBX(hMbx,stat);
 		return (-E_NoMsg);
-	if (d1)
-		*(long*)d1 = msg->d1;
-	if (d2)
-		*(long*)d2 = msg->d2;
-	if (d3)
-		*(long*)d3 = msg->d3;
-	if (qrmv) {
- 		FreeMsg(msg);
 	}
+	if (pMsg)
+		CopyMsg((MSG*)pMsg, msg);
+	if (qrmv)
+ 		FreeMsg(msg);
   UnlockMSGList(st2);
   UnlockMBX(hMbx,stat);
 	return (E_Ok);
@@ -995,13 +1023,10 @@ long FMTK_Request(
     UnlockMBX(hMbx,stat);
 		return (-E_NoMoreMsgBlks);
   }
-	msg = AllocMsg();
-	msg->dstadr = hMbx;
-	msg->type = MT_RQB;
-	msg->d1 = hRqb;
-	DequeueThreadFromMailbox(mbx, &thread);
+	msg = AllocMsg(MT_RQB,hRqb,0,0);
+	MBXDequeueThread(mbx, &thread);
 	if (thread == NULL) {
-		rr = QueueMsg(mbx, msg);
+		rr = MBXQueueMsg(mbx, msg);
 	  UnlockMSGList(st2);
   	UnlockMBX(hMbx,stat);
 		return (-rr);
@@ -1057,15 +1082,10 @@ long FMTK_Respond(__reg("d0") long hRqb, __reg("d1") long stat)
 	    UnlockSysSemaphore(st);
 		}
 	}
-	msg = AllocMsg();
-	msg->dstadr = rqb->response_mbx;
-	msg->type = MT_RESP;
-	msg->d1 = hRqb;
-	msg->d2 = stat;
-	msg->d3 = 0;
-	DequeueThreadFromMailbox(MBXHandleToPointer(rqb->response_mbx), &thread);
+	msg = AllocMsg(MT_RESP,hRqb,stat,0);
+	MBXDequeueThread(MBXHandleToPointer(rqb->response_mbx), &thread);
 	if (thread == NULL) {
-		rr = QueueMsg(MBXHandleToPointer(rqb->response_mbx), msg);
+		rr = MBXQueueMsg(MBXHandleToPointer(rqb->response_mbx), msg);
 		UnlockMSGList(st2);
 	  UnlockMBX(rqb->response_mbx,st);
 		return (-rr);

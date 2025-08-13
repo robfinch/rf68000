@@ -193,7 +193,7 @@ _FMTK_TimerISRLaunchpad:
 	; We know which irq it must have been, would not be in this routine unless
 	; it was the right one.
 	lea PIT,a0
-	move.l #16,$1010(a0)				; write flag value to negate irq,underflow flags
+	move.l #16,$2020(a0)				; write flag value to negate irq,underflow flags
 	move.l #$1D000000,$FD260014	; reset edge sense circuit
 
 	; Display IRQ Live indicator
@@ -248,7 +248,7 @@ _FMTK_NextAlarmISR\@
 	endm
 
 _SetupAlarmISRs:
-	rept 64
+	rept 7
 	macAlarmISR
 	endr	
 	rts

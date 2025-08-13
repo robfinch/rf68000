@@ -154,5 +154,8 @@ EOT		EQU		$04
 BLANK EQU		$20
 
 TCB_MAGIC	equ $00424354
+FMTK_MAGIC	equ	('K'<<24)|('T'<<16)|('M'<<8)|'F'
+
+FM_KEYDOWN	equ	$0100
 
 	endif
