@@ -672,13 +672,15 @@ reg [7:0] pmmu_scc;
 reg [7:0] pmmu_cal;
 reg [7:0] pmmu_val;
 reg [7:0] pmmu_acr;
-reg [63:0] cpu_root;
-reg [63:0] dma_root;
-reg [63:0] sys_root;
+reg [63:0] pmmu_cpu_root;
+reg [63:0] pmmu_dma_root;
+reg [63:0] pmmu_sys_root;
 reg [7:0] pmmu_cond;
 reg [3:0] pmmu_ea_shift = 4'd13;
 reg [15:0] pmmu_bad [0:7];
 reg [15:0] pmmu_bac [0:7];
+reg [31:0] pmmu_smask;
+wire [5:0] pmmu_flo;
 atc_entry_t [63:0] atc;
 reg atc_hit, atc_err;
 reg [15:0] appid;
@@ -1617,7 +1619,8 @@ end
 `endif
 
 wire [4:0] ffo;
-ffo24 uffo1 (.i({8'h00,imm[15:0]}), .o(ffo));
+flo24 uflo1 (.i({8'h00,imm[15:0]}), .o(ffo));
+flo48 uflo2 (.i({16'h00,pmmu_smask[31:0]}), .o(pmmu_flo));
 
 always_ff @(posedge clk_i)
 if (rst_i) begin
@@ -7274,22 +7277,22 @@ PFLUSH:
 						end
 					3'b100:
 						begin
-							d <= {4{cal}};
+							d <= {4{pmmu_cal}};
 							fs_data(mmm,rrr,STORE_BYTE,D);	// Current access level
 						end
 					3'b101:
 						begin
-							d <= {4{val}};
+							d <= {4{pmmu_val}};
 							fs_data(mmm,rrr,STORE_BYTE,D);	// Valid access level
 						end
 					3'b110:
 						begin
-							d <= {4{scc}};
+							d <= {4{pmmu_scc}};
 							fs_data(mmm,rrr,STORE_BYTE,D);	// Stack change control
 						end
 					3'b111:
 						begin
-							d <= {4{acr}};
+							d <= {4{pmmu_acr}};
 							fs_data(mmm,rrr,STORE_BYTE,D);	// Access control
 						end
 					endcase
@@ -7430,7 +7433,7 @@ PFLUSH3:
 //-----------------------------------------------------------------------------
 PMOVE1:
 	begin
-		if (pmmu_ir[9]) begin
+		if (pmmu_ir[9])
 			case(pmmu_ir[12:10])
 			3'b001:
 				begin
@@ -7535,7 +7538,7 @@ PMOVE3:
 //-----------------------------------------------------------------------------
 PSAVE:
 	begin
-		is_lea <= `TRUE;
+	    lea <= `TRUE;
 		fs_data(mmm,rrr,STORE_BYTE,D);	// Calc address
 		case(s[7:0])
 		8'h00:	ret();	// NULL
@@ -7547,7 +7550,7 @@ PSAVE:
 	end
 PSAVE1:
 	begin
-		is_lea <= `FALSE;
+		lea <= `FALSE;
 		casez(pmmu_flo)
 		6'd0:	begin	push(PSAVE2); goto(STORE_LWORD); d <= pmmu_cpu_root[63:32]; end
 		6'd1:	begin	push(PSAVE2); goto(STORE_LWORD); d <= pmmu_cpu_root[31:0]; end
@@ -7585,7 +7588,7 @@ PSAVE2:
 		6'b010???:	begin ea <= ea + 4'd2; end
 		6'b011???:	begin ea <= ea + 4'd2; end
 		endcase
-		pmmu_flo[pmmu_flo] <= 1'b0; 
+		pmmu_smask[pmmu_flo] <= 1'b0; 
 		goto (PSAVE1);
 	end
 
@@ -7594,8 +7597,8 @@ PSAVE2:
 //-----------------------------------------------------------------------------
 PRESTORE:
 	begin
-		is_lea <= `TRUE;
-		fs_data(mmm,rrr,LOAD_BYTE,S);	// Calc address
+		lea <= `TRUE;
+		fs_data(mmm,rrr,FETCH_BYTE,S);	// Calc address
 		case(s[7:0])
 		8'h00:	ret();	// NULL
 		8'h24:	begin pmmu_smask <= 32'h00001FFF; goto(PRESTORE1); end
@@ -7643,7 +7646,7 @@ PRESTORE2:
 		6'b010???:	begin pmmu_bad[pmmu_flo[2:0]] <= s[15:0]; ea <= ea + 4'd2; end
 		6'b011???:	begin pmmu_bac[pmmu_flo[2:0]] <= s[15:0]; ea <= ea + 4'd2; end
 		endcase
-		pmmu_flo[pmmu_flo] <= 1'b0; 
+		pmmu_smask[pmmu_flo] <= 1'b0; 
 		goto (PRESTORE1);
 	end
 
