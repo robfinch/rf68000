@@ -1,7 +1,7 @@
 `timescale 1ns / 1ps
 // ============================================================================
 //        __
-//   \\__/ o\    (C) 2025  Robert Finch, Waterloo
+//   \\__/ o\    (C) 2025-2026  Robert Finch, Waterloo
 //    \  __ /    All rights reserved.
 //     \/_//     robfinch<remove>@finitron.ca
 //       ||
@@ -47,7 +47,7 @@ module rf68851(rst_i, clk_i, rbo_i,
 input rst_i;
 input clk_i;
 input rbo_i;
-input [2:0] cfc_i;
+input [3:0] cfc_i;
 input ccyc_i;
 input cstb_i;
 output reg cack_o;
@@ -60,7 +60,7 @@ input [31:0] cadr_i;
 output reg [31:0] cdat_i;
 input [31:0] cdat_o;
 input cios_i;
-output reg [2:0] mfc_o;
+output reg [3:0] mfc_o;
 output reg mcyc_o;
 output reg mstb_o;
 input mack_i;					// From system
@@ -95,6 +95,7 @@ typedef struct packed
 
 typedef struct packed
 {
+	logic lock;
 	logic [15:0] appid;
 	logic [18:0] vpage;
 	pte_t pte;
@@ -128,9 +129,9 @@ reg mmu_en;
 reg [31:0] cdati;
 
 reg [15:0] appid;
-reg [31:13] sys_root;
-reg [31:13] user_root;
-reg [31:13] dma_root;
+reg [31:8] sys_root;
+reg [31:8] cpu_root;
+reg [31:8] dma_root;
 pte_t pte;
 reg [31:0] page_fault_addr;
 reg mmu_access;
@@ -195,7 +196,7 @@ edge_det ued2 (.rst(rst_i), .clk(clk_i), .ce(1'b1), .i(cs_mmu & ~cwe_i), .pe(pe_
 
 always_ff @(posedge clk_i)
 if (rst_i) begin
-	user_root <= 19'd0;
+	cpu_root <= 19'd0;
 	sys_root <= 19'd0;
 	dma_root <= 19'd0;
 end
@@ -207,11 +208,11 @@ if (cs_mmu & cwe_i)
 	12'b000000000010:
 		appid <= cdatr[15:0];
 	12'b000000010000:	
-		user_root <= cdatr[31:13];
+		cpu_root <= cdatr[31:8];
 	12'b000000010010:	
-		sys_root <= cdatr[31:13];
+		sys_root <= cdatr[31:8];
 	12'b000000010100:
-		dma_root <= cdatr[31:13];
+		dma_root <= cdatr[31:8];
 	default:	;
 	endcase
 end
@@ -224,11 +225,11 @@ if (cs_mmu & ~cwe_i)
 	12'b000000000010:
 		cdati <= {16'd0,appid};
 	12'b000000010000:
-		cdati <= {user_root,13'd0};
+		cdati <= {cpu_root,8'd0};
 	12'b000000010010:
-		cdati <= {sys_root,13'd0};
+		cdati <= {sys_root,8'd0};
 	12'b000000010100:
-		cdati <= {dma_root,13'd0};
+		cdati <= {dma_root,8'd0};
 	12'b000000010110:
 		cdati <= page_fault_addr;
 	default:	cdati <= 32'd0;
@@ -348,7 +349,7 @@ else begin
 			work_stb <= 1'b1;
 			work_we <= 1'b0;
 			work_sel <= 4'hF;
-			work_adr <= {cfc_i[2] ? sys_root : user_root,cadr_i[31:24],2'b00};
+			work_adr <= {cfc_i[2] ? sys_root : cpu_root,cadr_i[31:24],2'b00};
 		end
 	mmu_state[ST_ACCESS1]:
 		begin
@@ -357,7 +358,7 @@ else begin
 			work_stb <= 1'b1;
 			work_we <= 1'b0;
 			work_sel <= 4'hF;
-			work_adr <= {cfc_i[2] ? sys_root : user_root,cadr_i[31:24],2'b00};
+			work_adr <= {cfc_i[2] ? sys_root : cpu_root,cadr_i[31:24],2'b00};
 			if (mack_i) begin
 				work_cyc <= 1'b0;
 				work_stb <= 1'b0;

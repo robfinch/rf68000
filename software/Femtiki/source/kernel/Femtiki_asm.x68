@@ -47,6 +47,10 @@ _SetImLevelHelper:
 FemtikiInit:
 	moveq #1,d0
 	movec d0,tr
+	clr.l _InTimerISR
+	clr.l _InTimerISR+4
+	clr.l _InTimerISR+8
+	clr.l _InTimerISR+12
 ;	bsr TCBInit
 ;	clr.b QueueCycle
 FemtikiInitIRQ:
@@ -169,11 +173,14 @@ _FMTK_RescheduleISRLaunchpad:
 ;
 _FMTK_TimerISRLaunchpad:
 	move.w #$2700,sr						; disable interrupts
-;	move.l d0,-(sp)
-;	movec.l coreno,d0
+	move.l d0,-(sp)
+	movec.l coreno,a0
+	adda.l #_InTimerISR,a0						
+	tas (a0)										; Check: in ISR already?
+	bmi .0002										; Yes? Then skip
+	move.l (sp)+,a0
 ;	cmp.b _InTimerISR,d0				; Is it core's turn to process?
 ;	bne .0002										; no, just return
-;	move.l (sp)+,d0
 
 	; Save register context in TCB
 	move.l a0,-(a7)							; push a0
@@ -221,6 +228,12 @@ _FMTK_TimerISRLaunchpad:
 	move.l 136(a0),-(sp)				; push program counter
 	move.w 140(a0),-(sp)				; push status reg
 	move.l 64(a0),a0						; restore a0
+
+	move.l a0,-(sp)							; reset in timer ISR
+	movec.l coreno,a0
+	adda.l #_InTimerISR,a0						
+	clr (a0)
+	move.l (sp)+,d0
 
 ;	addi.b #1,_InTimerISR
 ;	cmpi.b #2,_InTimerISR

@@ -1,7 +1,7 @@
 `timescale 1ns / 1ps
 // ============================================================================
 //        __
-//   \\__/ o\    (C) 2017-2025  Robert Finch, Waterloo
+//   \\__/ o\    (C) 2017-2026  Robert Finch, Waterloo
 //    \  __ /    All rights reserved.
 //     \/_//     robfinch<remove>@finitron.ca
 //       ||
@@ -70,14 +70,14 @@
 //	2E8 on time 31
 //	2EC control 31
 //
-//	800	underflow status
-//  804 synchronization register
-//  808 interrupt enable
-//	80C temporary register
-//	810 output status
-//	814 internal gate
-//	818 internal gate on
-//	81C internal gate off
+//	2000	underflow status
+//  2004 synchronization register
+//  2008 interrupt enable
+//	200C temporary register
+//	2010 output status
+//	2014 internal gate
+//	2018 internal gate on
+//	201C internal gate off
 //
 //	- all counter controls can be written at the same time with a
 //    single instruction allowing synchronization of the counters.
@@ -95,7 +95,7 @@ module rf68000_pit3(rst_i, clk_i, cs_i, irq_chain_i, irq_chain_o, fc_i,
 	clk0, gate0, out0, clk1, gate1, out1, clk2, gate2, out2, clk3, gate3, out3,
 	irq_o
 	);
-parameter NTIMER=2;
+parameter NTIMER=200;
 parameter BITS=32;
 input rst_i;
 input clk_i;
@@ -297,15 +297,15 @@ assign pulse[g] = 1'b0;
 endgenerate
 
 ram_counter #(
-	.NTIMER(64)
+	.NTIMER(NTIMER)
 )
 urc1 (
 	.rst_i(rst_i),
 	.clk_i(clk_i),
 	.iack_i(cs_inta & irq1_o),
-	.cs_i(cs & ~adr_i[13]),
+	.cs_i(cs),
 	.we_i(we_i),
-	.adr_i(adr_i[12:0]),
+	.adr_i(adr_i[13:0]),
 	.dat_i(dat_i),
 	.dat_o(dat1_o),
 	.irq_o(irq1_o),

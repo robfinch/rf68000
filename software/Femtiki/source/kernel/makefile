@@ -1,10 +1,10 @@
 # Makefile for FEMTIKI
 #
-PATH1 = "C:/Users/Robert/OneDrive/documents/Cores2025/rf68000/software/"
-PATH2 = "C:\Users\Robert\OneDrive\documents\Cores2025\rf68000\software\c_standard_lib-master\assert\"
+PATH1 = "C:/Users/Robert/OneDrive/documents/Cores2026/rf68000/software/"
+PATH2 = "C:\Users\Robert\OneDrive\documents\Cores2026\rf68000\software\c_standard_lib-master\assert\"
 PATH = $PATH;$(PATH1)"Femtiki/source/";$(PATH1)"Femtiki/source/kernel/";"F:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Tools\MSVC\14.29.30133\bin\Hostx64\x64"
-INC1 = "C:/Users/Robert/OneDrive/documents/Cores2025/rf68000/software/c_standard_lib-master/_Femtiki/"
-FEMTIKI_INC = "C:/Users/Robert/OneDrive/documents/Cores2025/rf68000/software/Femtiki/source/inc/"
+INC1 = "C:/Users/Robert/OneDrive/documents/Cores2026/rf68000/software/c_standard_lib-master/_Femtiki/"
+FEMTIKI_INC = "C:/Users/Robert/OneDrive/documents/Cores2026/rf68000/software/Femtiki/source/inc/"
 INC = $(INC1)
 #;$(FEMTIKI_INC)
 INCLUDE = $(INC1)	
@@ -29,7 +29,8 @@ SOURCES = \
 	semaphore.c \
 	dbg_console.c \
 	console.c \
-	SetupDevices.c
+	SetupDevices.c \
+	../drivers/KeybdTranslateThread.c
 
 ASMS = \
 	femtiki_vars.x68 \
@@ -44,7 +45,8 @@ OUT = \
 	semaphore.o \
 	dbg_console.o \
 	console.o \
-	SetupDevices.o
+	SetupDevices.o \
+	KeybdTranslateThread.o
 
 Femtiki1.o: $(OUT)
 	$(CCX) $(CFLAGS) femtiki_kern.c
@@ -54,10 +56,12 @@ Femtiki1.o: $(OUT)
 	$(CCX) $(CFLAGS) dbg_console.c
 	$(CCX) $(CFLAGS) console.c
 	$(CCX) $(CFLAGS) SetupDevices.c
+	$(CCX) $(CFLAGS) ../drivers/KeybdTranslateThread.c
 	$(AAX) $(AFLAGS) femtiki_kern.asm -L femtiki_kern.lst -o femtiki_kern.o
 	$(AAX) $(AFLAGS) tcb.asm -L tcb.lst -o tcb.o
 	$(AAX) $(AFLAGS) msg.asm -L msg.lst -o msg.o
 	$(AAX) $(AFLAGS) semaphore.asm -L semaphore.lst -o semaphore.o
+	$(AAX) $(AFLAGS) KeybdTranslateThread.asm -L KeybdTranslateThread.lst -o KeybdTranslateThread.o
 	$(AAX) $(AFLAGS) dbg_console.asm -L dbg_console.lst -o dbg_console.o
 	$(AAX) $(AFLAGS) console.asm -L console.lst -o console.o
 	$(AAX) $(AFLAGS) SetupDevices.asm -L SetupDevices.lst -o SetupDevices.o

@@ -1,7 +1,7 @@
 `timescale 1ns / 1ps
 // ============================================================================
 //        __
-//   \\__/ o\    (C) 2022-2025  Robert Finch, Waterloo
+//   \\__/ o\    (C) 2022-2026  Robert Finch, Waterloo
 //    \  __ /    All rights reserved.
 //     \/_//     robfinch<remove>@finitron.ca
 //       ||
@@ -161,6 +161,8 @@ wire node_clk4;
 wb_cmd_request256_t ch7req;
 wb_cmd_request256_t ch7dreq;	// DRAM request
 wb_cmd_response256_t ch7resp;
+wire [5:0] cpu_num;
+wire [4:0] cpu_cmd;
 wire cpu_cyc;
 wire cpu_stb;
 wire cpu_we;
@@ -217,6 +219,11 @@ wire [31:0] psgm_sel;
 wire [31:0] psgm_adr;
 wire [255:0] psgm_dati;
 wire [255:0] psgm_dato;
+
+wire scr_cyc,scr_stb,scr_we,scr_cack;
+wire [3:0] scr_sel;
+wire [31:0] scr_adr;
+wire [31:0] scr_dati,scr_cdato;
 
 wire kbd_ack;
 wire kbd_irq;
@@ -997,7 +1004,9 @@ assign br3_fta.resp.dat = 32'd0;
 
 always_ff @(posedge clk100)
 	case(cs_br3_leds)
-	1'b1:	br3_dati <= led;
+	1'b1:	br3_dati <= {
+		sw,btnc_db|btnr_db|btnl_db|btnd_db|btnu_db,2'b0,
+		btnc_db,btnr_db,btnl_db,btnd_db,btnu_db,led};
 	1'b0:	br3_dati <= kbd_dato|rand_dato|acia_dato|rtc_dato|spi1_dato|spi2_dato|pit_dato;
 	endcase
 
@@ -1322,18 +1331,42 @@ binary_semamem usema2
 	.dat_o(sema2_dato)
 );
 
+mem_lock uml1
+(
+	.rst_i(rst),
+	.clk_i(node_clk),
+	.s_cmd_i(cpu_cmd),
+	.s_cpu_i(cpu_num),
+	.s_cyc_i(cpu_cyc),
+	.s_stb_i(cpu_stb),
+	.s_we_i(cpu_we),
+	.s_sel_i(cpu_sel),
+	.s_adr_i(cpu_adr),
+	.s_dat_i(cpu_dato),
+	.s_dat_o(scr_cdato),
+	.s_ack_o(scr_cack),
+	.m_cyc_o(scr_cyc),
+	.m_stb_o(scr_stb),
+	.m_we_o(scr_we),
+	.m_sel_o(scr_sel),
+	.m_adr_o(scr_adr),
+	.m_dat_o(scr_dati),
+	.m_dat_i(scr_dato),
+	.m_ack_i(scr_ack)
+);
+
 scratchmem uscr1
 (
 	.rst_i(rst),
 	.cs_i(cs_scr),
 	.clk_i(node_clk),
-	.cyc_i(cpu_cyc),
-	.stb_i(cpu_stb),
+	.cyc_i(scr_cyc),
+	.stb_i(scr_stb),
 	.ack_o(scr_ack),
-	.we_i(cpu_we),
-	.sel_i(cpu_sel),
-	.adr_i(cpu_adr),
-	.dat_i(cpu_dato),
+	.we_i(scr_we),
+	.sel_i(scr_sel),
+	.adr_i(scr_adr),
+	.dat_i(scr_dati),
 	.dat_o(scr_dato)
 );
 
@@ -1463,7 +1496,7 @@ rf68000_pic upic1
 	.i13(1'b0),
 	.i14(1'b0),
 	.i15(1'b0),
-	.i16(acia_irq),
+	.i16(kbd_irq),
 	.i17(1'b0),
 	.i18(1'b0),
 	.i19(1'b0),
@@ -1475,7 +1508,7 @@ rf68000_pic upic1
 	.i25(1'b0),
 	.i26(1'b0),
 	.i27(1'b0),
-	.i28(kbd_irq),
+	.i28(acia_irq),
 	.i29(tmr_irq),
 	.i30(1'b0),
 	.i31(btnu_db),
@@ -1580,6 +1613,7 @@ rf68000_nic unic1
 	.clk_i(node_clk),
 	.s_cti_i(3'd0),
 	.s_atag_o(),
+	.s_cmd_i(5'd0),
 	.s_cyc_i(1'b0),
 	.s_stb_i(1'b0),
 	.s_ack_o(),
@@ -1598,6 +1632,8 @@ rf68000_nic unic1
 	.s_mmus_i(1'b0),
 	.s_ios_i(1'b0),
 	.s_iops_i(1'b0),
+	.m_cpu_o(cpu_num),
+	.m_cmd_o(cpu_cmd),
 	.m_cyc_o(cpu_cyc),
 	.m_stb_o(cpu_stb),
 	.m_ack_i(ack),
@@ -1644,12 +1680,14 @@ nic_ager uager1
 // Debug
 // -----------------------------------------------------------------------------
 
+wire dt_i = btnc_db;
+
 ila_0 uila1 (
 	.clk(mem_ui_clk), // input wire clk
 
 //	.probe0(umpmc1.req_fifoo.req.padr), // input wire [31:0]  probe0  
-	.probe0(unode1.ucpu1.adr_o),//umpu1.ucpu1.pc), // input wire [31:0]  probe0  
-	.probe1(unode1.cyc1),//umpmc1.req_fifoo.req.cyc), // input wire [0:0]  probe1 
+	.probe0(unode1.ucpu1.trace_o),//umpu1.ucpu1.pc), // input wire [31:0]  probe0  
+	.probe1(unode1.ucpu1.dt_i),//umpmc1.req_fifoo.req.cyc), // input wire [0:0]  probe1 
 	.probe2(unode1.ack1),//umpmc1.req_fifoo.req.we), // input wire [0:0]  probe2
 	.probe3(unode1.we1),
 	.probe4(uuart.cs),
@@ -1660,7 +1698,7 @@ ila_0 uila1 (
 	.probe9(mem_rd_data_valid),
 	.probe10(cs_dram),
 //	.probe11({unode1.ram1_we[3:0],cpu_if.req.cmd}),
-	.probe11(dati),
+	.probe11(unode1.ucpu1.pc),	//dati
 /*
 	.probe11({
 		br1_stall,
@@ -1699,8 +1737,8 @@ ila_0 uila1 (
 	.probe17({ugfx1.rasterizer0.clip_ack_i,ugfx1.rasterizer0.clip_write_o,ugfx1.rasterizer0.raster_state}),
 	.probe18(dati),
 	.probe19(1'b0),
-//	.probe20(unode1.ucpu1.state),//uframebuf1.state)
-	.probe20(plic_core),
+	.probe20(unode1.ucpu1.state),//uframebuf1.state)
+//	.probe20(plic_core),
 	.probe21(plic_irq)
 );
 
@@ -1725,9 +1763,9 @@ always_ff @(posedge clk100)
 if (cs_dram)
 	dati <= dram_dato >> {cpu_adr[4:2],5'b0};
 else
-	dati <= br1_cdato|br3_cdato|sema_dato|scr_dato|plic_dato|mmu_dato|io_dat2;
+	dati <= br1_cdato|br3_cdato|sema_dato|scr_cdato|plic_dato|mmu_dato|io_dat2;
 always_ff @(posedge clk100)
-	ack <= dram_ack|br1_cack|br3_cack|sema_ack|scr_ack|plic_ack|mmu_ack|io_ack2;
+	ack <= dram_ack|br1_cack|br3_cack|sema_ack|scr_cack|plic_ack|mmu_ack|io_ack2;
 
 always_ff @(posedge clk100)
 if (rst) begin
@@ -1770,6 +1808,7 @@ rf68000_node #(.SUPPORT_DECFLT(1'b1)) unode1
 	.id(5'd1),
 	.rst1(rst),
 	.rst2(rst|rsts[3]),
+	.dt_i(dt_i),
 	.clken1(1'b1),
 	.clken2(1'b1),
 	.nic_rst(rst),

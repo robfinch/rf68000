@@ -1,7 +1,7 @@
 `timescale 1ns / 1ps
 // ============================================================================
 //        __
-//   \\__/ o\    (C) 2008-2025  Robert Finch, Waterloo
+//   \\__/ o\    (C) 2008-2026  Robert Finch, Waterloo
 //    \  __ /    All rights reserved.
 //     \/_//     robfinch<remove>@finitron.ca
 //       ||
@@ -141,15 +141,16 @@
 // 8 BRAMs
 
 module rf68000(coreno_i, clken_i, rst_i, rst_o, clk_i, dfclk_i, nmi_i, ipl_i, vpa_i, vpa2_i,
-	lock_o, cyc_o, stb_o, ack_i, err_i, rty_i, we_o, sel_o, fc_o, 
+	cmd_o, lock_o, cyc_o, stb_o, ack_i, err_i, rty_i, we_o, sel_o, fc_o, dt_i, trace_o,
 	asid_o, mmus_o, ios_o, iops_o, adr_o, dat_i, dat_o);
 parameter SUPPORT_DECFLT = 1'b1;
 parameter SUPPORT_BINFLT = 1'b0;
+parameter SUPPORT_PMMU = 1'b0;
 parameter IOPS_ADDR = 32'hFDE00000;
 parameter MMU_ADDR = 32'hFDC00000;
 
-typedef enum logic [7:0] {
-	IFETCH = 8'd1,
+typedef enum logic [8:0] {
+	IFETCH = 9'd1,
 	DECODE,
 	RETSTATE,
 	FETCH_BYTE,
@@ -481,7 +482,14 @@ typedef enum logic [7:0] {
 	FETCH_IMM64b,
 	FETCH_IMM64c,
 	
-	WAIT_NACK
+	WAIT_NACK,
+	
+	PBCC,
+	PDBCC,
+	PDBCC1,
+	PFLUSH,
+	PFLUSH1,
+	PFLUSH2
 } state_t;
 
 typedef enum logic [4:0] {
@@ -494,6 +502,13 @@ typedef enum logic [4:0] {
 	FU_EORI_SR, FU_ORI_CCR, FU_ORI_SR, FU_MOVE2CCR,
 	FU_MOVE2SR
 } flag_update_t;
+typedef enum logic [4:0] {
+	CMD_NONE = 5'd0,
+	CMD_RD,
+	CMD_WR,
+	CMD_LOCK,
+	CMD_UNLOCK
+} cmd_e;
 
 parameter S = 1'b0;
 parameter D = 1'b1;
@@ -510,6 +525,7 @@ input vpa2_i;
 input [2:0] ipl_i;
 output lock_o;
 reg lock_o;
+output reg [4:0] cmd_o;
 output cyc_o;
 reg cyc_o;
 output stb_o;
@@ -527,11 +543,22 @@ output [7:0] asid_o;
 output mmus_o;
 output ios_o;
 output iops_o;
-output [31:0] adr_o;
-reg [31:0] adr_o;
+output reg [31:0] adr_o;
 input [31:0] dat_i;
-output [31:0] dat_o;
-reg [31:0] dat_o;
+output reg [31:0] dat_o;
+input dt_i;
+output reg [31:0] trace_o;
+
+typedef struct packed
+{
+	logic v;						// valid bit
+	logic lock;					// entry is locked
+	logic [2:0] func;		// function code
+	logic [15:0] appid;
+	logic [23:0] vpn;		// virtual page number
+	logic [23:0] ppn;		// physical page number
+	pte_t pte;
+} atc_entry_t;
 
 reg em;							// emulation mode
 reg [15:0] ir;
@@ -612,6 +639,15 @@ wire [31:0] a6o;
 wire [31:0] spo;
 wire [31:0] flagso;
 wire [31:0] pco;
+// PMMU registers
+reg [15:0] pmmu_ir;
+reg [31:0] cpu_root;
+reg [31:0] dma_root;
+reg [31:0] sys_root;
+reg [7:0] pmmu_cond;
+reg [3:0] pmmu_ea_shift = 4'd13;
+atc_entry_t [63:0] atc;
+
 reg [15:0] pid_stack [0:15];
 reg [3:0] pid_sp;
 reg cf,vf,nf,zf,xf,sf,tf;
@@ -655,6 +691,9 @@ wire [2:0] RRR = ir[11:9];
 wire [2:0] QQQ = ir[11:9];
 wire [2:0] DDD = ir[11:9];
 wire [2:0] AAA = ir[11:9];
+reg [10:0] tracendx,tracendx2;
+reg [31:0] tracebuf [0:2047];
+
 reg [2:0] FLTSRC;
 reg [2:0] FLTDST;
 reg MMMRRR;
@@ -785,7 +824,7 @@ endgenerate
 //wire [31:0] rfoRnn = rrrr==4'b1111 ? sp : regfile[rrrr];
 reg rfwrL,rfwrB,rfwrW;
 reg rfwrF;
-reg takb, ftakb;
+reg takb, ftakb, ptakb;
 reg [8:0] resB;
 reg [16:0] resW;
 reg [32:0] resL;
@@ -839,7 +878,16 @@ reg [31:0] canary;
 assign mmus_o = adr_o[31:20] == mmus[31:20];
 assign iops_o = adr_o[31:16] == iops[31:16];
 assign ios_o  = adr_o[31:24] == ios [31:24] || adr_o[31:24]==8'hF0;
-integer n;
+wire pe_dt;
+integer n,n1,n2;
+
+initial begin
+	for (n1 = 0; n1 < 2048; n1 = n1 + 1)
+		tracebuf[n1] = 32'd0;
+end
+
+edge_det udted1 (.rst(rst_i), .clk(clk_i), .ce(1'b1), .i(dt_i), .pe(pe_dt), .ne(), .ee());
+
 
 wire [16:0] lfsr_o;
 lfsr17 ulfsr1
@@ -1493,6 +1541,15 @@ end
 end
 endgenerate
 
+generate begin : gPMMUcond
+	always_comb
+	if (pmmu_ir[5:4]==2'd0)
+		ptakb = pmmu_cond[ir[3:1]] ^ ~ir[0];
+	else
+		ptakb = `FALSE;
+end
+endgenerate
+
 `ifdef BIG_ENDIAN
 wire [15:0] iri = pc[1] ? {dat_i[23:16],dat_i[31:24]} : {dat_i[7:0],dat_i[15:8]};
 `else
@@ -1500,21 +1557,24 @@ wire [15:0] iri = pc[1] ? dat_i[31:16] : dat_i[15:0];
 `endif
 
 `ifdef SUPPORT_NANO_CACHE
-integer n1;
+integer n2;
 reg fetchbuf_found;
 reg [15:0] fetchbuf_ir;
 always_comb
 begin
 	fetchbuf_found = 1'b0;
 	fetchbuf_ir = 16'h4E71;
-	for (n1 = 0; n1 < 8; n1 = n1 + 1) begin
-		if (fetchbuf_tag[n1]==pc) begin
-			fetchbuf_ir = fetchbuf[n1];
+	for (n2 = 0; n2 < 8; n2 = n2 + 1) begin
+		if (fetchbuf_tag[n2]==pc) begin
+			fetchbuf_ir = fetchbuf[n2];
 			fetchbuf_found = 1'b1;
 		end
 	end
 end
 `endif
+
+wire [4:0] ffo;
+ffo24 uffo1 (.i({8'h00,imm[15:0]}), .o(ffo));
 
 always_ff @(posedge clk_i)
 if (rst_i) begin
@@ -1523,6 +1583,7 @@ if (rst_i) begin
 	for (n = 0; n < 16; n = n + 1)
 		pid_stack[n] <= 16'd1;
 	em <= 1'b0;
+	cmd_o <= CMD_NONE;
 	lock_o <= 1'b0;
 	cyc_o <= 1'b0;
 	stb_o <= 1'b0;
@@ -1593,8 +1654,17 @@ if (rst_i) begin
 `endif
 	ie_cntdwn <= 3'd0;
 	ie_val <= 3'd7;
+	tracendx <= 11'd0;
+	tracendx2 <= 11'd0;
 end
 else begin
+
+	if (pe_dt)
+		tracendx2 <= 11'd1;
+	if (tracendx2 != 11'd0) begin
+		trace_o <= tracebuf[tracendx2];
+		tracendx2 <= tracendx2 + 11'd1;
+	end	
 
 if (rst_cnt != 5'd0)
     rst_cnt <= rst_cnt - 5'd1;
@@ -2313,6 +2383,8 @@ IFETCH2:
 //-----------------------------------------------------------------------------
 DECODE:
 	begin
+		tracebuf[tracendx] <= pc;
+		tracendx <= tracendx + 11'd1;
 		pc <= pc + 4'd2;
 		opc <= pc + 4'd2;
 		icnt <= icnt + 2'd1;
@@ -3040,7 +3112,32 @@ DECODE:
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
   5'hF:
-  	if (ir[11:9]==3'b001)
+  	// PMMU
+  	if (ir[11:8]==4'd5)
+  		goto (PFLUSH3);
+  	else if (ir[11:9]==3'b000) begin
+  		if (ir[8:7]==2'b00) begin
+  			if (ir[6])
+  				call(FETCH_IMM16,PDBCC);
+  			else begin
+  				if (sf)
+  					call(FETCH_IMM16,PFLUSH);
+  				else
+  					tPrivilegeViolation();
+  			end
+  		end
+			else if (ir[8:7]==2'b01) begin
+				pmmu_ir <= ir;
+				if (ir[6])
+					call(FETCH_IMM32,PBCC);
+				else
+					call(FETCH_IMM16,PBCC);
+			end
+			else
+  			goto (IFETCH2);
+  	end
+  	// FPU
+  	else if (ir[11:9]==3'b001)
 			if (ir[8:7]==2'b01) begin
 				if (ir[6])
 					call(FETCH_IMM32,FBCC);
@@ -5010,6 +5107,7 @@ LFETCH_BYTE:
 		else
 			fc_o <= {sf,2'b01};
 		lock_o <= `HIGH;
+		cmd_o <= CMD_LOCK;
 		cyc_o <= `HIGH;
 		stb_o <= `HIGH;
 		adr_o <= ea;
@@ -5021,6 +5119,7 @@ LFETCH_BYTE:
 		endcase
 	end
 	else if (ack_i) begin
+		cmd_o <= CMD_NONE;
 		stb_o <= 1'b0;
 		sel_o <= 4'b0;
 		if (ds==D) begin
@@ -5333,6 +5432,7 @@ STORE_BYTE:
 //
 USTORE_BYTE:
 	if (!stb_o) begin
+		cmd_o <= CMD_UNLOCK;
 		if (use_sfc)
 			fc_o <= sfc[2:0];
 		else if (use_dfc)
@@ -5352,6 +5452,7 @@ USTORE_BYTE:
 		dat_o <= {4{d[7:0]}};
 	end
 	else if (ack_i) begin
+		cmd_o <= CMD_NONE;
 		lock_o <= 1'b0;
 		cyc_o <= 1'b0;
 		stb_o <= 1'b0;
@@ -6002,152 +6103,46 @@ MOVEM_Xn2D2:
 			ret();
 		end
 		if (mmm!=3'b100) begin
-			if (imm[0]) begin
-				imm[0] <= 1'b0;
-				rrrr <= 4'd0;
-				FLTSRC <= 3'd7;
-			end
-			else if (imm[1]) begin
-				imm[1] <= 1'b0;
-				rrrr <= 4'd1;
-				FLTSRC <= 3'd6;
-			end
-			else if (imm[2]) begin
-				imm[2] <= 1'b0;
-				rrrr <= 4'd2;
-				FLTSRC <= 3'd5;
-			end
-			else if (imm[3]) begin
-				imm[3] <= 1'b0;
-				rrrr <= 4'd3;
-				FLTSRC <= 3'd4;
-			end
-			else if (imm[4]) begin
-				imm[4] <= 1'b0;
-				rrrr <= 4'd4;
-				FLTSRC <= 3'd3;
-			end
-			else if (imm[5]) begin
-				imm[5] <= 1'b0;
-				rrrr <= 4'd5;
-				FLTSRC <= 3'd2;
-			end
-			else if (imm[6]) begin
-				imm[6] <= 1'b0;
-				rrrr <= 4'd6;
-				FLTSRC <= 3'd1;
-			end
-			else if (imm[7]) begin
-				imm[7] <= 1'b0;
-				rrrr <= 4'd7;
-				FLTSRC <= 3'd0;
-			end
-			else if (imm[8]) begin
-				imm[8] <= 1'b0;
-				rrrr <= 4'd8;
-			end
-			else if (imm[9]) begin
-				imm[9] <= 1'b0;
-				rrrr <= 4'd9;
-			end
-			else if (imm[10]) begin
-				imm[10] <= 1'b0;
-				rrrr <= 4'd10;
-			end
-			else if (imm[11]) begin
-				imm[11] <= 1'b0;
-				rrrr <= 4'd11;
-			end
-			else if (imm[12]) begin
-				imm[12] <= 1'b0;
-				rrrr <= 4'd12;
-			end
-			else if (imm[13]) begin
-				imm[13] <= 1'b0;
-				rrrr <= 4'd13;
-			end
-			else if (imm[14]) begin
-				imm[14] <= 1'b0;
-				rrrr <= 4'd14;
-			end
-			else if (imm[15]) begin
-				imm[15] <= 1'b0;
-				rrrr <= 4'd15;
-			end
+			case(ffo)
+			5'd0: begin imm[0] <= 1'b0; rrrr <= 4'd0; FLTSRC <= 3'd7; end
+			5'd1: begin imm[1] <= 1'b0; rrrr <= 4'd1; FLTSRC <= 3'd6; end
+			5'd2: begin imm[2] <= 1'b0; rrrr <= 4'd2; FLTSRC <= 3'd5; end
+			5'd3: begin imm[3] <= 1'b0; rrrr <= 4'd3; FLTSRC <= 3'd4; end
+			5'd4: begin imm[4] <= 1'b0; rrrr <= 4'd4; FLTSRC <= 3'd3; end
+			5'd5: begin imm[5] <= 1'b0; rrrr <= 4'd5; FLTSRC <= 3'd2; end
+			5'd6: begin imm[6] <= 1'b0; rrrr <= 4'd6; FLTSRC <= 3'd1; end
+			5'd7: begin imm[7] <= 1'b0; rrrr <= 4'd7; FLTSRC <= 3'd0; end
+			5'd8: begin imm[8] <= 1'b0; rrrr <= 4'd8; end
+			5'd9: begin imm[9] <= 1'b0; rrrr <= 4'd9; end
+			5'd10: begin imm[10] <= 1'b0; rrrr <= 4'd10; end
+			5'd11: begin imm[11] <= 1'b0; rrrr <= 4'd11; end
+			5'd12: begin imm[12] <= 1'b0; rrrr <= 4'd12; end
+			5'd13: begin imm[13] <= 1'b0; rrrr <= 4'd13; end
+			5'd14: begin imm[14] <= 1'b0; rrrr <= 4'd14; end
+			5'd15: begin imm[15] <= 1'b0; rrrr <= 4'd15; end
+			default:	;
+			endcase
 		end
 		else begin
-			if (imm[0]) begin
-				imm[0] <= 1'b0;
-				rrrr <= 4'd15;
-				FLTSRC <= 3'd0;
-			end
-			else if (imm[1]) begin
-				imm[1] <= 1'b0;
-				rrrr <= 4'd14;
-				FLTSRC <= 3'd1;
-			end
-			else if (imm[2]) begin
-				imm[2] <= 1'b0;
-				rrrr <= 4'd13;
-				FLTSRC <= 3'd2;
-			end
-			else if (imm[3]) begin
-				imm[3] <= 1'b0;
-				rrrr <= 4'd12;
-				FLTSRC <= 3'd3;
-			end
-			else if (imm[4]) begin
-				imm[4] <= 1'b0;
-				rrrr <= 4'd11;
-				FLTSRC <= 3'd4;
-			end
-			else if (imm[5]) begin
-				imm[5] <= 1'b0;
-				rrrr <= 4'd10;
-				FLTSRC <= 3'd5;
-			end
-			else if (imm[6]) begin
-				imm[6] <= 1'b0;
-				rrrr <= 4'd9;
-				FLTSRC <= 3'd6;
-			end
-			else if (imm[7]) begin
-				imm[7] <= 1'b0;
-				rrrr <= 4'd8;
-				FLTSRC <= 3'd7;
-			end
-			else if (imm[8]) begin
-				imm[8] <= 1'b0;
-				rrrr <= 4'd7;
-			end
-			else if (imm[9]) begin
-				imm[9] <= 1'b0;
-				rrrr <= 4'd6;
-			end
-			else if (imm[10]) begin
-				imm[10] <= 1'b0;
-				rrrr <= 4'd5;
-			end
-			else if (imm[11]) begin
-				imm[11] <= 1'b0;
-				rrrr <= 4'd4;
-			end
-			else if (imm[12]) begin
-				imm[12] <= 1'b0;
-				rrrr <= 4'd3;
-			end
-			else if (imm[13]) begin
-				imm[13] <= 1'b0;
-				rrrr <= 4'd2;
-			end
-			else if (imm[14]) begin
-				imm[14] <= 1'b0;
-				rrrr <= 4'd1;
-			end
-			else if (imm[15]) begin
-				imm[15] <= 1'b0;
-				rrrr <= 4'd0;
-			end
+			case(ffo)
+			5'd0: begin imm[0] <= 1'b0; rrrr <= 4'd15; FLTSRC <= 3'd0; end
+			5'd1: begin imm[1] <= 1'b0; rrrr <= 4'd14; FLTSRC <= 3'd1; end
+			5'd2: begin imm[2] <= 1'b0; rrrr <= 4'd13; FLTSRC <= 3'd2; end
+			5'd3: begin imm[3] <= 1'b0; rrrr <= 4'd12; FLTSRC <= 3'd3; end
+			5'd4: begin imm[4] <= 1'b0; rrrr <= 4'd11; FLTSRC <= 3'd4; end
+			5'd5: begin	imm[5] <= 1'b0; rrrr <= 4'd10; FLTSRC <= 3'd5; end
+			5'd6: begin imm[6] <= 1'b0; rrrr <= 4'd9;	FLTSRC <= 3'd6; end
+			5'd7: begin imm[7] <= 1'b0; rrrr <= 4'd8; FLTSRC <= 3'd7; end
+			5'd8: begin imm[8] <= 1'b0; rrrr <= 4'd7; end
+			5'd9: begin imm[9] <= 1'b0; rrrr <= 4'd6; end
+			5'd10: begin imm[10] <= 1'b0; rrrr <= 4'd5; end
+			5'd11: begin imm[11] <= 1'b0; rrrr <= 4'd4; end
+			5'd12: begin imm[12] <= 1'b0; rrrr <= 4'd3; end
+			5'd13: begin imm[13] <= 1'b0; rrrr <= 4'd2; end
+			5'd14: begin imm[14] <= 1'b0; rrrr <= 4'd1; end
+			5'd15: begin imm[15] <= 1'b0; rrrr <= 4'd0; end
+			default:	;
+			endcase
 		end
 	end
 MOVEM_Xn2D3:
@@ -6190,152 +6185,46 @@ MOVEM_Xn2D4:
 			ret();
 		end
 		if (mmm!=3'b100) begin
-			if (imm[0]) begin
-				imm[0] <= 1'b0;
-				rrrr <= 4'd0;
-				FLTSRC <= 3'd7;
-			end
-			else if (imm[1]) begin
-				imm[1] <= 1'b0;
-				rrrr <= 4'd1;
-				FLTSRC <= 3'd6;
-			end
-			else if (imm[2]) begin
-				imm[2] <= 1'b0;
-				rrrr <= 4'd2;
-				FLTSRC <= 3'd5;
-			end
-			else if (imm[3]) begin
-				imm[3] <= 1'b0;
-				rrrr <= 4'd3;
-				FLTSRC <= 3'd4;
-			end
-			else if (imm[4]) begin
-				imm[4] <= 1'b0;
-				rrrr <= 4'd4;
-				FLTSRC <= 3'd3;
-			end
-			else if (imm[5]) begin
-				imm[5] <= 1'b0;
-				rrrr <= 4'd5;
-				FLTSRC <= 3'd2;
-			end
-			else if (imm[6]) begin
-				imm[6] <= 1'b0;
-				rrrr <= 4'd6;
-				FLTSRC <= 3'd1;
-			end
-			else if (imm[7]) begin
-				imm[7] <= 1'b0;
-				rrrr <= 4'd7;
-				FLTSRC <= 3'd0;
-			end
-			else if (imm[8]) begin
-				imm[8] <= 1'b0;
-				rrrr <= 4'd8;
-			end
-			else if (imm[9]) begin
-				imm[9] <= 1'b0;
-				rrrr <= 4'd9;
-			end
-			else if (imm[10]) begin
-				imm[10] <= 1'b0;
-				rrrr <= 4'd10;
-			end
-			else if (imm[11]) begin
-				imm[11] <= 1'b0;
-				rrrr <= 4'd11;
-			end
-			else if (imm[12]) begin
-				imm[12] <= 1'b0;
-				rrrr <= 4'd12;
-			end
-			else if (imm[13]) begin
-				imm[13] <= 1'b0;
-				rrrr <= 4'd13;
-			end
-			else if (imm[14]) begin
-				imm[14] <= 1'b0;
-				rrrr <= 4'd14;
-			end
-			else if (imm[15]) begin
-				imm[15] <= 1'b0;
-				rrrr <= 4'd15;
-			end
+			case(ffo)
+			5'd0: begin imm[0] <= 1'b0; rrrr <= 4'd0; FLTSRC <= 3'd7; end
+			5'd1: begin imm[1] <= 1'b0; rrrr <= 4'd1; FLTSRC <= 3'd6; end
+			5'd2: begin imm[2] <= 1'b0; rrrr <= 4'd2; FLTSRC <= 3'd5;	end
+			5'd3: begin imm[3] <= 1'b0; rrrr <= 4'd3; FLTSRC <= 3'd4; end
+			5'd4: begin	imm[4] <= 1'b0;	rrrr <= 4'd4;	FLTSRC <= 3'd3;	end
+			5'd5: begin	imm[5] <= 1'b0;	rrrr <= 4'd5;	FLTSRC <= 3'd2;	end
+			5'd6: begin	imm[6] <= 1'b0;	rrrr <= 4'd6;	FLTSRC <= 3'd1;	end
+			5'd7: begin	imm[7] <= 1'b0;	rrrr <= 4'd7;	FLTSRC <= 3'd0;	end
+			5'd8: begin	imm[8] <= 1'b0;	rrrr <= 4'd8;	end
+			5'd9: begin	imm[9] <= 1'b0;	rrrr <= 4'd9;	end
+			5'd10: begin imm[10] <= 1'b0;	rrrr <= 4'd10; end
+			5'd11: begin imm[11] <= 1'b0;	rrrr <= 4'd11; end
+			5'd13: begin imm[12] <= 1'b0;	rrrr <= 4'd12; end
+			5'd13: begin imm[13] <= 1'b0; rrrr <= 4'd13; end
+			5'd14: begin imm[14] <= 1'b0; rrrr <= 4'd14; end
+			5'd15: begin imm[15] <= 1'b0; rrrr <= 4'd15; end
+			default:	;
+			endcase
 		end
 		else begin
-			if (imm[0]) begin
-				imm[0] <= 1'b0;
-				rrrr <= 4'd15;
-				FLTSRC <= 3'd0;
-			end
-			else if (imm[1]) begin
-				imm[1] <= 1'b0;
-				rrrr <= 4'd14;
-				FLTSRC <= 3'd1;
-			end
-			else if (imm[2]) begin
-				imm[2] <= 1'b0;
-				rrrr <= 4'd13;
-				FLTSRC <= 3'd2;
-			end
-			else if (imm[3]) begin
-				imm[3] <= 1'b0;
-				rrrr <= 4'd12;
-				FLTSRC <= 3'd3;
-			end
-			else if (imm[4]) begin
-				imm[4] <= 1'b0;
-				rrrr <= 4'd11;
-				FLTSRC <= 3'd4;
-			end
-			else if (imm[5]) begin
-				imm[5] <= 1'b0;
-				rrrr <= 4'd10;
-				FLTSRC <= 3'd5;
-			end
-			else if (imm[6]) begin
-				imm[6] <= 1'b0;
-				rrrr <= 4'd9;
-				FLTSRC <= 3'd6;
-			end
-			else if (imm[7]) begin
-				imm[7] <= 1'b0;
-				rrrr <= 4'd8;
-				FLTSRC <= 3'd7;
-			end
-			else if (imm[8]) begin
-				imm[8] <= 1'b0;
-				rrrr <= 4'd7;
-			end
-			else if (imm[9]) begin
-				imm[9] <= 1'b0;
-				rrrr <= 4'd6;
-			end
-			else if (imm[10]) begin
-				imm[10] <= 1'b0;
-				rrrr <= 4'd5;
-			end
-			else if (imm[11]) begin
-				imm[11] <= 1'b0;
-				rrrr <= 4'd4;
-			end
-			else if (imm[12]) begin
-				imm[12] <= 1'b0;
-				rrrr <= 4'd3;
-			end
-			else if (imm[13]) begin
-				imm[13] <= 1'b0;
-				rrrr <= 4'd2;
-			end
-			else if (imm[14]) begin
-				imm[14] <= 1'b0;
-				rrrr <= 4'd1;
-			end
-			else if (imm[15]) begin
-				imm[15] <= 1'b0;
-				rrrr <= 4'd0;
-			end
+			case(ffo)
+			5'd0: begin imm[0] <= 1'b0; rrrr <= 4'd15; FLTSRC <= 3'd0; end
+			5'd1: begin	imm[1] <= 1'b0; rrrr <= 4'd14; FLTSRC <= 3'd1; end
+			5'd2: begin imm[2] <= 1'b0; rrrr <= 4'd13; FLTSRC <= 3'd2; end
+			5'd3: begin imm[3] <= 1'b0;	rrrr <= 4'd12; FLTSRC <= 3'd3; end
+			5'd4: begin imm[4] <= 1'b0; rrrr <= 4'd11; FLTSRC <= 3'd4; end
+			5'd5: begin imm[5] <= 1'b0; rrrr <= 4'd10; FLTSRC <= 3'd5; end
+			5'd6: begin imm[6] <= 1'b0; rrrr <= 4'd9; FLTSRC <= 3'd6; end
+			5'd7: begin imm[7] <= 1'b0; rrrr <= 4'd8; FLTSRC <= 3'd7; end
+			5'd8: begin imm[8] <= 1'b0; rrrr <= 4'd7; end
+			5'd9: begin	imm[9] <= 1'b0; rrrr <= 4'd6; end
+			5'd10: begin imm[10] <= 1'b0; rrrr <= 4'd5; end
+			5'd11: begin imm[11] <= 1'b0;	rrrr <= 4'd4; end
+			5'd12: begin imm[12] <= 1'b0; rrrr <= 4'd3; end
+			5'd13: begin imm[13] <= 1'b0; rrrr <= 4'd2; end
+			5'd14: begin imm[14] <= 1'b0; rrrr <= 4'd1; end
+			5'd15: begin imm[15] <= 1'b0; rrrr <= 4'd0; end
+			default:	;
+			endcase
 		end
 	end
 	
@@ -6394,136 +6283,45 @@ MOVEM_s2Xn3:
 			resL <= {{16{s[15]}},s[15:0]};
 		resF <= fps;
 		if (mmm!=3'b100) begin
-			if (imm[0]) begin
-				imm[0] <= 1'b0;
-				Rt <= 4'd0 ^ {3{fmovem}};
-			end
-			else if (imm[1]) begin
-				imm[1] <= 1'b0;
-				Rt <= 4'd1 ^ {3{fmovem}};
-			end
-			else if (imm[2]) begin
-				imm[2] <= 1'b0;
-				Rt <= 4'd2 ^ {3{fmovem}};
-			end
-			else if (imm[3]) begin
-				imm[3] <= 1'b0;
-				Rt <= 4'd3 ^ {3{fmovem}};
-			end
-			else if (imm[4]) begin
-				imm[4] <= 1'b0;
-				Rt <= 4'd4 ^ {3{fmovem}};
-			end
-			else if (imm[5]) begin
-				imm[5] <= 1'b0;
-				Rt <= 4'd5 ^ {3{fmovem}};
-			end
-			else if (imm[6]) begin
-				imm[6] <= 1'b0;
-				Rt <= 4'd6 ^ {3{fmovem}};
-			end
-			else if (imm[7]) begin
-				imm[7] <= 1'b0;
-				Rt <= 4'd7 ^ {3{fmovem}};
-			end
-			else if (imm[8]) begin
-				imm[8] <= 1'b0;
-				Rt <= 4'd8;
-			end
-			else if (imm[9]) begin
-				imm[9] <= 1'b0;
-				Rt <= 4'd9;
-			end
-			else if (imm[10]) begin
-				imm[10] <= 1'b0;
-				Rt <= 4'd10;
-			end
-			else if (imm[11]) begin
-				imm[11] <= 1'b0;
-				Rt <= 4'd11;
-			end
-			else if (imm[12]) begin
-				imm[12] <= 1'b0;
-				Rt <= 4'd12;
-			end
-			else if (imm[13]) begin
-				imm[13] <= 1'b0;
-				Rt <= 4'd13;
-			end
-			else if (imm[14]) begin
-				imm[14] <= 1'b0;
-				Rt <= 4'd14;
-			end
-			else if (imm[15]) begin
-				imm[15] <= 1'b0;
-				Rt <= 4'd15;
-			end
+			case(ffo)
+			5'd0: begin imm[0] <= 1'b0; Rt <= 4'd0 ^ {3{fmovem}}; end
+			5'd1: begin imm[1] <= 1'b0; Rt <= 4'd1 ^ {3{fmovem}};	end
+			5'd2: begin	imm[2] <= 1'b0; Rt <= 4'd2 ^ {3{fmovem}};	end
+			5'd3: begin	imm[3] <= 1'b0;	Rt <= 4'd3 ^ {3{fmovem}};	end
+			5'd4: begin	imm[4] <= 1'b0;	Rt <= 4'd4 ^ {3{fmovem}};	end
+			5'd5: begin	imm[5] <= 1'b0;	Rt <= 4'd5 ^ {3{fmovem}};	end
+			5'd6: begin	imm[6] <= 1'b0;	Rt <= 4'd6 ^ {3{fmovem}};	end
+			5'd7: begin	imm[7] <= 1'b0;	Rt <= 4'd7 ^ {3{fmovem}};	end
+			5'd8: begin	imm[8] <= 1'b0;	Rt <= 4'd8;	end
+			5'd9: begin	imm[9] <= 1'b0;	Rt <= 4'd9;	end
+			5'd10: begin imm[10] <= 1'b0;	Rt <= 4'd10; end
+			5'd11: begin imm[11] <= 1'b0;	Rt <= 4'd11; end
+			5'd12: begin imm[12] <= 1'b0;	Rt <= 4'd12; end
+			5'd13: begin imm[13] <= 1'b0;	Rt <= 4'd13; end
+			5'd14: begin imm[14] <= 1'b0;	Rt <= 4'd14; end
+			5'd15: begin imm[15] <= 1'b0; Rt <= 4'd15; end
+			default:	;
+			endcase
 		end
 		else begin
-			if (imm[0]) begin
-				imm[0] <= 1'b0;
-				Rt <= 4'd15 ^ {4{fmovem}};
-			end
-			else if (imm[1]) begin
-				imm[1] <= 1'b0;
-				Rt <= 4'd14 ^ {4{fmovem}};
-			end
-			else if (imm[2]) begin
-				imm[2] <= 1'b0;
-				Rt <= 4'd13 ^ {4{fmovem}};
-			end
-			else if (imm[3]) begin
-				imm[3] <= 1'b0;
-				Rt <= 4'd12 ^ {4{fmovem}};
-			end
-			else if (imm[4]) begin
-				imm[4] <= 1'b0;
-				Rt <= 4'd11 ^ {4{fmovem}};
-			end
-			else if (imm[5]) begin
-				imm[5] <= 1'b0;
-				Rt <= 4'd10 ^ {4{fmovem}};
-			end
-			else if (imm[6]) begin
-				imm[6] <= 1'b0;
-				Rt <= 4'd9 ^ {4{fmovem}};
-			end
-			else if (imm[7]) begin
-				imm[7] <= 1'b0;
-				Rt <= 4'd8 ^ {4{fmovem}};
-			end
-			else if (imm[8]) begin
-				imm[8] <= 1'b0;
-				Rt <= 4'd7;
-			end
-			else if (imm[9]) begin
-				imm[9] <= 1'b0;
-				Rt <= 4'd6;
-			end
-			else if (imm[10]) begin
-				imm[10] <= 1'b0;
-				Rt <= 4'd5;
-			end
-			else if (imm[11]) begin
-				imm[11] <= 1'b0;
-				Rt <= 4'd4;
-			end
-			else if (imm[12]) begin
-				imm[12] <= 1'b0;
-				Rt <= 4'd3;
-			end
-			else if (imm[13]) begin
-				imm[13] <= 1'b0;
-				Rt <= 4'd2;
-			end
-			else if (imm[14]) begin
-				imm[14] <= 1'b0;
-				Rt <= 4'd1;
-			end
-			else if (imm[15]) begin
-				imm[15] <= 1'b0;
-				Rt <= 4'd0;
-			end
+			case(ffo)
+			5'd0: begin imm[0] <= 1'b0; Rt <= 4'd15 ^ {4{fmovem}}; end
+			5'd1: begin imm[1] <= 1'b0; Rt <= 4'd14 ^ {4{fmovem}}; end
+			5'd2: begin	imm[2] <= 1'b0;	Rt <= 4'd13 ^ {4{fmovem}}; end
+			5'd3: begin imm[3] <= 1'b0; Rt <= 4'd12 ^ {4{fmovem}}; end
+			5'd4: begin imm[4] <= 1'b0; Rt <= 4'd11 ^ {4{fmovem}}; end
+			5'd5: begin imm[5] <= 1'b0; Rt <= 4'd10 ^ {4{fmovem}}; end
+			5'd6: begin imm[6] <= 1'b0; Rt <= 4'd9 ^ {4{fmovem}}; end
+			5'd7: begin imm[7] <= 1'b0;	Rt <= 4'd8 ^ {4{fmovem}}; end
+			5'd8: begin	imm[8] <= 1'b0; Rt <= 4'd7;	end
+			5'd9: begin imm[9] <= 1'b0; Rt <= 4'd6; end
+			5'd10: begin imm[10] <= 1'b0; Rt <= 4'd5; end
+			5'd11: begin imm[11] <= 1'b0; Rt <= 4'd4; end
+			5'd12: begin imm[12] <= 1'b0;	Rt <= 4'd3; end
+			5'd13: begin imm[13] <= 1'b0; Rt <= 4'd2; end
+			5'd14: begin imm[14] <= 1'b0; Rt <= 4'd1; end
+			5'd15: begin imm[15] <= 1'b0; Rt <= 4'd0; end
+			endcase
 		end
 	end
 //----------------------------------------------------
@@ -7100,15 +6898,7 @@ FMOVE:
 	end
 FMOVE1:
 	begin
-		if (SUPPORT_DECFLT) begin
-			resF <= fps[95:0];
-			fzf <= fps[94:0]==95'd0;
-			fnf <= fps[95];
-			Rt <= {1'b0,FLTDST};
-			rfwrF <= 1'b1;
-			ret();
-		end
-		else if (SUPPORT_DECFLT) begin
+		if (SUPPORT_DECFLT|SUPPORT_BINFLT) begin
 			resF <= fps[95:0];
 			fzf <= fps[94:0]==95'd0;
 			fnf <= fps[95];
@@ -7289,6 +7079,140 @@ FBCC:
 			pc <= opc + imm;
 		ret();
 	end
+PBCC:
+	begin
+		if (ptakb)
+			pc <= opc + imm;
+		ret();
+	end
+
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+// PMMU states
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+
+//-----------------------------------------------------------------------------
+// PDBcc
+//-----------------------------------------------------------------------------
+PDBCC:
+	begin
+		pmmu_ir <= imm[15:0];
+		call(FETCH_IMM16,PDBCC1);
+	end
+PDBCC1:
+	if (~takb) begin
+		resW <= rfoDnn - 4'd1;
+		Rt <= {1'b0,rrr};
+		rfwrW <= 1'b1;
+		if (rfoDnn[15:0]!=0)
+			pc <= opc + imm;
+		ret();
+	end
+	else
+		ret();
+
+//-----------------------------------------------------------------------------
+// PFLUSH
+//-----------------------------------------------------------------------------
+
+PFLUSH:
+	begin
+		pmmu_ir <= imm[15:0];
+		case(imm[12:10])
+		3'b001:
+			begin	// flush all?
+				for (n2 = 0; n2 < $size(atc); n2 = n2 + 1)
+					atc[n2].v <= 1'b0;
+				ret();
+			end
+		3'b100:	// flush by func code?
+			begin
+				for (n2 = 0; n2 < $size(atc); n2 = n2 + 1)
+					if (atc[n2].v)
+						casez(imm[4:0])
+						5'b00000: 
+							if ((atc[n2].func & imm[8:5])==(sfc[2:0] & imm[8:5]))
+								atc[n2].v <= 1'b0;
+						5'b00001:
+							if ((atc[n2].func & imm[8:5])==(dfc[2:0] & imm[8:5]))
+								atc[n2].v <= 1'b0;
+						5'b01???:
+							case(imm[2:0])
+							3'b000:	if ((atc[n2].func & imm[8:5])==(d0[2:0] & imm[8:5])) atc[n2].v <= 1'b0;
+							3'b001:	if ((atc[n2].func & imm[8:5])==(d0[2:0] & imm[8:5])) atc[n2].v <= 1'b0;
+							3'b010:	if ((atc[n2].func & imm[8:5])==(d0[2:0] & imm[8:5])) atc[n2].v <= 1'b0;
+							3'b011:	if ((atc[n2].func & imm[8:5])==(d0[2:0] & imm[8:5])) atc[n2].v <= 1'b0;
+							3'b100:	if ((atc[n2].func & imm[8:5])==(d0[2:0] & imm[8:5])) atc[n2].v <= 1'b0;
+							3'b101:	if ((atc[n2].func & imm[8:5])==(d0[2:0] & imm[8:5])) atc[n2].v <= 1'b0;
+							3'b110:	if ((atc[n2].func & imm[8:5])==(d0[2:0] & imm[8:5])) atc[n2].v <= 1'b0;
+							3'b111:	if ((atc[n2].func & imm[8:5])==(d0[2:0] & imm[8:5])) atc[n2].v <= 1'b0;
+							endcase
+						5'b10???:
+							if ((atc[n2].func & imm[8:5])==(imm[2:0] & imm[8:5]))
+								atc[n2].v <= 1'b0;
+						default:	tIllegal();
+						endcase
+				ret();
+			end
+		3'b110:
+			begin
+				lea <= `TRUE;
+				goto (PFLUSH1);
+			end
+		default:	tIllegal();
+		endcase
+	end
+PFLUSH1:
+	begin
+		push(PFLUSH2);
+		fs_data(mmm,rrr,FETCH_NOP_LWORD,S);
+	end
+PFLUSH2:
+	begin
+		for (n2 = 0; n2 < $size(atc); n2 = n2 + 1)
+			if (atc[n2].v)
+				casez(imm[4:0])
+				5'b00000: 
+					if ((atc[n2].func & imm[8:5])==(sfc[2:0] & imm[8:5]))
+						atc[n2].v <= (ea >> pmmu_ea_shift) != atc[n2].vpn;
+				5'b00001:
+					if ((atc[n2].func & imm[8:5])==(dfc[2:0] & imm[8:5]))
+						atc[n2].v <= (ea >> pmmu_ea_shift) != atc[n2].vpn;
+				5'b01???:
+					case(imm[2:0])
+					3'b000:	if ((atc[n2].func & imm[8:5])==(d0[2:0] & imm[8:5])) atc[n2].v <= (ea >> pmmu_ea_shift) != atc[n2].vpn;
+					3'b001:	if ((atc[n2].func & imm[8:5])==(d0[2:0] & imm[8:5])) atc[n2].v <= (ea >> pmmu_ea_shift) != atc[n2].vpn;
+					3'b010:	if ((atc[n2].func & imm[8:5])==(d0[2:0] & imm[8:5])) atc[n2].v <= (ea >> pmmu_ea_shift) != atc[n2].vpn;
+					3'b011:	if ((atc[n2].func & imm[8:5])==(d0[2:0] & imm[8:5])) atc[n2].v <= (ea >> pmmu_ea_shift) != atc[n2].vpn;
+					3'b100:	if ((atc[n2].func & imm[8:5])==(d0[2:0] & imm[8:5])) atc[n2].v <= (ea >> pmmu_ea_shift) != atc[n2].vpn;
+					3'b101:	if ((atc[n2].func & imm[8:5])==(d0[2:0] & imm[8:5])) atc[n2].v <= (ea >> pmmu_ea_shift) != atc[n2].vpn;
+					3'b110:	if ((atc[n2].func & imm[8:5])==(d0[2:0] & imm[8:5])) atc[n2].v <= (ea >> pmmu_ea_shift) != atc[n2].vpn;
+					3'b111:	if ((atc[n2].func & imm[8:5])==(d0[2:0] & imm[8:5])) atc[n2].v <= (ea >> pmmu_ea_shift) != atc[n2].vpn;
+					endcase
+				5'b10???:
+					if ((atc[n2].func & imm[8:5])==(imm[2:0] & imm[8:5]))
+						atc[n2].v <= (ea >> pmmu_ea_shift) != atc[n2].vpn;
+				default:	tIllegal();
+				endcase
+		ret();
+	end
+PFLUSH3:
+	begin
+		for (n2 = 0; n2 < $size(atc); n2 = n2 + 1)
+			if (atc[n2].v)
+				case(ir[4:3])
+				2'b00:	if (!atc[n2].g && atc[n2].func==dfc[2:0] && (ea >> pmmu_ea_shift) == (rfoAn >> pmmu_ea_shift)) atc[n2] <= 1'b0;
+				2'b01:	if (atc[n2].func==dfc[2:0] && (ea >> pmmu_ea_shift) == (rfoAn >> pmmu_ea_shift)) atc[n2] <= 1'b0;
+				2'b10:	if (!atc[n2].g) atc[n2] <= 1'b0;	// flush all except global
+				2'b11:	atc[n2] <= 1'b0;									// flush all entries	
+				endcase
+		ret();
+	end	
+
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+
 /*	
 FCOPYEXP:
 	begin

@@ -20,11 +20,11 @@ extern void DisplayTetra(__reg("d1") long);
 void DumpThreads()
 {
 	int nn;
-	int im;
+	int sr;
 	
-	im = SetImLevel(7);
 	DisplayStringCRLF("\r\nthrd next stat    pc       sp    owner pri affin");
 	DisplayStringCRLF(    "---- ---- ---- -------- -------- ----- --- -----");
+	sr = SetImLevel7();
 	for (nn = 0; nn < 10;/*NR_TCB;*/ nn++) {
 		if (tcbs[nn].hApp != 0 || tcbs[nn].status != 0)
 		{
@@ -60,7 +60,7 @@ void DumpThreads()
 			OutputChar('\n');
 		}
 	}
-	SetImLevelHelper(im);
+	RestoreSr(sr);
 }
 
 void DumpTOL()

@@ -1,6 +1,6 @@
 // ============================================================================
 //        __
-//   \\__/ o\    (C) 2012-2025  Robert Finch, Waterloo
+//   \\__/ o\    (C) 2012-2026  Robert Finch, Waterloo
 //    \  __ /    All rights reserved.
 //     \/_//     robfinch<remove>@finitron.ca
 //       ||
@@ -676,7 +676,7 @@ void IdleThread()
 	unsigned long *screen = (unsigned long *)0xFD000000L;
 	MSG msg;
 
-	hIdleMbx = FMTK_AllocMbx();
+//	hIdleMbx = FMTK_AllocMbx();
 		
 	while(1) {
 		ii++;
@@ -684,8 +684,8 @@ void IdleThread()
 //     screen[47] = -screen[47];
 //	DisplayLEDS(hMbx);
 	
+/*		
 		if (hIdleMbx > 0) {
-		
 			rr = FMTK_WaitMsg(hIdleMbx, (long)&msg, 500L);
 			if (rr == E_Ok) {
 				DisplayString("Idle thread: ");
@@ -704,6 +704,7 @@ void IdleThread()
 				DisplayStringCRLF("Idle: no msg");
 //		FMTK_FreeMbx(hMbx);
 		}
+*/
 	}
 }
 

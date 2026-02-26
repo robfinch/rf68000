@@ -436,12 +436,12 @@ static void MBXQueueThread(hMBX hMbx, hTCB hThread)
 
 	thread = TCBHandleToPointer(hThread);
 	if (thread==NULL)
-		panic("MBXQueueThread:: thread is NULL");
+		panic("MBXQueueThread: thread is NULL");
 	mbx = MBXHandleToPointer(hMbx);
 	if (mbx==NULL)
-		panic("MBXQueueThread:: mbx is NULL");
+		panic("MBXQueueThread: mbx is NULL");
 	if (thread->mbq_next > 0 || thread->mbq_prev > 0)
-		panic("Waitmsg: thread already queued at a mailbox");
+		panic("MBXQueueThread: thread already queued at a mailbox");
 	thread->status |= TS_WAITMSG;
 	thread->hWaitMbx = hMbx;
 	thread->mbq_next = 0;
@@ -738,6 +738,9 @@ long FMTK_PostMsg(
 	int rr;
 	MSG* pMsg2;
 
+	DisplayStringCRLF("Postmsg()");
+	DisplayLEDS(3);
+	WaitAnyButton();
 	if (hMbx <= 0 || hMbx > NR_MBX)
 		return (-E_Arg);
 	mbx = MBXHandleToPointer(hMbx);
@@ -747,24 +750,33 @@ long FMTK_PostMsg(
 	// posted.
 	if ((stat = LockMBX(hMbx,50)) < 0)
 		return (-E_Busy);
+	DisplayLEDS(4);
+	WaitAnyButton();
 	if (mbx->owner <= 0 || mbx->owner > NR_ACB) {
     UnlockMBX(hMbx,stat);
     return (-E_NotAlloc);
   }
+	DBGDisplayChar('c');
  	if ((stat2 = LockMSGList(50)) < 0) {
     UnlockMBX(hMbx,stat);
 		return (-E_Busy); 		
  	}
+	DBGDisplayChar('f');
 	if (freeMSG <= 0 || freeMSG > NR_MSG) {
 		UnlockMSGList(stat2);
     UnlockMBX(hMbx,stat);
 		return (-E_NoMoreMsgBlks);
   }
+	DisplayLEDS(5);
+	WaitAnyButton();
 	MBXDequeueThread(mbx, &thread);
 	pMsg2 = (MSG*)pMsg;
 	if (thread == null) {
+		DisplayLEDS(6);
+		WaitAnyButton();
 	  msg = AllocMsg(MT_DATA,pMsg2->d1,pMsg2->d2,pMsg2->d3);
 		if (msg) {
+			DisplayString("PostMsg()/QueueMsg(): ");
 			rr = MBXQueueMsg(mbx, msg);
 			UnlockMSGList(stat2);
   		UnlockMBX(hMbx,stat);
@@ -778,6 +790,8 @@ long FMTK_PostMsg(
 	}
 	if (thread->status & TS_TIMEOUT)
 		TCBRemoveFromTimeoutList(TCBPointerToHandle(thread));
+	DisplayLEDS(7);
+	WaitAnyButton();
 	TCBInsertIntoReadyQueue(TCBPointerToHandle(thread));
 //	thread->msg.dstadr = hMbx;
 	thread->msg.link = 0;
@@ -833,10 +847,12 @@ long FMTK_WaitMsg(
 	int sr;
 	int stat,st2;
 
-//	DisplayStringCRLF("Waitmsg()");
+	DisplayStringCRLF("Waitmsg()");
 	if (hMbx == 0 || hMbx > NR_MBX)
 		return (-E_Arg);
 	mbx = MBXHandleToPointer(hMbx);
+	DisplayLEDS(8);
+	WaitAnyButton();
 	do {
 		stat = LockMBX(hMbx,0);
 		// Check for a mailbox owner which indicates the mailbox
@@ -848,11 +864,16 @@ long FMTK_WaitMsg(
 		if ((st2 = LockMSGList(50)) < 0)
 			UnlockMBX(hMbx,stat);
 	} while (st2 < 0);
+	DisplayLEDS(9);
+	WaitAnyButton();
 	msg = MBXDequeueMsg(mbx);
   // Return message right away if there is one available.
   if (msg) {
-  	if (pMsg)
+  	if (pMsg) {
+			DisplayLEDS(10);
+			WaitAnyButton();
   		CopyMsg((MSG*)pMsg,msg);
+  	}
   	/*
 		if (d1)
 			*(long*)d1 = msg->d1;
@@ -872,12 +893,16 @@ long FMTK_WaitMsg(
 	// Queue thread at mailbox
 	// Interrupts are disabled at this point.
 	//----------------------------------------
+	DisplayLEDS(11);
+	WaitAnyButton();
 	hThread = GetRunningTCB();
 	TCBRemoveFromReadyQueue(hThread);
 	MBXQueueThread(hMbx, hThread);
   UnlockMBX(hMbx,stat);
 	//---------------------------
 	// Is a timeout specified ?
+	DisplayLEDS(12);
+	WaitAnyButton();
 	if (timelimit > 0) {
       //asm { ; Waitmsg here; }
   	sr = SetImLevel7();
@@ -888,7 +913,7 @@ long FMTK_WaitMsg(
 	//  FMTK_Reschedule();
 		// Nothing to do until a message arrives.
  	FMTK_Reschedule();
- 	DisplayStringCRLF("Waitmsg() after reschdule");
+ 	DisplayStringCRLF("Waitmsg() after reschedule");
 		// Control will return here as a result of a SendMsg
 		// The SendMsg() should have put the thread back in the ready queue.
 	// Control will return here as a result of a SendMsg or a

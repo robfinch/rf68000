@@ -3,11 +3,11 @@
 #INC = D:\cores2022\Thor\software\source\;D:\cores2022\Thor\software\FMTK\source\kernel\;D:\cores2022\Thor\software\inc\
 #INCLUDE = D:\cores2022\Thor\software\source\;D:\cores2022\Thor\software\FMTK\source\kernel\;D:\cores2022\Thor\software\inc\
 #FPPINC  = D:\cores2022\Thor\software\source\;D:\cores2022\Thor\software\FMTK\source\kernel\;D:\cores2022\Thor\software\inc\
-PATH1 = "C:/Users/Robert/OneDrive/documents/Cores2025/rf68000/software/"
-PATH2 = "C:\Users\Robert\OneDrive\documents\Cores2025\rf68000\software\c_standard_lib-master\assert\"
+PATH1 = "C:/Users/Robert/OneDrive/documents/Cores2026/rf68000/software/"
+PATH2 = "C:\Users\Robert\OneDrive\documents\Cores2026\rf68000\software\c_standard_lib-master\assert\"
 PATH = $PATH;$(PATH1)"Femtiki/source/";$(PATH1)"Femtiki/source/kernel/";"F:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Tools\MSVC\14.29.30133\bin\Hostx64\x64"
-INC1 = "C:/Users/Robert/OneDrive/documents/Cores2025/rf68000/software/c_standard_lib-master/_Femtiki/"
-FEMTIKI_INC = "C:/Users/Robert/OneDrive/documents/Cores2025/rf68000/software/Femtiki/source/inc/"
+INC1 = "C:/Users/Robert/OneDrive/documents/Cores2026/rf68000/software/c_standard_lib-master/_Femtiki/"
+FEMTIKI_INC = "C:/Users/Robert/OneDrive/documents/Cores2026/rf68000/software/Femtiki/source/inc/"
 INC = $(INC1)
 #;$(FEMTIKI_INC)
 INCLUDE = $(INC1)	

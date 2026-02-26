@@ -1,6 +1,6 @@
 ; ============================================================================
 ;        __
-;   \\__/ o\    (C) 2022-2025  Robert Finch, Waterloo
+;   \\__/ o\    (C) 2022-2026  Robert Finch, Waterloo
 ;    \  __ /    All rights reserved.
 ;     \/_//     robfinch<remove>@opencores.org
 ;       ||
@@ -101,6 +101,7 @@ endm
 NCORES equ 2
 
 	extrn _setup_textvid
+	extrn _OutputCharFlag
 
 	include "..\Femtiki\source\inc\const.x68"
 	include "..\Femtiki\source\inc\device.x68"
@@ -418,7 +419,9 @@ EightPixels equ $40100000	; to $40200020
 start:
 ;	fadd (a0)+,fp2
 	clr.l _go
+	clr.b _OutputCharFlag			; enable output routine
 	move.b #1,leds
+	jsr _WaitAnyButton
 	move.w #$2700,sr					; enable level 6 and higher interrupts
 	move.w #$2700,_regSR
 	move.b #2,_InTimerISR
@@ -449,6 +452,7 @@ start:
 	endif
 ;	move.l $4000000C,d0
 	move.b #2,leds
+	jsr _WaitAnyButton
 .stp
 	movec.l coreno,d0							; set initial value of thread register
 	cmpi.b #2,d0
@@ -467,33 +471,41 @@ start:
 ;	clr.l	(a0)+								; clear the memory area
 ;	dbra d0,.0111
 	move.b #5,leds
+	jsr _WaitAnyButton
 	move.l #$10000,_InputDevice			; select keyboard input
 	move.l #$20000,_OutputDevice		; select text screen output
 	bsr	InitSemaphores
 	move.l #_DeviceTable+2*DCB_SIZE,d0
 	jsr _setup_textvid
 	move.b #4,leds
+	jsr _WaitAnyButton
 ;	bsr test_scratchpad_ram
 	move.l #2,_IOFocus				; Set the IO focus in global memory
 	move.b #3,leds
+	jsr _WaitAnyButton
 	move.l #_DeviceTable+0*DCB_SIZE,d0
 	jsr _setup_null
 	move.b #4,leds
+	jsr _WaitAnyButton
 	move.l #_DeviceTable+1*DCB_SIZE,d0
 	jsr _setup_keybd
 	move.b #6,leds
+	jsr _WaitAnyButton
 	move.l #_DeviceTable+5*DCB_SIZE,d0
 	jsr _setup_serial
 	move.b #7,leds
+	jsr _WaitAnyButton
 	movec.l	coreno,d0					; get core number
 	cmpi.b #2,d0
 	bne	start_other
 	move.l #_DeviceTable+6*DCB_SIZE,d0
 	jsr _setup_framebuf
 	move.b #8,leds
+	jsr _WaitAnyButton
 	move.l #_DeviceTable+7*DCB_SIZE,d0
 	jsr _setup_gfxaccel
 	move.b #9,leds
+	jsr _WaitAnyButton
 	move.l #_DeviceTable+30*DCB_SIZE,d0
 	jsr _setup_random
 	jsr _SetupFirstThread
@@ -520,6 +532,7 @@ start:
 ;	move.l d1,_canary
 ;	movec d1,canary
 ;	bsr AudioTestOn
+	jsr _WaitAnyButton
 	bsr Delay3s
 ;	bsr AudioTestOff
 ;	bsr	Delay3s						; give devices time to reset
@@ -541,6 +554,7 @@ start:
 	bsr	_DisplayString
 ;	bsr	FemtikiInit
 	bsr Delay3s
+	jsr _WaitAnyButton
 	movec	coreno,d0
 	swap d0
 	moveq	#1,d1
@@ -557,6 +571,7 @@ start:
 ;	bsr	UnlockSemaphore	; allow other cpus to proceed
 	move.w #$A4A4,leds			; diagnostics
 	jsr	setup_pic				; initialize interrupt controller
+	jsr _WaitAnyButton
 	jsr _FMTK_Initialize
 ;	jsr __crt_start
 ;	move.l #-1,_go			; Let the other cores start up
@@ -1011,6 +1026,7 @@ InitIOPBitmap:
 	ext.w	d1					; make into a long value
 	ext.l d1
 	move.w #127,d4
+	moveq #-1,d1			; allow everyone access
 .0001
 	move.l d1,(a1)+		; set or clear entire table
 	dbra d4,.0001
@@ -1146,6 +1162,22 @@ RandWait:
 	dbra		d1,.0001
 	movem.l	(a7)+,d0/d1
 	rts
+
+;------------------------------------------------------------------------------
+; Wait for a button press.
+;------------------------------------------------------------------------------
+
+_WaitAnyButton:
+.waitabtn1
+	move.l $FDFFC000,d0
+	and.l #$001f00,d0
+	beq .waitabtn1
+.waitabtn2
+	move.l $FDFFC000,d0
+	and.l #$001f00,d0
+	bne .waitabtn2
+	rts
+	global _WaitAnyButton
 
 ;------------------------------------------------------------------------------
 ; Initialize semaphores
@@ -2042,6 +2074,7 @@ T15Cursor:
 	movem.l (a7)+,d0/d1/d2/d3/d6/d7
 	rts
 .0002
+	movem.l d0/d1/d2/d3/d6/d7,-(a7)
 	move.l #$20000,d7
 	moveq #DEV_SET_OUTPOS,d6
 	btst #16,d1
@@ -2229,14 +2262,14 @@ Monitor:
 	movec	coreno,d0
 	swap d0
 	moveq	#1,d1					; Unlock semaphore #1
-	moveq #44,d0
-	move.l #$2000,d2
+	moveq #44,d0				; function 44
+	move.l #$2000,d2		; stdout
 	trap #15
 ;	bsr	UnlockSemaphore
 ;	clr.b KeybdEcho			; turn off keyboard echo
-	move.l #$10000,d7		; was $70000
+	move.l #$10000,d7		; was $70000 (stdin)
 	moveq #DEV_SET_ECHO,d6
-	moveq #0,d1
+	moveq #0,d1					; echo off
 	trap #0
 PromptLn:
 	bsr	CRLF
@@ -4833,6 +4866,8 @@ T15FloatToString:
 	rts
 
 ;==============================================================================
+; TRAP #0 - I/O operation
+;
 ; Parameters:
 ;		d7 = device handle, d7.high word = device number
 ;		d6 = function number
@@ -4868,13 +4903,16 @@ io_trap:
 ;==============================================================================
 
 _OutputChar:
+.0001:											; spinlock waiting for OutputChar to complete
+	tas _OutputCharFlag
+	bne .0001
 	movem.l d0/d6/d7,-(a7)
-	clr.l d7
 	clr.l d6
 	move.l _OutputDevice,d7		; d7 = output device
 	move.w #DEV_PUTCHAR,d6		; d6 = function
 	trap #0
 	movem.l (a7)+,d0/d6/d7
+	clr.b _OutputCharFlag
 	rts
 
 ;------------------------------------------------------------------------------

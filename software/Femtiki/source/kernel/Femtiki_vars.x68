@@ -256,8 +256,11 @@ _hasUltraHighPriorityTasks
 	ds.b	1
 ;_iof_switch
 ;	ds.b	1
-_InTimerISR
+_OutputCharFlag
 	ds.b	1
+	align 2
+_InTimerISR
+	ds.b	16		; 1 byte for each core
 	align 1
 SerTailRcv
 	ds.w	1
@@ -294,6 +297,7 @@ _PAMEnd
 
 _FemtikiVars_end
 
+	global _OutputCharFlag
 	global scratch_ram
 	global _semaphores
 	global _sys_pd
