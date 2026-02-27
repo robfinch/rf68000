@@ -35,7 +35,7 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
-// 10,800 LUTS / 2,560 FFs / 2 DSP (no float)                                                                          
+// 10,800 LUTS / 2,560 FFs / 2 DSP (no float, no MMU)                                                                          
 // 24k LUTs / 14k FFs / 2 DSPs (with DFP)
 // ============================================================================
 //
@@ -88,6 +88,7 @@
 `define IRQ_VEC         9'd024
 // Vectors 32-46 for TRAPQ instruction
 `define TRAP_VEC        9'd032
+`define PMMU_ILLOP_VEC	9'd057
 `define DISP_VEC				9'd063
 `define USER64          9'd064
 //`define NMI_TRAP        9'h1FE
@@ -503,8 +504,27 @@ typedef enum logic [8:0] {
 	PRESTORE1,
 	PRESTORE2,
 	// 270
-	PSCC
+	PSCC,
+	STORE_NOP_BYTE,
+	PTRAPCC,
+	PTRAPCC1,
+	PVALID,
+	PVALID1
 } state_t;
+
+typedef enum logic [3:0] {
+	PMMU_WAIT_MISS = 0,
+	PMMU_ACCESS1,
+	PMMU_ACCESS2,
+	PMMU_WAIT_ACK2,
+	PMMU_ACCESS3,
+	PMMU_WAIT_ACK3,
+	PMMU_ACCESS4,
+	PMMU_WAIT_ACK4,
+	PMMU_ATC_UPDATE,
+	PMMU_PTE_UPDATE,
+	PMMU_PTE_ACK
+} pmmu_state_t;
 
 typedef enum logic [4:0] {
 	FU_NONE = 5'd0,
@@ -565,7 +585,11 @@ output reg [31:0] trace_o;
 
 typedef struct packed
 {
-    logic [23:0] ppn;
+  logic [23:0] ppn;
+  logic resv;
+	logic p;
+	logic m;
+	logic a;
 	logic s;
 	logic r;
 	logic w;
@@ -582,6 +606,36 @@ typedef struct packed
 	logic [23:0] vpn;		// virtual page number
 	pte_t pte;
 } atc_entry_t;
+
+typedef struct packed
+{
+	logic [3:0] A;
+	logic [3:0] B;
+	logic [3:0] C;
+	logic [3:0] D;
+	logic [14:0] resv;
+	logic e;
+} pmmu_trans_ctrl_t;
+
+typedef struct packed
+{
+	logic [7:0] resv;
+	logic C;
+	logic G;
+	logic I;
+	logic W;
+	logic A;
+	logic S;
+	logic L;
+	logic B;
+} pmmu_stat_t;
+
+typedef struct packed
+{
+	logic [4:0] resv;
+	logic MC;
+	logic [2:0] ALC;
+} pmmu_acr_t;
 
 reg em;							// emulation mode
 reg [15:0] ir;
@@ -664,24 +718,57 @@ wire [31:0] flagso;
 wire [31:0] pco;
 // PMMU registers
 reg pmmu_en;
+reg [4:0] pmmu_log_pagesize = 5'd13;
+reg [4:0] pmmu_adrbits_consumed = pmmu_log_pagesize - 2'd2;
+reg [2:0] pmmu_table_depth;
+always_comb
+	case(pmmu_log_pagesize)
+	5'd0:	pmmu_table_depth = 4;
+	5'd1:	pmmu_table_depth = 4;
+	5'd2:	pmmu_table_depth = 4;
+	5'd3:	pmmu_table_depth = 4;
+	5'd4:	pmmu_table_depth = 4;
+	5'd5:	pmmu_table_depth = 4;
+	5'd6:	pmmu_table_depth = 4;
+	5'd7:	pmmu_table_depth = 4;
+	5'd8:	pmmu_table_depth = 4;
+	5'd9:	pmmu_table_depth = 4;
+	5'd10:	pmmu_table_depth = 3;
+	5'd11:	pmmu_table_depth = 3;
+	5'd12:	pmmu_table_depth = 2;
+	5'd13:	pmmu_table_depth = 2;
+	5'd14:	pmmu_table_depth = 2;
+	5'd15:	pmmu_table_depth = 2;
+	5'd16:	pmmu_table_depth = 2;
+	default:	pmmu_table_depth = 1;
+	endcase
+reg [4:0] pmmu_table_level;
+reg [31:0] pmmu_pmask;
+always_comb
+	pmmu_pmask = (32'd1 << pmmu_log_pagesize) - 2'd1;
 reg [15:0] pmmu_ir;
-reg [15:0] pmmu_sr;		// status reg
+pmmu_stat_t pmmu_sr;	// status reg
 reg [15:0] pmmu_csr;	// cache status reg
-reg [31:0] pmmu_tc;
+pmmu_trans_ctrl_t pmmu_tc;
 reg [7:0] pmmu_scc;
 reg [7:0] pmmu_cal;
 reg [7:0] pmmu_val;
-reg [7:0] pmmu_acr;
+pmmu_acr_t pmmu_acr;
+reg [31:0] pmmu_amask;
+always_comb
+	pmmu_amask = ~((32'd1 << (pmmu_acr.ALC + 8'd24)) - 2'd1);
 reg [63:0] pmmu_cpu_root;
 reg [63:0] pmmu_dma_root;
 reg [63:0] pmmu_sys_root;
 reg [7:0] pmmu_cond;
-reg [3:0] pmmu_ea_shift = 4'd13;
 reg [15:0] pmmu_bad [0:7];
 reg [15:0] pmmu_bac [0:7];
+reg [7:0] pmmu_format;
 reg [31:0] pmmu_smask;
 wire [5:0] pmmu_flo;
 atc_entry_t [63:0] atc;
+pte_t pte;
+reg [5:0] atc_ua = 6'd0;
 reg atc_hit, atc_err;
 reg [15:0] appid;
 integer n3;
@@ -692,6 +779,18 @@ reg pwe_o;
 reg [3:0] psel_o;
 reg [31:0] padr_o;
 reg [31:0] pdat_o;
+reg pmmu_access;
+reg [15:0] pmmu_state;
+reg [2:0] work_fc;
+reg work_cyc;
+reg work_stb;
+reg work_we;
+reg [3:0] work_sel;
+reg [31:0] work_adr;
+reg [31:0] work_dat;
+reg page_fault;
+reg [31:0] page_fault_adr; 
+reg pload;
 
 reg [15:0] pid_stack [0:15];
 reg [3:0] pid_sp;
@@ -886,7 +985,7 @@ reg [15:0] mac_cycle_type;
 reg prev_nmi;
 reg pe_nmi;
 reg is_nmi;
-reg is_irq, is_trace, is_priv, is_illegal, is_format;
+reg is_irq, is_trace, is_priv, is_illegal, is_format, is_page_fault;
 reg is_adr_err;
 reg is_rst;
 reg is_bus_err;
@@ -1589,7 +1688,7 @@ endgenerate
 generate begin : gPMMUcond
 	always_comb
 	if (pmmu_ir[5:4]==2'd0)
-		ptakb = pmmu_cond[ir[3:1]] ^ ~ir[0];
+		ptakb = pmmu_stat[ir[3:1]] ^ ~ir[0];
 	else
 		ptakb = `FALSE;
 end
@@ -1645,6 +1744,13 @@ if (rst_i) begin
 	psel_o <= 4'h0;
 	padr_o <= 32'd0;
 	pdat_o <= 32'd0;
+	work_fc <= 3'd0;
+	work_cyc <= 1'b0;
+	work_stb <= 1'b0;
+	work_we <= 1'b0;
+	work_sel <= 4'h0;
+	work_adr <= 32'h0;
+	work_dat <= 32'h0;
 	rfwrB <= 1'b0;
 	rfwrW <= 1'b0;
 	rfwrL <= 1'b0;
@@ -1712,6 +1818,9 @@ if (rst_i) begin
 	tracendx2 <= 11'd0;
 	appid <= 16'h0000;
 	pmmu_en <= 1'b0;
+	pmmu_format <= 8'h4C;
+	atc_ua <= 6'd0;
+	pload <= `FALSE;
 end
 else begin
 
@@ -2317,6 +2426,7 @@ IFETCH:
 		rtr <= 1'b0;
 		bsr <= 1'b0;
 		lea <= 1'b0;
+		pload <= `FALSE;
 		fsub <= 1'b0;
 		fabs <= 1'b0;
 		bcdsub <= 1'b0;
@@ -3178,12 +3288,8 @@ DECODE:
 	  		begin
 	  			if (ir[6])
 	  				call(FETCH_IMM16,PDBCC);
-	  			else begin
-	  				if (sf)
-	  					call(FETCH_IMM16,PFLUSH);
-	  				else
-	  					tPrivilegeViolation();
-	  			end
+	  			else
+  					call(FETCH_IMM16,PFLUSH);
 	  		end
 	  	3'b01?:
 				begin
@@ -4744,10 +4850,15 @@ CHK:
 	end
 
 //-----------------------------------------------------------------------------
+// Memory NOP operations - for LEA and PLOAD
 //-----------------------------------------------------------------------------
 FETCH_NOP_BYTE,FETCH_NOP_WORD,FETCH_NOP_LWORD:
 	ret();
+STORE_NOP_BYTE:
+	ret();
 
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
 FETCH_BRDISP:
 	begin
 /*
@@ -7169,7 +7280,10 @@ PBCC:
 PDBCC:
 	begin
 		pmmu_ir <= imm[15:0];
-		call(FETCH_IMM16,PDBCC1);
+		if (ir[5:3]==3'b111)
+			goto (PTRAPCC);
+		else
+			call(FETCH_IMM16,PDBCC1);
 	end
 PDBCC1:
 	if (~takb) begin
@@ -7182,6 +7296,26 @@ PDBCC1:
 	end
 	else
 		ret();
+
+//-----------------------------------------------------------------------------
+// PTRAPCC
+//-----------------------------------------------------------------------------
+PTRAPCC:
+	begin
+		case(ir[2:0])
+		3'b010:	call (FETCH_IMM16,PTRAPCC1);
+		3'b011:	call (FETCH_IMM32,PTRAPCC1);
+		3'b100:	goto (PTRAPCC1);
+		default:	tIllegal();
+		endcase
+	end
+PTRAPCC1:
+	begin
+		if (ptakb)
+			tPTrapcc();
+		else
+			ret();
+	end
 
 //-----------------------------------------------------------------------------
 // PSCC
@@ -7204,7 +7338,21 @@ PFLUSH:
 		3'b000:	goto (PSCC);
 		// PFLUSH
 		3'b001:
+			// PVALID?
+			if (pmmu_ir[12:0]==13'h0800) begin
+				lea <= `TRUE;
+				goto (PVALID);
+			end
+			else if (!sf)
+				tPrivilegeViolation();
+			else
 			case(imm[12:10])
+			// PLOAD - do a flush then a load
+			3'b000:
+				begin
+					pload <= 1'b1;
+					call (PFLUSH2, PLOAD);
+				end
 			3'b001:
 				begin	// flush all?
 					for (n2 = 0; n2 < $size(atc); n2 = n2 + 1)
@@ -7392,25 +7540,25 @@ PFLUSH2:
 			if (atc[n2].v)
 				casez(imm[4:0])
 				5'b00000: 
-					if ((atc[n2].func & imm[8:5])==(sfc[2:0] & imm[8:5]))
-						atc[n2].v <= (ea >> pmmu_ea_shift) != atc[n2].vpn;
+					if ((atc[n2].func & imm[8:5])==(sfc[2:0] & imm[8:5]) && (ea >> pmmu_log_pagesize) == atc[n2].vpn)
+						atc[n2].v <= `FALSE;
 				5'b00001:
-					if ((atc[n2].func & imm[8:5])==(dfc[2:0] & imm[8:5]))
-						atc[n2].v <= (ea >> pmmu_ea_shift) != atc[n2].vpn;
+					if ((atc[n2].func & imm[8:5])==(dfc[2:0] & imm[8:5]) && (ea >> pmmu_log_pagesize) == atc[n2].vpn)
+						atc[n2].v <= `FALSE;
 				5'b01???:
 					case(imm[2:0])
-					3'b000:	if ((atc[n2].func & imm[8:5])==(d0[2:0] & imm[8:5])) atc[n2].v <= (ea >> pmmu_ea_shift) != atc[n2].vpn;
-					3'b001:	if ((atc[n2].func & imm[8:5])==(d0[2:0] & imm[8:5])) atc[n2].v <= (ea >> pmmu_ea_shift) != atc[n2].vpn;
-					3'b010:	if ((atc[n2].func & imm[8:5])==(d0[2:0] & imm[8:5])) atc[n2].v <= (ea >> pmmu_ea_shift) != atc[n2].vpn;
-					3'b011:	if ((atc[n2].func & imm[8:5])==(d0[2:0] & imm[8:5])) atc[n2].v <= (ea >> pmmu_ea_shift) != atc[n2].vpn;
-					3'b100:	if ((atc[n2].func & imm[8:5])==(d0[2:0] & imm[8:5])) atc[n2].v <= (ea >> pmmu_ea_shift) != atc[n2].vpn;
-					3'b101:	if ((atc[n2].func & imm[8:5])==(d0[2:0] & imm[8:5])) atc[n2].v <= (ea >> pmmu_ea_shift) != atc[n2].vpn;
-					3'b110:	if ((atc[n2].func & imm[8:5])==(d0[2:0] & imm[8:5])) atc[n2].v <= (ea >> pmmu_ea_shift) != atc[n2].vpn;
-					3'b111:	if ((atc[n2].func & imm[8:5])==(d0[2:0] & imm[8:5])) atc[n2].v <= (ea >> pmmu_ea_shift) != atc[n2].vpn;
+					3'b000:	if ((atc[n2].func & imm[8:5])==(d0[2:0] & imm[8:5]) && (ea >> pmmu_log_pagesize) == atc[n2].vpn) atc[n2].v <= `FALSE;
+					3'b001:	if ((atc[n2].func & imm[8:5])==(d0[2:0] & imm[8:5]) && (ea >> pmmu_log_pagesize) == atc[n2].vpn) atc[n2].v <= `FALSE;
+					3'b010:	if ((atc[n2].func & imm[8:5])==(d0[2:0] & imm[8:5]) && (ea >> pmmu_log_pagesize) == atc[n2].vpn) atc[n2].v <= `FALSE;
+					3'b011:	if ((atc[n2].func & imm[8:5])==(d0[2:0] & imm[8:5]) && (ea >> pmmu_log_pagesize) == atc[n2].vpn) atc[n2].v <= `FALSE;
+					3'b100:	if ((atc[n2].func & imm[8:5])==(d0[2:0] & imm[8:5]) && (ea >> pmmu_log_pagesize) == atc[n2].vpn) atc[n2].v <= `FALSE;
+					3'b101:	if ((atc[n2].func & imm[8:5])==(d0[2:0] & imm[8:5]) && (ea >> pmmu_log_pagesize) == atc[n2].vpn) atc[n2].v <= `FALSE;
+					3'b110:	if ((atc[n2].func & imm[8:5])==(d0[2:0] & imm[8:5]) && (ea >> pmmu_log_pagesize) == atc[n2].vpn) atc[n2].v <= `FALSE;
+					3'b111:	if ((atc[n2].func & imm[8:5])==(d0[2:0] & imm[8:5]) && (ea >> pmmu_log_pagesize) == atc[n2].vpn) atc[n2].v <= `FALSE;
 					endcase
 				5'b10???:
-					if ((atc[n2].func & imm[8:5])==(imm[2:0] & imm[8:5]))
-						atc[n2].v <= (ea >> pmmu_ea_shift) != atc[n2].vpn;
+					if ((atc[n2].func & imm[8:5])==(imm[2:0] & imm[8:5]) && (ea >> pmmu_log_pagesize) == atc[n2].vpn)
+						atc[n2].v <= `FALSE;
 				default:	tIllegal();
 				endcase
 		ret();
@@ -7420,13 +7568,85 @@ PFLUSH3:
 		for (n2 = 0; n2 < $size(atc); n2 = n2 + 1)
 			if (atc[n2].v)
 				case(ir[4:3])
-				2'b00:	if (!atc[n2].g && atc[n2].func==dfc[2:0] && (ea >> pmmu_ea_shift) == (rfoAn >> pmmu_ea_shift)) atc[n2] <= 1'b0;
-				2'b01:	if (atc[n2].func==dfc[2:0] && (ea >> pmmu_ea_shift) == (rfoAn >> pmmu_ea_shift)) atc[n2] <= 1'b0;
+				2'b00:	if (!atc[n2].g && atc[n2].func==dfc[2:0] && (ea >> pmmu_log_pagesize) == (rfoAn >> pmmu_log_pagesize)) atc[n2] <= 1'b0;
+				2'b01:	if (atc[n2].func==dfc[2:0] && (ea >> pmmu_log_pagesize) == (rfoAn >> pmmu_log_pagesize)) atc[n2] <= 1'b0;
 				2'b10:	if (!atc[n2].g) atc[n2] <= 1'b0;	// flush all except global
 				2'b11:	atc[n2] <= 1'b0;									// flush all entries	
 				endcase
 		ret();
 	end	
+
+//-----------------------------------------------------------------------------
+// PLOADn
+//-----------------------------------------------------------------------------
+PLOAD:
+	begin
+		if (!pmmu_tc.e)
+			tPMMUIllop();
+		else begin
+			if (pmmu_ir[9])
+				fs_data(mmm,rrr,FETCH_NOP_BYTE,S);	// Translation control reg
+			else
+				fs_data(mmm,rrr,STORE_NOP_BYTE,D);	// Translation control reg
+		end
+	end
+
+//-----------------------------------------------------------------------------
+// PLOADn
+//-----------------------------------------------------------------------------
+PVALID:
+	begin
+		push(PVALID1);
+		fs_data(mmm,rrr,FETCH_NOP_BYTE,S);
+	end
+PVALID1:
+	begin
+		if (pmmu_acr.MC)
+			tPrivilegeViolation();
+		else
+			case(pmmu_ir[2:0])
+			3'b000:
+				if ((ea & pmmu_amask) < (({24'd0,pmmu_val} << 24) & pmmu_amask))
+					tPrivilegeViolation();
+				else
+					ret();
+			3'b001:	
+				if ((ea & pmmu_amask) < (a1 & pmmu_amask))
+					tPrivilegeViolation();
+				else
+					ret();
+			3'b010:	
+				if ((ea & pmmu_amask) < (a2 & pmmu_amask))
+					tPrivilegeViolation();
+				else
+					ret();
+			3'b011:	
+				if ((ea & pmmu_amask) < (a3 & pmmu_amask))
+					tPrivilegeViolation();
+				else
+					ret();
+			3'b100:	
+				if ((ea & pmmu_amask) < (a4 & pmmu_amask))
+					tPrivilegeViolation();
+				else
+					ret();
+			3'b101:	
+				if ((ea & pmmu_amask) < (a5 & pmmu_amask))
+					tPrivilegeViolation();
+				else
+					ret();
+			3'b110:	
+				if ((ea & pmmu_amask) < (a6 & pmmu_amask))
+					tPrivilegeViolation();
+				else
+					ret();
+			3'b111:	
+				if ((ea & pmmu_amask) < (a7 & pmmu_amask))
+					tPrivilegeViolation();
+				else
+					ret();
+			endcase
+	end
 
 //-----------------------------------------------------------------------------
 // PMOVE
@@ -7552,39 +7772,41 @@ PSAVE1:
 	begin
 		lea <= `FALSE;
 		casez(pmmu_flo)
-		6'd0:	begin	push(PSAVE2); goto(STORE_LWORD); d <= pmmu_cpu_root[63:32]; end
-		6'd1:	begin	push(PSAVE2); goto(STORE_LWORD); d <= pmmu_cpu_root[31:0]; end
-		6'd2:	begin	push(PSAVE2); goto(STORE_LWORD); d <= pmmu_dma_root[63:32]; end
-		6'd3:	begin	push(PSAVE2); goto(STORE_LWORD); d <= pmmu_dma_root[31:0]; end
-		6'd4:	begin	push(PSAVE2); goto(STORE_LWORD); d <= pmmu_sys_root[63:32]; end
-		6'd5:	begin	push(PSAVE2); goto(STORE_LWORD); d <= pmmu_dma_root[31:0]; end
-		6'd6:	begin	push(PSAVE2); goto(STORE_LWORD); d <= pmmu_tc; end
-		6'd7:	begin	push(PSAVE2); goto(STORE_WORD); d <= {2{pmmu_csr}}; end
-		6'd8:	begin	push(PSAVE2); goto(STORE_WORD); d <= {2{pmmu_sr}}; end
-		6'd9:	begin	push(PSAVE2); goto(STORE_BYTE); d <= {4{pmmu_cal}}; end
-		6'd10:	begin	push(PSAVE2); goto(STORE_BYTE); d <= {4{pmmu_val}}; end
-		6'd11:	begin	push(PSAVE2); goto(STORE_BYTE); d <= {4{pmmu_scc}}; end
-		6'd12:	begin	push(PSAVE2); goto(STORE_WORD); d <= {2{pmmu_bad[pmmu_flo[2:0]]}}; end
+		6'd0:	begin push(PSAVE2); goto(STORE_BYTE); d <= {4{pmmu_format}}; end
+		6'd1:	begin	push(PSAVE2); goto(STORE_LWORD); d <= pmmu_cpu_root[63:32]; end
+		6'd2:	begin	push(PSAVE2); goto(STORE_LWORD); d <= pmmu_cpu_root[31:0]; end
+		6'd3:	begin	push(PSAVE2); goto(STORE_LWORD); d <= pmmu_dma_root[63:32]; end
+		6'd4:	begin	push(PSAVE2); goto(STORE_LWORD); d <= pmmu_dma_root[31:0]; end
+		6'd5:	begin	push(PSAVE2); goto(STORE_LWORD); d <= pmmu_sys_root[63:32]; end
+		6'd6:	begin	push(PSAVE2); goto(STORE_LWORD); d <= pmmu_dma_root[31:0]; end
+		6'd7:	begin	push(PSAVE2); goto(STORE_LWORD); d <= pmmu_tc; end
+		6'd8:	begin	push(PSAVE2); goto(STORE_WORD); d <= {2{pmmu_csr}}; end
+		6'd9:	begin	push(PSAVE2); goto(STORE_WORD); d <= {2{pmmu_sr}}; end
+		6'd10:	begin	push(PSAVE2); goto(STORE_BYTE); d <= {4{pmmu_cal}}; end
+		6'd11:	begin	push(PSAVE2); goto(STORE_BYTE); d <= {4{pmmu_val}}; end
+		6'd12:	begin	push(PSAVE2); goto(STORE_BYTE); d <= {4{pmmu_scc}}; end
+		6'd13:	begin	push(PSAVE2); goto(STORE_WORD); d <= {2{pmmu_bad[pmmu_flo[2:0]]}}; end
 		6'b01????:	begin	push(PSAVE2); goto(STORE_WORD); d <= {2{pmmu_bac[pmmu_flo[2:0]]}}; end
-		6'b1?????:	tRet();
+		6'b1?????:	ret();
 		endcase
 	end
 PSAVE2:
 	begin
 		casez(pmmu_flo)
-		6'd0:	begin ea <= ea + 4'd4; end
+		6'd0:	begin ea <= ea + 4'd1; end
 		6'd1:	begin ea <= ea + 4'd4; end
 		6'd2:	begin ea <= ea + 4'd4; end
 		6'd3:	begin ea <= ea + 4'd4; end
 		6'd4:	begin ea <= ea + 4'd4; end
 		6'd5:	begin ea <= ea + 4'd4; end
 		6'd6:	begin ea <= ea + 4'd4; end
-		6'd7:	begin ea <= ea + 4'd2; end
+		6'd7:	begin ea <= ea + 4'd4; end
 		6'd8:	begin ea <= ea + 4'd2; end
-		6'd9:	begin ea <= ea + 4'd1; end
+		6'd9:	begin ea <= ea + 4'd2; end
 		6'd10:	begin ea <= ea + 4'd1; end
 		6'd11:	begin ea <= ea + 4'd1; end
-		6'd12:	begin ea <= ea + 4'd2; end
+		6'd12:	begin ea <= ea + 4'd1; end
+		6'd13:	begin ea <= ea + 4'd2; end
 		6'b010???:	begin ea <= ea + 4'd2; end
 		6'b011???:	begin ea <= ea + 4'd2; end
 		endcase
@@ -7601,48 +7823,50 @@ PRESTORE:
 		fs_data(mmm,rrr,FETCH_BYTE,S);	// Calc address
 		case(s[7:0])
 		8'h00:	ret();	// NULL
-		8'h24:	begin pmmu_smask <= 32'h00001FFF; goto(PRESTORE1); end
-		8'h2C:	begin pmmu_smask <= 32'h00001FFF; goto(PRESTORE1); end
-		8'h4C:	begin pmmu_smask <= 32'hFFFF1FFF; goto(PRESTORE1); end
+		8'h24:	begin pmmu_smask <= 32'h00003FFF; goto(PRESTORE1); end
+		8'h2C:	begin pmmu_smask <= 32'h00003FFF; goto(PRESTORE1); end
+		8'h4C:	begin pmmu_smask <= 32'hFFFF3FFF; goto(PRESTORE1); end
 		default:	tFormat();
 		endcase
 	end
 PRESTORE1:
 	begin
 		casez(pmmu_flo)
-		6'd0:	begin	push(PRESTORE2); goto(FETCH_LWORD); end
+		6'd0:	begin push(PRESTORE2); goto(FETCH_BYTE); end
 		6'd1:	begin	push(PRESTORE2); goto(FETCH_LWORD); end
 		6'd2:	begin	push(PRESTORE2); goto(FETCH_LWORD); end
 		6'd3:	begin	push(PRESTORE2); goto(FETCH_LWORD); end
 		6'd4:	begin	push(PRESTORE2); goto(FETCH_LWORD); end
 		6'd5:	begin	push(PRESTORE2); goto(FETCH_LWORD); end
 		6'd6:	begin	push(PRESTORE2); goto(FETCH_LWORD); end
-		6'd7:	begin	push(PRESTORE2); goto(FETCH_WORD); end
+		6'd7:	begin	push(PRESTORE2); goto(FETCH_LWORD); end
 		6'd8:	begin	push(PRESTORE2); goto(FETCH_WORD); end
-		6'd9:	begin	push(PRESTORE2); goto(FETCH_BYTE); end
+		6'd9:	begin	push(PRESTORE2); goto(FETCH_WORD); end
 		6'd10:	begin	push(PRESTORE2); goto(FETCH_BYTE); end
 		6'd11:	begin	push(PRESTORE2); goto(FETCH_BYTE); end
-		6'd12:	begin	push(PRESTORE2); goto(FETCH_WORD); end
+		6'd12:	begin	push(PRESTORE2); goto(FETCH_BYTE); end
+		6'd13:	begin	push(PRESTORE2); goto(FETCH_WORD); end
 		6'b01????:	begin	push(PRESTORE2); goto(FETCH_WORD); end
-		6'b1?????:	tRet();
+		6'b1?????:	ret();
 		endcase
 	end
 PRESTORE2:
 	begin
 		casez(pmmu_flo)
-		6'd0:	begin pmmu_cpu_root[63:32] <= s; ea <= ea + 4'd4; end
-		6'd1:	begin pmmu_cpu_root[31:0] <= s; ea <= ea + 4'd4; end
-		6'd2:	begin pmmu_dma_root[63:32] <= s; ea <= ea + 4'd4; end
-		6'd3:	begin pmmu_dma_root[31:0] <= s; ea <= ea + 4'd4; end
-		6'd4:	begin pmmu_sys_root[63:32] <= s; ea <= ea + 4'd4; end
-		6'd5:	begin pmmu_sys_root[31:0] <= s; ea <= ea + 4'd4; end
-		6'd6:	begin pmmu_tc <= s; ea <= ea + 4'd4; end
-		6'd7:	begin pmmu_csr <= s[15:0]; ea <= ea + 4'd2; end
-		6'd8:	begin pmmu_sr <= s[15:0]; ea <= ea + 4'd2; end
-		6'd9:	begin pmmu_cal <= s[7:0]; ea <= ea + 4'd1; end
-		6'd10:	begin pmmu_val <= s[7:0]; ea <= ea + 4'd1; end
-		6'd11:	begin pmmu_scc <= s[7:0]; ea <= ea + 4'd1; end
-		6'd12:	begin pmmu_acr <= s[15:0]; ea <= ea + 4'd2; end
+		6'd0:	begin pmmu_format <= s[7:0]; ea <= ea + 4'd1; end
+		6'd1:	begin pmmu_cpu_root[63:32] <= s; ea <= ea + 4'd4; end
+		6'd2:	begin pmmu_cpu_root[31:0] <= s; ea <= ea + 4'd4; end
+		6'd3:	begin pmmu_dma_root[63:32] <= s; ea <= ea + 4'd4; end
+		6'd4:	begin pmmu_dma_root[31:0] <= s; ea <= ea + 4'd4; end
+		6'd5:	begin pmmu_sys_root[63:32] <= s; ea <= ea + 4'd4; end
+		6'd6:	begin pmmu_sys_root[31:0] <= s; ea <= ea + 4'd4; end
+		6'd7:	begin pmmu_tc <= s; ea <= ea + 4'd4; end
+		6'd8:	begin pmmu_csr <= s[15:0]; ea <= ea + 4'd2; end
+		6'd9:	begin pmmu_sr <= s[15:0]; ea <= ea + 4'd2; end
+		6'd10:	begin pmmu_cal <= s[7:0]; ea <= ea + 4'd1; end
+		6'd11:	begin pmmu_val <= s[7:0]; ea <= ea + 4'd1; end
+		6'd12:	begin pmmu_scc <= s[7:0]; ea <= ea + 4'd1; end
+		6'd13:	begin pmmu_acr <= s[15:0]; ea <= ea + 4'd2; end
 		6'b010???:	begin pmmu_bad[pmmu_flo[2:0]] <= s[15:0]; ea <= ea + 4'd2; end
 		6'b011???:	begin pmmu_bac[pmmu_flo[2:0]] <= s[15:0]; ea <= ea + 4'd2; end
 		endcase
@@ -7676,7 +7900,7 @@ default:
 endcase
 
 	// Bus error: abort current cycle and trap.
-	if ((cyc_o & err_i)|atc_err) begin
+	if (cyc_o & err_i) begin
 		pcyc_o <= `LOW;
 		pstb_o <= `LOW;
 		pwe_o <= `LOW;
@@ -7691,6 +7915,39 @@ endcase
 		end
 	end
 
+	if (page_fault) begin
+		pcyc_o <= `LOW;
+		pstb_o <= `LOW;
+		pwe_o <= `LOW;
+		psel_o <= 4'h0;
+		mac_cycle_type <= {state[6:0],psel_o,~pwe_o,1'b0,pfc_o};
+		bad_addr <= adr_o;
+		begin
+			is_bus_err <= 1'b1;
+			dati_buf <= dat_i;
+			dato_buf <= pdat_o;
+			page_fault <= 1'b0;
+			goto (TRAP);
+		end
+	end
+
+	// Bus error: abort current cycle and trap.
+	if (atc_err) begin
+		pcyc_o <= `LOW;
+		pstb_o <= `LOW;
+		pwe_o <= `LOW;
+		psel_o <= 4'h0;
+		mac_cycle_type <= {state[6:0],psel_o,~pwe_o,1'b0,pfc_o};
+		bad_addr <= adr_o;
+		if (state != INTA) begin
+			is_priv <= 1'b1;
+			dati_buf <= dat_i;
+			dato_buf <= pdat_o;
+			goto (TRAP);
+		end
+	end
+
+
 `ifdef SUPPORT_RETRY
 	// Retry: abort current cycle and retry.
 	if (cyc_o & rty_i) begin
@@ -7703,12 +7960,257 @@ endcase
 	end
 `endif
 
+	case(1'b1)
+	pmmu_state[PMMU_WAIT_MISS]:
+		if (!(atc_hit|pload) && pmmu_en) begin
+			pmmu_access <= 1'b1;
+			work_fc <= 3'd5;
+			work_cyc <= 1'b1;
+			work_stb <= 1'b1;
+			work_we <= 1'b0;
+			work_sel <= 4'hF;
+			if (pfc_o[2])
+				work_adr <= {pmmu_sys_root[31:8],8'h00} + (((padr_o >> (pmmu_log_pagesize + pmmu_adrbits_consumed * (pmmu_table_depth-1))) << 2) & pmmu_pmask);
+			else
+				work_adr <= {pmmu_cpu_root[31:8],8'h00} + (((padr_o >> (pmmu_log_pagesize + pmmu_adrbits_consumed * (pmmu_table_depth-1))) << 2) & pmmu_pmask);
+			pmmu_table_level <= pmmu_table_depth;
+		end
+
+	pmmu_state[PMMU_ACCESS1]:
+		begin
+			pmmu_access <= 1'b1;
+			work_fc <= 3'd5;
+			work_cyc <= 1'b1;
+			work_stb <= 1'b1;
+			work_we <= 1'b0;
+			work_sel <= 4'hF;
+			if (pfc_o[2])
+				work_adr <= {pmmu_sys_root[31:8],8'h00} + (((padr_o >> (pmmu_log_pagesize + pmmu_adrbits_consumed * (pmmu_table_depth-1))) << 2) & pmmu_pmask);
+			else
+				work_adr <= {pmmu_cpu_root[31:8],8'h00} + (((padr_o >> (pmmu_log_pagesize + pmmu_adrbits_consumed * (pmmu_table_depth-1))) << 2) & pmmu_pmask);
+			if (ack_i) begin
+				pmmu_table_level <= pmmu_table_level - 2'd1;
+				work_cyc <= 1'b0;
+				work_stb <= 1'b0;
+				work_sel <= 4'h0;
+				pte <= pte_t'(dat_i);
+			end
+		end
+
+	pmmu_state[PMMU_ACCESS2]:
+		begin
+			pmmu_access <= 1'b1;
+			work_cyc <= 1'b1;
+			work_stb <= 1'b1;
+			work_we <= 1'b0;
+			work_sel <= 4'hF;
+			work_adr <= {{32'd0,pte.ppn} << pmmu_log_pagesize} | (((padr_o >> (pmmu_log_pagesize + pmmu_adrbits_consumed * (pmmu_table_level-1))) << 2) & pmmu_pmask);
+		end
+	pmmu_state[PMMU_WAIT_ACK2]:
+		begin
+			pmmu_access <= 1'b1;
+			work_cyc <= 1'b1;
+			work_stb <= 1'b1;
+			work_we <= 1'b0;
+			work_sel <= 4'hF;
+			work_adr <= {pte.ppn,padr_o[23:13],2'b00};
+			if (ack_i) begin
+				pmmu_table_level <= pmmu_table_level - 2'd1;
+				work_cyc <= 1'b0;
+				work_stb <= 1'b0;
+				work_sel <= 4'h0;
+				pte <= pte_t'(dat_i);
+			end
+		end	
+
+	pmmu_state[PMMU_ACCESS3]:
+		begin
+			pmmu_access <= 1'b1;
+			work_cyc <= 1'b1;
+			work_stb <= 1'b1;
+			work_we <= 1'b0;
+			work_sel <= 4'hF;
+			work_adr <= {{32'd0,pte.ppn} << pmmu_log_pagesize} | (((padr_o >> (pmmu_log_pagesize + pmmu_adrbits_consumed * (pmmu_table_level-1))) << 2) & pmmu_pmask);
+		end
+	pmmu_state[PMMU_WAIT_ACK3]:
+		begin
+			pmmu_access <= 1'b1;
+			work_cyc <= 1'b1;
+			work_stb <= 1'b1;
+			work_we <= 1'b0;
+			work_sel <= 4'hF;
+			work_adr <= {{32'd0,pte.ppn} << pmmu_log_pagesize} | (((padr_o >> (pmmu_log_pagesize + pmmu_adrbits_consumed * (pmmu_table_level-1))) << 2) & pmmu_pmask);
+			if (ack_i) begin
+				pmmu_table_level <= pmmu_table_level - 2'd1;
+				work_cyc <= 1'b0;
+				work_stb <= 1'b0;
+				work_sel <= 4'h0;
+				pte <= pte_t'(dat_i);
+			end
+		end	
+
+	pmmu_state[PMMU_ACCESS4]:
+		begin
+			pmmu_access <= 1'b1;
+			work_cyc <= 1'b1;
+			work_stb <= 1'b1;
+			work_we <= 1'b0;
+			work_sel <= 4'hF;
+			work_adr <= {{32'd0,pte.ppn} << pmmu_log_pagesize} | (((padr_o >> (pmmu_log_pagesize + pmmu_adrbits_consumed * (pmmu_table_level-1))) << 2) & pmmu_pmask);
+		end
+	pmmu_state[PMMU_WAIT_ACK4]:
+		begin
+			pmmu_access <= 1'b1;
+			work_cyc <= 1'b1;
+			work_stb <= 1'b1;
+			work_we <= 1'b0;
+			work_sel <= 4'hF;
+			work_adr <= {{32'd0,pte.ppn} << pmmu_log_pagesize} | (((padr_o >> (pmmu_log_pagesize + pmmu_adrbits_consumed * (pmmu_table_level-1))) << 2) & pmmu_pmask);
+			if (ack_i) begin
+				pmmu_table_level <= pmmu_table_level - 2'd1;
+				work_cyc <= 1'b0;
+				work_stb <= 1'b0;
+				work_sel <= 4'h0;
+				pte <= pte_t'(dat_i);
+			end
+		end	
+
+	// This update state should cause an immediate hit on the ATC.
+	pmmu_state[PMMU_ATC_UPDATE]:
+		begin
+			pmmu_access <= 1'b0;
+			pload <= `FALSE;
+			if (pte.p) begin
+				pte.a <= `TRUE;
+				atc[atc_ua].pte.a <= `TRUE;
+				if (pwe_o) begin
+					pte.m <= `TRUE;
+					atc[atc_ua].pte.m <= `TRUE;
+				end
+				atc[atc_ua].pte <= pte;
+				atc[atc_ua].vpn <= padr_o[31:8];
+				atc[atc_ua].appid <= appid;
+				atc_ua <= atc_ua + 6'd1;
+			end
+			else begin
+				page_fault <= 1'b1;
+				page_fault_adr <= padr_o;
+			end
+		end
+
+	pmmu_state[PMMU_PTE_UPDATE]:
+		begin
+			pmmu_access <= 1'b1;
+			work_cyc <= 1'b1;
+			work_stb <= 1'b1;
+			work_we <= 1'b1;
+			work_sel <= 4'hF;
+			work_dat <= pte;
+		end
+	pmmu_state[PMMU_PTE_ACK]:
+		begin
+			pmmu_access <= 1'b1;
+			work_cyc <= 1'b1;
+			work_stb <= 1'b1;
+			work_we <= 1'b1;
+			work_sel <= 4'hF;
+			if (ack_i) begin
+				pmmu_table_level <= pmmu_table_level - 2'd1;
+				work_cyc <= 1'b0;
+				work_stb <= 1'b0;
+				work_sel <= 4'h0;
+				work_we <= 1'b0;
+			end
+		end	
+	// ToDo: dump evicted translation to memory.
+	default:	;
+	endcase
+
+end
+
+// PMMU access state machine
+always_ff @(posedge clk_i)
+if (rst_i) begin
+	pmmu_state <= 16'd0;
+	pmmu_state[PMMU_WAIT_MISS] <= 1'b1;
+end
+else begin
+	pmmu_state <= 16'd0;
+	case(1'b1)
+
+	pmmu_state[PMMU_WAIT_MISS]:
+		if (!atc_hit && pmmu_en)
+			pmmu_state[PMMU_ACCESS1] <= 1'b1;
+		else
+			pmmu_state[PMMU_WAIT_MISS] <= 1'b1;
+
+	pmmu_state[PMMU_ACCESS1]:
+		if (ack_i) begin
+			if (pmmu_table_depth==1)
+				pmmu_state[PMMU_ATC_UPDATE] <= 1'b1;
+			else
+				pmmu_state[PMMU_ACCESS2] <= 1'b1;
+		end
+		else
+			pmmu_state[PMMU_ACCESS1] <= 1'b1;
+
+	pmmu_state[PMMU_ACCESS2]:
+		pmmu_state[PMMU_WAIT_ACK2] <= 1'b1;
+
+	pmmu_state[PMMU_WAIT_ACK2]:
+		if (ack_i) begin
+			if (pmmu_table_depth==2)
+				pmmu_state[PMMU_ATC_UPDATE] <= 1'b1;
+			else
+				pmmu_state[PMMU_ACCESS3] <= 1'b1;
+		end
+		else
+			pmmu_state[PMMU_WAIT_ACK2] <= 1'b1;
+
+	pmmu_state[PMMU_ACCESS3]:
+		pmmu_state[PMMU_WAIT_ACK3] <= 1'b1;
+
+	pmmu_state[PMMU_WAIT_ACK3]:
+		if (ack_i) begin
+			if (pmmu_table_depth==3)
+				pmmu_state[PMMU_ATC_UPDATE] <= 1'b1;
+			else
+				pmmu_state[PMMU_ACCESS4] <= 1'b1;
+		end
+		else
+			pmmu_state[PMMU_WAIT_ACK3] <= 1'b1;
+
+	pmmu_state[PMMU_ACCESS4]:
+		pmmu_state[PMMU_WAIT_ACK4] <= 1'b1;
+
+	pmmu_state[PMMU_WAIT_ACK4]:
+		if (ack_i)
+			pmmu_state[PMMU_ATC_UPDATE] <= 1'b1;
+		else
+			pmmu_state[PMMU_WAIT_ACK4] <= 1'b1;
+
+	pmmu_state[PMMU_ATC_UPDATE]:
+		if (pte.p & pload)
+			pmmu_state[PMMU_PTE_UPDATE] <= 1'b1;
+		else
+			pmmu_state[PMMU_WAIT_MISS] <= 1'b1;
+		
+	pmmu_state[PMMU_PTE_UPDATE]:
+		pmmu_state[PMMU_PTE_ACK] <= 1'b1;
+		
+	pmmu_state[PMMU_PTE_ACK]:
+		if (ack_i)
+			pmmu_state[PMMU_WAIT_MISS] <= 1'b1;
+		else
+			pmmu_state[PMMU_PTE_ACK] <= 1'b1;
+
+	default:
+		pmmu_state[PMMU_WAIT_MISS] <= 1'b1;
+		
+	endcase
 end
 
 reg [31:0] padr1;
-reg [31:0] pmask;
-always_comb
-	pmask = (32'd1 << pmmu_ea_shift) - 1;
 
 // Bus signals all need to be delayed a clock to aligned with PMMU translation.
 // However, as soon as the cycle is terminated, we want the signals to be
@@ -7719,24 +8221,24 @@ reg [3:0] selo;
 reg [31:0] adro;
 reg [31:0] dato;
 always_ff @(posedge clk_i)	
-	fco <= pfc_o;
+	fco <= pmmu_access ? work_fc : pfc_o;
 always_ff @(posedge clk_i)	
-	cyco <= pcyc_o;
+	cyco <= pmmu_access ? work_cyc : pcyc_o;
 always_ff @(posedge clk_i)	
-	stbo <= pstb_o;
+	stbo <= pmmu_access ? work_stb : pstb_o;
 always_ff @(posedge clk_i)	
-	weo <= pwe_o;
+	weo <= pmmu_access ? work_we : pwe_o;
 always_ff @(posedge clk_i)	
-	selo <= psel_o;
+	selo <= pmmu_access ? work_sel : psel_o;
 always_ff @(posedge clk_i)	
-	dato <= pdat_o;
+	dato <= pmmu_access ? work_dat : pdat_o;
 // Address is a little more complex
 always_ff @(posedge clk_i)
 begin
 	if (pmmu_en) begin
 		if (atc_hit)
 			//         Low order         High order
-			adro <= (padr_o & pmask) | (padr1 & ~pmask);
+			adro <= pmmu_access ? work_adr : (padr_o & pmmu_pmask) | (padr1 & ~pmmu_pmask);
 		else
 			adro <= 32'h00000000;
 	end
@@ -7758,8 +8260,8 @@ begin
 	atc_hit = 1'b0;
 	atc_err = 1'b0;
 	for (n3 = 0; n3 < $size(atc); n3 = n3 + 1)
-		if (atc[n1].vpn==(padr_o >> pmmu_ea_shift) && appid==atc[n1].appid) begin
-			padr1 = atc[n1].pte.ppn << pmmu_ea_shift;
+		if (atc[n1].vpn==(padr_o >> pmmu_log_pagesize) && appid==atc[n1].appid) begin
+			padr1 = atc[n1].pte.ppn << pmmu_log_pagesize;
 			atc_hit = 1'b1;
 			case(pfc_o)
 			3'b000:	;	// not used
@@ -7854,7 +8356,7 @@ begin
 			end
 	3'd3:	begin	// (An)+
 				ea <= (MMMRRR ? rfoAna : rfoAn);
-				if (!lea) begin
+				if (!lea && !pload) begin
 					Rt <= {1'b1,rrr};
 					rfwrL <= 1'b1;
 				end			
@@ -7868,7 +8370,7 @@ begin
 				goto(size_state);
 			end
 	3'd4:	begin	// -(An)
-				if (!lea) begin
+				if (!lea && !pload) begin
 					Rt <= {1'b1,rrr};
 					rfwrL <= 1'b1;
 				end
@@ -8049,10 +8551,25 @@ begin
 end
 endtask
 
+task tPTRAPcc;
+begin
+	vecno <= `TRAPV_VEC;
+	goto (TRAP);
+end
+endtask
+
 task tIllegal;
 begin
 	is_illegal <= 1'b1;
   vecno <= `ILLEGAL_VEC;
+  goto (TRAP);
+end
+endtask
+
+task tPMMUIllop;
+begin
+	is_illegal <= 1'b1;
+  vecno <= `PMMU_ILLOP_VEC;
   goto (TRAP);
 end
 endtask
