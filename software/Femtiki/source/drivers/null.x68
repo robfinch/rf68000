@@ -59,8 +59,9 @@ null_init:
 	move.l #$4E554C4C,DCB_NAME(a1)					; 'NULL'
 	move.l #null_cmdproc,DCB_CMDPROC(a1)
 	lea.l DCB_MAGIC(a1),a1
-	moveq #13,d0									; DisplayStringCRLF function
-	trap #15
+	; No I/O is setup yet. This is mainly for debugging.
+;	moveq #13,d0									; DisplayStringCRLF function
+;	trap #15
 	movem.l (a7)+,d0/a0/a1
 null_ret:
 	rts

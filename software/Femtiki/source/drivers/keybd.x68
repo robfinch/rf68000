@@ -892,12 +892,13 @@ KeybdIRQ:
 	movem.l d1-d3,-(sp)
 	move.l _FMTK_Inited,d0
 	cmp.l #FMTK_MAGIC,d0
-	bne.s .0005
+;	bne.s .0005
 	move.l d1,d3							; d3 = scan code
 	move.l _hKeybdIRQMbx,d0
 	move.l #_KeybdMsg,d1
 	move.l #$ffff,_KeybdMsg+20	; msg->d1 = IRQ message
 	move.l #-1,_KeybdMsg+24			; msg->d2 = -1
+	move.b #2,leds
 	jsr _FMTK_PostMsg
 .0005
 	movem.l (sp)+,d1-d3

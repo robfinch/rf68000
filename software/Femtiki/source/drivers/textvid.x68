@@ -1,6 +1,6 @@
 ; ============================================================================
 ;        __
-;   \\__/ o\    (C) 2025  Robert Finch, Waterloo
+;   \\__/ o\    (C) 2025-2026  Robert Finch, Waterloo
 ;    \  __ /    All rights reserved.
 ;     \/_//     robfinch<remove>@opencores.org
 ;       ||
@@ -689,7 +689,7 @@ dcx12:
 	clr.w	tv_outpos_y(a3)
 	bra	dcx14
 dcx11:
-	movem.l	a0,-(a7)
+	move.l a0,-(a7)
 	cmpi.b #$99,d1				; delete ?
 	beq.s	doDelete
 	cmpi.b #CTRLH,d1			; backspace ?
@@ -717,7 +717,7 @@ dclf:
 dcx16:
 	bsr	SyncCursor
 dcx4:
-	movem.l	(a7)+,a0			; get back a0
+	move.l (a7)+,a0			; get back a0
 	movem.l	(a7)+,d1/d2/d3
 	moveq #E_Ok,d0
 	rts

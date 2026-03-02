@@ -190,4 +190,11 @@ typedef struct packed
 	logic [2:0] ALC;
 } pmmu_acr_t;
 
+typedef struct packed
+{
+	logic bpe;
+	logic [6:0] resv;
+	logic [7:0] skip;
+} pmmu_bac_t;
+
 endpackage
