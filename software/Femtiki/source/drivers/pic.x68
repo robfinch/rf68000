@@ -26,7 +26,7 @@ init_pic:
 	lea	$80+4*16(a0),a1			; point to keyboard registers (28)
 	move.l #$3C030502,(a1)	; core=2,level sensitive,enabled,irq3,inta
 	lea	$80+4*29(a0),a1			; point to timer registers (29)
-	move.l #$00060B02,(a1)	; initialize, core=2,edge sensitive,enabled,irq6,inta
+	move.l #$1E060702,(a1)	; initialize, core=2,edge sensitive,enabled,irq6,inta
 ;	move.l #$00060302,(a1)	; initialize, core=2,edge sensitive,disabled,irq6,vpa2
 	lea	$80+4*31(a0),a1			; point to nmi button register (31)
 	move.l #$00070302,(a1)	; initialize, core=2,edge sensitive,enabled,irq7,vpa
