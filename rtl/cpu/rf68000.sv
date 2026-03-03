@@ -563,7 +563,10 @@ typedef enum logic [9:0] {
 	FETCH_NDXg,
 	FETCH_NDXh,
 	// 310
-	FETCH_NDXi
+	FETCH_NDXi,
+	BITFLD,
+	BITFLD_UPDATE,
+	FETCH_BRDISP32
 } state_t;
 
 typedef enum logic [4:0] {
@@ -1008,6 +1011,45 @@ case(rrr)
 3'd6:   rfoDnn <= d6;
 3'd7:   rfoDnn <= d7;
 endcase
+// For bitfield
+integer bf1;
+state_t bf_size;
+reg [5:0] bfwidth,bfoffs;
+reg [31:0] bfdat;
+reg [63:0] bfmask;
+reg [1:0] bfcmd;
+function [5:0] fnBfow;
+input [5:0] fld;
+begin
+case(fld)
+6'b100000:	fnBfow = {d0[4:0]==5'd0,d0[4:0]};
+6'b100001:	fnBfow = {d1[4:0]==5'd0,d1[4:0]};
+6'b100010:	fnBfow = {d2[4:0]==5'd0,d2[4:0]};
+6'b100011:	fnBfow = {d3[4:0]==5'd0,d3[4:0]};
+6'b100100:	fnBfow = {d4[4:0]==5'd0,d4[4:0]};
+6'b100101:	fnBfow = {d5[4:0]==5'd0,d5[4:0]};
+6'b100110:	fnBfow = {d6[4:0]==5'd0,d6[4:0]};
+6'b100111:	fnBfow = {d7[4:0]==5'd0,d7[4:0]};
+6'b0?????:	fnBfow = {fld[4:0]==5'd0,fld[4:0]};
+default:	fnBfow = 6'd0;
+endcase
+end
+endfunction
+function [31:0] fnBfdat;
+input [2:0] fld;
+begin
+case(fld)
+3'b000:	fnBfdat = d0;
+3'b001:	fnBfdat = d1;
+3'b010:	fnBfdat = d2;
+3'b011:	fnBfdat = d3;
+3'b100:	fnBfdat = d4;
+3'b101:	fnBfdat = d5;
+3'b110:	fnBfdat = d6;
+3'b111:	fnBfdat = d7;
+endcase
+end
+endfunction
 reg [31:0] rfob;
 always_comb
 case({mmm[0],rrr})
@@ -3105,6 +3147,8 @@ DECODE:
 `endif
 					goto(FETCH_BRDISP);
 				end
+				else if (ir[7:0]==8'hFF)
+					call (FETCH_IMM32,FETCH_BRDISP32);
 				else begin
 					pc <= pc + {{24{ir[7]}},ir[7:1],1'b0} + 4'd2;
 					ret();
@@ -3117,6 +3161,8 @@ DECODE:
 				if (ir[7:0]==8'h00)		// skip over long displacement
 `endif			
 					pc <= pc + 4'd4;
+				else if (ir[7:0]==8'hFF)
+					pc <= pc + 4'd6;
 				ret();
 			end
 		end
@@ -3392,25 +3438,36 @@ DECODE:
 //-----------------------------------------------------------------------------
 	5'hE:
 		begin
-			if (sz==2'b11) begin
-				cnt <= 6'd1;	// memory shifts only by one
-				shift_op <= {ir[8],ir[10:9]};
-				push(SHIFT1);
-				fs_data(mmm,rrr,FETCH_WORD,D);
-			end
-			else begin
-				shift_op <= {ir[8],ir[4:3]};
-				goto (SHIFT1);
-				if (ir[5])
-					cnt <= rfoDn[5:0];
-				else
-					cnt <= {2'b0,~|QQQ,QQQ};
-				// Extend by a bit for ASL overflow detection.
-				resL <= {rfoDnn[31],rfoDnn};
-				resB <= {rfoDnn[7],rfoDnn[7:0]};
-				resW <= {rfoDnn[15],rfoDnn[15:0]};
-				d <= rfoDnn;
-			end
+			casez(ir)
+			16'b1110_1000_11??_????,
+			16'b1110_1001_11??_????,
+			16'b1110_1010_11??_????,
+			16'b1110_1011_11??_????,
+			16'b1110_1100_11??_????,
+			16'b1110_1101_11??_????,
+			16'b1110_1110_11??_????,
+			16'b1110_1111_11??_????:	goto (IFETCH2);
+			default:
+				if (sz==2'b11) begin
+					cnt <= 6'd1;	// memory shifts only by one
+					shift_op <= {ir[8],ir[10:9]};
+					push(SHIFT1);
+					fs_data(mmm,rrr,FETCH_WORD,D);
+				end
+				else begin
+					shift_op <= {ir[8],ir[4:3]};
+					goto (SHIFT1);
+					if (ir[5])
+						cnt <= rfoDn[5:0];
+					else
+						cnt <= {2'b0,~|QQQ,QQQ};
+					// Extend by a bit for ASL overflow detection.
+					resL <= {rfoDnn[31],rfoDnn};
+					resB <= {rfoDnn[7],rfoDnn[7:0]};
+					resW <= {rfoDnn[15],rfoDnn[15:0]};
+					d <= rfoDnn;
+				end
+			endcase
 		end
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
@@ -3506,6 +3563,44 @@ DECODE:
 			else
 				tIllegal();
 		end
+
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+	5'h1E:
+		casez(ir)
+		16'b1110_1000_11??_????,	// BFTEST
+		16'b1110_1001_11??_????,	// BFEXTU
+		16'b1110_1010_11??_????,	// BFCHG
+		16'b1110_1011_11??_????,	// BFEXTS
+		16'b1110_1100_11??_????,	// BFCLR
+		16'b1110_1101_11??_????,	// BFFFO
+		16'b1110_1110_11??_????,	// BFSET
+		16'b1110_1111_11??_????:	// BFINS
+			begin
+				bfdat <= fnBfdat(ir2[14:12]);
+				bfwidth <= fnBfow(ir2[5:0]);
+				bfoffs <= fnBfow(ir2[11:6]);
+				bfmask <= ((64'd1 << fnBfow(ir2[5:0])) - 64'd1) << fnBfow(ir[11:6]);
+				push (BITFLD);
+				if ({2'b0,bfoffs} + {2'd0,bfwidth} <= 7'd8) begin
+					bf_size <= FETCH_BYTE;
+					fs_data(mmm,rrr,FETCH_BYTE,S);
+				end
+				else if ({2'b0,bfoffs} + {2'd0,bfwidth} <= 7'd16) begin
+					bf_size <= FETCH_WORD;
+					fs_data(mmm,rrr,FETCH_WORD,S);
+				end
+				else if ({2'b0,bfoffs} + {2'd0,bfwidth} <= 7'd32) begin
+					bf_size <= FETCH_LWORD;
+					fs_data(mmm,rrr,FETCH_LWORD,S);
+				end
+				else begin
+					bf_size <= FETCH_OCTA;
+					fs_data(mmm,rrr,FETCH_OCTA,S);
+				end
+			end
+		endcase
+
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
 	5'h1F:
@@ -5276,6 +5371,13 @@ FETCH_BRDISPa:
 `endif			
 				pc <= pc + {{16{d[15]}},d[15:0]};
 		end
+		goto(WAIT_NACK);
+	end
+FETCH_BRDISP32:
+	begin
+		d <= pc + {imm[31:1],1'b0};
+		pc <= pc + {imm[31:1],1'b0};
+		ea <= pc + {imm[31:1],1'b0};
 		goto(WAIT_NACK);
 	end
 
@@ -8195,8 +8297,176 @@ PRESTORE2:
 	end
 
 //-----------------------------------------------------------------------------
-// 68020 - Breakpoint
+// 68020 - 
 //-----------------------------------------------------------------------------
+BITFLD:
+	begin
+		goto (BITFLD_UPDATE);
+		case(bf_size)
+		FETCH_BYTE,FETCH_WORD,FETCH_LWORD:	
+			begin
+				case(ir[11:8])
+				4'b1011:	// BFEXTS
+					begin
+						d <= (s & bfmask) >> bfoffs;
+						for (bf1 = 0; bf1 < 32; bf1 = bf1 + 1)
+							if (bf1 >= bfwidth)
+								d[bf1] <= s[bfoffs+bfwidth-1];
+						cf <= 1'b0;
+						vf <= 1'b0;
+						nf <= s[bfoffs+bfwidth-1];
+						zf <= (s & bfmask)==32'd0;
+					end
+				4'b1001:	// BFEXTU
+					begin
+						d <= (s & bfmask) >> bfoffs;
+						for (bf1 = 0; bf1 < 32; bf1 = bf1 + 1)
+							if (bf1 >= bfwidth)
+								d[bf1] <= 1'b0;
+						cf <= 1'b0;
+						vf <= 1'b0;
+						nf <= s[bfoffs+bfwidth-1];
+						zf <= (s & bfmask)==32'd0;
+					end
+				4'b1101:	// BFFFO
+					begin
+						d <= bfoffs + bfwidth;
+						for (bf1 = 31; bf1 >= 0; bf1 = bf1 - 1)
+							if (bf1 <= bfoffs)
+								if (s[bf1]==1'b1) begin
+									d <= bf1;
+									break;
+								end
+						cf <= 1'b0;
+						vf <= 1'b0;
+						nf <= s[bfoffs+bfwidth-1];
+						zf <= (s & bfmask)==32'd0;
+					end
+				4'b1111:	// BFINS
+					begin
+						d <= (s & ~bfmask) | (bfdat & (bfmask >> bfoffs) << bfoffs);
+						zf <= (bfdat & (bfmask >> bfoffs))==32'd0;
+						nf <= bfdat[bfwidth-1];
+						cf <= 1'b0;
+						vf <= 1'b0;
+					end
+				4'b1000:
+					begin
+						nf <= s[bfoffs+bfwidth-1];
+						zf <= (s & bfmask)==32'd0;
+						cf <= 1'b0;
+						vf <= 1'b0;
+						ret();
+					end
+				default:
+				begin
+					zf <= TRUE;
+					for (bf1 = 0; bf1 < 32; bf1 = bf1 + 1)
+						if (bf1 < bfoffs && bf1 < bfoffs + bfwidth-1) begin
+							zf <= zf & ~s[bf1];
+							case(ir[11:8])
+							4'b1010:	d[bf1] <= s[bf1] ^ 1'b1;
+							4'b1100:	d[bf1] <= 1'b0;
+							4'b1110:	d[bf1] <= 1'b1;
+							default:	;
+							endcase
+						end
+						else
+							d[bf1] <= s[bf1];
+					cf <= 1'b0;
+					vf <= 1'b0;
+					nf <= s[bfoffs+bfwidth-1];
+				end
+				endcase
+			end
+		FETCH_OCTA:
+			begin
+				case(ir[11:8])
+				4'b1011:
+					begin
+						fpd <= (fps & bfmask) >> bfoffs;
+						for (bf1 = 0; bf1 < 32; bf1 = bf1 + 1)
+							if (bf1 >= bfwidth)
+								fpd[bf1] <= fps[bfoffs+bfwidth-1];
+						cf <= 1'b0;
+						vf <= 1'b0;
+						nf <= fps[bfoffs+bfwidth-1];
+						zf <= (fps & bfmask)==64'd0;
+					end
+				4'b1001:
+					begin
+						fpd <= fps >> bfoffs;
+						for (bf1 = 0; bf1 < 32; bf1 = bf1 + 1)
+							if (bf1 >= bfwidth)
+								fpd[bf1] <= 1'b0;
+						cf <= 1'b0;
+						vf <= 1'b0;
+						nf <= fps[bfoffs+bfwidth-1];
+						zf <= (fps & bfmask)==64'd0;
+					end
+				4'b1101:
+					begin
+						fpd <= bfoffs + bfwidth;
+						for (bf1 = 63; bf1 >= 0; bf1 = bf1 - 1)
+							if (bf1 <= bfoffs)
+								if (fps[bf1]==1'b1) begin
+									fpd <= bf1;
+									break;
+								end
+						cf <= 1'b0;
+						vf <= 1'b0;
+						nf <= fps[bfoffs+bfwidth-1];
+						zf <= (fps & bfmask)==64'd0;
+					end
+				4'b1111:	// BFINS
+					begin
+						fpd <= (fps & ~bfmask) | (bfdat & (bfmask >> bfoffs) << bfoffs);
+						zf <= (bfdat & (bfmask >> bfoffs))==64'd0;
+						nf <= bfdat[bfwidth-1];
+						cf <= 1'b0;
+						vf <= 1'b0;
+					end
+				4'b1000:
+					begin
+						nf <= fps[bfoffs+bfwidth-1];
+						zf <= (fps & bfmask)==64'd0;
+						cf <= 1'b0;
+						vf <= 1'b0;
+						ret();
+					end
+				default:
+				begin
+					zf <= TRUE;
+					for (bf1 = 0; bf1 < 64; bf1 = bf1 + 1)
+						if (bf1 < bfoffs && bf1 < bfoffs + bfwidth-1) begin
+							zf <= zf & ~fps[bf1];
+							case(ir[11:8])
+							4'b1010:	fpd[bf1] <= fps[bf1] ^ 1'b1;
+							4'b1100:	fpd[bf1] <= 1'b0;
+							4'b1110:	fpd[bf1] <= 1'b1;
+							default:	;
+							endcase
+						end
+						else
+							fpd[bf1] <= fps[bf1];
+					cf <= 1'b0;
+					vf <= 1'b0;
+					nf <= fps[bfoffs+bfwidth-1];
+				end
+				endcase
+			end
+		default:	;
+		endcase
+	end
+BITFLD_UPDATE:
+	if (ir[11:8]==4'b1011 || ir[11:8]==4'b1001 || ir[11:8]==4'b1101) begin
+		Rt <= {1'b0,ir2[14:12]};
+		rfwrL <= TRUE;
+		resL <= bf_size==FETCH_OCTA ? fpd[31:0] : d[31:0];
+		ret();
+	end
+	else
+		fs_data(mmm,rrr,bf_size,D);
 
 // Do breakpoint acknowledge cycle
 BREAKPOINT:
