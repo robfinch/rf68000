@@ -151,6 +151,7 @@ module rf68000(coreno_i, clken_i, rst_i, rst_o, clk_i, dfclk_i, nmi_i, ipl_i, vp
 parameter SUPPORT_DECFLT = 1'b1;
 parameter SUPPORT_BINFLT = 1'b0;
 parameter SUPPORT_PMMU = 1'b0;
+parameter SUPPORT_68020 = 1'b0;
 parameter IOPS_ADDR = 32'hFDE00000;
 parameter MMU_ADDR = 32'hFDC00000;
 
@@ -552,7 +553,17 @@ typedef enum logic [9:0] {
 	// 300
 	BREAKPOINT,
 	BREAKPOINT_ACK,
-	IFETCH_ACK
+	IFETCH_ACK,
+	
+	FETCH_NDXb,
+	FETCH_NDXc,
+	FETCH_NDXd,
+	FETCH_NDXe,
+	FETCH_NDXf,
+	FETCH_NDXg,
+	FETCH_NDXh,
+	// 310
+	FETCH_NDXi
 } state_t;
 
 typedef enum logic [4:0] {
@@ -923,6 +934,18 @@ reg dsix;
 reg [2:0] mmm,mmmx,mmm_save='d0;
 reg [2:0] rrr,rrrx;
 reg [3:0] rrrr;
+// Extension word fields
+reg [31:0] base_reg;
+reg [31:0] index_reg;
+reg [31:0] base_disp;
+reg [31:0] outer_disp;
+reg [2:0] iis;
+reg [1:0] bdsz;
+reg index_suppress;
+reg base_suppress;
+reg xword_format;
+reg [1:0] scale;
+
 wire [2:0] MMM = ir[8:6];
 wire [2:0] RRR = ir[11:9];
 wire [2:0] QQQ = ir[11:9];
@@ -5576,16 +5599,108 @@ FETCH_NDX_ACK:
 		mmm <= {2'b00,iri[15]};	// to get reg
 		rrr <= iri[14:12];
 		wl <= iri[11];
+		iis <= iri[2:0];
+		bdsz <= iri[5:4];
+		index_suppress = iri[6];
+		base_suppress = iri[7];
+		xword_format = iri[8];
+		scale = iri[10:9];
 		state <= FETCH_NDXa;
 	end
 FETCH_NDXa:
 	begin
-		pc <= pc + 32'd2;
-		if (wl)
-			ea <= ea + rfob + disp;
-		else
-			ea <= ea + {{16{rfob[15]}},rfob[15:0]} + disp;
+		if (xword_format) begin
+			if (SUPPORT_68020) begin
+				imm <= 32'd0;
+				base_disp <= 32'd0;
+				outer_disp <= 32'd0;
+				if (base_suppress)
+					base_reg <= 32'd0;
+				else
+					base_reg <= ea;
+				ea <= 32'd0;
+				if (index_suppress)
+					index_reg <= 32'd0;
+				else begin
+					if (wl)
+						index_reg <= rfob << scale;
+					else
+						index_reg <= {{16{rfob[15]}},rfob[15:0]} << scale;
+				end
+				case(bdsz)
+				2'd0:	tIllegal();
+				2'd1: goto (FETCH_NDXb);
+				2'd2:	call (FETCH_IMM16,FETCH_NDXb);
+				2'd3:	call (FETCH_IMM32,FETCH_NDXb);
+				endcase
+			end
+			else
+				tIllegal();
+		end
+		else begin
+			pc <= pc + 32'd2;
+			if (wl)
+				ea <= ea + rfob + disp;
+			else
+				ea <= ea + {{16{rfob[15]}},rfob[15:0]} + disp;
+		end
 		goto(WAIT_NACK);
+	end
+FETCH_NDXb:
+	begin
+		case(iis)
+		// No indirection
+		3'd0:	begin ea <= imm + base_reg + index_reg; ret(); end
+		// Indirect pre-indexed with no outer displacement
+		3'd1:	begin ea <= imm + base_reg + index_reg; ds <= S; call (FETCH_LWORD,FETCH_NDXc); end
+		// Indirect pre-indxed with word outer displacement
+		3'd2:	begin base_disp <= imm; call (FETCH_IMM16, FETCH_NDXd); end
+		// Indirect pre-indxed with long word outer displacement
+		3'd3:	begin base_disp <= imm; call (FETCH_IMM32, FETCH_NDXd); end
+		3'd4:	tIllegal();
+		// Indirect post-indexed with no outer displacement
+		3'd5:	begin ea <= imm + base_reg; call(FETCH_LWORD,FETCH_NDXf); end
+		// Indirect post-indexed with word outer displacement
+		3'd6:	begin ea <= imm + base_reg; call(FETCH_LWORD,FETCH_NDXg); end
+		// Indirect post-indexed with long word outer displacement
+		3'd7:	begin ea <= imm + base_reg; call(FETCH_LWORD,FETCH_NDXi); end
+		endcase
+	end
+FETCH_NDXc:
+	begin
+		ea <= s;
+		goto(WAIT_NACK);
+	end
+FETCH_NDXd:
+	begin
+		ea <= base_disp + base_reg + index_reg;
+		ds <= S;
+		call (FETCH_LWORD,FETCH_NDXe);
+	end
+FETCH_NDXe:
+	begin
+		ea <= s + imm;
+		goto(WAIT_NACK);
+	end
+FETCH_NDXf:
+	begin
+		ea <= s + index_reg;
+		goto(WAIT_NACK);
+	end
+FETCH_NDXg:
+	begin
+		ea <= s + index_reg;
+		call (FETCH_IMM16,FETCH_NDXh);
+	end
+FETCH_NDXh:
+	begin
+		ea <= ea + imm;
+		goto(WAIT_NACK);
+	end
+FETCH_NDXi:
+	begin
+		ea <= s + index_reg;
+		call (FETCH_IMM32,FETCH_NDXh);
 	end
 
 FETCH_BYTE:
