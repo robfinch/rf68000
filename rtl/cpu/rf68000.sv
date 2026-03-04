@@ -51,6 +51,8 @@ import rf68851_pkg::*;
 `define SUPPORT_DIV	1'b1
 `define SUPPORT_BCD	1'b1
 `define SUPPORT_010	1'b1
+//`define SUPPORT_020 1'b1
+`define SUPPORT_PMMU 1'b1
 `define SUPPORT_BITPAIRS 1'b1
 
 `define SUPPORT_NANO_CACHE	1'b1
@@ -566,7 +568,52 @@ typedef enum logic [9:0] {
 	FETCH_NDXi,
 	BITFLD,
 	BITFLD_UPDATE,
-	FETCH_BRDISP32
+	FETCH_BRDISP32,
+	MOVEP1_ACK,
+	MOVEP2_ACK,
+	MOVEP3_ACK,
+	FETCH_QLW1,		// Quinta-long-word
+	FETCH_QLW2,
+	FETCH_QLW3,
+	// 320
+	FETCH_QLW4,
+	FETCH_QLW5,
+	FETCH_QLW6,
+	STORE_QLW1,		// Quinta-long-word
+	STORE_QLW2,
+	STORE_QLW3,
+	STORE_QLW4,
+	STORE_QLW5,
+	CALLM,
+	// 330
+	CALLM1,
+	CALLM2,
+	CALLM3,
+	CALLM4,
+	CALLM5,
+	CALLM6,
+	CALLM7,
+	CALLM8,
+	CALLM9,
+	// 340
+	CALLM10,
+	CALLM11,
+	CALLM12,
+	CALLM13,
+	CAS,
+	CAS1,
+	CAS2,
+	CAS3,
+	CAS4,
+	// 350
+	CASO,
+	CASO1,
+	CASO2,
+	CASO3,
+	CASO4,
+	CASO5,
+	CASO6,
+	CHK2
 } state_t;
 
 typedef enum logic [4:0] {
@@ -710,6 +757,29 @@ wire [31:0] a6o;
 wire [31:0] spo;
 wire [31:0] flagso;
 wire [31:0] pco;
+function [31:0] fnReg;
+input [3:0] rg;
+begin
+	case(rg)
+	4'd0:	fnReg = d0;
+	4'd1:	fnReg = d1;
+	4'd2:	fnReg = d2;
+	4'd3:	fnReg = d3;
+	4'd4:	fnReg = d4;
+	4'd5:	fnReg = d5;
+	4'd6:	fnReg = d6;
+	4'd7:	fnReg = d7;
+	4'd8:	fnReg = a0;
+	4'd9:	fnReg = a1;
+	4'd10:	fnReg = a2;
+	4'd11:	fnReg = a3;
+	4'd12:	fnReg = a4;
+	4'd13:	fnReg = a5;
+	4'd14:	fnReg = a6;
+	4'd15:	fnReg = sp;
+	endcase
+end
+endfunction
 // PMMU registers
 integer pn5,pn6;
 reg pmmu_en;
@@ -964,53 +1034,17 @@ wire Anabit;
 wire [31:0] sp_dec = sp - 32'd2;
 reg [31:0] rfoAn;
 always_comb
-case(rrr)
-3'd0: rfoAn <= a0;
-3'd1: rfoAn <= a1;
-3'd2: rfoAn <= a2;
-3'd3: rfoAn <= a3;
-3'd4: rfoAn <= a4;
-3'd5: rfoAn <= a5;
-3'd6: rfoAn <= a6;
-3'd7: rfoAn <= sp;
-endcase
+	rfoAn = fnReg({1'b1,rrr});
 reg [31:0] rfoAna;
 always_comb
-case(AAA)
-3'd0: rfoAna <= a0;
-3'd1: rfoAna <= a1;
-3'd2: rfoAna <= a2;
-3'd3: rfoAna <= a3;
-3'd4: rfoAna <= a4;
-3'd5: rfoAna <= a5;
-3'd6: rfoAna <= a6;
-3'd7: rfoAna <= sp;
-endcase
+	rfoAna = fnReg({1'b1,AAA});
 //wire [31:0] rfoAn =	rrr==3'b111 ? sp : regfile[{1'b1,rrr}];
 reg [31:0] rfoDn;
 always_comb
-case(DDD)
-3'd0:   rfoDn <= d0;
-3'd1:   rfoDn <= d1;
-3'd2:   rfoDn <= d2;
-3'd3:   rfoDn <= d3;
-3'd4:   rfoDn <= d4;
-3'd5:   rfoDn <= d5;
-3'd6:   rfoDn <= d6;
-3'd7:   rfoDn <= d7;
-endcase
+	rfoDn = fnReg({1'b0,DDD});
 reg [31:0] rfoDnn;
 always_comb
-case(rrr)
-3'd0:   rfoDnn <= d0;
-3'd1:   rfoDnn <= d1;
-3'd2:   rfoDnn <= d2;
-3'd3:   rfoDnn <= d3;
-3'd4:   rfoDnn <= d4;
-3'd5:   rfoDnn <= d5;
-3'd6:   rfoDnn <= d6;
-3'd7:   rfoDnn <= d7;
-endcase
+	rfoDnn = fnReg({1'b0,rrr});
 // For bitfield
 integer bf1;
 state_t bf_size;
@@ -1038,58 +1072,15 @@ endfunction
 function [31:0] fnBfdat;
 input [2:0] fld;
 begin
-case(fld)
-3'b000:	fnBfdat = d0;
-3'b001:	fnBfdat = d1;
-3'b010:	fnBfdat = d2;
-3'b011:	fnBfdat = d3;
-3'b100:	fnBfdat = d4;
-3'b101:	fnBfdat = d5;
-3'b110:	fnBfdat = d6;
-3'b111:	fnBfdat = d7;
-endcase
+	fnBfdat = fnReg({1'b0,fld});
 end
 endfunction
 reg [31:0] rfob;
 always_comb
-case({mmm[0],rrr})
-4'd0:   rfob <= d0;
-4'd1:   rfob <= d1;
-4'd2:   rfob <= d2;
-4'd3:   rfob <= d3;
-4'd4:   rfob <= d4;
-4'd5:   rfob <= d5;
-4'd6:   rfob <= d6;
-4'd7:   rfob <= d7;
-4'd8:   rfob <= a0;
-4'd9:   rfob <= a1;
-4'd10:  rfob <= a2;
-4'd11:  rfob <= a3;
-4'd12:  rfob <= a4;
-4'd13:  rfob <= a5;
-4'd14:  rfob <= a6;
-4'd15:  rfob <= sp;
-endcase
+	rfob = fnReg({mmm[0],rrr});
 reg [31:0] rfoRnn;
 always_comb
-case(rrrr)
-4'd0:   rfoRnn <= d0;
-4'd1:   rfoRnn <= d1;
-4'd2:   rfoRnn <= d2;
-4'd3:   rfoRnn <= d3;
-4'd4:   rfoRnn <= d4;
-4'd5:   rfoRnn <= d5;
-4'd6:   rfoRnn <= d6;
-4'd7:   rfoRnn <= d7;
-4'd8:   rfoRnn <= a0;
-4'd9:   rfoRnn <= a1;
-4'd10:  rfoRnn <= a2;
-4'd11:  rfoRnn <= a3;
-4'd12:  rfoRnn <= a4;
-4'd13:  rfoRnn <= a5;
-4'd14:  rfoRnn <= a6;
-4'd15:  rfoRnn <= sp;
-endcase
+	rfoRnn = fnReg(rrrr);
 reg [95:0] rfoFpdst, rfoFpsrc;
 generate begin : gFLTSrcDst
 if (SUPPORT_DECFLT) begin
@@ -3567,6 +3558,7 @@ DECODE:
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
 	5'h1E:
+`ifdef SUPPORT_020
 		casez(ir)
 		16'b1110_1000_11??_????,	// BFTEST
 		16'b1110_1001_11??_????,	// BFEXTU
@@ -3600,6 +3592,10 @@ DECODE:
 				end
 			end
 		endcase
+`else
+	tIllegal();		
+`endif
+		
 
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
@@ -7883,7 +7879,7 @@ FBCC:
 // PMMU states
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
-
+`ifdef SUPPORT_PMMU
 PBCC:
 	begin
 		if (ptakb)
@@ -8295,10 +8291,12 @@ PRESTORE2:
 		pmmu_smask[pmmu_flo] <= 1'b0; 
 		goto (PRESTORE1);
 	end
+`endif
 
 //-----------------------------------------------------------------------------
 // 68020 - 
 //-----------------------------------------------------------------------------
+`ifdef SUPPORT_020
 BITFLD:
 	begin
 		goto (BITFLD_UPDATE);
@@ -8500,6 +8498,87 @@ BREAKPOINT_ACK:
     	goto (DECODE);
     end
   end
+
+// Fetch sources	
+CAS:
+	begin
+		case(ir[10:9])
+		2'b01:	begin lock_o <= HIGH; push(CAS1); fs_data(mmm,rrr,FETCH_BYTE,D); end
+		2'b10:	begin lock_o <= HIGH; push(CAS1); fs_data(mmm,rrr,FETCH_WORD,D); end
+		2'b11:	begin lock_o <= HIGH; push(CAS1); fs_data(mmm,rrr,FETCH_LWORD,D); end
+		default:	tIllegal();
+		endcase
+		Dc <= fnReg({1'b0,ir2[2:0]});
+		Du <= fnReg({1'b0,ir2[8:6]});
+	end
+// Compare
+CAS1:
+	begin
+		resB <= d[7:0] - Dc[7:0];
+		resW <= d[15:0] - Dc[15:0];
+		resL <= d - Dc;
+		goto (CAS2);
+	end
+// Update flags
+CAS2:
+	begin
+		case(ir[10:9])
+		2'b01:
+			begin
+				zf <= resB[7:0]==8'd0;
+				nf <= resB[7];
+				cf <= resB[8];
+				vf <= fnSubOverflow(resB[7],d[7],Dc[7]);
+			end
+		2'b10:
+			begin
+				zf <= resW[15:0]==16'd0;
+				nf <= resW[15];
+				cf <= resW[16];
+				vf <= fnSubOverflow(resW[15],d[15],Dc[15]);
+			end
+		2'b11:
+			begin
+				zf <= resL[31:0]==32'd0;
+				nf <= resL[31];
+				cf <= resL[32];
+				vf <= fnSubOverflow(resL[31],d[31],Dc[31]);
+			end
+		default:	;
+		endcase
+		goto (CAS3);
+	end
+// Conditionally store
+CAS3:
+	begin
+		d <= Du;
+		if (zf)
+			case(ir[10:9])
+			2'b01:	call(STORE_BYTE,CAS4);
+			2'b10:	call(STORE_WORD,CAS4);
+			2'b11:	call(STORE_LWORD,CAS4);
+			default:	tIllegal();
+			endcase
+		else begin
+			lock_o <= LOW;
+			Rt <= ir2[8:6];
+			resL <= d;
+			case(ir[10:9])
+			2'b01:	rfwrB <= TRUE;
+			2'b10:	rfwrW <= TRUE;
+			2'b11:	rfwrL <= TRUE;
+			default:	;
+			endcase
+			ret();
+		end
+	end
+CAS4:
+	begin
+		lock_o <= LOW;
+		ret();
+	end
+
+`endif
 /*
 FCOPYEXP:
 	begin
