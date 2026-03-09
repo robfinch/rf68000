@@ -19,7 +19,8 @@ typedef enum logic [4:0] {
 	PMMU_WAIT_ACK_DL,
 	PMMU_ATC_UPDATE,
 	PMMU_PTE_UPDATE,
-	PMMU_PTE_ACK
+	PMMU_PTE_ACK,
+	PMMU_PTEST
 } pmmu_state_t;
 
 typedef enum logic [1:0] 
