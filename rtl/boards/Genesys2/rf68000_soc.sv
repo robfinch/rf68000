@@ -1360,6 +1360,17 @@ scratchmem uscr1
 	.rst_i(rst),
 	.cs_i(cs_scr),
 	.clk_i(node_clk),
+/*
+	.cyc_i(cpu_cyc),
+	.stb_i(cpu_stb),
+	.ack_o(scr_cack),
+	.we_i(cpu_we),
+	.sel_i(cpu_sel),
+	.adr_i(cpu_adr),
+	.dat_i(cpu_dati),
+	.dat_o(scr_cdato)
+*/
+
 	.cyc_i(scr_cyc),
 	.stb_i(scr_stb),
 	.ack_o(scr_ack),
@@ -1368,6 +1379,7 @@ scratchmem uscr1
 	.adr_i(scr_adr),
 	.dat_i(scr_dati),
 	.dat_o(scr_dato)
+
 );
 
 /*
@@ -1597,9 +1609,7 @@ assign mmu_dato = 32'd0;
 `endif
 always_comb
 begin
-	ch7req.cid = 4'd7;
 	ch7dreq = ch7req;
-	ch7dreq.cid = 4'd7;
 	ch7dreq.cyc = ch7req.cyc & cs_dram;
 	ch7dreq.stb = ch7req.stb & cs_dram;
 end
@@ -1686,7 +1696,7 @@ ila_0 uila1 (
 	.clk(mem_ui_clk), // input wire clk
 
 //	.probe0(umpmc1.req_fifoo.req.padr), // input wire [31:0]  probe0  
-	.probe0(unode1.ucpu1.trace_o),//umpu1.ucpu1.pc), // input wire [31:0]  probe0  
+	.probe0(unode1.ucpu1.imm),//trace_o),//umpu1.ucpu1.pc), // input wire [31:0]  probe0  
 	.probe1(unode1.ucpu1.dt_i),//umpmc1.req_fifoo.req.cyc), // input wire [0:0]  probe1 
 	.probe2(unode1.ack1),//umpmc1.req_fifoo.req.we), // input wire [0:0]  probe2
 	.probe3(unode1.we1),
@@ -1698,7 +1708,7 @@ ila_0 uila1 (
 	.probe9(mem_rd_data_valid),
 	.probe10(cs_dram),
 //	.probe11({unode1.ram1_we[3:0],cpu_if.req.cmd}),
-	.probe11(unode1.ucpu1.pc),	//dati
+	.probe11(unode1.ucpu1.pc),//unode1.ucpu1.pc	//dati
 /*
 	.probe11({
 		br1_stall,
@@ -1735,11 +1745,14 @@ ila_0 uila1 (
 	.probe15(umpmc1.app_rdy),
 	.probe16(umpmc1.app_en),
 	.probe17({ugfx1.rasterizer0.clip_ack_i,ugfx1.rasterizer0.clip_write_o,ugfx1.rasterizer0.raster_state}),
-	.probe18(dati),
-	.probe19(1'b0),
+	.probe18({5'd0,unode1.ucpu1.flo,unode1.ram1_ack,unode1.nic1_sack,unode1.ucpu1.im,node_clk,unode1.ucpu1.ir}),
+	.probe19(bus_err),
 	.probe20(unode1.ucpu1.state),//uframebuf1.state)
 //	.probe20(plic_core),
-	.probe21(plic_irq)
+	.probe21(plic_irq),
+	.probe22(unode1.ucpu1.adr_o),
+	.probe23(unode1.ucpu1.dat_i),
+	.probe24(led)
 );
 
 /*

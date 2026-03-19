@@ -608,6 +608,25 @@ long FMTK_FreeMbx(__reg("d0") long hMbx)
 	return (E_Ok);
 }
 
+// Free up any queued messages at the mailbox.
+
+long FMTK_EmptyMbx(__reg("d0") long hMbx) 
+{
+	int st2;
+	MBX *mbx;
+	MSG *msg;
+
+	if (hMbx <= 0 || hMbx > NR_MBX)
+		return (-E_Arg);
+	mbx = MBXHandleToPointer(hMbx);
+  if ((st2 = LockMSGList(30)) != -1) {
+		while (msg = MBXDequeueMsg(mbx))
+			FreeMsg(msg);
+		UnlockMSGList(st2);
+		return (E_Ok);
+	}
+	return (-E_Busy);
+}
 
 /* ---------------------------------------------------------------
 	Description:
@@ -738,9 +757,7 @@ long FMTK_PostMsg(
 	int rr;
 	MSG* pMsg2;
 
-	DisplayStringCRLF("Postmsg()");
-	DisplayLEDS(3);
-	WaitAnyButton();
+//	DisplayStringCRLF("Postmsg()");
 	if (hMbx <= 0 || hMbx > NR_MBX)
 		return (-E_Arg);
 	mbx = MBXHandleToPointer(hMbx);
@@ -748,41 +765,43 @@ long FMTK_PostMsg(
 	msg = null;
 	// Both the mailbox and message list are needed or a message cannot be
 	// posted.
-	if ((stat = LockMBX(hMbx,50)) < 0)
+	if ((stat = LockMBX(hMbx,50)) == -1) {
+		DisplayLEDS(3);
 		return (-E_Busy);
-	DisplayLEDS(4);
-	WaitAnyButton();
+	}
 	if (mbx->owner <= 0 || mbx->owner > NR_ACB) {
+		DisplayLEDS(4);
     UnlockMBX(hMbx,stat);
     return (-E_NotAlloc);
   }
-	DBGDisplayChar('c');
- 	if ((stat2 = LockMSGList(50)) < 0) {
+//	DBGDisplayChar('c');
+ 	if ((stat2 = LockMSGList(50)) == -1) {
+		DisplayLEDS(5);
     UnlockMBX(hMbx,stat);
 		return (-E_Busy); 		
  	}
-	DBGDisplayChar('f');
+//	DBGDisplayChar('f');
 	if (freeMSG <= 0 || freeMSG > NR_MSG) {
+		DisplayLEDS(6);
 		UnlockMSGList(stat2);
     UnlockMBX(hMbx,stat);
 		return (-E_NoMoreMsgBlks);
   }
-	DisplayLEDS(5);
-	WaitAnyButton();
+//	DisplayLEDS(5);
 	MBXDequeueThread(mbx, &thread);
 	pMsg2 = (MSG*)pMsg;
 	if (thread == null) {
-		DisplayLEDS(6);
-		WaitAnyButton();
+//		DisplayLEDS(6);
 	  msg = AllocMsg(MT_DATA,pMsg2->d1,pMsg2->d2,pMsg2->d3);
 		if (msg) {
-			DisplayString("PostMsg()/QueueMsg(): ");
+//			DisplayString("PostMsg()/QueueMsg(): ");
 			rr = MBXQueueMsg(mbx, msg);
 			UnlockMSGList(stat2);
   		UnlockMBX(hMbx,stat);
  			return (-rr);
  		}
 		else {
+			DisplayLEDS(7);
 			UnlockMSGList(stat2);
   		UnlockMBX(hMbx,stat);
 			return (-E_NoMoreMsgBlks);
@@ -790,8 +809,7 @@ long FMTK_PostMsg(
 	}
 	if (thread->status & TS_TIMEOUT)
 		TCBRemoveFromTimeoutList(TCBPointerToHandle(thread));
-	DisplayLEDS(7);
-	WaitAnyButton();
+//	DisplayLEDS(7);
 	TCBInsertIntoReadyQueue(TCBPointerToHandle(thread));
 //	thread->msg.dstadr = hMbx;
 	thread->msg.link = 0;
@@ -800,6 +818,7 @@ long FMTK_PostMsg(
 	thread->msg.x = 0;
 	thread->msg.y = 0;
 	thread->msg.z = 0;
+/*
 	DisplayString("PostMsg(): ");
 	DisplayTetra(pMsg2->d1);
 	OutputChar(' ');
@@ -808,6 +827,7 @@ long FMTK_PostMsg(
 	DisplayTetra(pMsg2->d3);
 	OutputChar('\r');
 	OutputChar('\n');
+*/
 	thread->msg.d1 = pMsg2->d1;
 	thread->msg.d2 = pMsg2->d2;
 	thread->msg.d3 = pMsg2->d3;
@@ -847,12 +867,11 @@ long FMTK_WaitMsg(
 	int sr;
 	int stat,st2;
 
-	DisplayStringCRLF("Waitmsg()");
+//	DisplayStringCRLF("Waitmsg()");
 	if (hMbx == 0 || hMbx > NR_MBX)
 		return (-E_Arg);
 	mbx = MBXHandleToPointer(hMbx);
 	DisplayLEDS(8);
-	WaitAnyButton();
 	do {
 		stat = LockMBX(hMbx,0);
 		// Check for a mailbox owner which indicates the mailbox
@@ -865,13 +884,11 @@ long FMTK_WaitMsg(
 			UnlockMBX(hMbx,stat);
 	} while (st2 < 0);
 	DisplayLEDS(9);
-	WaitAnyButton();
 	msg = MBXDequeueMsg(mbx);
   // Return message right away if there is one available.
   if (msg) {
   	if (pMsg) {
 			DisplayLEDS(10);
-			WaitAnyButton();
   		CopyMsg((MSG*)pMsg,msg);
   	}
   	/*
@@ -894,7 +911,6 @@ long FMTK_WaitMsg(
 	// Interrupts are disabled at this point.
 	//----------------------------------------
 	DisplayLEDS(11);
-	WaitAnyButton();
 	hThread = GetRunningTCB();
 	TCBRemoveFromReadyQueue(hThread);
 	MBXQueueThread(hMbx, hThread);
@@ -902,7 +918,6 @@ long FMTK_WaitMsg(
 	//---------------------------
 	// Is a timeout specified ?
 	DisplayLEDS(12);
-	WaitAnyButton();
 	if (timelimit > 0) {
       //asm { ; Waitmsg here; }
   	sr = SetImLevel7();
@@ -962,17 +977,20 @@ long FMTK_CheckMsg (
 	MSG *msg;
 	int stat,st2;
 
-	if (hMbx == 0 || hMbx > NR_MBX)
+	if (hMbx == 0 || hMbx > NR_MBX) {
+		DisplayLEDS(8);
 		return (-E_Arg);
+	}
 	mbx = MBXHandleToPointer(hMbx);
 	do {
  		stat = LockMBX(hMbx,0);
- 		if ((st2 = LockMSGList(50)) < 0)
+ 		if ((st2 = LockMSGList(50)) == -1)
  			UnlockMBX(hMbx,stat);
- 	} while (st2 < 0);
+ 	} while (st2 == -1);
 	// check for a mailbox owner which indicates the mailbox
 	// is active.
 	if (mbx->owner == 0 || mbx->owner > NR_ACB) {
+		DisplayLEDS(9);
 	  UnlockMSGList(st2);
 	  UnlockMBX(hMbx,stat);
 		return (-E_NotAlloc);
@@ -982,6 +1000,7 @@ long FMTK_CheckMsg (
 	else
 		msg = MSGHandleToPointer(mbx->mq_head);
 	if (msg == null) {
+		DisplayLEDS(10);
 	  UnlockMSGList(st2);
   	UnlockMBX(hMbx,stat);
 		return (-E_NoMsg);

@@ -30,6 +30,9 @@ extern unsigned char keybdControlCodes[128];
 extern unsigned char shiftedScanCodes[256];
 extern unsigned char unshiftedScanCodes[256];
 
+// dir: +1 = forward, -1=backward
+extern void rotate_iofocus(__reg("d0") long dir);
+
 void rotate_io_focus(int dir)
 {
 	if (IOFocusList==0)
@@ -152,7 +155,7 @@ waitIRQ:
 					VirtKey = shiftedScanCodes[ScanCode];
 					// Alt-Shift-TAB?
 					if ((KeyState2 & 2) && ScanCode==SC_TAB)
-						rotate_io_focus(-1);
+						rotate_iofocus(-1);
 					else {
 						msg.d1 = FM_KEYDOWN;
 						msg.d2 =
@@ -170,7 +173,7 @@ waitIRQ:
 					VirtKey = unshiftedScanCodes[ScanCode];
 					// Alt-TAB?
 					if ((KeyState2 & 2) && ScanCode==SC_TAB)
-						rotate_io_focus(1);
+						rotate_iofocus(1);
 					else {
 						msg.d1 = FM_KEYDOWN;
 						msg.d2 =
@@ -185,4 +188,121 @@ waitIRQ:
 			}
 		}
 	}	
+}
+
+long KeybdTranslate(__reg("d0") long scancode)
+{
+	long d1,d2,d3;
+	int er;
+	int sr;
+	unsigned char ScanCode;
+	unsigned short int VirtKey;
+	signed char KeyState1;
+	unsigned char KeyState2;
+	hMBX hMbx;
+	MSG msg;
+	static int first = 1;
+
+//	DisplayStringCRLF("KbdTransThread");
+	// All keys are up to begin with
+	if (first) {
+		first = 0;
+		KeyState1 = 0;
+		KeyState2 = 0;
+		for (er = 0; er < 256; er++)
+			KeyState[er] = 0xff;
+	}
+	ScanCode = scancode & 0xffL;
+	switch(ScanCode) {
+	case SC_KEYUP:	KeyState1 = -1; break;
+	case SC_EXTEND: KeyState2 |= 0x80; break;
+	case SC_CTRL:		if (KeyState1 < 0) KeyState2 &= ~0x04; else KeyState2 |= 0x04; KeyState1 = 0; break;
+	case SC_LSHIFT:	if (KeyState1 < 0) KeyState2 &= ~0x01; else KeyState2 |= 0x01; KeyState1 = 0; break;
+	case SC_RSHIFT:	if (KeyState1 < 0) KeyState2 &= ~0x40; else KeyState2 |= 0x40; KeyState1 = 0; break;
+	case SC_NUMLOCK:	KeyState2 ^= 0x08; break;
+	case SC_CAPSLOCK:	KeyState2 ^= 0x10; break;
+	case SC_SCROLLLOCK:	KeyState2 ^= 0x20; break;
+	case SC_ALT:	if (KeyState1 < 0) KeyState2 &= ~0x02; else KeyState2 |= 0x02; KeyState1 = 0; break;
+	default:
+		if (KeyState1) {
+			KeyState[VirtKey] = 0xff;
+			return (
+				((unsigned long)KeyState2 << 24) |
+				((unsigned long)ScanCode << 16) |
+				VirtKey
+			);
+		}
+		else {
+			if (KeyState2 & 0x80) {	// Extended?
+				KeyState1 = 0;
+				VirtKey = keybdExtendedCodes[ScanCode & 0x7f];
+				KeyState2 &= 0x7f;
+				KeyState[VirtKey] = 0x00;
+				return (
+					((unsigned long)KeyState2 << 24) |
+					((unsigned long)ScanCode << 16) |
+					VirtKey
+				);
+			}
+			else if (KeyState2 & 0x04) {	// Control?
+				KeyState1 = 0;
+				VirtKey = keybdControlCodes[ScanCode & 0x7f];
+				// CTRL-C?
+				if (ScanCode==SC_C) {
+					KeyState2 &= 0xFB;
+					KeyState[VirtKey] = 0x00;
+					return (
+						((unsigned long)KeyState2 << 24) |
+						((unsigned long)ScanCode << 16) |
+						VirtKey
+					);
+				}
+				else {
+					KeyState2 &= 0xFB;
+					KeyState[VirtKey] = 0x00;
+					return (
+						((unsigned long)KeyState2 << 24) |
+						((unsigned long)ScanCode << 16) |
+						VirtKey
+					);
+				}
+			}
+			else if (KeyState2 & 0x41) {	// Shift?
+				KeyState1 = 0;
+				VirtKey = shiftedScanCodes[ScanCode];
+				// Alt-Shift-TAB?
+				if ((KeyState2 & 2) && ScanCode==SC_TAB) {
+					FMTK_EmptyMbx(hKeybdIRQMbx);
+					rotate_iofocus(-1);
+				}
+				else {
+					KeyState2 &= 0xBE;
+					KeyState[VirtKey] = 0x00;
+					return (
+						((unsigned long)KeyState2 << 24) |
+						((unsigned long)ScanCode << 16) |
+						VirtKey
+					);
+				}
+			}
+			else {	// Unshifted?
+				KeyState1 = 0;
+				VirtKey = unshiftedScanCodes[ScanCode];
+				// Alt-TAB?
+				if ((KeyState2 & 2) && ScanCode==SC_TAB) {
+					FMTK_EmptyMbx(hKeybdIRQMbx);
+					rotate_iofocus(1);
+				}
+				else {
+					KeyState[VirtKey] = 0x00;
+					return (
+						((unsigned long)KeyState2 << 24) |
+						((unsigned long)ScanCode << 16) |
+						VirtKey
+					);
+				}
+			}			
+		}
+	}
+	return (0L);
 }

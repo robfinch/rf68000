@@ -160,8 +160,9 @@ numwka
 
 	section gvars
 scratch_ram
+	align 2
 _semaphores
-	ds.b	256
+	ds.l	64
 _tcbs
 	ds.b	256*128
 _tcbs_end

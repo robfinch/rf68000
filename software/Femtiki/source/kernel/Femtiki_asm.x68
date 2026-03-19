@@ -88,6 +88,7 @@ OSCallTable:
 	macOSCallAddr	_FMTK_CheckMsg
 	macOSCallAddr	_FMTK_AllocMbx
 	macOSCallAddr	_FMTK_FreeMbx
+	macOSCallAddr	_FMTK_EmptyMbx
 	macOSCallAddr	_FMTK_StartApp
 	macOSCallAddr	_FMTK_RegisterService
 	macOSCallAddr	_FMTK_UnregisterService
@@ -173,17 +174,12 @@ _FMTK_RescheduleISRLaunchpad:
 ;
 _FMTK_TimerISRLaunchpad:
 	move.w #$2700,sr						; disable interrupts
-	move.l d0,-(sp)
+	move.l a0,-(sp)
 	movec.l coreno,a0
 	adda.l #_InTimerISR,a0						
 	tas (a0)										; Check: in ISR already?
 	bmi .0002										; Yes? Then skip
-	move.l (sp)+,a0
-;	cmp.b _InTimerISR,d0				; Is it core's turn to process?
-;	bne .0002										; no, just return
 
-	; Save register context in TCB
-	move.l a0,-(a7)							; push a0
 	movec.l tcba,a0							; a0 points to task control block
 	movem.l d0-d7/a1-a6,4(a0)		; save registers in task control block
 	move usp,a1									; save usp in TCB
@@ -192,7 +188,7 @@ _FMTK_TimerISRLaunchpad:
 	move.w (sp)+,140(a0)				; status reg
 	move.l (sp)+,136(a0)				; program counter
 	move.w (sp)+,144(a0)				; and format word
-	move.l a7,68(a0)						; finally save a7
+	move.l sp,68(a0)						; finally save a7
 
 	move.l #$47FFC,a7						; setup sp
 
@@ -223,7 +219,7 @@ _FMTK_TimerISRLaunchpad:
 	move.l 60(a0),a1						; restore usp
 	move.l a1,usp
 	movem.l 4(a0),d0-d7/a1-a6		; restore register set
-	move.l 68(a0),a7						; restore a7
+	move.l 68(a0),sp						; restore a7
 	move.w 144(a0),-(sp)				; push format word
 	move.l 136(a0),-(sp)				; push program counter
 	move.w 140(a0),-(sp)				; push status reg
@@ -232,17 +228,12 @@ _FMTK_TimerISRLaunchpad:
 	move.l a0,-(sp)							; reset in timer ISR
 	movec.l coreno,a0
 	adda.l #_InTimerISR,a0						
-	clr (a0)
-	move.l (sp)+,d0
-
-;	addi.b #1,_InTimerISR
-;	cmpi.b #2,_InTimerISR
-;	bls.s .0001
-;	move.b #2,_InTimerISR
+	clr.b (a0)
+	move.l (sp)+,a0
 .0001
 	rte
 .0002
-	move.l (sp)+,d0
+	move.l (sp)+,a0
 	rte
 
 	global _FMTK_TimerISRLaunchpad

@@ -39,11 +39,12 @@
 
 import nic_pkg::*;
 
-module rf68000_nic(id, rst_i, clk_i, s_cti_i, s_atag_o,
-	s_cyc_i, s_stb_i, s_ack_o, s_aack_o, s_rty_o, s_err_o, s_vpa_o, 
+module rf68000_nic(id, rst_i, clk_i, s_cti_i, s_atag_o, s_vpa2_o,
+	s_cmd_i, s_cyc_i, s_stb_i, s_ack_o, s_aack_o, s_rty_o, s_err_o, s_vpa_o, 
 	s_we_i, s_sel_i, s_asid_i, s_fc_i, s_adr_i, s_dat_i, s_dat_o,
 	s_mmus_i, s_ios_i, s_iops_i,
-	m_cyc_o, m_stb_o, m_ack_i, m_err_i, m_vpa_i,
+	m_cpu_o, m_cmd_o,
+	m_cyc_o, m_stb_o, m_ack_i, m_err_i, m_vpa_i, m_vpa2_i,
 	m_we_o, m_sel_o, m_asid_o, m_fc_o, m_adr_o, m_dat_o, m_dat_i,
 	m_mmus_o, m_ios_o, m_iops_o,
 	packet_i, packet_o, ipacket_i, ipacket_o,
@@ -55,12 +56,14 @@ input rst_i;
 input clk_i;
 input [2:0] s_cti_i;
 output reg [3:0] s_atag_o;
+input [4:0] s_cmd_i;
 input s_cyc_i;
 input s_stb_i;
 output reg s_ack_o;
 output reg s_rty_o;
 output reg s_err_o;
 output reg s_vpa_o;
+output reg s_vpa2_o;
 output reg s_aack_o;
 input s_we_i;
 input [3:0] s_sel_i;
@@ -72,11 +75,14 @@ output reg [31:0] s_dat_o;
 input s_mmus_i;
 input s_ios_i;
 input s_iops_i;
+output reg [5:0] m_cpu_o;
+output reg [4:0] m_cmd_o;
 output reg m_cyc_o;
 output reg m_stb_o;
 input m_ack_i;
 input m_err_i;
 input m_vpa_i;
+input m_vpa2_i;
 output reg m_we_o;
 output reg [3:0] m_sel_o;
 output reg [7:0] m_asid_o;
@@ -114,6 +120,7 @@ parameter ST_AACK = 6'd8;
 parameter ST_RETRY = 6'd9;
 parameter ST_ERR = 6'd10;
 parameter ST_VPA = 6'd11;
+parameter ST_VPA2 = 6'd12;
 reg [3:0] rsp_state;
 reg [11:0] mto;
 
@@ -170,6 +177,7 @@ if (rst_i) begin
 	s_err_o <= FALSE;
 	s_rty_o <= FALSE;
 	s_vpa_o <= FALSE;
+	s_vpa2_o <= FALSE;
 	packet_o <= {$bits(packet_t){1'b0}};
 	rpacket_o <= {$bits(packet_t){1'b0}};
 	ipacket_o <= {$bits(ipacket_t){1'b0}};
@@ -183,6 +191,8 @@ if (rst_i) begin
 	rcv <= 1'b0;
 	rw_done <= TRUE;
 	wait_ack <= 1'b0;
+	m_cpu_o <= 6'd0;
+	m_cmd_o <= 5'd0;
 	m_cyc_o <= 1'b0;
 	m_stb_o <= 1'b0;
 	m_we_o <= 1'b0;
@@ -244,6 +254,7 @@ else begin
 		rpacket_rx <= rpacket_i;
 		case (rpacket_i.typ)
 		PT_VPA:	rsp_state <= ST_VPA;
+		PT_VPA2:	rsp_state <= ST_VPA2;
 		PT_ERR:	rsp_state <= ST_ERR;
 		PT_RETRY:	rsp_state <= ST_RETRY;
 		PT_ACK:	rsp_state <= ST_ACK;
@@ -306,7 +317,8 @@ else begin
 		rpacket_tx.did <= 6'd0;
 	end
 	
-	if (packet_tx.did==6'd0 && rw_done)
+	// Exclude local memory access from network.	
+	if (packet_tx.did==6'd0 && rw_done && s_adr_i[31:20]!=12'h000)
 		tSetupReadWrite(cyc, s_we_i, s_adr_i, s_dat_i);
 
 	// Process request
@@ -359,6 +371,19 @@ else begin
 				if (!m_we_o || SYNC_WRITE)
 					tSetupResponsePacket(
 						PT_VPA,
+						id,
+						packet_rx.sid,
+						packet_rx.adr,
+						m_dat_i
+					);
+				packet_rx.did <= 6'd0;
+				state <= ST_IDLE;
+			end
+			else if (m_vpa2_i) begin
+				tClearBus();
+				if (!m_we_o || SYNC_WRITE)
+					tSetupResponsePacket(
+						PT_VPA2,
 						id,
 						packet_rx.sid,
 						packet_rx.adr,
@@ -440,6 +465,13 @@ else begin
 			rpacket_rx.did <= 6'd0;
 			rsp_state <= ST_IDLE;
 		end
+	ST_VPA2:
+		begin
+			s_vpa2_o <= TRUE;
+			s_atag_o <= rpacket_rx.adr[3:0];
+			rpacket_rx.did <= 6'd0;
+			rsp_state <= ST_IDLE;
+		end
 	ST_RETRY:
 		begin
 			s_rty_o <= TRUE;
@@ -449,7 +481,9 @@ else begin
 		end
 	ST_ERR:
 		begin
-			s_err_o <= TRUE;
+			// There is no error if it was not a global cycle.
+			if (s_adr_i[31:30]!=12'h000)
+				s_err_o <= TRUE;
 			s_atag_o <= rpacket_rx.adr[3:0];
 			rpacket_rx.did <= 6'd0;
 			rsp_state <= ST_IDLE;
@@ -530,6 +564,7 @@ begin
 				packet_tx.ack <= 1'b0;
 				packet_tx.typ <= wr ? PT_WRITE : burst ? PT_AREAD : PT_READ;
 				packet_tx.pad2 <= 2'b0;
+				packet_tx.cmd <= nic_pkg::cmd_e'(s_cmd_i);
 				packet_tx.we <= wr;
 				packet_tx.sel <= s_sel_i;
 				packet_tx.asid <= s_asid_i;
@@ -546,8 +581,8 @@ begin
 		8'hFF:	
 			if (!wr) begin
 				packet_tx.did <= 6'd62;
-				s_ack1 <= burst;
-				rw_done <= burst;
+				s_ack1 <= 1'b0;//burst;
+				rw_done <= 1'b0;//burst;
 			end
 			else begin
 				packet_tx.did <= 6'd62;
@@ -613,6 +648,8 @@ task tBusCycle;
 input wr;
 input packet_t packet_rx;
 begin
+	m_cpu_o <= packet_rx.sid;
+	m_cmd_o <= packet_rx.cmd;
 	m_cyc_o <= TRUE;
 	m_stb_o <= TRUE;
 	m_we_o <= wr;
@@ -629,6 +666,8 @@ endtask
 
 task tClearBus;
 begin
+	m_cpu_o <= 6'd0;
+	m_cmd_o <= 5'd0;
 	m_cyc_o <= FALSE;
 	m_stb_o <= FALSE;
 	m_we_o <= FALSE;

@@ -157,6 +157,11 @@ typedef struct packed
 
 typedef struct packed
 {
+	atc_entry_t [3:0] e;
+} quad_atc_entry_t;
+
+typedef struct packed
+{
 	logic E;
 	logic [4:0] zero;
 	logic SRE;

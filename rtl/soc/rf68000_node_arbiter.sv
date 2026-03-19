@@ -36,7 +36,7 @@
 
 module rf68000_node_arbiter(id, rst_i, clk_i,
 	cpu_cyc, cpu_stb, cpu_ack, cpu_aack, cpu_we, cpu_sel, cpu_adr, cpu_dato, cpu_dati,
-	nic_cyc, nic_stb, nic_ack, nic_we, nic_sel, nic_adr, nic_dati, nic_dato,
+	nic_fc, nic_cyc, nic_stb, nic_ack, nic_we, nic_sel, nic_adr, nic_dati, nic_dato,
 	ram_en, ram_we, ram_adr, ram_dati, ram_dato);
 input [3:0] id;
 input rst_i;
@@ -50,6 +50,7 @@ input [3:0] cpu_sel;
 input [31:0] cpu_adr;
 input [31:0] cpu_dato;
 output reg [31:0] cpu_dati;
+input [2:0] nic_fc;
 input nic_cyc;
 input nic_stb;
 input nic_we;
@@ -110,23 +111,31 @@ else begin
 	ST_IDLE:
 		if (nic_cyc && nic_stb && (w1==2'b00 || w1==2'b01)) begin
 			w1 <= 2'b01;
-			if (nic_adr[31:20]=={8'hFF,id[3:0]}) begin
-				ram_adr <= nic_adr;
+			if (nic_adr[31:20]=={8'hFF,id[3:0]} && nic_fc!=3'b111) begin
+				if (id[0] && nic_adr[31:16] >= 16'h0004)
+					ram_adr <= nic_adr ^ 32'h8000;
+				else
+					ram_adr <= nic_adr;
 				ram_dati <= nic_dato;
 				ram_we <= 4'b0;
 				ram_en <= TRUE;
 				state <= nic_we ? ST_RD2 : ST_RD1;
 			end
+			else if (nic_adr[31:20]==12'hFFF)
+				;
 			else
 				nic_ack <= 1'b1;
 		end
 		else if (cpu_cyc && cpu_stb && (w1==2'b00 || w1==2'b10)) begin
 			w1 <= 2'b10;
-			if (cpu_adr[31:18]==14'h0) begin
+			if (cpu_adr[31:19]==13'h0) begin
 				state <= cpu_we ? ST_RD2 : ST_RD1;
 				ram_we <= 4'b0;
 				ram_en <= TRUE;
-				ram_adr <= cpu_adr;
+				if (id[0] && cpu_adr[31:16] >= 16'h0004)
+					ram_adr <= cpu_adr ^ 32'h8000;
+				else
+					ram_adr <= cpu_adr;
 				ram_dati <= cpu_dato;
 			end
 		end
@@ -149,14 +158,19 @@ else begin
 		end
 	ST_RD2:
 		begin
+			// Write protect the ROM area
 			case(w1)
 			2'b01:
-				begin	
+				if ((ram_adr[31:12] > 20'h00000 && ram_adr[31:16] < 16'h0004) || (ram_adr < 32'h00000100))
+					ram_dati <= nic_dato;
+				else begin
 					ram_we <= {4{nic_we}} & nic_sel;
 					ram_dati <= nic_dato;
 				end
 			2'b10:
-				begin
+				if ((ram_adr[31:12] > 20'h00000 && ram_adr[31:16] < 16'h0004) || (ram_adr < 32'h00000100))
+					ram_dati <= cpu_dato;
+				else begin
 					ram_we <= {4{cpu_we}} & cpu_sel;
 					ram_dati <= cpu_dato;
 				end

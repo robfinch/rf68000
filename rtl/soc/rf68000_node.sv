@@ -1,7 +1,7 @@
 `timescale 1ns / 1ps
 // ============================================================================
 //        __
-//   \\__/ o\    (C) 2022-2025  Robert Finch, Waterloo
+//   \\__/ o\    (C) 2022-2026  Robert Finch, Waterloo
 //    \  __ /    All rights reserved.
 //     \/_//     robfinch<remove>@finitron.ca
 //       ||
@@ -36,7 +36,7 @@
 
 import nic_pkg::*;
 
-module rf68000_node(id, rst1, rst2, nic_rst, clk, dfclk, clken1, clken2, packet_i, packet_o, 
+module rf68000_node(id, rst1, rst2, nic_rst, clk, dfclk, dt_i, clken1, clken2, packet_i, packet_o, 
 	rpacket_i, rpacket_o, ipacket_i, ipacket_o);
 parameter SUPPORT_DECFLT = 1'b1;
 parameter ROM_FILE = "rom68k.mem";
@@ -46,6 +46,7 @@ input rst2;
 input nic_rst;
 input clk;
 input dfclk;
+input dt_i;
 input clken1;
 input clken2;
 input packet_t packet_i;
@@ -56,6 +57,7 @@ input ipacket_t ipacket_i;
 output ipacket_t ipacket_o;
 
 wire [2:0] fc1, fc2, fc1a;
+wire [4:0] cmd1, cmd2;
 wire cyc1, stb1, ack1;
 wire cyc1a, stb1a, ack1a;
 wire cyc2, stb2, ack2;
@@ -73,6 +75,8 @@ wire [31:0] ram1_dato, ram2_dato;
 wire [31:0] ram1_dat, ram2_dat;
 wire ram1_ack, ram1_aack;
 wire ram2_ack, ram2_aack;
+wire [5:0] nic1_cpu, nic2_cpu;
+wire [4:0] nic1_cmd, nic2_cmd;
 wire [2:0] nic1_fc, nic2_fc;
 wire nic1_cyc, nic1_stb, nic1_ack, nic1_we;
 wire nic2_cyc, nic2_stb, nic2_ack, nic2_we;
@@ -84,7 +88,8 @@ wire [31:0] nic1_sdato, nic2_sdato;
 wire [2:0] cpu1_irq, cpu2_irq;
 wire [7:0] cpu1_icause, cpu2_icause;
 wire err1, err2, err1a;
-wire vpa1, vpa2, vpa1a;
+wire vpa1, vpa2, vpa1a, vpa2a;
+wire vpa1_2, vpa2_2;
 wire spram1_ack, spram2_ack;
 wire [31:0] spram1o, spram2o;
 wire [7:0] asid1, asid2;
@@ -105,15 +110,15 @@ assign ack2 = nic2_sack|ram2_ack|spram2_ack;
 always_comb
 	casez({fc1,adr1[31:15]})
 //	20'b111?????????????????:	dati1 <= icause1[adr1[3:1]];
-	20'b???00000000000000???:	dati1 <= ram1_dat;
-	20'b???00000000000001000:	dati1 <= spram1o;
+	20'b???0000000000000????:	dati1 <= ram1_dat;
+//	20'b???00000000000001000:	dati1 <= spram1o;
 	default:	dati1 <= nic1_sdato;
 	endcase
 always_comb
 	casez({fc2,adr2[31:15]})
 //	20'b111?????????????????:	dati2 <= icause2[adr2[3:1]];
-	20'b???00000000000000???:	dati2 <= ram2_dat;
-	20'b???00000000000001000:	dati2 <= spram2o;
+	20'b???0000000000000????:	dati2 <= ram2_dat;
+//	20'b???00000000000001000:	dati2 <= spram2o;
 	default:	dati2 <= nic2_sdato;
 	endcase
 
@@ -148,6 +153,7 @@ rf68000_nic unic1
 	.clk_i(clk),
 	.s_cti_i(3'd0),
 	.s_atag_o(),
+	.s_cmd_i(cmd1),
 	.s_cyc_i(cyc1),
 	.s_stb_i(stb1),
 	.s_ack_o(nic1_sack),
@@ -155,6 +161,7 @@ rf68000_nic unic1
 	.s_rty_o(),
 	.s_err_o(err1),
 	.s_vpa_o(vpa1),
+	.s_vpa2_o(vpa1_2),
 	.s_we_i(we1),
 	.s_sel_i(sel1),
 	.s_asid_i(asid1),
@@ -165,11 +172,14 @@ rf68000_nic unic1
 	.s_adr_i(adr1),
 	.s_dat_i(dato1),
 	.s_dat_o(nic1_sdato),
+	.m_cpu_o(nic1_cpu),
+	.m_cmd_o(nic1_cmd),
 	.m_cyc_o(nic1_cyc),
 	.m_stb_o(nic1_stb),
 	.m_ack_i(nic1_ack),
 	.m_err_i(1'b0),
 	.m_vpa_i(1'b0),
+	.m_vpa2_i(1'b0),
 	.m_we_o(nic1_we),
 	.m_sel_o(nic1_sel),
 	.m_asid_o(),
@@ -202,6 +212,7 @@ rf68000_nic unic2
 	.clk_i(clk),
 	.s_cti_i(3'd0),
 	.s_atag_o(),
+	.s_cmd_i(cmd2),
 	.s_cyc_i(cyc2),
 	.s_stb_i(stb2),
 	.s_ack_o(nic2_sack),
@@ -209,6 +220,7 @@ rf68000_nic unic2
 	.s_rty_o(),
 	.s_err_o(err2),
 	.s_vpa_o(vpa2),
+	.s_vpa2_o(vpa2_2),
 	.s_we_i(we2),
 	.s_sel_i(sel2),
 	.s_asid_i(asid2),
@@ -219,11 +231,14 @@ rf68000_nic unic2
 	.s_adr_i(adr2),
 	.s_dat_i(dato2),
 	.s_dat_o(nic2_sdato),
+	.m_cpu_o(nic2_cpu),
+	.m_cmd_o(nic2_cmd),
 	.m_cyc_o(nic2_cyc),
 	.m_stb_o(nic2_stb),
 	.m_ack_i(nic2_ack),
 	.m_err_i(1'b0),
 	.m_vpa_i(1'b0),
+	.m_vpa2_i(1'b0),
 	.m_we_o(nic2_we),
 	.m_sel_o(nic2_sel),
 	.m_asid_o(),
@@ -254,8 +269,8 @@ rf68000_node_arbiter undarb1
 	.id({id[2:0],1'b0}),
 	.rst_i(rst),
 	.clk_i(clk),
-	.cpu_cyc(cyc1 && adr1[31:18]==14'h000),
-	.cpu_stb(stb1 && adr1[31:18]==14'h000),
+	.cpu_cyc(cyc1 && adr1[31:19]==13'h000),
+	.cpu_stb(stb1 && adr1[31:19]==13'h000),
 	.cpu_ack(ram1_ack),
 	.cpu_aack(ram1_aack),
 	.cpu_we(we1),
@@ -263,6 +278,7 @@ rf68000_node_arbiter undarb1
 	.cpu_adr(adr1),
 	.cpu_dato(dato1),
 	.cpu_dati(ram1_dat),
+	.nic_fc(nic1_fc),
 	.nic_cyc(nic1_cyc),
 	.nic_stb(nic1_stb),
 	.nic_ack(nic1_ack),
@@ -283,8 +299,8 @@ rf68000_node_arbiter undarb2
 	.id({id[2:0],1'b1}),
 	.rst_i(rst),
 	.clk_i(clk),
-	.cpu_cyc(cyc2 && adr2[31:18]==14'h000),
-	.cpu_stb(stb2 && adr2[31:18]==14'h000),
+	.cpu_cyc(cyc2 && adr2[31:19]==13'h000),
+	.cpu_stb(stb2 && adr2[31:19]==13'h000),
 	.cpu_ack(ram2_ack),
 	.cpu_aack(ram2_aack),
 	.cpu_we(we2),
@@ -292,6 +308,7 @@ rf68000_node_arbiter undarb2
 	.cpu_adr(adr2),
 	.cpu_dato(dato2),
 	.cpu_dati(ram2_dat),
+	.nic_fc(nic2_fc),
 	.nic_cyc(nic2_cyc),
 	.nic_stb(nic2_stb),
 	.nic_ack(nic2_ack),
@@ -315,27 +332,30 @@ rf68000 #(.SUPPORT_DECFLT(SUPPORT_DECFLT)) ucpu1
 	.rst_o(),
 	.clk_i(clk),
 	.dfclk_i(dfclk),
+	.dt_i(dt_i),
 	.nmi_i(1'b0),
 	.ipl_i(cpu1_irq),
-	.vpa_i(vpa1a),
+	.vpa_i(vpa1),
+	.vpa2_i(vpa2),
 	.lock_o(),
-	.cyc_o(cyc1a),
-	.stb_o(stb1a),
-	.ack_i(ack1a),
-	.err_i(err1a),
+	.cmd_o(cmd1),
+	.cyc_o(cyc1),
+	.stb_o(stb1),
+	.ack_i(ack1),
+	.err_i(err1),
 	.rty_i(1'b0),
-	.we_o(we1a),
-	.sel_o(sel1a),
-	.fc_o(fc1a),
+	.we_o(we1),
+	.sel_o(sel1),
+	.fc_o(fc1),
 	.asid_o(asid1),
 	.mmus_o(mmus1),
 	.ios_o(ios1),
 	.iops_o(iops1),
-	.adr_o(adr1a),
-	.dat_i(dati1a),
-	.dat_o(dato1a)
+	.adr_o(adr1),
+	.dat_i(dati1),
+	.dat_o(dato1)
 );
-
+/*
 rf68851 ummu1
 (
 	.rst_i(rst1),
@@ -348,6 +368,7 @@ rf68851 ummu1
 	.cack_o(ack1a),
 	.cerr_o(err1a),
 	.cvpa_o(vpa1a),
+	.cvpa2_o(vpa2a),
 	.cwe_i(we1a),
 	.csel_i(sel1a),
 	.cadr_i(adr1a),
@@ -360,6 +381,7 @@ rf68851 ummu1
 	.mack_i(ack1),
 	.merr_i(err1),
 	.mvpa_i(vpa1),
+	.mvpa2_i(vpa1_2),
 	.mwe_o(we1),
 	.msel_o(sel1),
 	.madr_o(adr1),
@@ -368,7 +390,7 @@ rf68851 ummu1
 
 	.page_fault_o()
 );
-
+*/
 
 rf68000 #(.SUPPORT_DECFLT(SUPPORT_DECFLT)) ucpu2
 (
@@ -378,10 +400,13 @@ rf68000 #(.SUPPORT_DECFLT(SUPPORT_DECFLT)) ucpu2
 	.rst_o(),
 	.clk_i(clk),
 	.dfclk_i(dfclk),
+	.dt_i(dt_i),
 	.nmi_i(1'b0),
 	.ipl_i(cpu2_irq),
 	.vpa_i(vpa2),
+	.vpa2_i(vpa2_2),
 	.lock_o(),
+	.cmd_o(cmd2),
 	.cyc_o(cyc2),
 	.stb_o(stb2),
 	.ack_i(ack2),
@@ -431,8 +456,8 @@ rf68000 #(.SUPPORT_DECFLT(SUPPORT_DECFLT)) ucpu2
    // Xilinx Parameterized Macro, version 2022.2
 
    xpm_memory_tdpram #(
-      .ADDR_WIDTH_A(16),               // DECIMAL
-      .ADDR_WIDTH_B(16),               // DECIMAL
+      .ADDR_WIDTH_A(17),               // DECIMAL
+      .ADDR_WIDTH_B(17),               // DECIMAL
       .AUTO_SLEEP_TIME(0),            // DECIMAL
       .BYTE_WRITE_WIDTH_A(8),        // DECIMAL
       .BYTE_WRITE_WIDTH_B(8),        // DECIMAL
@@ -443,7 +468,7 @@ rf68000 #(.SUPPORT_DECFLT(SUPPORT_DECFLT)) ucpu2
       .MEMORY_INIT_PARAM("0"),        // String
       .MEMORY_OPTIMIZATION("true"),   // String
       .MEMORY_PRIMITIVE("block"),      // String
-      .MEMORY_SIZE(262144*8),         // DECIMAL
+      .MEMORY_SIZE(327680*8),         // DECIMAL
       .MESSAGE_CONTROL(0),            // DECIMAL
       .READ_DATA_WIDTH_A(32),         // DECIMAL
       .READ_DATA_WIDTH_B(32),         // DECIMAL
@@ -479,8 +504,8 @@ rf68000 #(.SUPPORT_DECFLT(SUPPORT_DECFLT)) ucpu2
       .sbiterrb(),             				// 1-bit output: Status signal to indicate single bit error occurrence
                                        // on the data output of port B.
 
-      .addra(ram1_adr[17:2]),                   // ADDR_WIDTH_A-bit input: Address for port A write and read operations.
-      .addrb(ram2_adr[17:2]),                   // ADDR_WIDTH_B-bit input: Address for port B write and read operations.
+      .addra(ram1_adr[18:2]),                   // ADDR_WIDTH_A-bit input: Address for port A write and read operations.
+      .addrb(ram2_adr[18:2]),                   // ADDR_WIDTH_B-bit input: Address for port B write and read operations.
       .clka(clk),                     // 1-bit input: Clock signal for port A. Also clocks port B when
                                        // parameter CLOCKING_MODE is "common_clock".
 
@@ -545,9 +570,11 @@ rf68000 #(.SUPPORT_DECFLT(SUPPORT_DECFLT)) ucpu2
 
    );
 
-wire cs_spram1 = adr1[31:15]==17'h8 && cyc1 && stb1;
-wire cs_spram2 = adr2[31:15]==17'h8 && cyc2 && stb2;
-
+wire cs_spram1 = 1'b0;//adr1[31:15]==17'h8 && cyc1 && stb1;
+wire cs_spram2 = 1'b0;//adr2[31:15]==17'h8 && cyc2 && stb2;
+assign spram1_ack = 1'b0;
+assign spram2_ack = 1'b0;
+/*
 ack_gen uag1
 (
 	.rst_i(rst1),
@@ -713,6 +740,6 @@ ack_gen uag2
    );
 
    // End of xpm_memory_spram_inst instantiation
-				
+*/				
 							
 endmodule

@@ -390,6 +390,7 @@ void FMTK_TimerTickISR()
 	IRQFlag = 1;
   if (FMTK_Inited != FMTK_MAGIC)
 		return;
+	return;
 	ot = t = GetRunningTCBPtr();
 	if (t == NULL)
 		panic("TimerTickISR: NULL running thread");
@@ -1088,9 +1089,16 @@ long FMTK_Initialize()
 		SetTr(1,(long)&tcbs[0]);
   	RestoreSr(sr);								// Restore interrupts
 
-		hKeybdIRQMbx = FMTK_AllocMbx();
+		hKeybdIRQMbx = (hMBX)FMTK_AllocMbx();
+		if (hKeybdIRQMbx < 0)
+			DisplayStringCRLF("Could not allocate keyboard IRQ mailbox.");
 		ACBPtrs[0]->hMailbox = FMTK_AllocMbx();
 		sysmbx = ACBPtrs[0]->hMailbox;
+
+		hKeybdMbx = 0;
+		hFocusSwitchMbx = 0;
+  	FMTK_Inited = FMTK_MAGIC;
+		DisplayLEDS(5);
 
 		FMTK_StartThread(
 			(unsigned long)IdleThread,
@@ -1140,7 +1148,7 @@ long FMTK_Initialize()
 		}
 		ACBPtrs[hAcb]->is_system = 1;
 */	
-		DisplayLEDS(5);
+		DisplayLEDS(6);
 /*
     	InsertIntoReadyList(0);
     	InsertIntoReadyList(1);
@@ -1154,15 +1162,16 @@ long FMTK_Initialize()
 //		SetVBA(FMTK_IRQDispatch);
 //    	set_vector(4,(unsigned int)FMTK_SystemCall);
 //    	set_vector(2,(unsigned int)FMTK_SchedulerIRQ);
-		hKeybdMbx = 0;
-		hFocusSwitchMbx = 0;
-  	FMTK_Inited = FMTK_MAGIC;
-		DisplayLEDS(6);
   }
 	DisplayStringCRLF("Femtiki Started.");
 	
 	// Enable all interrupts
-	RestoreSr(0x2000);
+//	RestoreSr(0x2000);
 	
   return (E_Ok);
+}
+
+__interrupt TestIRQ()
+{
+	printf("hello");
 }

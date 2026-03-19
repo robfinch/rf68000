@@ -146,7 +146,10 @@ always_comb
 
 reg s1_cyc;
 always_comb
-	s1_cyc = s1_cyc_i && ((s1_adr_i[31:24]==8'hFD && s1_adr_i[23:16]!=8'h20) || (s1_adr_i[31:24]==8'hF0));
+	s1_cyc = s1_cyc_i && ((s1_adr_i[31:24]==8'hFD && s1_adr_i[23:16]!=8'h20) ||
+		(s1_adr_i[31:24]==8'hF0) ||
+		(s1_adr_i[31:24]==8'hFF)
+		);
 
 reg cop_cs0;
 reg cop_cs1;

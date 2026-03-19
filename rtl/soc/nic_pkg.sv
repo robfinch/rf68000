@@ -48,9 +48,18 @@ parameter PT_AREAD = 6'd5;	// asynchronous read
 parameter PT_AACK = 6'd6;
 parameter PT_ERR = 6'd7;
 parameter PT_VPA = 6'd8;
+parameter PT_VPA2 = 6'd9;
 
 typedef logic [31:0] address_t;
 typedef logic [31:0] data_t;
+
+typedef enum logic [4:0] {
+	CMD_NONE = 5'd0,
+	CMD_RD,
+	CMD_WR,
+	CMD_LOCK,
+	CMD_UNLOCK
+} cmd_e;
 
 typedef struct packed
 {
@@ -60,6 +69,7 @@ typedef struct packed
 	logic ack;
 	logic [5:0] typ;
 	logic [1:0] pad2;
+	cmd_e cmd;
 	logic we;
 	logic [3:0] sel;
 	logic [7:0] asid;

@@ -49,20 +49,26 @@
 //		3 = 1 = use external clock, 0 = internal clk_i
 //    4 = 1 = use gate to enable count, 0 = ignore gate
 //		7 = 1 = set registers immediately, 0 = wait for sync
-//	010	current count 1
-//	014  max count 1
-//	018  on time 1
-//	020	current count 2
-//	024	max count 2
-//	028	on time 2
-//	030	current count 3
-//	034	max count 3
-//	038	on time 3
+//	010 callback address
+//	014	callback pid
+//
+//	020	current count 1
+//	024  max count 1
+//	028  on time 1
+//
+//	040	current count 2
+//	044	max count 2
+//	048	on time 2
+//
+//	060	current count 3
+//	064	max count 3
+//	068	on time 3
 //	...
-//	1F0 current count 31
-//	1F4 max count 31
-//	1F8 on time 31
-//	1FC control 31
+//	2E0 current count 31
+//	2E4 max count 31
+//	2E8 on time 31
+//	2EC control 31
+//
 //	800	underflow status
 //  804 synchronization register
 //  808 interrupt enable
@@ -143,11 +149,13 @@ integer n,n1;
 wire cs_pit;
 wire [63:0] cfg_out;
 wire irq_en;
-reg [BITS-1:0] maxcounth [0:NTIMER-1];
-reg [BITS-1:0] maxcount [0:NTIMER-1];
-reg [BITS-1:0] count [0:NTIMER-1];
-reg [BITS-1:0] onth [0:NTIMER-1];
-reg [BITS-1:0] ont [0:NTIMER-1];
+reg [63:0] maxcounth [0:NTIMER-1];
+reg [63:0] maxcount [0:NTIMER-1];
+reg [63:0] count [0:NTIMER-1];
+reg [63:0] onth [0:NTIMER-1];
+reg [63:0] ont [0:NTIMER-1];
+reg [BITS-1:0] callback [0:NTIMER-1];
+reg [15:0] pid [0:NTIMER-1];
 wire [NTIMER-1:0] gate;
 reg [NTIMER-1:0] igate;
 wire [NTIMER-1:0] pulse;
@@ -281,11 +289,11 @@ endgenerate
 
 initial begin
 	for (n = 0; n < NTIMER; n = n + 1) begin
-		maxcount[n] <= 32'd0;
-		maxcounth[n] <= 32'd0;
-		count[n] <= 32'd0;
-		ont[n] <= 32'd0;
-		onth[n] <= 32'd0;
+		maxcount[n] <= 64'd0;
+		maxcounth[n] <= 64'd0;
+		count[n] <= 64'd0;
+		ont[n] <= 64'd0;
+		onth[n] <= 64'd0;
 		igate[n] <= 1'b0;
 		ld[n] <= 1'b0;
 		ce[n] <= 1'b0;
@@ -306,11 +314,13 @@ always_ff @(posedge clk_i)
 if (rst_i) begin
 	ie <= 32'd0;
 	for (n1 = 0; n1 < NTIMER; n1 = n1 + 1) begin
-		maxcount[n1] <= 32'd0;
-		maxcounth[n1] <= 32'd0;
-		count[n1] <= 32'd0;
-		ont[n1] <= 32'd0;
-		onth[n1] <= 32'd0;
+		callback[n1] <= 32'd0;
+		pid[n1] <= 16'h0;
+		maxcount[n1] <= 64'd0;
+		maxcounth[n1] <= 64'd0;
+		count[n1] <= 64'd0;
+		ont[n1] <= 64'd0;
+		onth[n1] <= 64'd0;
 		igate[n1] <= 1'b0;
 		ld[n1] <= 1'b0;
 		ce[n1] <= 1'b0;
@@ -328,27 +338,32 @@ else begin
 	ld <= 32'd0;
 	if (cs && we_i)
 		casez(adr_i[11:2])
-		10'b000?????01:
-			maxcounth[adr_i[8:4]][31:0] <= dat_i[31:0];
-		10'b000?????10:
-				onth[adr_i[8:4]][31:0] <= dat_i[31:0];
-		10'b000?????11:
+		10'b00?????010:
+			maxcounth[adr_i[9:5]][31:0] <= dat_i[31:0];
+		10'b00?????011:
+			maxcounth[adr_i[9:5]][63:32] <= dat_i[31:0];
+		10'b00?????100:
+			onth[adr_i[9:5]][31:0] <= dat_i[31:0];
+		10'b00?????101:
+			onth[adr_i[9:5]][63:32] <= dat_i[31:0];
+		10'b00?????110:
 			begin
-					ldh[adr_i[8:4]] <= dat_i[0];
-					ceh[adr_i[8:4]] <= dat_i[1];
-					arh[adr_i[8:4]] <= dat_i[2];
-					xch[adr_i[8:4]] <= dat_i[3];
-					geh[adr_i[8:4]] <= dat_i[4];
-					if (dat_i[7]) begin
-						ld[adr_i[8:4]] <= dat_i[0];
-						ce[adr_i[8:4]] <= dat_i[1];
-						ar[adr_i[8:4]] <= dat_i[2];
-						xc[adr_i[8:4]] <= dat_i[3];
-						ge[adr_i[8:4]] <= dat_i[4];
-						maxcount[adr_i[8:4]] <= maxcounth[adr_i[8:4]];
-						ont[adr_i[8:4]] <= onth[adr_i[8:4]];
-					end
+				ldh[adr_i[9:5]] <= dat_i[0];
+				ceh[adr_i[9:5]] <= dat_i[1];
+				arh[adr_i[9:5]] <= dat_i[2];
+				xch[adr_i[9:5]] <= dat_i[3];
+				geh[adr_i[9:5]] <= dat_i[4];
+				if (dat_i[7]) begin
+					ld[adr_i[9:5]] <= dat_i[0];
+					ce[adr_i[9:5]] <= dat_i[1];
+					ar[adr_i[9:5]] <= dat_i[2];
+					xc[adr_i[9:5]] <= dat_i[3];
+					ge[adr_i[9:5]] <= dat_i[4];
+					maxcount[adr_i[9:5]] <= maxcounth[adr_i[9:5]];
+					ont[adr_i[9:5]] <= onth[adr_i[9:5]];
 				end
+			end
+			
 	// Writing the underflow register clears the underflows and disable further
 	// interrupts where bits are set in the incoming data.
 	// Interrupt processing should read the underflow register to determine
@@ -384,10 +399,13 @@ else begin
 		endcase
 	if (cs) begin
 		casez(adr_i[11:2])
-		10'b000?????00:	dat_o <= count[adr_i[8:4]];
-		10'b000?????01:	dat_o <= maxcounth[adr_i[8:4]];
-		10'b000?????10:	dat_o <= onth[adr_i[8:4]];
-		10'b000?????11:	dat_o <= {24'd0,3'b0,ge[adr_i[8:4]],xc[adr_i[8:4]],ar[adr_i[8:4]],ce[adr_i[8:4]],1'b0};
+		10'b00?????000:	dat_o <= count[adr_i[9:5]][31: 0];
+		10'b00?????001:	dat_o <= count[adr_i[9:5]][63:32];
+		10'b00?????010:	dat_o <= maxcounth[adr_i[9:5]][31: 0];
+		10'b00?????011:	dat_o <= maxcounth[adr_i[9:5]][63:32];
+		10'b00?????100:	dat_o <= onth[adr_i[9:5]][31:0];
+		10'b00?????101:	dat_o <= onth[adr_i[9:5]][63:32];
+		10'b00?????110:	dat_o <= {24'd0,3'b0,ge[adr_i[9:5]],xc[adr_i[9:5]],ar[adr_i[9:5]],ce[adr_i[9:5]],1'b0};
 		10'h200:	dat_o <= underflow;
 		10'h201:	dat_o <= 32'd0;
 		10'h202:	dat_o <= ie;

@@ -146,17 +146,17 @@ typedef struct _tagHeap {
 } HEAP;
 
 typedef struct tagMSG {
-	hMSG link;
-	unsigned short int type;
+	hMSG link;										// 0
+	unsigned short int type;			// 2
 //	unsigned short int retadr;    // return address
 //	unsigned short int dstadr;    // destination address
-	unsigned long timestamp;
-	unsigned long x;								// cursor position
-	unsigned long y;								//
-	unsigned long z;
-	unsigned long d1;            // payload data 1
-	unsigned long d2;            // payload data 2
-	unsigned long d3;            // payload data 3
+	unsigned long timestamp;			// 4
+	unsigned long x;							// 8	// cursor position
+	unsigned long y;							// 12	//
+	unsigned long z;							// 16
+	unsigned long d1;            // 20 payload data 1
+	unsigned long d2;            // 24 payload data 2
+	unsigned long d3;            // 28 payload data 3
 } MSG;
 // 32 bytes
 

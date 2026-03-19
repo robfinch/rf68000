@@ -15,7 +15,7 @@ INCLUDE = $(INC1)
 #CXX = cc64 -w -S 
 #AFLAGS = -Fvobj -Lbpl=5
 AFLAGS = -Fvobj -m68010 -m68881
-CFLAGS = -I$(INC)
+CFLAGS = -I$(INC) -O=4
 CCX = vbccm68k
 AAX = vasmrf68000_mot.exe
 LLX = vlink

@@ -3,7 +3,7 @@
 
 // ============================================================================
 //        __
-//   \\__/ o\    (C) 2012-2025  Robert Finch, Waterloo
+//   \\__/ o\    (C) 2012-2026  Robert Finch, Waterloo
 //    \  __ /    All rights reserved.
 //     \/_//     robfinch<remove>@finitron.ca
 //       ||
@@ -136,6 +136,7 @@ long FMTK_ExitThread();
 long FMTK_KillThread(__reg("d0") long);
 long FMTK_AllocMbx();
 long FMTK_FreeMbx(__reg("d0") long hMbx);
+long FMTK_EmptyMbx(__reg("d0") long hMbx);
 long FMTK_SetThreadPriority(__reg("d0") long hTCB, __reg("d1") long pri);
 long FMTK_StartApp(__reg("d0") long rec, __reg("d1") long hParent);
 long FMTK_RegisterService(__reg("d0") long pName);
@@ -179,7 +180,9 @@ void outc(unsigned int, int);
 void outh(unsigned int, int);
 void outw(unsigned int, int);
 int LockSemaphore(long sema, int retries);
+int LockSemaphoreNB(long sema, int retries);
 void UnlockSemaphore(long sema, int stat);
+void UnlockSemaphoreNB(long sema, int stat);
 
 int LockSysSemaphore(long retries);
 int LockIOFSemaphore(long retries);
@@ -202,7 +205,7 @@ void UnlockKbdSemaphore(int);
 void UnlockMMUSemaphore(int);
 void UnlockPMTSemaphore(int);
 void UnlockMSGList(int);
-void UnlockMBX(hMBX,int);
+void UnlockMBX(long hMbx,int);
 void UnlockMBXList(int);
 void UnlockTimeoutList(int);
 void UnlockReadyQueue(int);
@@ -243,6 +246,7 @@ extern void DisplayStringCRLF(__reg("a1") char *);
 void DisplayLEDS(__reg("d0") long v) =
 	"\tmove.b d0,$FDFFC000\r\n"
 ;
+extern int WaitAnyButton();
 
 extern char* LinearToPhysical(hACB appid, char* linadr);
 

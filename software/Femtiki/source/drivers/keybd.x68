@@ -19,8 +19,8 @@
 	include "..\Femtiki\source\inc\const.x68"
 	include "..\Femtiki\source\inc\device.x68"
 
-WM_KEYDOWN	equ	$100
-WM_KEYUP		equ	$101
+;FM_KEYDOWN	equ	$100
+;FM_KEYUP		equ	$101
 
 	section local_ram
 keybd_vars	equ	*
@@ -629,8 +629,8 @@ KeybdGetChar:
 	moveq #37,d0						; Lock semaphore
 	move.l #100000,d2				; wait this long
 	trap #15
-	tst.l d0
-	bmi.s .lockFailed
+	cmp.l #-1,d0
+	beq.s .lockFailed
 	move.b _KeybdCnt(a3),d2		; get count of buffered scan codes
 	beq.s	.0015								;
 	move.b _KeybdHead(a3),d2		; d2 = buffer head
@@ -870,81 +870,59 @@ Wait300ms:
 KeybdIRQ:
 	; Disable lower interrupts. The IPL will be restored by the RTE at the
 	; end of this routine.
-	move.w #$2700,sr					
-	movem.l	d0-d7/a0-a6,-(a7)
-	move.l #keybd_vars,a3
-	moveq	#0,d1								; check if keyboard IRQ
-	move.b KEYBD+1,d1					; get status reg
-	tst.b	d1
+	move.w #$2700,sr					; disable all interrupts
+	neg.l $FD000000						; update IRQ live indicator (no regs needed)
+	tst.b	KEYBD+1							; check if keyboard IRQ, get status reg
 	bpl	.0001									; branch if not keyboard
-	move.l #KEYBD_SEMA+_semaphores,d1
-	moveq #37,d0							; lock semaphore
-	move.l #100,d2
-	trap #15
-	tst.l d0									; was the semaphore locked?
-	bmi .lockFailed						; nope, return
-	neg.l $FD000000						; update IRQ live indicator
-	move.b #1,leds
-	move.l d0,d2							; d2 = sr value
+	move.b #16,leds
+	; Only d0-d1 and a0-a2 need be saved. The compiler saves and restores
+	; anything else it uses.
+	movem.l d0-d1/a0-a2,-(sp)
+	move.l #keybd_vars,a2
 	clr.l d1
 	move.b KEYBD,d1						; get scan code
 	clr.b KEYBD+1							; clear status register (clears IRQ AND scancode)
-	movem.l d1-d3,-(sp)
-	move.l _FMTK_Inited,d0
-	cmp.l #FMTK_MAGIC,d0
-;	bne.s .0005
-	move.l d1,d3							; d3 = scan code
-	move.l _hKeybdIRQMbx,d0
-	move.l #_KeybdMsg,d1
-	move.l #$ffff,_KeybdMsg+20	; msg->d1 = IRQ message
-	move.l #-1,_KeybdMsg+24			; msg->d2 = -1
-	move.b #2,leds
-	jsr _FMTK_PostMsg
-.0005
-	movem.l (sp)+,d1-d3
-	btst #1,_KeyState2(a3)		; Is Alt down?
-	beq.s	.0003
-	cmpi.b #SC_TAB,d1					; is Alt-Tab?
-	bne.s	.0003
-	movec tick,d0
-	sub.l _Keybd_tick(a3),d0
-	cmp.l #10,d0							; has it been 10 or more ticks?
-;	blo.s .0002
-	movec tick,d0							; update tick of last ALT-Tab
-	move.l d0,_Keybd_tick(a3)
-	jsr	rotate_iofocus
-	clr.b	_KeybdHead(a3)			; clear keyboard buffer
-	clr.b	_KeybdTail(a3)
-	clr.b	_KeybdCnt(a3)
-	bra	.0002									; do not store Alt-Tab
-.0003
-	btst #2,_KeyState2(a3)		; Is Ctrl down?
-	beq.s .0004
-	cmpi.b #SC_C,d1						; Is it Ctrl-C ?
+	btst.b #2,_KeyState2(a2)	; CTRL?
+	beq.s .0005
+	cmp.b #SC_C,d1						; CTRL+C?
+	bne.s .0005
+	move.b #17,leds
+	jmp _StartMon							; should do a signal here
+.0005:
+	btst.b #1,_KeyState2(a2)	; ALT?
+	beq.s .0003
+	cmp.b #SC_TAB,d1					; ALT-Tab?
+	bne.s .0003
+	move.w _hKeybdIRQMbx,d0		; d0 = handle to keyboard IRQ mailbox
+	ext.l d0	
+	jsr _FMTK_EmptyMbx				; empty the IRQ mailbox
+	move.b _KeyState2(a2),d0
+	and.b #$41,d0							; Shift-ALT-Tab?
 	bne.s .0004
-	move.l #_StartMon,a0			; Stuff the Monitor address as
-	move.l a0,22(sp)					; the return address
-	bra .0002
-.0004
-	; Insert keyboard scan code into raw keyboard buffer
-	cmpi.b #32,_KeybdCnt(a3)	; see if keyboard buffer full
-	bhs.s	.0002
-	move.b _KeybdTail(a3),d0	; keyboard buffer not full, add to tail
-	ext.w	d0
-	lea	_KeybdBuf(a3),a0			; a0 = pointer to buffer
-	move.b d1,(a0,d0.w)				; put scancode in buffer
-	addi.b #1,d0							; increment tail index
-	andi.b #31,d0							; wrap at buffer limit
-	move.b d0,_KeybdTail(a3)	; update tail index
-	addi.b #1,_KeybdCnt(a3)		; increment buffer count
+	moveq #1,d0
+	move.b #18,leds
+	jsr _rotate_iofocus				; and rotate the focus
+	bra.s .0003
+.0004:
+	moveq #-1,d0
+	move.b #19,leds
+	jsr _rotate_iofocus				; and rotate the focus
+.0003:
+	; Post message to keyboard mailbox
+	move.l _FMTK_Inited,d0		; no point in posting messages if system is not ready
+	cmp.l #FMTK_MAGIC,d0
+	bne.s .0002
+	move.w _hKeybdIRQMbx,d0		; d0 = handle to keyboard IRQ mailbox
+	ext.l d0
+	move.l d1,_KeybdMsg+20		; msg->d1 = message = scancode
+	move.l #_KeybdMsg,d1
+	move.l #-1,_KeybdMsg+24		; msg->d2 = -1
+	; Could call the OS dispatcher TRAP here, but that would waste clock cycles.
+	move.b #20,leds
+	jsr _FMTK_PostMsg
 .0002
-	move.l #KEYBD_SEMA+_semaphores,d1			; d2 = sr value (above)
-	moveq #38,d0							; unlock semaphore
-	trap #15
-.lockFailed
+	movem.l (sp)+,d0-d1/a0-a2
 .0001
-	move.b #2,leds
-	movem.l	(a7)+,d0-d7/a0-a6		; return
 	rte
 	global KeybdIRQ
 
@@ -960,9 +938,11 @@ KeybdIRQ2:
 	movem.l	(a7)+,d0-d7/a0-a6
 	rte
 .0001
-	move.l _hKeybdIRQMbx,d0
+	move.w _hKeybdIRQMbx,d0
+	ext.l d0
 	move.l #_KeybdMsg,d1
 	move.l #$ffff,_KeybdMsg+20	; msg->d1 = IRQ message
+	move.w #FM_KEYDOWN,_KeybdMsg+22
 	move.l #-1,_KeybdMsg+24			; msg->d2 = -1
 	clr.l d3
 	move.b KEYBD,d3						; get scan code

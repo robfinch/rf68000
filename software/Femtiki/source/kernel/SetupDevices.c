@@ -56,30 +56,39 @@ extern long serial_cmdproc(__reg("d6") long cmd, __reg("d1") long p1, __reg("d2"
 //extern long sdc_cmdProc(long cmd, long p1, long p2, long p3, long p4);
 //extern long con_cmdProc(long cmd, long p1, long p2, long p3, long p4);
 
+extern void DisplayStringCRLF(__reg("a1") char * str);
+
 void SetupDevices()
 {
 	DCB *p;
 	int n;
+	int sr;
 
+	sr = SetImLevel7();
+	DisplayStringCRLF("Setup devices");
 	p = &DeviceTable[0];
 	memset(p, 0, sizeof(DCB) * NR_DCB);
+	DisplayStringCRLF("Cleared DCBs");
 
 	strncpy(p->name,"NULL",12);
 	p->type = DVT_Unit;
 	p->UnitSize = 0;
 	p->cmdproc = null_cmdproc;
+	DisplayStringCRLF("Setup NULL");
 	
 	p = &DeviceTable[1];
 	strncpy(p->name,"KBD",12);
 	p->type = DVT_Unit;
 	p->UnitSize = 1;
 	p->cmdproc = keybd_cmdproc;
+	DisplayStringCRLF("Setup KBD");
 
 	p = &DeviceTable[2];
 	strncpy(p->name,"TEXTVID",12);
 	p->type = DVT_Unit;
 	p->UnitSize = 1;
 	p->cmdproc = textvid_cmdproc;
+	DisplayStringCRLF("Setup TEXTVID");
 
 	p = &DeviceTable[5];
 	strncpy(p->name,"COM1",12);
@@ -123,6 +132,7 @@ void SetupDevices()
 	strncpy(p->name,"DBG",12);
 	p->type = DVT_Unit;
 	p->UnitSize = 1;
+	DisplayStringCRLF("Setup DBG");
 
   for (n = 0; n < NR_DCB; n++) {
     if ((hDevMailbox[n*2] = FMTK_AllocMbx()) < 0)
@@ -133,5 +143,6 @@ void SetupDevices()
     p->hMbxSend = hDevMailbox[n*2];
     p->hMbxRcv = hDevMailbox[n*2+1];
   }
-
+	DisplayStringCRLF("Setup mailboxes");
+	RestoreSr(sr);
 }

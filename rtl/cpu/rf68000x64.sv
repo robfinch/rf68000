@@ -152,16 +152,10 @@ module rf68000(coreno_i, clken_i, rst_i, rst_o, clk_i, dfclk_i, nmi_i, ipl_i, vp
 	asid_o, mmus_o, ios_o, iops_o, adr_o, dat_i, dat_o);
 parameter SUPPORT_DECFLT = 1'b1;
 parameter SUPPORT_BINFLT = 1'b0;
-parameter SUPPORT_PMMU = 1'b1;
+parameter SUPPORT_PMMU = 1'b0;
 parameter SUPPORT_68020 = 1'b0;
 parameter IOPS_ADDR = 32'hFDE00000;
 parameter MMU_ADDR = 32'hFDC00000;
-// Number of ATC entries
-// The original 68851 had 64 entries. This was reduced in the 68030 to 22
-// likley to reduce the footprint and improve the timing. Since it is fully
-// associative, this is expensive to implement in an FPGA as it must be
-// made from FF's and LUTs.
-parameter NATC = 22;
 
 typedef struct packed
 {
@@ -682,6 +676,7 @@ output reg [31:0] trace_o;
 
 bus_stat_t bus_stat;
 reg em;							// emulation mode
+reg rext=1'b0,rext2=1'b0;
 reg [15:0] ir;
 reg [15:0] ir2;			// second word for ir
 `ifdef SUPPORT_NANO_CACHE
@@ -703,22 +698,23 @@ state_t state_stk5;
 state_t state_stk6;
 state_t sz_state;
 flag_update_t flag_update;
-reg [31:0] d0 = 'd0;
-reg [31:0] d1 = 'd0;
-reg [31:0] d2 = 'd0;
-reg [31:0] d3 = 'd0;
-reg [31:0] d4 = 'd0;
-reg [31:0] d5 = 'd0;
-reg [31:0] d6 = 'd0;
-reg [31:0] d7 = 'd0;
-reg [31:0] a0 = 'd0;
-reg [31:0] a1 = 'd0;
-reg [31:0] a2 = 'd0;
-reg [31:0] a3 = 'd0;
-reg [31:0] a4 = 'd0;
-reg [31:0] a5 = 'd0;
-reg [31:0] a6 = 'd0;
-reg [31:0] sp = 'd0;
+reg [63:0] d0 = 'd0;
+reg [63:0] d1 = 'd0;
+reg [63:0] d2 = 'd0;
+reg [63:0] d3 = 'd0;
+reg [63:0] d4 = 'd0;
+reg [63:0] d5 = 'd0;
+reg [63:0] d6 = 'd0;
+reg [63:0] d7 = 'd0;
+reg [63:0] a0 = 'd0;
+reg [63:0] a1 = 'd0;
+reg [63:0] a2 = 'd0;
+reg [63:0] a3 = 'd0;
+reg [63:0] a4 = 'd0;
+reg [63:0] a5 = 'd0;
+reg [63:0] a6 = 'd0;
+reg [63:0] sp = 'd0;
+
 reg [95:0] fp0 = 'd0;
 reg [95:0] fp1 = 'd0;
 reg [95:0] fp2 = 'd0;
@@ -763,8 +759,8 @@ wire [31:0] a6o;
 wire [31:0] spo;
 wire [31:0] flagso;
 wire [31:0] pco;
-function [31:0] fnReg;
-input [3:0] rg;
+function [63:0] fnReg;
+input [6:0] rg;
 begin
 	case(rg)
 	4'd0:	fnReg = d0;
@@ -967,7 +963,7 @@ always_comb
 always_comb
 	pmmu_index_DP = (padr >> pmmu_DP) & pmmu_Dmask;
 
-atc_entry_t [NATC-1:0] atc;
+atc_entry_t [63:0] atc;
 reg [63:0] desc = 64'd0;
 SFT_desc_t sft_desc;
 LFT_desc_t lft_desc;
@@ -1033,7 +1029,7 @@ reg [5:0] cnt;				// shift count
 reg [31:0] ea;				// effective address
 reg [31:0] vector;
 reg [7:0] vecno;
-reg [3:0] Rt;
+reg [5:0] Rt;
 wire [1:0] sz = ir[7:6];
 reg dsix;
 reg [2:0] mmm,mmmx,mmm_save='d0;
@@ -1064,19 +1060,27 @@ reg [2:0] FLTDST;
 reg MMMRRR;
 wire Anabit;
 wire [31:0] sp_dec = sp - 32'd2;
-reg [31:0] rfoAn;
+wire [63:0] rfoAn;
+/*
 always_comb
 	rfoAn = fnReg({1'b1,rrr});
-reg [31:0] rfoAna;
+*/
+wire [63:0] rfoAna;
+/*
 always_comb
 	rfoAna = fnReg({1'b1,AAA});
+*/
 //wire [31:0] rfoAn =	rrr==3'b111 ? sp : regfile[{1'b1,rrr}];
-reg [31:0] rfoDn;
+wire [63:0] rfoDn;
+/*
 always_comb
 	rfoDn = fnReg({1'b0,DDD});
-reg [31:0] rfoDnn;
+*/
+wire [63:0] rfoDnn;
+/*
 always_comb
 	rfoDnn = fnReg({1'b0,rrr});
+*/
 // For bitfield
 integer bf1;
 state_t bf_size;
@@ -1107,12 +1111,49 @@ begin
 	fnBfdat = fnReg({1'b0,fld});
 end
 endfunction
-reg [31:0] rfob;
+
+wire [63:0] rfob;
+/*
 always_comb
 	rfob = fnReg({mmm[0],rrr});
-reg [31:0] rfoRnn;
+*/
+wire [63:0] rfoRnn;
+/*
 always_comb
 	rfoRnn = fnReg(rrrr);
+*/
+reg rfwrL,rfwrB,rfwrW,rfwrX=1'b0;
+reg [8:0] resB;
+reg [16:0] resW;
+reg [32:0] resL;
+reg [64:0] resX;
+reg [2:0] Xnx=3'd0,Rnx=3'd0,Nnx=3'd0;
+
+regfile urgfile1
+(
+	.clk(clk_i),
+	.wrb(rfwrB),
+	.wrw(rfwrW),
+	.wrl(rfwrL),
+	.wrx(rfwrX),
+	.wa(Rt),
+	.i(rfwrB ? resB[7:0] : rfwrW ? resW[15:0] : rfwrL ? resL[31:0] : resX[63:0]),
+	.ra0(|Xnx ? {Xnx,rrr} : {3'b001,rrr}), 
+	.ra1(|Rnx ? {Rnx,AAA} : {3'b001,AAA}),
+	.ra2(|Rnx ? {Rnx,DDD} : {3'b000,DDD}),
+	.ra3(|Xnx ? {XnX,rrr} : {3'b000,rrr}),
+	.ra4(|Xnx ? {Xnx,rrr} : {2'b00,mmm[0],rrr}),
+	.ra5(|Xnx ? {Xnx,rrr} : {2'b00,rrrr}),
+	.ra6(6'd0),
+	.o0(rfoAn),
+	.o1(rfoAna),
+	.o2(rfoDn),
+	.o3(rfoDnn),
+	.o4(rfob),
+	.o5(rfoRnn),
+	.o6()
+);
+
 reg [95:0] rfoFpdst, rfoFpsrc;
 generate begin : gFLTSrcDst
 if (SUPPORT_DECFLT) begin
@@ -1147,12 +1188,8 @@ endgenerate
 //wire [31:0] rfob = {mmm[0],rrr}==4'b1111 ? sp : regfile[{mmm[0],rrr}];
 //wire [31:0] rfoDnn = regfile[{1'b0,rrr}];
 //wire [31:0] rfoRnn = rrrr==4'b1111 ? sp : regfile[rrrr];
-reg rfwrL,rfwrB,rfwrW;
 reg rfwrF;
 reg takb, ftakb, ptakb;
-reg [8:0] resB;
-reg [16:0] resW;
-reg [32:0] resL;
 reg [95:0] resF;
 reg [95:0] fps, fpd;
 (* USE_DSP = "no" *)
@@ -1273,91 +1310,6 @@ end
 endtask
 */
 
-/* Under construction 
-wire atc_rsta = rst_i;
-wire atc_rstb = rst_i;
-wire atc_clka = clk_i;
-wire atc_clkb = clk_i;
-quad_atc_entry_t atc_dina;
-quad_atc_entry_t atc_dinb;
-quad_atc_entry_t atc_douta;
-quad_atc_entry_t atc_doutb;
-reg atc_ena,atc_enb;
-reg atc_wea,atc_web;
-reg [7:0] atc_addra,atc_addrb;
-
-// xpm_memory_tdpram: True Dual Port RAM
-// Xilinx Parameterized Macro, version 2025.1
-
-xpm_memory_tdpram #(
-  .ADDR_WIDTH_A(8),
-  .ADDR_WIDTH_B(8),
-  .AUTO_SLEEP_TIME(0),
-  .BYTE_WRITE_WIDTH_A($bits(atc_entry_t)*4),
-  .BYTE_WRITE_WIDTH_B($bits(atc_entry_t)*4),
-  .CASCADE_HEIGHT(0),             // DECIMAL
-  .CLOCKING_MODE("common_clock"), // String
-  .ECC_BIT_RANGE("7:0"),          // String
-  .ECC_MODE("no_ecc"),            // String
-  .ECC_TYPE("none"),              // String
-  .IGNORE_INIT_SYNTH(0),          // DECIMAL
-  .MEMORY_INIT_FILE("none"),      // String
-  .MEMORY_INIT_PARAM("0"),        // String
-  .MEMORY_OPTIMIZATION("true"),   // String
-  .MEMORY_PRIMITIVE("block"),
-  .MEMORY_SIZE($bits(atc_entry_t)*4*256),
-  .MESSAGE_CONTROL(0),            // DECIMAL
-  .RAM_DECOMP("auto"),            // String
-  .READ_DATA_WIDTH_A($bits(atc_entry_t)*4),
-  .READ_DATA_WIDTH_B($bits(atc_entry_t)*4),
-  .READ_LATENCY_A(1),             // DECIMAL
-  .READ_LATENCY_B(1),             // DECIMAL
-  .READ_RESET_VALUE_A("0"),       // String
-  .READ_RESET_VALUE_B("0"),       // String
-  .RST_MODE_A("SYNC"),            // String
-  .RST_MODE_B("SYNC"),            // String
-  .SIM_ASSERT_CHK(0),             // DECIMAL; 0=disable simulation messages, 1=enable simulation messages
-  .USE_EMBEDDED_CONSTRAINT(0),    // DECIMAL
-  .USE_MEM_INIT(1),               // DECIMAL
-  .USE_MEM_INIT_MMI(0),           // DECIMAL
-  .WAKEUP_TIME("disable_sleep"),  // String
-  .WRITE_DATA_WIDTH_A($bits(atc_entry_t)*4),
-  .WRITE_DATA_WIDTH_B($bits(atc_entry_t)*4),
-  .WRITE_MODE_A("no_change"),     // String
-  .WRITE_MODE_B("no_change"),     // String
-  .WRITE_PROTECT(1)               // DECIMAL
-)
-atc_mem (
-  .dbiterra(),
-  .dbiterrb(),
-  .douta(atc_douta),
-  .doutb(atc_doutb),
-  .sbiterra(),
-  .sbiterrb(),
-  .addra(atc_addra),
-  .addrb(atc_addrb),
-  .clka(atc_clka),
-  .clkb(atc_clkb),
-  .dina(atc_dina),
-  .dinb(atc_dinb),
-  .ena(atc_ena),
-  .enb(atc_enb),
-  .injectdbiterra(1'b0),
-  .injectdbiterrb(1'b0),
-  .injectsbiterra(1'b0),
-  .injectsbiterrb(1'b0),
-  .regcea(1'b1),
-  .regceb(1'b1),
-  .rsta(atc_rsta),
-  .rstb(atc_rstb),
-  .sleep(1'b0),
-  .wea(atc_wea),
-  .web(atc_web)
-);
-
-// End of xpm_memory_tdpram_inst instantiation
-*/		
-			
 function [31:0] rbo;
 input [31:0] w;
 rbo = {w[7:0],w[15:8],w[23:16],w[31:24]};
@@ -2017,6 +1969,7 @@ if (rst_i) begin
 	rfwrB <= 1'b0;
 	rfwrW <= 1'b0;
 	rfwrL <= 1'b0;
+	rfwrX <= 1'b0;
 	rfwrF <= 1'b0;
 	zf <= 1'b0;
 	nf <= 1'b0;
@@ -3021,7 +2974,7 @@ DECODE:
 				nf <= rfoRnn[15];
 				zf <= rfoRnn[15:0]==16'h0000;
 				rfwrL <= 1'b1;
-				Rt <= {1'b0,ir[2:0]};
+				Rt <= {Xnx,ir[2:0]};
 				resL <= {{16{rfoRnn[15]}},rfoRnn[15:0]};
 				ret();
 			end
@@ -3031,7 +2984,7 @@ DECODE:
 				nf <= rfoRnn[7];
 				zf <= rfoRnn[7:0]==8'h00;
 				rfwrW <= 1'b1;
-				Rt <= {1'b0,ir[2:0]};
+				Rt <= {Xnx,ir[2:0]};
 				resW <= {rfoRnn[31:16],{8{rfoRnn[7]}},rfoRnn[7:0]};
 				ret();
 			end
@@ -3050,7 +3003,7 @@ DECODE:
 				zf <= rfoDnn==32'd0;
 				nf <= rfoDnn[15];
 				resL <= {rfoDnn[15:0],rfoDnn[31:16]};
-				Rt <= {1'b0,rrr};
+				Rt <= {Xnx,rrr};
 				rfwrL <= 1'b1;
 				ret();
 			end
@@ -3084,7 +3037,7 @@ DECODE:
 		9'b11100110?:
 			if (ir[3]) begin
 				ret();
-				Rt <= {1'b1,rrr};
+				Rt <= |Xnx ? {Xnx,rrr} : {3'b001,rrr};
 				rfwrL <= 1'b1;
 				resL <= usp;
 			end
@@ -3207,7 +3160,7 @@ DECODE:
 					d <= {32{takb}};
 					if (mmm==3'b000) begin
 						rfwrB <= 1'b1;
-						Rt <= {1'b0,rrr};
+						Rt <= {Xnx,rrr};
 						ret();
 					end
 					else begin
@@ -3236,42 +3189,44 @@ DECODE:
 	5'h6:
 		begin
 			opc <= pc + 4'd2;
-			ea <= pc + {{24{ir[7]}},ir[7:1],1'b0} + 4'd2;
-			if (ir[11:0]==12'h100) begin		// 6100 = BSR
-				bsr <= 1'b1;
-				call(FETCH_BRDISP,JSR);
-			end
-			else if (ir[11:8]==4'h1)	// 61xx = BSR
-				goto(JSR);
-			else if (takb) begin
-				// If branch back to self, trap
-			  if (ir[7:0]==8'hFE)
-			  	tBadBranchDisp();
-				else
-`ifdef SUPPORT_B24			
-				if (ir[7:0]==8'h00 || ir[0]) begin
-`else				
-				if (ir[7:0]==8'h00) begin
-`endif
-					goto(FETCH_BRDISP);
+			begin
+				ea <= pc + {{24{ir[7]}},ir[7:1],1'b0} + 4'd2;
+				if (ir[11:0]==12'h100) begin		// 6100 = BSR
+					bsr <= 1'b1;
+					call(FETCH_BRDISP,JSR);
 				end
-				else if (ir[7:0]==8'hFF)
-					call (FETCH_IMM32,FETCH_BRDISP32);
+				else if (ir[11:8]==4'h1)	// 61xx = BSR
+					goto(JSR);
+				else if (takb) begin
+					// If branch back to self, trap
+				  if (ir[7:0]==8'hFE)
+				  	tBadBranchDisp();
+					else
+`ifdef SUPPORT_B24			
+					if (ir[7:0]==8'h00 || ir[0]) begin
+`else				
+					if (ir[7:0]==8'h00) begin
+`endif
+						goto(FETCH_BRDISP);
+					end
+					else if (ir[7:0]==8'hFF)
+						call (FETCH_IMM32,FETCH_BRDISP32);
+					else begin
+						pc <= pc + {{24{ir[7]}},ir[7:1],1'b0} + 4'd2;
+						ret();
+					end
+				end
 				else begin
-					pc <= pc + {{24{ir[7]}},ir[7:1],1'b0} + 4'd2;
+`ifdef SUPPORT_B24			
+					if (ir[7:0]==8'h00 || ir[0])		// skip over long displacement
+`else
+					if (ir[7:0]==8'h00)		// skip over long displacement
+`endif			
+						pc <= pc + 4'd4;
+					else if (ir[7:0]==8'hFF)
+						pc <= pc + 4'd6;
 					ret();
 				end
-			end
-			else begin
-`ifdef SUPPORT_B24			
-				if (ir[7:0]==8'h00 || ir[0])		// skip over long displacement
-`else
-				if (ir[7:0]==8'h00)		// skip over long displacement
-`endif			
-					pc <= pc + 4'd4;
-				else if (ir[7:0]==8'hFF)
-					pc <= pc + 4'd6;
-				ret();
 			end
 		end
 
@@ -3282,13 +3237,22 @@ DECODE:
 		// MOVEQ only if ir[8]==0, but it is otherwise not used for the 68k.
 		// So some decode and fmax is saved by not decoding ir[8]
 		//if (ir[8]==1'b0) 
-		begin
+		if (ir[8]) begin
+			Xnx <= ir[2:0];
+			Rnx <= ir[5:3];
+			Nnx <= ir[11:9];
+			No <= ir[6];
+			rext <= TRUE;
+			rext2 <= FALSE;
+			ret();
+		end
+		else begin
 			vf <= 1'b0;
 			cf <= 1'b0;
 			nf <= ir[7];
 			zf <= ir[7:0]==8'h00;
 			rfwrL <= 1'b1;
-			Rt <= {1'b0,ir[11:9]};
+			Rt <= {Rnx,ir[11:9]};
 			resL <= {{24{ir[7]}},ir[7:0]};
 			ret();
 		end
@@ -3452,7 +3416,7 @@ DECODE:
 				end
 			12'b???1_0100_0???:	// EXG	Dx,Dy
 			begin
-				Rt <= {1'b0,DDD};
+				Rt <= {Xnx,DDD};
 				rfwrL <= 1'b1;
 				resL <= rfoRnn;
 				s <= rfoDn;
@@ -3468,7 +3432,7 @@ DECODE:
 			end
 			12'b???1_1000_1???:	// EXG Dx,Ay
 			begin
-				Rt <= {1'b0,DDD};
+				Rt <= {Xnx,DDD};
 				rfwrL <= 1'b1;
 				resL <= rfoRnn;
 				s <= rfoDn;
@@ -4158,8 +4122,8 @@ DECODE:
 MOVES:
 	begin
 		ir2 <= imm[15:0];
-		rrrr <= imm[15:12];
-		Rt <= imm[15:12];
+		rrrr <= |Nnx ? {Nnx,imm[14:12]} : {2'b00,imm[15:12]};
+		Rt <= |Nnx ? {Nnx,imm[14:12]} : {2'b00,imm[15:12]};
 		if (imm[11])
 			goto (MOVES2);
 		else begin
@@ -4215,13 +4179,13 @@ MOVES3:
 BCD:
 	begin
 		push(BCD0);
-		fs_data(3'b100,rrr,FETCH_BYTE,S);
+		fs_data(3'b100,{Xnx,rrr},FETCH_BYTE,S);
 	end
 BCD0:
 	begin
 		if (ir[3]) begin
 			push(BCD1);
-			fs_data(3'b100,RRR,FETCH_BYTE,D);
+			fs_data(3'b100,{Rnx,RRR},FETCH_BYTE,D);
 		end
 		else
 			goto (BCD1);
@@ -4245,9 +4209,9 @@ BCD4:
 		else begin
 			rfwrB <= 1'b1;
 			if (bcdneg)
-				Rt <= {1'b0,rrr};
+				Rt <= {Xnx,rrr};
 			else
-				Rt <= {1'b0,RRR};
+				Rt <= {Rnx,RRR};
 			resB <= bcdreso[7:0];
 			ret();
 		end
@@ -4300,7 +4264,7 @@ MULS3:
 	begin
 		flag_update <= FU_MUL;
 		rfwrL <= 1'b1;
-		Rt <= {1'b0,DDD};
+		Rt <= {Rnx,DDD};
 		resL <= resMS2;
 		ret();
 	end
@@ -4318,7 +4282,7 @@ MULU3:
 	begin
 		flag_update <= FU_MUL;
 		rfwrL <= 1'b1;
-		Rt <= {1'b0,DDD};
+		Rt <= {Rnx,DDD};
 		resL <= resMU2;
 		ret();
 	end
@@ -4345,7 +4309,7 @@ DIV2:
 		cf <= 1'b0;		// always cleared
 		nf <= divq[15];
 		zf <= divq[15:0]==16'h0000;
-		Rt <= {1'b0,DDD};
+		Rt <= {Rnx,DDD};
 		resL <= {divr[15:0],divq[15:0]};
 		if (dvovf) begin
 			vf <= 1'b1;
@@ -4375,7 +4339,7 @@ NOT:
 		default:	;
 		endcase
 		if (mmm==3'b000) begin
-			Rt <= {1'b0,rrr};
+			Rt <= {Rnx,rrr};
 			case(sz)
 			2'b00:	rfwrB <= 1'b1;
 			2'b01:	rfwrW <= 1'b1;
@@ -4427,7 +4391,7 @@ NEGX1:
 		2'b10:	begin cf <= resL[32]; nf <= resL[31]; vf <= fnSubOverflow(resL[31],dd[31],s[31]); zf <= resL[31:0]==32'h00; xf <= resL[32]; end
 		endcase
 		if (mmm==3'b000) begin
-			Rt <= {1'b0,rrr};
+			Rt <= {Xnx,rrr};
 			case(sz)
 			2'b00:	rfwrB <= 1'b1;
 			2'b01:	rfwrW <= 1'b1;
@@ -4477,7 +4441,7 @@ LINK2:
 	begin
 		resL <= sp - 32'd4;
 		rfwrL <= 1'b1;
-		Rt <= {1'b1,rrr};
+		Rt <= |Xnx ? {Xnx,rrr} : {3'b001,rrr};
 		sp <= sp + imm - 32'd4;
 		ret();		
 	end
@@ -4492,7 +4456,7 @@ LEA:
 	end
 LEA2:
 	begin
-		Rt <= {1'b1,AAA};
+		Rt <= |Rnx ? {Rnx,AAA} : {3'b001,AAA};
 		rfwrL <= 1'b1;
 		resL <= ea;
 		ret();
@@ -4527,7 +4491,7 @@ DBRA:
 `endif
 	begin
 		resW <= rfoDnn - 4'd1;
-		Rt <= {1'b0,rrr};
+		Rt <= {Xnx,rrr};
 		rfwrW <= 1'b1;
 		if (rfoDnn[15:0]!=0)
 			pc <= opc + imm;
@@ -4545,7 +4509,7 @@ EXG1:
 	begin
 		rfwrL <= 1'b1;
 		resL <= s;
-		Rt <= rrrr;
+		Rt <= |Xnx ? {Xnx,rrr} : {2'b00,rrrr};
 		ret();
 	end
 
@@ -4719,7 +4683,7 @@ SHIFT:
 		2'b10:	d <= resL;
 		2'b11:	d <= resW;
 		endcase
-		Rt <= {1'b0,rrr};
+		Rt <= {Xnx,rrr};
 		case(sz)
 		2'b00:	begin zf <= resB[7:0]== 8'h00; nf <= resB[ 7]; end
 		2'b01:	begin zf <= resW[15:0]==16'h00; nf <= resW[15]; end
@@ -4742,7 +4706,7 @@ ADD:
 		flag_update <= FU_ADD;
 		if (sz==2'b11) begin
 			flag_update <= FU_NONE;
-			Rt <= {1'b1,AAA};
+			Rt <= |Rnx ? {Rnx,AAA} : {3'b001,AAA};
 			if (ir[8]) begin
 				rfwrL <= 1'b1;
 				resL <= d + s;
@@ -4762,7 +4726,7 @@ ADD:
 			d <= d + s;
 			dd <= d;
 			if (mmm==3'd0 || mmm==3'd1) begin
-				Rt <= {mmm[0],rrr};
+				Rt <= |Xnx ? {Xnx,rrr} : {2'b00,mmm[0],rrr};
 				case(sz)
 				2'b00:	rfwrB <= 1'b1;
 				2'b01:	rfwrW <= 1'b1;
@@ -4781,7 +4745,7 @@ ADD:
 			end
 		end
 		else begin
-			Rt <= {1'b0,DDD};
+			Rt <= {Rnx,DDD};
 			resB <= d[7:0] + s[7:0];
 			resW <= d[15:0] + s[15:0];
 			resL <= d + s;
@@ -4804,7 +4768,7 @@ SUB:
 		flag_update <= FU_SUB;
 		if (sz==2'b11) begin
 			flag_update <= FU_NONE;
-			Rt <= {1'b1,AAA};
+			Rt <= |Rnx ? {Rnx,AAA} : {3'b001,AAA};
 			if (ir[8]) begin
 				rfwrL <= 1'b1;
 				resL <= d - s;
@@ -4824,7 +4788,7 @@ SUB:
 			d <= d - s;
 			dd <= d;
 			if (mmm==3'd0 || mmm==3'd1) begin
-				Rt <= {mmm[0],rrr};
+				Rt <= |Xnx ? {Xnx,rrr} : {2'b00,mmm[0],rrr};
 				case(sz)
 				2'b00:	rfwrB <= 1'b1;
 				2'b01:	rfwrW <= 1'b1;
@@ -4843,7 +4807,7 @@ SUB:
 			end
 		end
 		else begin
-			Rt <= {1'b0,DDD};
+			Rt <= {Rnx,DDD};
 			resB <= d[7:0] - s[7:0];
 			resW <= d[15:0] - s[15:0];
 			resL <= d - s;
@@ -4894,7 +4858,7 @@ ADDX3:
 			default:	;
 			endcase
 		else begin
-			Rt <= {1'b0,RRR};
+			Rt <= {Rnx,RRR};
 			case(sz)
 			2'd0:	rfwrB <= 1'b1;
 			2'd1:	rfwrW <= 1'b1;
@@ -4941,7 +4905,7 @@ SUBX3:
 			default:	;
 			endcase
 		else begin
-			Rt <= {1'b0,RRR};
+			Rt <= {Rnx,RRR};
 			case(sz)
 			2'd0:	rfwrB <= 1'b1;
 			2'd1:	rfwrW <= 1'b1;
@@ -4963,7 +4927,7 @@ AND:
 			resL <= d & rfoDn;
 			d <= d & rfoDn;
 			if (mmm==3'd0 || mmm==3'd1) begin
-				Rt <= {mmm[0],rrr};
+				Rt <= |Xnx ? {Xnx,rrr} : {2'b00,mmm[0],rrr};
 				case(sz)
 				2'b00:	rfwrB <= 1'b1;
 				2'b01:	rfwrW <= 1'b1;
@@ -4982,7 +4946,7 @@ AND:
 			end
 		end
 		else begin
-			Rt <= {1'b0,DDD};
+			Rt <= {Rnx,DDD};
 			resB <= rfoDn[7:0] & s[7:0];
 			resW <= rfoDn[15:0] & s[15:0];
 			resL <= rfoDn & s;
@@ -5008,7 +4972,7 @@ OR:
 			resL <= d | rfoDn;
 			d <= d | rfoDn;
 			if (mmm==3'd0 || mmm==3'd1) begin
-				Rt <= {mmm[0],rrr};
+				Rt <= |Xnx ? {Xnx,rrr} : {2'b00,mmm[0],rrr};
 				case(sz)
 				2'b00:	rfwrB <= 1'b1;
 				2'b01:	rfwrW <= 1'b1;
@@ -5027,7 +4991,7 @@ OR:
 			end
 		end
 		else begin
-			Rt <= {1'b0,DDD};
+			Rt <= {Rnx,DDD};
 			resB <= rfoDn[7:0] | s[7:0];
 			resW <= rfoDn[15:0] | s[15:0];
 			resL <= rfoDn | s;
@@ -5052,7 +5016,7 @@ EOR:
 		resL <= d ^ rfoDn;
 		d <= d ^ rfoDn;
 		if (mmm[2:1]==2'd0) begin
-			Rt <= {mmm[0],rrr};
+			Rt <= |Xnx ? {Xnx,rrr} : {2'b00,mmm[0],rrr};
 			case(sz)
 			2'b00:	rfwrB <= 1'b1;
 			2'b01:	rfwrW <= 1'b1;
@@ -5100,7 +5064,7 @@ ADDQ:
 		end
 		if (mmm==3'd0) begin
 			ret();
-			Rt <= {mmm[0],rrr};
+			Rt <= |Xnx ? {Xnx,rrr} : {2'b00,mmm[0],rrr};
 			case(sz)
 			2'b00:	rfwrB <= 1'b1;
 			2'b01:	rfwrW <= 1'b1;
@@ -5111,7 +5075,7 @@ ADDQ:
 		// If the target is an address register, the entire register is updated.
 		else if (mmm==3'b001) begin
 			ret();
-			Rt <= {mmm[0],rrr};
+			Rt <= |Xnx ? {Xnx,rrr} : {2'b00,mmm[0],rrr};
 			rfwrL <= 1'b1;
 		end
 		else
@@ -5194,7 +5158,7 @@ ADDI3:
 			2'b10:	rfwrL <= 1'b1;
 			default:	;
 			endcase
-			Rt <= {mmm[0],rrr};
+			Rt <= |Xnx ? {Xnx,rrr} : {2'b00,mmm[0],rrr};
 			ret();
 		end
 		else
@@ -5294,7 +5258,7 @@ BIT2:
 						resL <= d ^  (32'd1 << bit2test[4:0]);
 					end
 					rfwrL <= 1'b1;
-					Rt <= {1'b0,rrr};
+					Rt <= {Xnx,rrr};
 					ret();
 				end
 			2'b10:	// BCLR
@@ -5314,7 +5278,7 @@ BIT2:
 						resL <= d & ~(32'd1 << bit2test[4:0]);
 					end
 					rfwrL <= 1'b1;
-					Rt <= {1'b0,rrr};
+					Rt <= {Xnx,rrr};
 					ret();
 				end
 			2'b11:	// BSET
@@ -5334,7 +5298,7 @@ BIT2:
 						resL <= d |  (32'd1 << bit2test[4:0]);
 					end
 					rfwrL <= 1'b1;
-					Rt <= {1'b0,rrr};
+					Rt <= {Xnx,rrr};
 					ret();
 				end
 			endcase
@@ -5445,17 +5409,17 @@ FETCH_BRDISP:
 		end
 		else
 */		
-	if (!cyc_o) begin
-		pfc_o <= {sf,2'b10};
-		pcyc_o <= 1'b1;
-		pstb_o <= 1'b1;
-		case(pc[1])
-		1'b0:	psel_o <= 4'b0011;
-		1'b1:	psel_o <= 4'b1100;
-		endcase
-		padr_o <= pc;
-		goto (FETCH_BRDISP_ACK);
-	end
+		if (!cyc_o) begin
+			pfc_o <= {sf,2'b10};
+			pcyc_o <= 1'b1;
+			pstb_o <= 1'b1;
+			case(pc[1])
+			1'b0:	psel_o <= 4'b0011;
+			1'b1:	psel_o <= 4'b1100;
+			endcase
+			padr_o <= pc;
+			goto (FETCH_BRDISP_ACK);
+		end
 FETCH_BRDISP_ACK:
 	if (ack_i) begin
 		pcyc_o <= 1'b0;
@@ -5473,11 +5437,9 @@ FETCH_BRDISPa:
 			ea <= pc + {{9{ir[7]}},ir[7:1],d[15:0],1'b0};
 		end
 		else
-`endif
-		begin		
+`endif		
 			d <= pc + {{16{d[15]}},d[15:0]};
 			ea <= pc + {{16{d[15]}},d[15:0]};
-		end
 		// Want to point PC to return after displacement, it will be stacked
 		if (bsr)
 			pc <= pc + 4'd2;
@@ -6436,7 +6398,6 @@ STORE_LWORDa_ACK:
 RESET:
   begin
     pc <= `RESET_VECTOR;
-    is_rst <= 1'b1;
     padr_o <= 32'h0;
     push(IFETCH);
     goto(TRAP);
@@ -6770,7 +6731,7 @@ UNLNK:
 UNLNK2:
 	if (dec_unlink) begin
 		rfwrL <= 1'b1;
-		Rt <= {1'b1,rrr};
+		Rt <= |Xnx ? {Xnx,rrr} : {3'b001,rrr};
 		resL <= s;
 		ret();
 	end
@@ -7005,7 +6966,7 @@ MOVEM_Xn2D2:
 			case(mmm)
 			3'b100:	// -(An)
 				begin
-					Rt <= {1'b1,rrr};
+					Rt <= |Xnx ? {Xnx,rrr} : {3'b001,rrr};
 					resL <= ea + (fmovem ? 32'd12 : ir[6] ? 32'd4 : 32'd2);
 					rfwrL <= 1'b1;
 				end
@@ -7083,13 +7044,13 @@ MOVEM_Xn2D4:
 			case(mmm)
 			3'b011:
 				begin
-					Rt <= {1'b1,rrr};
+					Rt <= |Xnx ? {Xnx,rrr} : {3'b001,rrr};
 					resL <= ea + (fmovem ? 32'd12 : ir[6] ? 32'd4 : 32'd2);
 					rfwrL <= 1'b1;
 				end
 			3'b100:
 				begin
-					Rt <= {1'b1,rrr};
+					Rt <= |Xnx ? {Xnx,rrr} : {3'b001,rrr};
 					resL <= ea;
 					rfwrL <= 1'b1;
 				end
@@ -7168,13 +7129,13 @@ MOVEM_s2Xn2:
 		case(mmm)
 		3'b011:	// (An)+
 			begin
-				Rt <= {1'b1,rrr};
+				Rt <= |Xnx ? {Xnx,rrr} : {3'b001,rrr};
 				resL <= ea;
 				rfwrL <= 1'b1;
 			end
 		3'b100:	// -(An)
 			begin
-				Rt <= {1'b1,rrr};
+				Rt <= |Xnx ? {Xnx,rrr} : {3'b001,rrr};
 				resL <= ea + (fmovem ? 32'd12 : ir[6] ? 32'd4 : 32'd2);
 				rfwrL <= 1'b1;
 			end
@@ -7297,7 +7258,7 @@ MOVEP1:
 			resL[23:16] <= dat_i >> {ea[1:0]+4'd2,3'b0};
 		else
 			resW[7:0] <= dat_i >> {ea[1:0]+4'd2,3'b0};
-		Rt <= {1'b0,DDD};
+		Rt <= {Rnx,DDD};
 		if (ir[6])
 			goto (MOVEP2);
 		else begin
@@ -7347,7 +7308,7 @@ MOVEP3:
 		pwe_o <= `LOW;
 		psel_o <= 4'h0;
 		resL[7:0] <= dat_i >> {ea[1:0]+4'd2,3'b0};
-		Rt <= {1'b0,DDD};
+		Rt <= {Rnx,DDD};
 		rfwrL <= ~ir[7];
 		ret();
 	end
@@ -7450,7 +7411,7 @@ BIN2BCD2:
 		vf <= dd32out[39:32]!=8'h00;
 		resL <= dd32out[31:0];
 		rfwrL <= 1'b1;
-		Rt <= {1'b0,rrr};
+		Rt <= {Xnx,rrr};
 		ret();
 	end
 BCD2BIN1:
@@ -7476,7 +7437,7 @@ BCD2BIN3:
 	begin
 		resL <= resL2;
 		rfwrL <= 1'b1;
-		Rt <= {1'b0,rrr};
+		Rt <= {Xnx,rrr};
 		ret();
 	end
 CCHK:
@@ -8024,7 +7985,7 @@ PDBCC:
 PDBCC1:
 	if (~takb) begin
 		resW <= rfoDnn - 4'd1;
-		Rt <= {1'b0,rrr};
+		Rt <= {Xnx,rrr};
 		rfwrW <= 1'b1;
 		if (rfoDnn[15:0]!=0)
 			pc <= opc + imm;
@@ -8583,7 +8544,7 @@ BITFLD:
 	end
 BITFLD_UPDATE:
 	if (ir[11:8]==4'b1011 || ir[11:8]==4'b1001 || ir[11:8]==4'b1101) begin
-		Rt <= {1'b0,ir2[14:12]};
+		Rt <= {Nnx,ir2[14:12]};
 		rfwrL <= TRUE;
 		resL <= bf_size==FETCH_OCTA ? fpd[31:0] : d[31:0];
 		ret();
@@ -8888,11 +8849,6 @@ endcase
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 	// Bus error: abort current cycle and trap.
-	// There is somewhat of an issue with the state stack. We do not know how
-	// deep the states are stacked. Ideally the state stack would be reset, but
-	// it works to just to call the TRAP routine and go back to IFETCH. The stack
-	// may subsequently overflow, as there is no checking. But it does not matter
-	// because the TOS is correct.
 	if (cyc_o & err_i) begin
 		pcyc_o <= `LOW;
 		pstb_o <= `LOW;
@@ -8904,14 +8860,14 @@ endcase
 			is_bus_err <= 1'b1;
 			dati_buf <= dat_i;
 			dato_buf <= pdat_o;
-			call (TRAP, IFETCH);
+			goto (TRAP);
 		end
 		// If a bus error occurs during the PTEST instruction set status in PMMU.
 		if (ptest)
 			pmmu_sr.B <= 1'b1;
 	end
 
-	if (page_fault & pmmu_en) begin
+	if (page_fault) begin
 		pcyc_o <= `LOW;
 		pstb_o <= `LOW;
 		pwe_o <= `LOW;
@@ -8923,7 +8879,7 @@ endcase
 			dati_buf <= dat_i;
 			dato_buf <= pdat_o;
 			page_fault <= 1'b0;
-			call (TRAP, IFETCH);
+			goto (TRAP);
 		end
 	end
 
@@ -8939,7 +8895,7 @@ endcase
 			is_priv <= 1'b1;
 			dati_buf <= dat_i;
 			dato_buf <= pdat_o;
-			call (TRAP, IFETCH);
+			goto (TRAP);
 		end
 	end
 
@@ -9426,17 +9382,17 @@ begin
 				case(size_state)
 				STORE_LWORD:
 					begin
-						Rt <= {mmm[0],rrr};
+						Rt <= |Xnx ? {Xnx,rrr} : {2'b00,mmm[0],rrr};
 						rfwrL <= 1'b1;
 					end
 				STORE_WORD:
 					begin
-						Rt <= {mmm[0],rrr};
+						Rt <= |Xnx ? {Xnx,rrr} : {2'b00,mmm[0],rrr};
 						rfwrW <= 1'b1;
 					end
 				STORE_BYTE:
 					begin
-						Rt <= {mmm[0],rrr};
+						Rt <= |Xnx ? {Xnx,rrr} : {2'b00,mmm[0],rrr};
 						rfwrB <= 1'b1;
 					end
 				default:	;
@@ -9451,17 +9407,17 @@ begin
 				case(size_state)
 				STORE_LWORD:
 					begin
-						Rt <= {mmm[0],rrr};
+						Rt <= |Xnx ? {Xnx,rrr} : {2'b00,mmm[0],rrr};
 						rfwrL <= 1'b1;
 					end
 				STORE_WORD:
 					begin
-						Rt <= {mmm[0],rrr};
+						Rt <= |Xnx ? {Xnx,rrr} : {2'b00,mmm[0],rrr};
 						rfwrW <= 1'b1;
 					end
 				STORE_BYTE:
 					begin
-						Rt <= {mmm[0],rrr};
+						Rt <= |Xnx ? {Xnx,rrr} : {2'b00,mmm[0],rrr};
 						rfwrB <= 1'b1;
 					end
 				default:	;
@@ -9475,7 +9431,7 @@ begin
 	3'd3:	begin	// (An)+
 				ea <= (MMMRRR ? rfoAna : rfoAn);
 				if (!lea && !pload) begin
-					Rt <= {1'b1,rrr};
+					Rt <= |Xnx ? {Xnx,rrr} : {3'b001,rrr};
 					rfwrL <= 1'b1;
 				end			
 				case(size_state)
@@ -9489,7 +9445,7 @@ begin
 			end
 	3'd4:	begin	// -(An)
 				if (!lea && !pload) begin
-					Rt <= {1'b1,rrr};
+					Rt <= |Xnx ? {Xnx,rrr} : {3'b001,rrr};
 					rfwrL <= 1'b1;
 				end
 				case(size_state)
@@ -9511,7 +9467,7 @@ begin
 	3'd5:	begin	// d16(An)
 				ea <= (MMMRRR ? rfoAna : rfoAn);
 				mmmx <= mmm;
-				rrrx <= rrr;
+				rrrx <= {Xnx,rrr};
 				sz_state <= size_state;
 				dsix <= dsi;
 				goto (FSDATA2);
@@ -9519,7 +9475,7 @@ begin
 	3'd6:	begin	// d8(An,Xn)
 				ea <= (MMMRRR ? rfoAna : rfoAn);
 				mmmx <= mmm;
-				rrrx <= rrr;
+				rrrx <= {Xnx,rrr};
 				sz_state <= size_state;
 				dsix <= dsi;
 				goto (FSDATA2);
@@ -9529,7 +9485,7 @@ begin
 				3'd0:	begin	// abs short
 							ea <= 32'd0;
 							mmmx <= mmm;
-							rrrx <= rrr;
+							rrrx <= {Xnx,rrr};
 							sz_state <= size_state;
 							dsix <= dsi;
 							goto (FSDATA2);
@@ -9537,7 +9493,7 @@ begin
 				3'd1:	begin	// abs long
 							ea <= 32'd0;
 							mmmx <= mmm;
-							rrrx <= rrr;
+							rrrx <= {Xnx,rrr};
 							sz_state <= size_state;
 							dsix <= dsi;
 							goto (FSDATA2);
@@ -9545,7 +9501,7 @@ begin
 				3'd2:	begin	// d16(PC)
 							ea <= pc;
 							mmmx <= mmm;
-							rrrx <= rrr;
+							rrrx <= {Xnx,rrr};
 							sz_state <= size_state;
 							dsix <= dsi;
 							goto (FSDATA2);
@@ -9553,7 +9509,7 @@ begin
 				3'd3:	begin	// d8(PC,Xn)
 							ea <= pc;
 							mmmx <= mmm;
-							rrrx <= rrr;
+							rrrx <= {Xnx,rrr};
 							sz_state <= size_state;
 							dsix <= dsi;
 							goto (FSDATA2);
@@ -9730,6 +9686,16 @@ begin
 			state_stk1==BCD0 ||
 			state_stk1==CMPM)
 		MMMRRR <= 1'b1;
+	if (state_stk1==IFETCH) begin
+		rext2 <= rext;
+		rext <= FALSE;
+		if (rext2) begin
+			rext2 <= FALSE;
+			Xnx <= 3'b000;
+			Rnx <= 3'b000;
+			Nnx <= 3'b000;
+		end
+	end
 	// TRAP will come back here for a second try at returning. If trace is on
 	// then a return is not done, instead flow goes to the TRAP sequence which
 	// will then do a ret(), but this time trace will be off.

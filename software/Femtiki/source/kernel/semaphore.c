@@ -14,141 +14,141 @@ extern long semaphores;
 
 int LockSysSemaphore(long retries)
 {
-	return(LockSemaphore(OSSEMA+(long)&semaphores,retries));
+	return(LockSemaphoreNB(OSSEMA+(long)&semaphores,retries));
 }
 
 void UnlockSysSemaphore(int im)
 {
-	UnlockSemaphore(OSSEMA+(long)&semaphores,im);
+	UnlockSemaphoreNB(OSSEMA+(long)&semaphores,im);
 }
 
 int LockIOFSemaphore(long retries)
 {
-	return(LockSemaphore(IOFSEMA+(long)&semaphores,retries));
+	return(LockSemaphoreNB(IOFSEMA+(long)&semaphores,retries));
 }
 
 void UnlockIOFSemaphore(int im)
 {
-	UnlockSemaphore(IOFSEMA+(long)&semaphores, im);
+	UnlockSemaphoreNB(IOFSEMA+(long)&semaphores, im);
 }
 
 int LockKbdSemaphore(long retries)
 {
-	return(LockSemaphore(KEYBD_SEMA+(long)&semaphores,retries));
+	return(LockSemaphoreNB(KEYBD_SEMA+(long)&semaphores,retries));
 }
 
 void UnlockKbdSemaphore(int im)
 {
-	UnlockSemaphore(KEYBD_SEMA+(long)&semaphores, im);
+	UnlockSemaphoreNB(KEYBD_SEMA+(long)&semaphores, im);
 }
 
 int LockMMUSemaphore(long retries)
 {
-	return(LockSemaphore(MEMORY_SEMA+(long)&semaphores,retries));
+	return(LockSemaphoreNB(MEMORY_SEMA+(long)&semaphores,retries));
 }
 
 void UnlockMMUSemaphore(int im)
 {
-	UnlockSemaphore(MEMORY_SEMA+(long)&semaphores, im);
+	UnlockSemaphoreNB(MEMORY_SEMA+(long)&semaphores, im);
 }
 
 int LockPMTSemaphore(long retries)
 {
-	return(LockSemaphore(PMT_SEMA+(long)&semaphores,retries));
+	return(LockSemaphoreNB(PMT_SEMA+(long)&semaphores,retries));
 }
 
 void UnlockPMTSemaphore(int im)
 {
-	UnlockSemaphore(PMT_SEMA+(long)&semaphores, im);
+	UnlockSemaphoreNB(PMT_SEMA+(long)&semaphores, im);
 }
 
 int LockMSGList(long retries)
 {
-	return(LockSemaphore(MSG_SEMA+(long)&semaphores,retries));
+	return(LockSemaphoreNB(MSG_SEMA+(long)&semaphores,retries));
 }
 
 void UnlockMSGList(int im)
 {
-	UnlockSemaphore(MSG_SEMA+(long)&semaphores, im);
+	UnlockSemaphoreNB(MSG_SEMA+(long)&semaphores, im);
 }
 
 int LockMBXList(long retries)
 {
-	return(LockSemaphore(MBXLIST_SEMA+(long)&semaphores,retries));
+	return(LockSemaphoreNB(MBXLIST_SEMA+(long)&semaphores,retries));
 }
 
 void UnlockMBXList(int im)
 {
-	UnlockSemaphore(MBXLIST_SEMA+(long)&semaphores, im);
+	UnlockSemaphoreNB(MBXLIST_SEMA+(long)&semaphores, im);
 }
 
 int LockMBX(long wh, long retries)
 {
-	return(LockSemaphore(mailbox[wh-1].lock,retries));
+	return(LockSemaphoreNB(mailbox[wh-1].lock,retries));
 }
 
 void UnlockMBX(long wh, int im)
 {
-	UnlockSemaphore(mailbox[wh-1].lock, im);
+	UnlockSemaphoreNB(mailbox[wh-1].lock, im);
 }
 
 int LockTimeoutList(long retries)
 {
-	return(LockSemaphore(TOL_SEMA+(long)&semaphores,retries));
+	return(LockSemaphoreNB(TOL_SEMA+(long)&semaphores,retries));
 }
 
 void UnlockTimeoutList(int im)
 {
-	UnlockSemaphore(TOL_SEMA+(long)&semaphores, im);
+	UnlockSemaphoreNB(TOL_SEMA+(long)&semaphores, im);
 }
 
 int LockReadyQueue(long retries)
 {
-	return(LockSemaphore(RDQ_SEMA+(long)&semaphores,retries));
+	return(LockSemaphoreNB(RDQ_SEMA+(long)&semaphores,retries));
 }
 
 void UnlockReadyQueue(int im)
 {
-	UnlockSemaphore(RDQ_SEMA+(long)&semaphores, im);
+	UnlockSemaphoreNB(RDQ_SEMA+(long)&semaphores, im);
 }
 
 int LockTCBList(long retries)
 {
-	return(LockSemaphore(TCB_SEMA+(long)&semaphores,retries));
+	return(LockSemaphoreNB(TCB_SEMA+(long)&semaphores,retries));
 }
 
 void UnlockTCBList(int im)
 {
-	UnlockSemaphore(TCB_SEMA+(long)&semaphores, im);
+	UnlockSemaphoreNB(TCB_SEMA+(long)&semaphores, im);
 }
 
 int LockACBSemaphore(long retries)
 {
-	return(LockSemaphore(ACB_SEMA+(long)&semaphores,retries));
+	return(LockSemaphoreNB(ACB_SEMA+(long)&semaphores,retries));
 }
 
 void UnlockACBSemaphore(int im)
 {
-	UnlockSemaphore(ACB_SEMA+(long)&semaphores, im);
+	UnlockSemaphoreNB(ACB_SEMA+(long)&semaphores, im);
 }
 
 int LockAlarmList(long retries)
 {
-	return(LockSemaphore(ALARM_SEMA+(long)&semaphores,retries));
+	return(LockSemaphoreNB(ALARM_SEMA+(long)&semaphores,retries));
 }
 
 void UnlockAlarmList(int im)
 {
-	UnlockSemaphore(ALARM_SEMA+(long)&semaphores, im);
+	UnlockSemaphoreNB(ALARM_SEMA+(long)&semaphores, im);
 }
 
 int LockTMRSemaphore(long retries)
 {
-	return(LockSemaphore(TMR_SEMA+(long)&semaphores,retries));
+	return(LockSemaphoreNB(TMR_SEMA+(long)&semaphores,retries));
 }
 
 void UnlockTMRSemaphore(int im)
 {
-	UnlockSemaphore(TMR_SEMA+(long)&semaphores, im);
+	UnlockSemaphoreNB(TMR_SEMA+(long)&semaphores, im);
 }
 

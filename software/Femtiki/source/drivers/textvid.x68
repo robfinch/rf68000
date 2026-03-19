@@ -957,7 +957,7 @@ SyncCursor:
 	movec.l	coreno,d0
 	cmp.l	_IOFocus,d0
 ;	cmp.l #2,d0
-	bne.s .0001
+;	bne.s .0001
 	move.w tv_outpos_x(a3),d0
 	move.w tv_outpos_y(a3),d1
 	move.w tv_dimen_x(a3),d2
