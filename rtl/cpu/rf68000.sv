@@ -2141,7 +2141,7 @@ if (rfwrB|rfwrW|rfwrL)
   4'd7:   d7[7:0] <= resL[7:0];
   default:    ;
   endcase
-if (rfwrW|rfwrL) begin
+if (rfwrW|rfwrL)
   case(Rt)
   4'd0:   d0[15:8] <= resL[15:8];
   4'd1:   d1[15:8] <= resL[15:8];
@@ -2160,7 +2160,7 @@ if (rfwrW|rfwrL) begin
   4'd14:  a6[15:8] <= resL[15:8];
   4'd15:  sp[15:8] <= resL[15:8];
   endcase
-if (rfwrW) begin
+if (rfwrW)
   case(Rt)
   4'd8:   a0[31:16] <= {16{resL[15]}};
   4'd9:   a1[31:16] <= {16{resL[15]}};
@@ -2170,9 +2170,8 @@ if (rfwrW) begin
   4'd13:  a5[31:16] <= {16{resL[15]}};
   4'd14:  a6[31:16] <= {16{resL[15]}};
   4'd15:  sp[31:16] <= {16{resL[15]}};
-	endcase
-end
-if (rfwrL) begin
+endcase
+if (rfwrL)
   case(Rt)
   4'd0:   d0[31:16] <= resL[31:16];
   4'd1:   d1[31:16] <= resL[31:16];
@@ -2191,7 +2190,6 @@ if (rfwrL) begin
   4'd14:  a6[31:16] <= resL[31:16];
   4'd15:  sp[31:16] <= resL[31:16];
   endcase
-end
 
  if (SUPPORT_DECFLT && rfwrF)
  	case(Rt)
