@@ -4859,14 +4859,12 @@ ADD:
 		case(sz)
 		2'b00:	resL <= d[7:0] + s[7:0];
 		2'b01:	resL <= d[15:0] + s[15:0];
-		2'b10:	resL <= d + s;
-		default:	;
+		default:	resL <= d + s;
 		endcase
 		case(sz)
 		2'b00:	d <= d[7:0] + s[7:0];
 		2'b01:	d <= d[15:0] + s[15:0];
-		2'b10:	d <= d + s;
-		default:	;
+		default:	d <= d + s;
 		endcase
 		dd <= d;
 		if (sz==2'b11) begin
@@ -4918,14 +4916,12 @@ SUB:
 		case(sz)
 		2'b00:	resL <= d[7:0] - s[7:0];
 		2'b01:	resL <= d[15:0] - s[15:0];
-		2'b10:	resL <= d - s;
-		default:	;
+		default:	resL <= d - s;
 		endcase
 		case(sz)
 		2'b00:	d <= d[7:0] - s[7:0];
 		2'b01:	d <= d[15:0] - s[15:0];
-		2'b10:	d <= d - s;
-		default:	;
+		default:	d <= d - s;
 		endcase
 		dd <= d;
 		if (sz==2'b11) begin
@@ -4995,14 +4991,12 @@ ADDX3:
 		case(sz)
 		2'b00:	resL <= d[7:0] + s[7:0] + xf;
 		2'b01:	resL <= d[15:0] + s[15:0] + xf;
-		2'b10:	resL <= d + s + xf;
-		default:	;
+		default:	resL <= d + s + xf;
 		endcase
 		case(sz)
 		2'b00:	d <= d[7:0] + s[7:0] + xf;
 		2'b01:	d <= d[15:0] + s[15:0] + xf;
-		2'b10:	d <= d + s + xf;
-		default:	;
+		default:	d <= d + s + xf;
 		endcase
 		dd <= d;
 		if (ir[3])
@@ -5050,14 +5044,12 @@ SUBX3:
 		case(sz)
 		2'b00:	resL <= d[7:0] - s[7:0] - xf;
 		2'b01:	resL <= d[15:0] - s[15:0] - xf;
-		2'b10:	resL <= d - s - xf;
-		default:	;
+		default:	resL <= d - s - xf;
 		endcase
 		case(sz)
 		2'b00:	d <= d[7:0] - s[7:0] - xf;
 		2'b01:	d <= d[15:0] - s[15:0] - xf;
-		2'b10:	d <= d - s - xf;
-		default:	;
+		default:	d <= d - s - xf;
 		endcase
 		dd <= d;
 		if (ir[3])
@@ -5201,14 +5193,12 @@ ADDQ:
 			case(sz)
 			2'b00:	resL <= d[7:0] - immx[7:0];
 			2'b01:	resL <= d[15:0] - immx[15:0];
-			2'b10:	resL <= d - immx;
-			default:	;
+			default:	resL <= d - immx;
 			endcase
 			case(sz)
 			2'b00:	d <= d[7:0] - immx[7:0];
 			2'b01:	d <= d[15:0] - immx[15:0];
-			2'b10:	d <= d - immx;
-			default:	;
+			default:	d <= d - immx;
 			endcase
 			dd <= d;
 			s <= immx;
@@ -5219,14 +5209,12 @@ ADDQ:
 			case(sz)
 			2'b00:	resL <= d[7:0] + immx[7:0];
 			2'b01:	resL <= d[15:0] + immx[15:0];
-			2'b10:	resL <= d + immx;
-			default:	;
+			default:	resL <= d + immx;
 			endcase
 			case(sz)
 			2'b00:	d <= d[7:0] + immx[7:0];
 			2'b01:	d <= d[15:0] + immx[15:0];
-			2'b10:	d <= d + immx;
-			default:	;
+			default:	d <= d + immx;
 			endcase
 			dd <= d;
 			s <= immx;
@@ -5292,16 +5280,14 @@ ADDI3:
 		4'h4,4'hC:	// SUBI / CMPI
 			case(sz)
 			2'b00:	resL = d[7:0] - immx[7:0];
-			2'b01:	resL = d[15:8] - immx[15:8];
-			2'b10:	resL <= d - immx;
-			default:	;
+			2'b01:	resL = d[15:0] - immx[15:0];
+			default:	resL <= d - immx;
 			endcase
 		4'h6:
 			case(sz)
 			2'b00:	resL = d[7:0] + immx[7:0];
-			2'b01:	resL = d[15:8] + immx[15:8];
-			2'b10:	resL <= d + immx;
-			default:	;
+			2'b01:	resL = d[15:0] + immx[15:0];
+			default:	resL <= d + immx;
 			endcase
 		4'hA:	resL <= d ^ immx;	// EORI
 		default:	;
@@ -5312,16 +5298,14 @@ ADDI3:
 		4'h4,4'hC:	// SUBI / CMPI
 			case(sz)
 			2'b00:	d = d[7:0] - immx[7:0];
-			2'b01:	d = d[15:8] - immx[15:8];
-			2'b10:	d <= d - immx;
-			default:	;
+			2'b01:	d = d[15:0] - immx[15:0];
+			default:	d <= d - immx;
 			endcase
 		4'h6:
 			case(sz)
 			2'b00:	d = d[7:0] + immx[7:0];
-			2'b01:	d = d[15:8] + immx[15:8];
-			2'b10:	d <= d + immx;
-			default:	;
+			2'b01:	d = d[15:0] + immx[15:0];
+			default:	d <= d + immx;
 			endcase
 		4'hA:	d <= d ^ immx;	// EORI
 		default:	;
