@@ -2182,7 +2182,7 @@ else if (rfwrB)
   default:    ;
   endcase
 
- if (SUPPORT_DECFLT && rfwrF)
+ if ((SUPPORT_DECFLT|SUPPORT_BINFLT) && rfwrF)
  	case(Rt)
  	4'd0:	fp0 <= resF;
  	4'd1:	fp1 <= resF;
@@ -2439,7 +2439,7 @@ IFETCH:
 					begin
 						 xf <= resL[8];
 						 cf <= resL[8];
-						 vf <= resL[8]!=resL[7];
+//						 vf <= resL[8]!=resL[7];
 						vf <= fnAddOverflow(resL[7],dd[7],s[7]);
 						 zf <= resL[7:0]==8'd0;
 						 nf <= resL[7];
@@ -4695,15 +4695,12 @@ STORE_IN_DEST:
 CMP:
 	begin
 		flag_update <= FU_CMP;
-		resL <= d[31:0] - s[31:0];
-		/*
 		case(sz)
-		2'b00:	resB <= d[ 7:0] - s[ 7:0];
-		2'b01:	resW <= d[15:0] - s[15:0];
+		2'b00:	resL <= d[ 7:0] - s[ 7:0];
+		2'b01:	resL <= d[15:0] - s[15:0];
 		2'b10:	resL <= d[31:0] - s[31:0];
 		2'b11:	;
 		endcase
-		*/
 		ret();
 	end
 
@@ -4859,8 +4856,18 @@ SHIFT:
 ADD:
 	begin
 		flag_update <= FU_ADD;
-		resL <= d + s;
-		d <= d + s;
+		case(sz)
+		2'b00:	resL <= d[7:0] + s[7:0];
+		2'b01:	resL <= d[15:0] + s[15:0];
+		2'b10:	resL <= d + s;
+		default:	;
+		endcase
+		case(sz)
+		2'b00:	d <= d[7:0] + s[7:0];
+		2'b01:	d <= d[15:0] + s[15:0];
+		2'b10:	d <= d + s;
+		default:	;
+		endcase
 		dd <= d;
 		if (sz==2'b11) begin
 			flag_update <= FU_NONE;
@@ -4908,8 +4915,18 @@ ADD:
 SUB:
 	begin
 		flag_update <= FU_SUB;
-		resL <= d - s;
-		d <= d - s;
+		case(sz)
+		2'b00:	resL <= d[7:0] - s[7:0];
+		2'b01:	resL <= d[15:0] - s[15:0];
+		2'b10:	resL <= d - s;
+		default:	;
+		endcase
+		case(sz)
+		2'b00:	d <= d[7:0] - s[7:0];
+		2'b01:	d <= d[15:0] - s[15:0];
+		2'b10:	d <= d - s;
+		default:	;
+		endcase
 		dd <= d;
 		if (sz==2'b11) begin
 			flag_update <= FU_NONE;
@@ -4975,8 +4992,18 @@ ADDX2:
 ADDX3:
 	begin
 		flag_update <= FU_ADDX;
-		d <= d + s + xf;
-		resL <= d[31:0] + s[31:0] + xf;
+		case(sz)
+		2'b00:	resL <= d[7:0] + s[7:0] + xf;
+		2'b01:	resL <= d[15:0] + s[15:0] + xf;
+		2'b10:	resL <= d + s + xf;
+		default:	;
+		endcase
+		case(sz)
+		2'b00:	d <= d[7:0] + s[7:0] + xf;
+		2'b01:	d <= d[15:0] + s[15:0] + xf;
+		2'b10:	d <= d + s + xf;
+		default:	;
+		endcase
 		dd <= d;
 		if (ir[3])
 			case(sz)
@@ -5020,9 +5047,19 @@ SUBX2:
 SUBX3:
 	begin
 		flag_update <= FU_SUBX;
-		resL <= d[31:0] - s[31:0] - xf;
+		case(sz)
+		2'b00:	resL <= d[7:0] - s[7:0] - xf;
+		2'b01:	resL <= d[15:0] - s[15:0] - xf;
+		2'b10:	resL <= d - s - xf;
+		default:	;
+		endcase
+		case(sz)
+		2'b00:	d <= d[7:0] - s[7:0] - xf;
+		2'b01:	d <= d[15:0] - s[15:0] - xf;
+		2'b10:	d <= d - s - xf;
+		default:	;
+		endcase
 		dd <= d;
-		d <= d - s - xf;
 		if (ir[3])
 			case(sz)
 			2'b00:	goto(STORE_BYTE);
@@ -5161,16 +5198,36 @@ ADDQ:
 		if (ir[8]) begin
 			if (mmm!=AM_AN)
 				flag_update <= FU_SUBQ;
-			resL <= d - immx;
-			d <= d - immx;
+			case(sz)
+			2'b00:	resL <= d[7:0] - immx[7:0];
+			2'b01:	resL <= d[15:0] - immx[15:0];
+			2'b10:	resL <= d - immx;
+			default:	;
+			endcase
+			case(sz)
+			2'b00:	d <= d[7:0] - immx[7:0];
+			2'b01:	d <= d[15:0] - immx[15:0];
+			2'b10:	d <= d - immx;
+			default:	;
+			endcase
 			dd <= d;
 			s <= immx;
 		end
 		else begin
 			if (mmm!=AM_AN)
 				flag_update <= FU_ADDQ;
-			resL <= d + immx;
-			d <= d + immx;
+			case(sz)
+			2'b00:	resL <= d[7:0] + immx[7:0];
+			2'b01:	resL <= d[15:0] + immx[15:0];
+			2'b10:	resL <= d + immx;
+			default:	;
+			endcase
+			case(sz)
+			2'b00:	d <= d[7:0] + immx[7:0];
+			2'b01:	d <= d[15:0] + immx[15:0];
+			2'b10:	d <= d + immx;
+			default:	;
+			endcase
 			dd <= d;
 			s <= immx;
 		end
@@ -5232,19 +5289,41 @@ ADDI3:
 		case(ir[11:8])
 		4'h0:	resL <= d | immx;	// ORI
 		4'h2:	resL <= d & immx;	// ANDI
-		4'h4:	resL <= d - immx;	// SUBI
-		4'h6:	resL <= d + immx;	// ADDI
+		4'h4,4'hC:	// SUBI / CMPI
+			case(sz)
+			2'b00:	resL = d[7:0] - immx[7:0];
+			2'b01:	resL = d[15:8] - immx[15:8];
+			2'b10:	resL <= d - immx;
+			default:	;
+			endcase
+		4'h6:
+			case(sz)
+			2'b00:	resL = d[7:0] + immx[7:0];
+			2'b01:	resL = d[15:8] + immx[15:8];
+			2'b10:	resL <= d + immx;
+			default:	;
+			endcase
 		4'hA:	resL <= d ^ immx;	// EORI
-		4'hC:	resL <= d - immx;	// CMPI
 		default:	;
 		endcase
 		case(ir[11:8])
 		4'h0:	d <= d | immx;	// ORI
 		4'h2:	d <= d & immx;	// ANDI
-		4'h4:	d <= d - immx;	// SUBI
-		4'h6:	d <= d + immx;	// ADDI
+		4'h4,4'hC:	// SUBI / CMPI
+			case(sz)
+			2'b00:	d = d[7:0] - immx[7:0];
+			2'b01:	d = d[15:8] - immx[15:8];
+			2'b10:	d <= d - immx;
+			default:	;
+			endcase
+		4'h6:
+			case(sz)
+			2'b00:	d = d[7:0] + immx[7:0];
+			2'b01:	d = d[15:8] + immx[15:8];
+			2'b10:	d <= d + immx;
+			default:	;
+			endcase
 		4'hA:	d <= d ^ immx;	// EORI
-		4'hC:	d <= d - immx;	// CMPI
 		default:	;
 		endcase
 		if (ir[11:8]==4'hC)
