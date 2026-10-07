@@ -626,7 +626,7 @@ typedef enum logic [9:0] {
 
 typedef enum logic [4:0] {
 	FU_NONE = 5'd0,
-	FU_MUL,
+	FU_MUL, FU_SHIFT,
 	FU_TST, FU_ADDX, FU_SUBX, FU_NEGX,
 	FU_CMP, FU_ADD, FU_SUB, FU_LOGIC, FU_ADDQ, FU_SUBQ,
 	FU_ADDI, FU_ANDI_CCR, FU_ANDI_SR, FU_EORI_CCR,
@@ -2129,7 +2129,47 @@ rfwrB <= 1'b0;
 rfwrW <= 1'b0;
 rfwrL <= 1'b0;
 rfwrF <= 1'b0;
-if (rfwrB|rfwrW|rfwrL)
+if (rfwrL) begin
+  case(Rt)
+  4'd0:   d0 <= resL[31:0];
+  4'd1:   d1 <= resL[31:0];
+  4'd2:   d2 <= resL[31:0];
+  4'd3:   d3 <= resL[31:0];
+  4'd4:   d4 <= resL[31:0];
+  4'd5:   d5 <= resL[31:0];
+  4'd6:   d6 <= resL[31:0];
+  4'd7:   d7 <= resL[31:0];
+  4'd8:   a0 <= resL[31:0];
+  4'd9:   a1 <= resL[31:0];
+  4'd10:  a2 <= resL[31:0];
+  4'd11:  a3 <= resL[31:0];
+  4'd12:  a4 <= resL[31:0];
+  4'd13:  a5 <= resL[31:0];
+  4'd14:  a6 <= resL[31:0];
+  4'd15:  sp <= resL[31:0];
+  endcase
+end
+else if (rfwrW) begin
+  case(Rt)
+  4'd0:   d0[15:0] <= resL[15:0];
+  4'd1:   d1[15:0] <= resL[15:0];
+  4'd2:   d2[15:0] <= resL[15:0];
+  4'd3:   d3[15:0] <= resL[15:0];
+  4'd4:   d4[15:0] <= resL[15:0];
+  4'd5:   d5[15:0] <= resL[15:0];
+  4'd6:   d6[15:0] <= resL[15:0];
+  4'd7:   d7[15:0] <= resL[15:0];
+  4'd8:   a0 <= {{16{resL[15]}},resL[15:0]};
+  4'd9:   a1 <= {{16{resL[15]}},resL[15:0]};
+  4'd10:  a2 <= {{16{resL[15]}},resL[15:0]};
+  4'd11:  a3 <= {{16{resL[15]}},resL[15:0]};
+  4'd12:  a4 <= {{16{resL[15]}},resL[15:0]};
+  4'd13:  a5 <= {{16{resL[15]}},resL[15:0]};
+  4'd14:  a6 <= {{16{resL[15]}},resL[15:0]};
+  4'd15:  sp <= {{16{resL[15]}},resL[15:0]};
+  endcase
+end
+else if (rfwrB)
   case(Rt)
   4'd0:   d0[7:0] <= resL[7:0];
   4'd1:   d1[7:0] <= resL[7:0];
@@ -2140,55 +2180,6 @@ if (rfwrB|rfwrW|rfwrL)
   4'd6:   d6[7:0] <= resL[7:0];
   4'd7:   d7[7:0] <= resL[7:0];
   default:    ;
-  endcase
-if (rfwrW|rfwrL)
-  case(Rt)
-  4'd0:   d0[15:8] <= resL[15:8];
-  4'd1:   d1[15:8] <= resL[15:8];
-  4'd2:   d2[15:8] <= resL[15:8];
-  4'd3:   d3[15:8] <= resL[15:8];
-  4'd4:   d4[15:8] <= resL[15:8];
-  4'd5:   d5[15:8] <= resL[15:8];
-  4'd6:   d6[15:8] <= resL[15:8];
-  4'd7:   d7[15:8] <= resL[15:8];
-  4'd8:   a0[15:8] <= resL[15:8];
-  4'd9:   a1[15:8] <= resL[15:8];
-  4'd10:  a2[15:8] <= resL[15:8];
-  4'd11:  a3[15:8] <= resL[15:8];
-  4'd12:  a4[15:8] <= resL[15:8];
-  4'd13:  a5[15:8] <= resL[15:8];
-  4'd14:  a6[15:8] <= resL[15:8];
-  4'd15:  sp[15:8] <= resL[15:8];
-  endcase
-if (rfwrW)
-  case(Rt)
-  4'd8:   a0[31:16] <= {16{resL[15]}};
-  4'd9:   a1[31:16] <= {16{resL[15]}};
-  4'd10:  a2[31:16] <= {16{resL[15]}};
-  4'd11:  a3[31:16] <= {16{resL[15]}};
-  4'd12:  a4[31:16] <= {16{resL[15]}};
-  4'd13:  a5[31:16] <= {16{resL[15]}};
-  4'd14:  a6[31:16] <= {16{resL[15]}};
-  4'd15:  sp[31:16] <= {16{resL[15]}};
-endcase
-if (rfwrL)
-  case(Rt)
-  4'd0:   d0[31:16] <= resL[31:16];
-  4'd1:   d1[31:16] <= resL[31:16];
-  4'd2:   d2[31:16] <= resL[31:16];
-  4'd3:   d3[31:16] <= resL[31:16];
-  4'd4:   d4[31:16] <= resL[31:16];
-  4'd5:   d5[31:16] <= resL[31:16];
-  4'd6:   d6[31:16] <= resL[31:16];
-  4'd7:   d7[31:16] <= resL[31:16];
-  4'd8:   a0[31:16] <= resL[31:16];
-  4'd9:   a1[31:16] <= resL[31:16];
-  4'd10:  a2[31:16] <= resL[31:16];
-  4'd11:  a3[31:16] <= resL[31:16];
-  4'd12:  a4[31:16] <= resL[31:16];
-  4'd13:  a5[31:16] <= resL[31:16];
-  4'd14:  a6[31:16] <= resL[31:16];
-  4'd15:  sp[31:16] <= resL[31:16];
   endcase
 
  if (SUPPORT_DECFLT && rfwrF)
@@ -2511,124 +2502,118 @@ IFETCH:
 			begin
 				vf <= 1'b0;
 				cf <= 1'b0;
-				nf <= ir[7];
-				zf <= ir[7:0]==8'h00;
+				nf <= resL[7];
+				zf <= resL[7:0]==8'h00;
 			end
 		FU_ADDI:
 			begin
 				case(ir[11:8])
 				4'h0,4'h2,4'hA:
-						begin	// ORI,ANDI,EORI
-							cf <= 1'b0;
-							vf <= 1'b0;
-							case(sz)
-							2'b00:	zf <= resL[7:0]==8'h00;
-							2'b01:	zf <= resL[15:0]==16'h00;
-							2'b10:	zf <= resL[31:0]==32'd0;
-							default:	;
-							endcase
-							case(sz)
-							2'b00:	nf <= resL[7];
-							2'b01:	nf <= resL[15];
-							2'b10:	nf <= resL[31];
-							default:	;
-							endcase
-						end
+					begin	// ORI,ANDI,EORI
+						cf <= 1'b0;
+						vf <= 1'b0;
+						case(sz)
+						2'b00:	zf <= resL[7:0]==8'h00;
+						2'b01:	zf <= resL[15:0]==16'h00;
+						2'b10:	zf <= resL[31:0]==32'd0;
+						default:	;
+						endcase
+						case(sz)
+						2'b00:	nf <= resL[7];
+						2'b01:	nf <= resL[15];
+						2'b10:	nf <= resL[31];
+						default:	;
+						endcase
+					end
 				4'h4:	// SUBI
-					begin
-						case(sz)
-						2'b00:
-							begin
-								xf <= resL[8];
-								cf <= resL[8];
-								vf <= fnSubOverflow(resL[7],dd[7],immx[7]);
-								//vf <= resB[8]!=resB[7];
-								zf <= resL[7:0]==8'd0;
-								nf <= resL[7];
-							end
-						2'b01:
-							begin
-								xf <= resL[16];
-								cf <= resL[16];
-								vf <= fnSubOverflow(resL[15],dd[15],immx[15]);
-								//vf <= resW[16]!=resW[15];
-								zf <= resL[15:0]==16'd0;
-								nf <= resL[15];
-							end
-						2'b10:
-							begin
-								xf <= resL[32];
-								cf <= resL[32];
-								vf <= fnSubOverflow(resL[31],dd[31],immx[31]);
-								//vf <= resL[32]!=resL[31];
-								zf <= resL[31:0]==32'd0;
-								nf <= resL[31];
-							end
-						default:	;
-						endcase
-					end
+					case(sz)
+					2'b00:
+						begin
+							xf <= resL[8];
+							cf <= resL[8];
+							vf <= fnSubOverflow(resL[7],dd[7],immx[7]);
+							//vf <= resB[8]!=resB[7];
+							zf <= resL[7:0]==8'd0;
+							nf <= resL[7];
+						end
+					2'b01:
+						begin
+							xf <= resL[16];
+							cf <= resL[16];
+							vf <= fnSubOverflow(resL[15],dd[15],immx[15]);
+							//vf <= resW[16]!=resW[15];
+							zf <= resL[15:0]==16'd0;
+							nf <= resL[15];
+						end
+					2'b10:
+						begin
+							xf <= resL[32];
+							cf <= resL[32];
+							vf <= fnSubOverflow(resL[31],dd[31],immx[31]);
+							//vf <= resL[32]!=resL[31];
+							zf <= resL[31:0]==32'd0;
+							nf <= resL[31];
+						end
+					default:	;
+					endcase
 				4'h6:	// ADDI
-					begin
-						case(sz)
-						2'b00:
-							begin
-								xf <= resL[8];
-								cf <= resL[8];
-								vf <= fnAddOverflow(resL[7],dd[7],immx[7]);
-								//vf <= resB[8]!=resB[7];
-								zf <= resL[7:0]==8'd0;
-								nf <= resL[7];
-							end
-						2'b01:
-							begin
-								xf <= resL[16];
-								cf <= resL[16];
-								vf <= fnAddOverflow(resL[15],dd[15],immx[15]);
-								//vf <= resW[16]!=resW[15];
-								zf <= resL[15:0]==16'd0;
-								nf <= resL[15];
-							end
-						2'b10:
-							begin
-								xf <= resL[32];
-								cf <= resL[32];
-								vf <= fnAddOverflow(resL[31],dd[31],immx[31]);
-								//vf <= resL[32]!=resL[31];
-								zf <= resL[31:0]==32'd0;
-								nf <= resL[31];
-							end
-						default:	;
-						endcase
-					end
+					case(sz)
+					2'b00:
+						begin
+							xf <= resL[8];
+							cf <= resL[8];
+							vf <= fnAddOverflow(resL[7],dd[7],immx[7]);
+							//vf <= resB[8]!=resB[7];
+							zf <= resL[7:0]==8'd0;
+							nf <= resL[7];
+						end
+					2'b01:
+						begin
+							xf <= resL[16];
+							cf <= resL[16];
+							vf <= fnAddOverflow(resL[15],dd[15],immx[15]);
+							//vf <= resW[16]!=resW[15];
+							zf <= resL[15:0]==16'd0;
+							nf <= resL[15];
+						end
+					2'b10:
+						begin
+							xf <= resL[32];
+							cf <= resL[32];
+							vf <= fnAddOverflow(resL[31],dd[31],immx[31]);
+							//vf <= resL[32]!=resL[31];
+							zf <= resL[31:0]==32'd0;
+							nf <= resL[31];
+						end
+					default:	;
+					endcase
 				4'hC:	// CMPI
-					begin
-						case(sz)
-						2'b00:
-							begin
-								cf <= resL[8];
-								vf <= fnSubOverflow(resL[7],dd[7],immx[7]);
-								zf <= resL[7:0]==8'd0;
-								nf <= resL[7];
-							end
-						2'b01:
-							begin
-								cf <= resL[16];
-								vf <= fnSubOverflow(resL[15],dd[15],immx[15]);
-								//vf <= resW[16]!=resW[15];
-								zf <= resL[15:0]==16'd0;
-								nf <= resL[15];
-							end
-						2'b10:
-							begin
-								cf <= resL[32];
-								vf <= fnSubOverflow(resL[31],dd[31],immx[31]);
-								//vf <= resL[32]!=resL[31];
-								zf <= resL[31:0]==32'd0;
-								nf <= resL[31];
-							end
-						default:	;
-						endcase
-					end
+					case(sz)
+					2'b00:
+						begin
+							cf <= resL[8];
+							vf <= fnSubOverflow(resL[7],dd[7],immx[7]);
+							zf <= resL[7:0]==8'd0;
+							nf <= resL[7];
+						end
+					2'b01:
+						begin
+							cf <= resL[16];
+							vf <= fnSubOverflow(resL[15],dd[15],immx[15]);
+							//vf <= resW[16]!=resW[15];
+							zf <= resL[15:0]==16'd0;
+							nf <= resL[15];
+						end
+					2'b10:
+						begin
+							cf <= resL[32];
+							vf <= fnSubOverflow(resL[31],dd[31],immx[31]);
+							//vf <= resL[32]!=resL[31];
+							zf <= resL[31:0]==32'd0;
+							nf <= resL[31];
+						end
+					default:	;
+					endcase
 				endcase
 			end
 		FU_ANDI_CCR:
@@ -2830,6 +2815,13 @@ IFETCH:
 				sr14 <= s[14];
 				tf <= s[15];
 			end
+		FU_SHIFT:
+			case(sz)
+			2'b00:	begin zf <= resL[7:0]== 8'h00; nf <= resL[ 7]; end
+			2'b01:	begin zf <= resL[15:0]==16'h00; nf <= resL[15]; end
+			2'b10:	begin zf <= resL[31:0]==32'h00; nf <= resL[31]; end
+			2'b11:	begin zf <= resL[15:0]==16'h00; nf <= resL[15]; end
+			endcase
 		default:	;
 		endcase
 		goto (IFETCH_ACK);
@@ -3697,24 +3689,12 @@ DECODE:
 				end
 				else begin
 					shift_op <= {ir[8],ir[4:3]};
-					goto (SHIFT1);
 					if (ir[5])
 						cnt <= rfoDn[5:0];
 					else
 						cnt <= {2'b0,~|QQQ,QQQ};
-					// Extend by a bit for ASL overflow detection.
-					case(sz)
-					2'b00:	resL <= {rfoDnn[7],rfoDnn[7:0]};
-					2'b01:	resL <= {rfoDnn[15],rfoDnn[15:0]};
-					2'b10:	resL <= {rfoDnn[31],rfoDnn};
-					2'b11:  resL <= {rfoDnn[15],rfoDnn[15:0]};
-					endcase
-					/*
-					resL <= {rfoDnn[31],rfoDnn};
-					resB <= {rfoDnn[7],rfoDnn[7:0]};
-					resW <= {rfoDnn[15],rfoDnn[15:0]};
-					*/
 					d <= rfoDnn;
+					goto (SHIFT1);
 				end
 			endcase
 		end
@@ -4819,24 +4799,24 @@ SHIFT:
 			endcase
 		3'b101:	// LSL
 			case(sz)
-			2'b00:	begin resL <= {resL[ 6:0],1'b0}; cf <= resL[ 7]; xf <= resL[ 7]; end
-			2'b01:	begin resL <= {resL[14:0],1'b0}; cf <= resL[15]; xf <= resL[15]; end
-			2'b10:	begin resL <= {resL[30:0],1'b0}; cf <= resL[31]; xf <= resL[31]; end
-			2'b11:	begin resL <= {resL[14:0],1'b0}; cf <= resL[15]; xf <= resL[15]; end
+			2'b00:	begin resL <= {resL[ 7:0],1'b0}; cf <= resL[ 7]; xf <= resL[ 7]; end
+			2'b01:	begin resL <= {resL[15:0],1'b0}; cf <= resL[15]; xf <= resL[15]; end
+			2'b10:	begin resL <= {resL[31:0],1'b0}; cf <= resL[31]; xf <= resL[31]; end
+			2'b11:	begin resL <= {resL[15:0],1'b0}; cf <= resL[15]; xf <= resL[15]; end
 			endcase
 		3'b110:	// ROXL
 			case(sz)
-			2'b00:	begin resL <= {resL[ 6:0],xf}; cf <= resL[ 7]; xf <= resL[ 7]; end
-			2'b01:	begin resL <= {resL[14:0],xf}; cf <= resL[15]; xf <= resL[15]; end
-			2'b10:	begin resL <= {resL[30:0],xf}; cf <= resL[31]; xf <= resL[31]; end
-			2'b11:	begin resL <= {resL[14:0],xf}; cf <= resL[15]; xf <= resL[15]; end
+			2'b00:	begin resL <= {resL[ 7:0],xf}; cf <= resL[ 7]; xf <= resL[ 7]; end
+			2'b01:	begin resL <= {resL[15:0],xf}; cf <= resL[15]; xf <= resL[15]; end
+			2'b10:	begin resL <= {resL[31:0],xf}; cf <= resL[31]; xf <= resL[31]; end
+			2'b11:	begin resL <= {resL[15:0],xf}; cf <= resL[15]; xf <= resL[15]; end
 			endcase
 		3'b111: // ROL
 			case(sz)
-			2'b00:	begin resL <= {resL[ 6:0],resL[ 7]}; cf <= resL[ 7]; end
-			2'b01:	begin resL <= {resL[14:0],resL[15]}; cf <= resL[15]; end
-			2'b10:	begin resL <= {resL[30:0],resL[31]}; cf <= resL[31]; end
-			2'b11:	begin resL <= {resL[14:0],resL[15]}; cf <= resL[15]; end
+			2'b00:	begin resL <= {resL[ 7:0],resL[ 7]}; cf <= resL[ 7]; end
+			2'b01:	begin resL <= {resL[15:0],resL[15]}; cf <= resL[15]; end
+			2'b10:	begin resL <= {resL[31:0],resL[31]}; cf <= resL[31]; end
+			2'b11:	begin resL <= {resL[15:0],resL[15]}; cf <= resL[15]; end
 			endcase
 		endcase
 	end
@@ -4863,13 +4843,8 @@ SHIFT:
 		2'b11:	d <= resW;
 		endcase
 		*/
+		flag_update <= FU_SHIFT;
 		Rt <= {1'b0,rrr};
-		case(sz)
-		2'b00:	begin zf <= resL[7:0]== 8'h00; nf <= resL[ 7]; end
-		2'b01:	begin zf <= resL[15:0]==16'h00; nf <= resL[15]; end
-		2'b10:	begin zf <= resL[31:0]==32'h00; nf <= resL[31]; end
-		2'b11:	begin zf <= resL[15:0]==16'h00; nf <= resL[15]; end
-		endcase
 		case(sz)
 		2'b00:	begin rfwrB <= 1'b1; ret(); end
 		2'b01:	begin rfwrW <= 1'b1; ret(); end
@@ -4884,27 +4859,19 @@ SHIFT:
 ADD:
 	begin
 		flag_update <= FU_ADD;
+		resL <= d + s;
+		d <= d + s;
+		dd <= d;
 		if (sz==2'b11) begin
 			flag_update <= FU_NONE;
 			Rt <= {1'b1,AAA};
-			if (ir[8]) begin
+			if (ir[8])
 				rfwrL <= 1'b1;
-				resL <= d + s;
-			end
-			else begin
-				resL <= d[15:0] + s[15:0];
+			else
 				rfwrW <= 1'b1;
-			end
-			d <= d + s;
-			dd <= d;
 			ret();
 		end
 		else if (ir[8]) begin
-//			resB <= d[7:0] + s[7:0];
-//			resW <= d[15:0] + s[15:0];
-			resL <= d + s;
-			d <= d + s;
-			dd <= d;
 			if (mmm==AM_DN || mmm==AM_AN) begin
 				Rt <= {mmm[0],rrr};
 				case(sz)
@@ -4920,17 +4887,12 @@ ADD:
 				2'b00:	goto(STORE_BYTE);
 				2'b01:	goto(STORE_WORD);
 				2'b10:	goto(STORE_LWORD);
-				default:	;
+				default:	tIllegal();
 				endcase
 			end
 		end
 		else begin
 			Rt <= {1'b0,DDD};
-//			resB <= d[7:0] + s[7:0];
-//			resW <= d[15:0] + s[15:0];
-			resL <= d + s;
-			d <= d + s;
-			dd <= d;
 			case(sz)
 			2'b00:	rfwrB <= 1'b1;
 			2'b01:	rfwrW <= 1'b1;
@@ -4946,27 +4908,19 @@ ADD:
 SUB:
 	begin
 		flag_update <= FU_SUB;
+		resL <= d - s;
+		d <= d - s;
+		dd <= d;
 		if (sz==2'b11) begin
 			flag_update <= FU_NONE;
 			Rt <= {1'b1,AAA};
-			if (ir[8]) begin
+			if (ir[8])
 				rfwrL <= 1'b1;
-				resL <= d - s;
-			end
-			else begin
-				resL <= d[15:0] - s[15:0];
+			else
 				rfwrW <= 1'b1;
-			end
-			d <= d - s;
-			dd <= d;
 			ret();
 		end
 		else if (ir[8]) begin
-//			resB <= d[7:0] - s[7:0];
-//			resW <= d[15:0] - s[15:0];
-			resL <= d - s;
-			d <= d - s;
-			dd <= d;
 			if (mmm==AM_DN || mmm==AM_AN) begin
 				Rt <= {mmm[0],rrr};
 				case(sz)
@@ -4982,16 +4936,12 @@ SUB:
 				2'b00:	goto(STORE_BYTE);
 				2'b01:	goto(STORE_WORD);
 				2'b10:	goto(STORE_LWORD);
-				default:	;
+				default:	tIllegal();
 				endcase
 			end
 		end
 		else begin
 			Rt <= {1'b0,DDD};
-//			resB <= d[7:0] - s[7:0];
-//			resW <= d[15:0] - s[15:0];
-			resL <= d - s;
-			dd <= d;
 			case(sz)
 			2'b00:	rfwrB <= 1'b1;
 			2'b01:	rfwrW <= 1'b1;
@@ -5009,7 +4959,7 @@ ADDX:
 		2'd0:	fs_data(AM_PRE,rrr,FETCH_BYTE,S);
 		2'd1:	fs_data(AM_PRE,rrr,FETCH_WORD,S);
 		2'd2:	fs_data(AM_PRE,rrr,FETCH_LWORD,S);
-		default:	;
+		default:	tIllegal();
 		endcase
 	end
 ADDX2:
@@ -5019,23 +4969,21 @@ ADDX2:
 		2'd0:	fs_data(AM_PRE,RRR,FETCH_BYTE,D);
 		2'd1:	fs_data(AM_PRE,RRR,FETCH_WORD,D);
 		2'd2:	fs_data(AM_PRE,RRR,FETCH_LWORD,D);
-		default:	;
+		default:	tIllegal();
 		endcase
 	end
 ADDX3:
 	begin
 		flag_update <= FU_ADDX;
-//		resB <= d[ 7:0] + s[ 7:0] + xf;
-//		resW <= d[15:0] + s[15:0] + xf;
+		d <= d + s + xf;
 		resL <= d[31:0] + s[31:0] + xf;
 		dd <= d;
-		d <= d + s + xf;
 		if (ir[3])
 			case(sz)
 			2'b00:	goto(STORE_BYTE);
 			2'b01:	goto(STORE_WORD);
 			2'b10:	goto(STORE_LWORD);
-			default:	;
+			default:	tIllegal();
 			endcase
 		else begin
 			Rt <= {1'b0,RRR};
@@ -5072,8 +5020,6 @@ SUBX2:
 SUBX3:
 	begin
 		flag_update <= FU_SUBX;
-//		resB <= d[7:0] - s[7:0] - xf;
-//		resW <= d[15:0] - s[15:0] - xf;
 		resL <= d[31:0] - s[31:0] - xf;
 		dd <= d;
 		d <= d - s - xf;
@@ -5082,7 +5028,7 @@ SUBX3:
 			2'b00:	goto(STORE_BYTE);
 			2'b01:	goto(STORE_WORD);
 			2'b10:	goto(STORE_LWORD);
-			default:	;
+			default:	tIllegal();
 			endcase
 		else begin
 			Rt <= {1'b0,RRR};
@@ -5102,8 +5048,6 @@ AND:
 	begin
 		flag_update <= FU_LOGIC;
 		if (ir[8]) begin
-//			resB <= d[7:0] & rfoDn[7:0];
-//			resW <= d[15:0] & rfoDn[15:0];
 			resL <= d & rfoDn;
 			d <= d & rfoDn;
 			if (mmm==AM_DN || mmm==AM_AN) begin
@@ -5121,14 +5065,12 @@ AND:
 				2'b00:	goto(STORE_BYTE);
 				2'b01:	goto(STORE_WORD);
 				2'b10:	goto(STORE_LWORD);
-				default:	;
+				default:	tIllegal();
 				endcase
 			end
 		end
 		else begin
 			Rt <= {1'b0,DDD};
-//			resB <= rfoDn[7:0] & s[7:0];
-//			resW <= rfoDn[15:0] & s[15:0];
 			resL <= rfoDn & s;
 			case(sz)
 			2'b00:	rfwrB <= 1'b1;
@@ -5147,8 +5089,6 @@ OR:
 	begin
 		flag_update <= FU_LOGIC;
 		if (ir[8]) begin
-//			resB <= d[7:0] | rfoDn[7:0];
-//			resW <= d[15:0] | rfoDn[15:0];
 			resL <= d | rfoDn;
 			d <= d | rfoDn;
 			if (mmm==AM_DN || mmm==AM_AN) begin
@@ -5166,14 +5106,12 @@ OR:
 				2'b00:	goto(STORE_BYTE);
 				2'b01:	goto(STORE_WORD); 
 				2'b10:	goto(STORE_LWORD);
-				default:	;	// DIV
+				default:	tIllegal();	// DIV
 				endcase
 			end
 		end
 		else begin
 			Rt <= {1'b0,DDD};
-//			resB <= rfoDn[7:0] | s[7:0];
-//			resW <= rfoDn[15:0] | s[15:0];
 			resL <= rfoDn | s;
 			case(sz)
 			2'b00:	rfwrB <= 1'b1;
@@ -5191,8 +5129,6 @@ OR:
 EOR:
 	begin
 		flag_update <= FU_LOGIC;
-//		resB <= d[7:0] ^ rfoDn[7:0];
-//		resW <= d[15:0] ^ rfoDn[15:0];
 		resL <= d ^ rfoDn;
 		d <= d ^ rfoDn;
 		if (mmm==AM_DN || mmm==AM_AN) begin
@@ -5210,7 +5146,7 @@ EOR:
 			2'b00:	goto(STORE_BYTE);
 			2'b01:	goto(STORE_WORD);
 			2'b10:	goto(STORE_LWORD);
-			default:	;
+			default:	tIllegal();
 			endcase
 		end
 	end
@@ -5226,8 +5162,6 @@ ADDQ:
 			if (mmm!=AM_AN)
 				flag_update <= FU_SUBQ;
 			resL <= d - immx;
-//			resB <= d[7:0] - immx[7:0];
-//			resW <= d[15:0] - immx[15:0];
 			d <= d - immx;
 			dd <= d;
 			s <= immx;
@@ -5236,8 +5170,6 @@ ADDQ:
 			if (mmm!=AM_AN)
 				flag_update <= FU_ADDQ;
 			resL <= d + immx;
-//			resB <= d[7:0] + immx[7:0];
-//			resW <= d[15:0] + immx[15:0];
 			d <= d + immx;
 			dd <= d;
 			s <= immx;
@@ -5256,14 +5188,18 @@ ADDQ:
 		else if (mmm==AM_AN) begin
 			ret();
 			Rt <= {mmm[0],rrr};
-			rfwrL <= 1'b1;
+			case(sz)
+			2'b01:	rfwrW <= 1'b1;
+			2'b10:	rfwrL <= 1'b1;
+			default:	tIllegal();
+			endcase
 		end
 		else
 			case(sz)
 			2'b00:	goto(STORE_BYTE);
 			2'b01:	goto(STORE_WORD);
 			2'b10:	goto(STORE_LWORD);
-			default:	;	// Scc / DBRA
+			default:	tIllegal();	// Scc / DBRA
 			endcase
 	end
 
@@ -5302,26 +5238,6 @@ ADDI3:
 		4'hC:	resL <= d - immx;	// CMPI
 		default:	;
 		endcase
-		/*
-		case(ir[11:8])
-		4'h0:	resW <= d[15:0] | immx[15:0];	// ORI
-		4'h2:	resW <= d[15:0] & immx[15:0];	// ANDI
-		4'h4:	resW <= d[15:0] - immx[15:0];	// SUBI
-		4'h6:	resW <= d[15:0] + immx[15:0];	// ADDI
-		4'hA:	resW <= d[15:0] ^ immx[15:0];	// EORI
-		4'hC:	resW <= d[15:0] - immx[15:0];	// CMPI
-		default:	;
-		endcase
-		case(ir[11:8])
-		4'h0:	resB <= d[7:0] | immx[7:0];	// ORI
-		4'h2:	resB <= d[7:0] & immx[7:0];	// ANDI
-		4'h4:	resB <= d[7:0] - immx[7:0];	// SUBI
-		4'h6:	resB <= d[7:0] + immx[7:0];	// ADDI
-		4'hA:	resB <= d[7:0] ^ immx[7:0];	// EORI
-		4'hC:	resB <= d[7:0] - immx[7:0];	// CMPI
-		default:	;
-		endcase
-		*/
 		case(ir[11:8])
 		4'h0:	d <= d | immx;	// ORI
 		4'h2:	d <= d & immx;	// ANDI
@@ -5333,12 +5249,21 @@ ADDI3:
 		endcase
 		if (ir[11:8]==4'hC)
 			ret();
-		else if (mmm==AM_DN || mmm==AM_AN) begin
+		else if (mmm==AM_DN) begin
 			case(sz)
 			2'b00:	rfwrB <= 1'b1;
 			2'b01:	rfwrW <= 1'b1;
 			2'b10:	rfwrL <= 1'b1;
 			default:	;
+			endcase
+			Rt <= {mmm[0],rrr};
+			ret();
+		end
+		else if (mmm==AM_AN) begin
+			case(sz)
+			2'b01:	rfwrW <= 1'b1;
+			2'b10:	rfwrL <= 1'b1;
+			default:	tIllegal();
 			endcase
 			Rt <= {mmm[0],rrr};
 			ret();
@@ -9664,7 +9589,9 @@ begin
 						rfwrW <= 1'b1;
 					end
 				STORE_BYTE:
-					begin
+					if (mmm[0])
+						tIllegal();	// Only if storing in An
+					else begin
 						Rt <= {mmm[0],rrr};
 						rfwrB <= 1'b1;
 					end
