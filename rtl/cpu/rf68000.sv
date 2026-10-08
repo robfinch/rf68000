@@ -40,6 +40,7 @@
 // ============================================================================
 //
 import const_pkg::*;
+import rf68000_pkg::*;
 import rf68851_pkg::*;
 
 // Uncomment the following to optimize for performance. Increases the core size.
@@ -621,19 +622,12 @@ typedef enum logic [9:0] {
 	CASO6,
 	CHK2,
 	TRAP6a,
-	FETCH_BRDISP32a
+	FETCH_BRDISP32a,
+	// 360
+	DELAY1,
+	TST1
 } state_t;
 
-typedef enum logic [4:0] {
-	FU_NONE = 5'd0,
-	FU_MUL, FU_SHIFT,
-	FU_TST, FU_ADDX, FU_SUBX, FU_NEGX,
-	FU_CMP, FU_ADD, FU_SUB, FU_LOGIC, FU_ADDQ, FU_SUBQ,
-	FU_ADDI, FU_ANDI_CCR, FU_ANDI_SR, FU_EORI_CCR,
-	FU_ANDI_SRX, FU_EORI_SRX, FU_ORI_SRX, FU_MOVE2SRX,
-	FU_EORI_SR, FU_ORI_CCR, FU_ORI_SR, FU_MOVE2CCR,
-	FU_MOVE2SR, FU_MOVEQ, FU_CLR, FU_EXT, FU_SWAP
-} flag_update_t;
 typedef enum logic [4:0] {
 	CMD_NONE = 5'd0,
 	CMD_RD,
@@ -696,6 +690,7 @@ bus_stat_t bus_stat;
 reg em;							// emulation mode
 reg [15:0] ir;
 reg [15:0] ir2;			// second word for ir
+reg [15:0] bank_pfx;
 `ifdef SUPPORT_NANO_CACHE
 reg [15:0] fetchbuf [0:7];
 reg [31:0] fetchbuf_tag [0:7];
@@ -715,7 +710,7 @@ state_t state_stk5;
 state_t state_stk6;
 state_t state_stk7;
 state_t sz_state;
-flag_update_t flag_update;
+flag_update_e flag_updated;
 reg [31:0] d0 = 'd0;
 reg [31:0] d1 = 'd0;
 reg [31:0] d2 = 'd0;
@@ -724,6 +719,30 @@ reg [31:0] d4 = 'd0;
 reg [31:0] d5 = 'd0;
 reg [31:0] d6 = 'd0;
 reg [31:0] d7 = 'd0;
+reg [31:0] d8 = 'd0;
+reg [31:0] d9 = 'd0;
+reg [31:0] d10 = 'd0;
+reg [31:0] d11 = 'd0;
+reg [31:0] d12 = 'd0;
+reg [31:0] d13 = 'd0;
+reg [31:0] d14 = 'd0;
+reg [31:0] d15 = 'd0;
+reg [31:0] d16 = 'd0;
+reg [31:0] d17 = 'd0;
+reg [31:0] d18 = 'd0;
+reg [31:0] d19 = 'd0;
+reg [31:0] d20 = 'd0;
+reg [31:0] d21 = 'd0;
+reg [31:0] d22 = 'd0;
+reg [31:0] d23 = 'd0;
+reg [31:0] d24 = 'd0;
+reg [31:0] d25 = 'd0;
+reg [31:0] d26 = 'd0;
+reg [31:0] d27 = 'd0;
+reg [31:0] d28 = 'd0;
+reg [31:0] d29 = 'd0;
+reg [31:0] d30 = 'd0;
+reg [31:0] d31 = 'd0;
 reg [31:0] a0 = 'd0;
 reg [31:0] a1 = 'd0;
 reg [31:0] a2 = 'd0;
@@ -777,25 +796,41 @@ wire [31:0] spo;
 wire [31:0] flagso;
 wire [31:0] pco;
 function [31:0] fnReg;
-input [3:0] rg;
+input [5:0] rg;
 begin
 	case(rg)
-	4'd0:	fnReg = d0;
-	4'd1:	fnReg = d1;
-	4'd2:	fnReg = d2;
-	4'd3:	fnReg = d3;
-	4'd4:	fnReg = d4;
-	4'd5:	fnReg = d5;
-	4'd6:	fnReg = d6;
-	4'd7:	fnReg = d7;
-	4'd8:	fnReg = a0;
-	4'd9:	fnReg = a1;
-	4'd10:	fnReg = a2;
-	4'd11:	fnReg = a3;
-	4'd12:	fnReg = a4;
-	4'd13:	fnReg = a5;
-	4'd14:	fnReg = a6;
-	4'd15:	fnReg = sp;
+	6'd0:	fnReg = d0;
+	6'd1:	fnReg = d1;
+	6'd2:	fnReg = d2;
+	6'd3:	fnReg = d3;
+	6'd4:	fnReg = d4;
+	6'd5:	fnReg = d5;
+	6'd6:	fnReg = d6;
+	6'd7:	fnReg = d7;
+	6'd16:	fnReg = d16;
+	6'd17:	fnReg = d17;
+	6'd18:	fnReg = d18;
+	6'd19:	fnReg = d19;
+	6'd20:	fnReg = d20;
+	6'd21:	fnReg = d21;
+	6'd22:	fnReg = d22;
+	6'd23:	fnReg = d23;
+	6'd24:	fnReg = d24;
+	6'd25:	fnReg = d25;
+	6'd26:	fnReg = d26;
+	6'd27:	fnReg = d27;
+	6'd28:	fnReg = d28;
+	6'd29:	fnReg = d29;
+	6'd30:	fnReg = d30;
+	6'd31:	fnReg = d31;
+	6'd32:	fnReg = a0;
+	6'd33:	fnReg = a1;
+	6'd34:	fnReg = a2;
+	6'd35:	fnReg = a3;
+	6'd36:	fnReg = a4;
+	6'd37:	fnReg = a5;
+	6'd38:	fnReg = a6;
+	6'd39:	fnReg = sp;
 	endcase
 end
 endfunction
@@ -1016,7 +1051,8 @@ reg pload, ptest=1'b0;
 
 reg [15:0] pid_stack [0:15];
 reg [3:0] pid_sp;
-reg cf,vf,nf,zf,xf,sf,mf,tf;
+wire cf,vf,nf,zf,xf;
+reg sf,mf,tf;
 reg movemf;
 reg gie;
 reg [2:0] im;
@@ -1047,11 +1083,12 @@ reg [5:0] cnt;				// shift count
 reg [31:0] ea;				// effective address
 reg [31:0] vector;
 reg [7:0] vecno;
-reg [3:0] Rt;
+reg [5:0] Rt;
 wire [1:0] sz = ir[7:6];
 reg dsix;
 amode_e mmm,mmmx,mmm_save=AM_DN;
-reg [2:0] rrr,rrrx;
+reg [2:0] rrr;
+reg [5:0] rrrx;
 reg [3:0] rrrr;
 // Extension word fields
 reg [31:0] base_reg;
@@ -1073,6 +1110,7 @@ wire [2:0] AAA = ir[11:9];
 reg [10:0] tracendx,tracendx2;
 reg [31:0] tracebuf [0:2047];
 
+reg [1:0] rrrbnk,AAAbnk,DDDbnk,rrrrbnk,RRRbnk;
 reg [2:0] FLTSRC;
 reg [2:0] FLTDST;
 reg MMMRRR;
@@ -1080,17 +1118,17 @@ wire Anabit;
 wire [31:0] sp_dec = sp - 32'd2;
 reg [31:0] rfoAn;
 always_comb
-	rfoAn = fnReg({1'b1,rrr});
+	rfoAn = fnReg({3'b1,rrrbnk,rrr});
 reg [31:0] rfoAna;
 always_comb
-	rfoAna = fnReg({1'b1,AAA});
+	rfoAna = fnReg({3'b1,AAAbnk,AAA});
 //wire [31:0] rfoAn =	rrr==3'b111 ? sp : regfile[{1'b1,rrr}];
 reg [31:0] rfoDn;
 always_comb
-	rfoDn = fnReg({1'b0,DDD});
+	rfoDn = fnReg({1'b0,DDDbnk,DDD});
 reg [31:0] rfoDnn;
 always_comb
-	rfoDnn = fnReg({1'b0,rrr});
+	rfoDnn = fnReg({1'b0,rrrbnk,rrr});
 // For bitfield
 integer bf1;
 state_t bf_size;
@@ -1117,16 +1155,17 @@ end
 endfunction
 function [31:0] fnBfdat;
 input [2:0] fld;
+input [1:0] bnk;
 begin
-	fnBfdat = fnReg({1'b0,fld});
+	fnBfdat = fnReg({1'b0,bnk,fld});
 end
 endfunction
 reg [31:0] rfob;
 always_comb
-	rfob = fnReg({mmm[0],rrr});
+	rfob = fnReg({mmm[0],rrrbnk,rrr});
 reg [31:0] rfoRnn;
 always_comb
-	rfoRnn = fnReg(rrrr);
+	rfoRnn = fnReg({rrrr[3],rrrrbnk,rrrr[2:0]});
 reg [95:0] rfoFpdst, rfoFpsrc;
 generate begin : gFLTSrcDst
 if (SUPPORT_DECFLT) begin
@@ -1165,6 +1204,7 @@ reg rfwrL,rfwrB,rfwrW;
 reg rfwrF;
 reg takb, ftakb, ptakb;
 reg [32:0] resL;
+reg [31:0] resO;		// high order of 64-bit word
 reg [95:0] resF;
 reg [95:0] fps, fpd;
 (* USE_DSP = "no" *)
@@ -1434,27 +1474,6 @@ BCDSub u3
 	.c(bcdnegoc)
 );
 */
-// These functions take the MSBs of the operands and results and return an
-// overflow status.
-
-// If the signs of the operands are the same, and the sign of the result does
-// not match the operands sign.
-function fnAddOverflow;
-input r;
-input a;
-input b;
-	fnAddOverflow = (r ^ b) & (1'b1 ^ a ^ b);
-endfunction
-
-// If the signs of the operands are different and sign of the result does not
-// match the first operand.
-function fnSubOverflow;
-input r;
-input a;
-input b;
-	fnSubOverflow = (r ^ a) & (a ^ b);
-endfunction
-
 reg divs;
 wire dvdone;
 wire dvByZr;
@@ -2003,6 +2022,478 @@ wire [4:0] flo;
 flo24 uflo1 (.i({8'h00,imm[15:0]}), .o(flo));
 flo48 uflo2 (.i({16'h00,pmmu_smask[31:0]}), .o(pmmu_flo));
 
+flag_update_e flag_update;
+
+rf68000_ccr uccr1 (
+	.rst(rst_i),
+	.clk(clk_i),
+	.ir(ir),
+	.sz(sz),
+	.resL({resO,resL}),
+	.d(d),
+	.s(s),
+	.dd(dd),
+	.imm(imm),
+	.immx(immx),
+	.dvovf(dvovf),
+	.Dc(Dc),
+	.Dc1(Dc1),
+	.bf_zf(bf_zf),
+	.bf_nf(bf_nf),
+	.cnt(cnt),
+	.shift_op(shift_op),
+	.flag_update(flag_update),
+	.cf(cf),
+	.vf(vf),
+	.nf(nf),
+	.zf(zf),
+	.xf(xf)
+);
+
+always_comb
+begin
+	flag_update = FU_NONE;
+	case(state)
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+DECODE:
+	begin
+	case({ext_ir,ir[15:12]})
+	5'h4:
+		casez(ir[11:3])
+		9'b0000?????:	;
+		9'b000110???:	;	// MOVE.L srx,<ea>
+		9'b0010?????:
+			begin		// 42xx	CLR
+				flag_update = FU_CLR;
+			end
+		9'b0100?????:
+			casez(sz)
+			2'b11:	// MOVE <src>,ccr
+				begin
+					flag_update = FU_MOVE2CCR;
+				end
+			endcase
+		9'b0110?????:
+			case(sz)
+			2'b11:	
+				if (sf) begin	// MOVE <src>,sr
+					flag_update = FU_MOVE2SR;
+				end
+			endcase
+		9'b10001?000:
+			if (ir[6]) begin	// EXT.L
+				flag_update = FU_EXT;
+			end
+			else begin	// EXT.W
+				flag_update = FU_EXT;
+			end
+`ifdef SUPPORT_BCD			
+		9'b100000???:	;	// NBCD
+`endif			
+		9'b100001000:	// 484x		SWAP
+			begin	
+				flag_update = FU_SWAP;
+			end
+		9'b100001001:	;	// 484x		Breakpoint
+		9'b100001???:	;	// PEA
+		9'b1010?????:	// TST / TAS
+			if (ir==16'h4AFC)	// 4AFC	Illegal
+				;
+			else
+				case(sz)
+				2'b00:	begin flag_update = FU_TST; end
+				2'b01:	begin flag_update = FU_TST; end
+				2'b10:	begin flag_update = FU_TST; end
+				2'b11:	;
+				endcase
+		9'b11100100?:	;
+		9'b111001010:	;
+		9'b111001011:	;
+		9'b11100110?:	;
+		9'b111001110:	;	// 4E70 RESET
+		9'b111001111:	;
+		9'b111010???:	;	// JSR		
+		9'b111011???:	;	// JMP
+		9'b1?001????:	;
+		9'b???111???:	;
+		9'b???110???:	;
+		default:	;
+		endcase
+//***		4'hF:	state <= RTD1;	// 4Fxx = rtd
+
+//-----------------------------------------------------------------------------
+// ADDQ / SUBQ / DBRA / Scc
+//-----------------------------------------------------------------------------
+	5'h5:	;
+		
+//-----------------------------------------------------------------------------
+// Branches
+//-----------------------------------------------------------------------------
+	5'h6:	;
+
+//-----------------------------------------------------------------------------
+// MOVEQ
+//-----------------------------------------------------------------------------
+	5'h7:
+		// MOVEQ only if ir[8]==0, but it is otherwise not used for the 68k.
+		// So some decode and fmax is saved by not decoding ir[8]
+		//if (ir[8]==1'b0) 
+		flag_update = FU_MOVEQ;
+
+//-----------------------------------------------------------------------------
+// OR / DIVU / DIVS / SBCD
+//-----------------------------------------------------------------------------
+	5'h8:	;
+//-----------------------------------------------------------------------------
+// SUB / SUBA / SUBX
+//-----------------------------------------------------------------------------
+  5'h9:	;
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+  5'hA:	;
+//-----------------------------------------------------------------------------
+// CMP / CMPA / CMPM / EOR
+//-----------------------------------------------------------------------------
+	5'hB:	;
+//-----------------------------------------------------------------------------
+// AND / EXG / MULU / MULS / ABCD
+//-----------------------------------------------------------------------------
+	5'hC:	;
+//-----------------------------------------------------------------------------
+// ADD / ADDA / ADDX
+//-----------------------------------------------------------------------------
+	5'hD:	;
+//-----------------------------------------------------------------------------
+// ASL / LSL / ASR / LSR / ROL / ROR / ROXL / ROXR
+//-----------------------------------------------------------------------------
+	5'hE:	;
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+  5'hF:	;
+
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+	5'h1A:	;
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+	5'h1E:	;
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+	5'h1F:	;
+	endcase
+	end
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+`ifdef SUPPORT_010
+MOVES:	;
+MOVES2:	;
+MOVES3:	;
+`endif
+
+//-----------------------------------------------------------------------------
+// BCD arithmetic
+// ABCD / SBCD / NBCD
+//-----------------------------------------------------------------------------
+`ifdef SUPPORT_BCD
+BCD4:
+	if (dd_done)
+		flag_update = FU_BCD;
+`endif		
+
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+STOP1:	flag_update = FU_STOP;
+
+//-----------------------------------------------------------------------------
+// MULU / MULS
+//-----------------------------------------------------------------------------
+MULS3:	flag_update = FU_MUL;
+MULU3:	flag_update = FU_MUL;
+
+//-----------------------------------------------------------------------------
+// DIVU / DIVS
+// - the target register is not updated if overflow occurs.
+// - the carry flag is always cleared
+// - N and Z flags are defined only for valid results
+//-----------------------------------------------------------------------------
+DIV2:
+	if (dvdone)
+		flag_update = FU_DIV;
+
+//-----------------------------------------------------------------------------
+// NOT
+//-----------------------------------------------------------------------------
+NOT:	flag_update = FU_LOGIC;
+
+//-----------------------------------------------------------------------------
+// NEG / NEGX
+//-----------------------------------------------------------------------------
+NEGX1:	flag_update = FU_NEGX;
+
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+TAS:	flag_update = FU_TAS;
+
+//-----------------------------------------------------------------------------
+// The destination store for the MOVE instruction.
+// Flags are not updated if the target is an address register.
+//-----------------------------------------------------------------------------
+
+STORE_IN_DEST:	flag_update = FU_MOVE;
+
+
+//-----------------------------------------------------------------------------
+// Compares
+//-----------------------------------------------------------------------------
+CMP:	flag_update = FU_CMP;
+CMPA:	flag_update = FU_CMP;
+
+//-----------------------------------------------------------------------------
+// Shifts
+// Rotate instructions ROL,ROR do not affect the X flag.
+//-----------------------------------------------------------------------------
+SHIFT1:
+	begin
+		flag_update = FU_SHIFT1;
+	end
+SHIFT:
+	begin
+		flag_update = FU_SHIFT;
+	end
+
+//-----------------------------------------------------------------------------
+// ADD / SUB / ADDA / SUBA / ADDX / SUBX
+//-----------------------------------------------------------------------------
+ADD:
+		if (sz!=2'b11)
+			flag_update = FU_ADD;
+
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+SUB:
+		if (sz!=2'b11)
+			flag_update = FU_SUB;
+
+ADDX3:
+		flag_update = FU_ADDX;
+
+SUBX3:
+		flag_update = FU_SUBX;
+
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+AND:
+		flag_update = FU_LOGIC;
+
+//-----------------------------------------------------------------------------
+// OR
+//-----------------------------------------------------------------------------
+OR:
+		flag_update = FU_LOGIC;
+
+//-----------------------------------------------------------------------------
+// EOR
+//-----------------------------------------------------------------------------
+EOR:
+		flag_update = FU_LOGIC;
+
+//-----------------------------------------------------------------------------
+// ADDQ / SUBQ
+// Flags are not updated if the target is an address register.
+// If the target is an address register, the entire register is updated.
+//-----------------------------------------------------------------------------
+ADDQ:
+	begin
+		if (ir[8]) begin
+			if (mmm!=AM_AN)
+				flag_update = FU_SUBQ;
+		end
+		else begin
+			if (mmm!=AM_AN)
+				flag_update = FU_ADDQ;
+		end
+	end
+
+//-----------------------------------------------------------------------------
+// ADDI / SUBI / CMPI / ANDI / ORI / EORI
+//-----------------------------------------------------------------------------
+ADDI3:
+	begin
+		flag_update = FU_ADDI;
+	end
+
+//-----------------------------------------------------------------------------
+// ANDI_CCR / ANDI_SR / EORI_CCR / EORI_SR / ORI_CCR / ORI_SR
+//-----------------------------------------------------------------------------
+//
+ANDI_CCR:
+	begin flag_update = FU_ANDI_CCR; end
+ANDI_SR:
+	begin flag_update = FU_ANDI_SR; end
+ANDI_SRX:
+	begin flag_update = FU_ANDI_SRX; end
+EORI_CCR:
+	begin flag_update = FU_EORI_CCR; end
+EORI_SR:
+	begin flag_update = FU_EORI_SR; end
+EORI_SRX:
+	begin flag_update = FU_EORI_SRX; end
+ORI_CCR:
+	begin flag_update = FU_ORI_CCR; end
+ORI_SR:
+	begin flag_update = FU_ORI_SR; end
+ORI_SRX:
+	begin flag_update = FU_ORI_SRX; end
+
+//-----------------------------------------------------------------------------
+// Bit manipulation
+//-----------------------------------------------------------------------------
+// ToDo: Speed this up by a clock cycle by placing the update in IFETCH.
+BIT2:
+	begin
+		// Targets a data register then the size is 32-bit, test is mod 32.
+		if (mmm_save==AM_DN)
+			case(sz)
+			2'b00:	// BTST
+				begin
+					flag_update = FU_BTST;
+				end
+			2'b01:	// BCHG
+				begin
+					flag_update = FU_BTST;
+				end
+			2'b10:	// BCLR
+				begin
+					flag_update = FU_BTST;
+				end
+			2'b11:	// BSET
+					flag_update = FU_BTST;
+			endcase
+		// Target is memory, size is byte, test is mod 8.
+		else
+			case(sz)
+			2'b00:	// BTST
+				begin
+					flag_update = FU_BTST;
+				end
+			2'b01:	// BCHG
+				begin
+					flag_update = FU_BTST;
+				end
+			2'b10:	// BCLR
+				begin
+					flag_update = FU_BTST;
+				end
+			2'b11:	// BSET
+				begin
+					flag_update = FU_BTST;
+				end
+			endcase
+	end
+
+
+TST1:	flag_update = FU_TST;
+
+//----------------------------------------------------
+// RTE / RTR
+// Return from exception
+//----------------------------------------------------
+
+RTE2:	flag_update = FU_RTE;
+
+BIN2BCD2:
+	if (dd32done) begin
+		flag_update = FU_BIN2BCD;
+	end
+
+//-----------------------------------------------------------------------------
+// 68020 - 
+//-----------------------------------------------------------------------------
+`ifdef SUPPORT_020
+BITFLD:
+	begin
+		case(bf_size)
+		FETCH_BYTE,FETCH_WORD,FETCH_LWORD:	
+			begin
+				case(ir[11:8])
+				4'b1011:	// BFEXTS
+					begin
+						flag_update = FU_BITFLD;
+					end
+				4'b1001:	// BFEXTU
+					begin
+						flag_update = FU_BITFLD;
+					end
+				4'b1101:	// BFFFO
+					begin
+						flag_update = FU_BITFLD;
+					end
+				4'b1111:	// BFINS
+					begin
+						flag_update = FU_BITFLD;
+					end
+				4'b1000:
+					begin
+						flag_update = FU_BITFLD;
+					end
+				default:
+					begin
+						flag_update = FU_BITFLD;
+					end
+				endcase
+			end
+		FETCH_OCTA:
+			begin
+				case(ir[11:8])
+				4'b1011:
+					begin
+						flag_update = FU_BITFLD;
+					end
+				4'b1001:
+					begin
+						flag_update = FU_BITFLD;
+					end
+				4'b1101:
+					begin
+						flag_update = FU_BITFLD;
+					end
+				4'b1111:	// BFINS
+					begin
+						flag_update = FU_BITFLD;
+					end
+				4'b1000:
+					begin
+						flag_update = FU_BITFLD;
+					end
+				default:
+					begin
+						flag_update = FU_BITFLD;
+					end
+				endcase
+			end
+		default:	;
+		endcase
+	end
+
+// Fetch sources	
+// Update flags
+CAS2:
+		flag_update = FU_CAS;
+
+// Fetch sources	
+// CAS2 instruction.
+
+// Update flags
+CASO3:
+		flag_update = FU_CASO;
+
+`endif
+	endcase
+end
+
 always_ff @(posedge clk_i)
 if (rst_i) begin
 	pc <= 32'h1000;
@@ -2033,11 +2524,6 @@ if (rst_i) begin
 	rfwrW <= 1'b0;
 	rfwrL <= 1'b0;
 	rfwrF <= 1'b0;
-	zf <= 1'b0;
-	nf <= 1'b0;
-	cf <= 1'b0;
-	vf <= 1'b0;
-	xf <= 1'b0;
 	gie <= 1'b0;
 	im <= 3'b111;
 	mf <= 1'b0;
@@ -2104,6 +2590,12 @@ if (rst_i) begin
 	pload <= `FALSE;
 	dec_unlink <= FALSE;
 	bus_stat <= 8'h00;
+	resO <= 32'h0;
+	bank_pfx <= 16'h0000;
+	rrrbnk <= 2'b00;
+	rrrrbnk <= 2'b00;
+	AAAbnk <= 2'b00;
+	DDDbnk <= 2'b00;
 end
 else begin
 
@@ -2131,701 +2623,233 @@ rfwrL <= 1'b0;
 rfwrF <= 1'b0;
 if (rfwrL) begin
   case(Rt)
-  4'd0:   d0 <= resL[31:0];
-  4'd1:   d1 <= resL[31:0];
-  4'd2:   d2 <= resL[31:0];
-  4'd3:   d3 <= resL[31:0];
-  4'd4:   d4 <= resL[31:0];
-  4'd5:   d5 <= resL[31:0];
-  4'd6:   d6 <= resL[31:0];
-  4'd7:   d7 <= resL[31:0];
-  4'd8:   a0 <= resL[31:0];
-  4'd9:   a1 <= resL[31:0];
-  4'd10:  a2 <= resL[31:0];
-  4'd11:  a3 <= resL[31:0];
-  4'd12:  a4 <= resL[31:0];
-  4'd13:  a5 <= resL[31:0];
-  4'd14:  a6 <= resL[31:0];
-  4'd15:  sp <= resL[31:0];
+  6'd0:   d0 <= resL[31:0];
+  6'd1:   d1 <= resL[31:0];
+  6'd2:   d2 <= resL[31:0];
+  6'd3:   d3 <= resL[31:0];
+  6'd4:   d4 <= resL[31:0];
+  6'd5:   d5 <= resL[31:0];
+  6'd6:   d6 <= resL[31:0];
+  6'd7:   d7 <= resL[31:0];
+  6'd8:   d8 <= resL[31:0];
+  6'd9:   d9 <= resL[31:0];
+  6'd10:   d10 <= resL[31:0];
+  6'd11:   d11 <= resL[31:0];
+  6'd12:   d12 <= resL[31:0];
+  6'd13:   d13 <= resL[31:0];
+  6'd14:   d14 <= resL[31:0];
+  6'd15:   d15 <= resL[31:0];
+  6'd32:  a0 <= resL[31:0];
+  6'd33:  a1 <= resL[31:0];
+  6'd34:  a2 <= resL[31:0];
+  6'd35:  a3 <= resL[31:0];
+  6'd36:  a4 <= resL[31:0];
+  6'd37:  a5 <= resL[31:0];
+  6'd38:  a6 <= resL[31:0];
+  6'd39:  sp <= resL[31:0];
   endcase
 end
 else if (rfwrW) begin
   case(Rt)
-  4'd0:   d0[15:0] <= resL[15:0];
-  4'd1:   d1[15:0] <= resL[15:0];
-  4'd2:   d2[15:0] <= resL[15:0];
-  4'd3:   d3[15:0] <= resL[15:0];
-  4'd4:   d4[15:0] <= resL[15:0];
-  4'd5:   d5[15:0] <= resL[15:0];
-  4'd6:   d6[15:0] <= resL[15:0];
-  4'd7:   d7[15:0] <= resL[15:0];
-  4'd8:   a0 <= {{16{resL[15]}},resL[15:0]};
-  4'd9:   a1 <= {{16{resL[15]}},resL[15:0]};
-  4'd10:  a2 <= {{16{resL[15]}},resL[15:0]};
-  4'd11:  a3 <= {{16{resL[15]}},resL[15:0]};
-  4'd12:  a4 <= {{16{resL[15]}},resL[15:0]};
-  4'd13:  a5 <= {{16{resL[15]}},resL[15:0]};
-  4'd14:  a6 <= {{16{resL[15]}},resL[15:0]};
-  4'd15:  sp <= {{16{resL[15]}},resL[15:0]};
+  6'd0:   d0[15:0] <= resL[15:0];
+  6'd1:   d1[15:0] <= resL[15:0];
+  6'd2:   d2[15:0] <= resL[15:0];
+  6'd3:   d3[15:0] <= resL[15:0];
+  6'd4:   d4[15:0] <= resL[15:0];
+  6'd5:   d5[15:0] <= resL[15:0];
+  6'd6:   d6[15:0] <= resL[15:0];
+  6'd7:   d7[15:0] <= resL[15:0];
+  6'd8:   d8[15:0] <= resL[15:0];
+  6'd9:   d9[15:0] <= resL[15:0];
+  6'd10:   d10[15:0] <= resL[15:0];
+  6'd11:   d11[15:0] <= resL[15:0];
+  6'd12:   d12[15:0] <= resL[15:0];
+  6'd13:   d13[15:0] <= resL[15:0];
+  6'd14:   d14[15:0] <= resL[15:0];
+  6'd15:   d15[15:0] <= resL[15:0];
+  6'd32:  a0 <= {{16{resL[15]}},resL[15:0]};
+  6'd33:  a1 <= {{16{resL[15]}},resL[15:0]};
+  6'd34:  a2 <= {{16{resL[15]}},resL[15:0]};
+  6'd35:  a3 <= {{16{resL[15]}},resL[15:0]};
+  6'd36:  a4 <= {{16{resL[15]}},resL[15:0]};
+  6'd37:  a5 <= {{16{resL[15]}},resL[15:0]};
+  6'd38:  a6 <= {{16{resL[15]}},resL[15:0]};
+  6'd39:  sp <= {{16{resL[15]}},resL[15:0]};
   endcase
 end
 else if (rfwrB)
   case(Rt)
-  4'd0:   d0[7:0] <= resL[7:0];
-  4'd1:   d1[7:0] <= resL[7:0];
-  4'd2:   d2[7:0] <= resL[7:0];
-  4'd3:   d3[7:0] <= resL[7:0];
-  4'd4:   d4[7:0] <= resL[7:0];
-  4'd5:   d5[7:0] <= resL[7:0];
-  4'd6:   d6[7:0] <= resL[7:0];
-  4'd7:   d7[7:0] <= resL[7:0];
+  6'd0:   d0[7:0] <= resL[7:0];
+  6'd1:   d1[7:0] <= resL[7:0];
+  6'd2:   d2[7:0] <= resL[7:0];
+  6'd3:   d3[7:0] <= resL[7:0];
+  6'd4:   d4[7:0] <= resL[7:0];
+  6'd5:   d5[7:0] <= resL[7:0];
+  6'd6:   d6[7:0] <= resL[7:0];
+  6'd7:   d7[7:0] <= resL[7:0];
+  6'd8:   d8[7:0] <= resL[7:0];
+  6'd9:   d9[7:0] <= resL[7:0];
+  6'd10:   d10[7:0] <= resL[7:0];
+  6'd11:   d11[7:0] <= resL[7:0];
+  6'd12:   d12[7:0] <= resL[7:0];
+  6'd13:   d13[7:0] <= resL[7:0];
+  6'd14:   d14[7:0] <= resL[7:0];
+  6'd7:   d15[7:0] <= resL[7:0];
   default:    ;
   endcase
 
  if ((SUPPORT_DECFLT|SUPPORT_BINFLT) && rfwrF)
  	case(Rt)
- 	4'd0:	fp0 <= resF;
- 	4'd1:	fp1 <= resF;
- 	4'd2:	fp2 <= resF;
- 	4'd3:	fp3 <= resF;
- 	4'd4:	fp4 <= resF;
- 	4'd5:	fp5 <= resF;
- 	4'd6:	fp6 <= resF;
- 	4'd7:	fp7 <= resF;
+ 	6'd0:	fp0 <= resF;
+ 	6'd1:	fp1 <= resF;
+ 	6'd2:	fp2 <= resF;
+ 	6'd3:	fp3 <= resF;
+ 	6'd4:	fp4 <= resF;
+ 	6'd5:	fp5 <= resF;
+ 	6'd6:	fp6 <= resF;
+ 	6'd7:	fp7 <= resF;
 	default:	;
 	endcase
+	
+	flag_updated <= flag_update;
 
 	pmmu_flush_cmd <= 2'd0;	// NOP
+
+	case(flag_updated)
+	FU_ANDI_SR:
+		begin
+			gie <= 1'b1;
+			im[0] <= im[0] & imm[8];
+			im[1] <= im[1] & imm[9];
+			im[2] <= im[2] & imm[10];
+			mf <= mf & imm[12];
+			sf <= sf & imm[13];
+			tf <= tf & imm[15];
+			casez({sf,mf}&imm[13:12])
+			2'b0?:	sp <= usp;
+			2'b10:	sp <= isp;
+			2'b11:	sp <= ssp;
+			endcase
+		end
+	FU_ANDI_SRX:
+		begin
+			gie <= 1'b1;
+			im[0] <= im[0] & imm[8];
+			im[1] <= im[1] & imm[9];
+			im[2] <= im[2] & imm[10];
+			mf <= mf & imm[12];
+			sf <= sf & imm[13];
+			casez({sf,mf}&imm[13:12])
+			2'b0?:	sp <= usp;
+			2'b10:	sp <= isp;
+			2'b11:	sp <= ssp;
+			endcase
+			tf <= tf & imm[15];
+		end
+	FU_EORI_SR:
+		begin
+			gie <= 1'b1;
+			im[0] <= im[0] ^ imm[8];
+			im[1] <= im[1] ^ imm[9];
+			im[2] <= im[2] ^ imm[10];
+			mf <= mf ^ imm[12];
+			sf <= sf ^ imm[13];
+			casez({sf,mf}^imm[13:12])
+			2'b0?:	sp <= usp;
+			2'b10:	sp <= isp;
+			2'b11:	sp <= ssp;
+			endcase
+			tf <= tf ^ imm[15];
+		end
+	FU_EORI_SRX:
+		begin
+			gie <= 1'b1;
+			im[0] <= im[0] ^ imm[8];
+			im[1] <= im[1] ^ imm[9];
+			im[2] <= im[2] ^ imm[10];
+			mf <= mf ^ imm[12];
+			sf <= sf ^ imm[13];
+			casez({sf,mf}^imm[13:12])
+			2'b0?:	sp <= usp;
+			2'b10:	sp <= isp;
+			2'b11:	sp <= ssp;
+			endcase
+			tf <= tf ^ imm[15];
+		end
+	FU_ORI_SR:
+		begin
+			gie <= 1'b1;
+			im[0] <= im[0] | imm[8];
+			im[1] <= im[1] | imm[9];
+			im[2] <= im[2] | imm[10];
+			mf <= mf | imm[12];
+			sf <= sf | imm[13];
+			casez({sf,mf}|imm[13:12])
+			2'b0?:	sp <= usp;
+			2'b10:	sp <= isp;
+			2'b11:	sp <= ssp;
+			endcase
+			tf <= tf | imm[15];
+		end
+	FU_ORI_SRX:
+		begin
+			gie <= 1'b1;
+			im[0] <= im[0] | imm[8];
+			im[1] <= im[1] | imm[9];
+			im[2] <= im[2] | imm[10];
+			mf <= mf | imm[12];
+			sf <= sf | imm[13];
+			casez({sf,mf}|imm[13:12])
+			2'b0?:	sp <= usp;
+			2'b10:	sp <= isp;
+			2'b11:	sp <= ssp;
+			endcase
+			tf <= tf | imm[15];
+		end
+	FU_MOVE2SR:
+		begin
+			ccr57 <= s[7:5];
+			gie <= 1'b1;
+			im[0] <= s[8];
+			im[1] <= s[9];
+			im[2] <= s[10];
+			sr11 <= s[11];
+			mf <= s[12];
+			sf <= s[13];
+			casez(s[13:12])
+			2'b0?:	sp <= usp;
+			2'b10:	sp <= isp;
+			2'b11:	sp <= ssp;
+			endcase
+			sr14 <= s[14];
+			tf <= s[15];
+		end
+	FU_MOVE2SRX:
+		begin
+			ccr57 <= s[7:5];
+			gie <= 1'b1;
+			im[0] <= s[8];
+			im[1] <= s[9];
+			im[2] <= s[10];
+			sr11 <= s[11];
+			mf <= s[12];
+			sf <= s[13];
+			casez(s[13:12])
+			2'b0?:	sp <= usp;
+			2'b10:	sp <= isp;
+			2'b11:	sp <= ssp;
+			endcase
+			sr14 <= s[14];
+			tf <= s[15];
+		end
+	default:	;
+	endcase
 
 case(state)
 
 IFETCH:
 	begin
-		case(flag_update)
-		FU_CLR:
-			begin
-				cf <= 1'b0;
-				vf <= 1'b0;
-				zf <= 1'b1;
-				nf <= 1'b0;
-			end
-		FU_EXT:
-			if (ir[6]) begin
-				cf <= 1'b0;
-				vf <= 1'b0;
-				nf <= resL[15];
-				zf <= resL[15:0]==16'h0000;
-			end
-			else begin
-				cf <= 1'b0;
-				vf <= 1'b0;
-				nf <= resL[7];
-				zf <= resL[7:0]==8'h00;
-			end
-		FU_SWAP:
-			begin
-				cf <= 1'b0;
-				vf <= 1'b0;
-				nf <= resL[31];
-				zf <= resL==32'd0;
-			end
-		FU_MUL:
-			begin
-				cf <= 1'b0;
-				vf <= 1'b0;
-				nf <= resL[31];
-				zf <= resL[31:0]==32'd0;
-			end
-		FU_TST:
-			begin
-				cf <= 1'b0;
-				vf <= 1'b0;
-				case(sz)
-				2'b00:	begin zf <= d[7:0]==8'h00; nf <= d[7]; end
-				2'b01:	begin zf <= d[15:0]==16'h00; nf <= d[15]; end
-				2'b10:	begin zf <= d[31:0]==32'h00; nf <= d[31]; end
-				default:	;
-				endcase
-			end
-		FU_CMP:
-			begin
-				case(sz)
-				2'b00:	begin zf <= resL[ 7:0]== 8'd0; nf <= resL[ 7]; cf <= resL[ 8]; vf <= fnSubOverflow(resL[ 7],d[ 7],s[ 7]); end
-				2'b01:	begin zf <= resL[15:0]==16'd0; nf <= resL[15]; cf <= resL[16]; vf <= fnSubOverflow(resL[15],d[15],s[15]); end
-				2'b10:	begin zf <= resL[31:0]==32'd0; nf <= resL[31]; cf <= resL[32]; vf <= fnSubOverflow(resL[31],d[31],s[31]); end
-				2'b11:	begin zf <= resL[31:0]==32'd0; nf <= resL[31]; cf <= resL[32]; vf <= fnSubOverflow(resL[31],d[31],s[31]); end	// CMPA
-				endcase
-			end
-		FU_ADD:
-			begin
-				case(sz)
-				2'b00:
-					begin
-						cf <= resL[8];
-						nf <= resL[7];
-						zf <= resL[7:0]==8'h00;
-						vf <= fnAddOverflow(resL[7],dd[7],s[7]);
-						xf <= resL[8];
-					end
-				2'b01:
-					begin
-						cf <= resL[16];
-						nf <= resL[15];
-						zf <= resL[15:0]==16'h0000;
-						vf <= fnAddOverflow(resL[15],dd[15],s[15]);
-						xf <= resL[16];
-					end
-				2'b10:
-					begin
-						cf <= resL[32];
-						nf <= resL[31];
-						zf <= resL[31:0]==32'h00000000;
-						vf <= fnAddOverflow(resL[31],dd[31],s[31]);
-						xf <= resL[32];
-					end
-				default:	;
-				endcase
-			end
-		FU_ADDX:
-			begin
-				case(sz)
-				2'b00:
-					begin
-						cf <= resL[8];
-						nf <= resL[7];
-						if (resL[7:0]!=8'h00)
-							zf <= 1'b0;
-						vf <= fnAddOverflow(resL[7],dd[7],s[7]);
-						xf <= resL[8];
-					end
-				2'b01:
-					begin
-						cf <= resL[16];
-						nf <= resL[15];
-						if (resL[15:0]!=16'h00)
-							zf <= 1'b0;
-						vf <= fnAddOverflow(resL[15],dd[15],s[15]);
-						xf <= resL[16];
-					end
-				2'b10:
-					begin
-						cf <= resL[32];
-						nf <= resL[31];
-						if (resL[31:0]!=32'h00)
-							zf <= 1'b0;
-						vf <= fnAddOverflow(resL[31],dd[31],s[31]);
-						xf <= resL[32];
-					end
-				default:	;
-				endcase
-			end
-		FU_SUBX:
-			begin
-				case(sz)
-				2'b00:
-					begin
-						cf <= resL[8];
-						nf <= resL[7];
-						if (resL[7:0]!=8'h00)
-							zf <= 1'b0;
-						vf <= fnSubOverflow(resL[7],dd[7],s[7]);
-						xf <= resL[8];
-					end
-				2'b01:
-					begin
-						cf <= resL[16];
-						nf <= resL[15];
-						if (resL[15:0]!=16'h00)
-							zf <= 1'b0;
-						vf <= fnSubOverflow(resL[15],dd[15],s[15]);
-						xf <= resL[16];
-					end
-				2'b10:
-					begin
-						cf <= resL[32];
-						nf <= resL[31];
-						if (resL[31:0]!=32'h00)
-							zf <= 1'b0;
-						vf <= fnSubOverflow(resL[31],dd[31],s[31]);
-						xf <= resL[32];
-					end
-				default:	;
-				endcase
-			end
-		FU_NEGX:
-			case(sz)
-			2'b00:
-				begin
-					cf <= resL[8];
-					nf <= resL[7];
-					vf <= fnSubOverflow(resL[7],dd[7],s[7]);
-					zf <= resL[7:0]==8'h00;
-					xf <= resL[8];
-				end
-			2'b01:
-				begin
-					cf <= resL[16];
-					nf <= resL[15];
-					vf <= fnSubOverflow(resL[15],dd[15],s[15]);
-					zf <= resL[15:0]==16'h00;
-					xf <= resL[16];
-				end
-			2'b10:
-				begin
-					cf <= resL[32];
-					nf <= resL[31];
-					vf <= fnSubOverflow(resL[31],dd[31],s[31]);
-					zf <= resL[31:0]==32'h00;
-					xf <= resL[32];
-				end
-			endcase
-		FU_SUB:
-			begin
-				case(sz)
-				2'b00:
-					begin
-						cf <= resL[8];
-						nf <= resL[7];
-						zf <= resL[7:0]==8'h00;
-						vf <= fnSubOverflow(resL[7],dd[7],s[7]);
-						xf <= resL[8];
-					end
-				2'b01:
-					begin
-						cf <= resL[16];
-						nf <= resL[15];
-						zf <= resL[15:0]==16'h0000;
-						vf <= fnSubOverflow(resL[15],dd[15],s[15]);
-						xf <= resL[16];
-					end
-				2'b10:
-					begin
-						cf <= resL[32];
-						nf <= resL[31];
-						zf <= resL[31:0]==32'h00000000;
-						vf <= fnSubOverflow(resL[31],dd[31],s[31]);
-						xf <= resL[32];
-					end
-				default:	;
-				endcase
-			end
-		FU_LOGIC:
-			begin
-				cf <= 1'b0;
-				vf <= 1'b0;
-				case(sz)
-				2'b00:
-					begin
-						nf <= resL[7];
-						zf <= resL[7:0]==8'h00;
-					end
-				2'b01:
-					begin
-						nf <= resL[15];
-						zf <= resL[15:0]==16'h0000;
-					end
-				2'b10:
-					begin
-						nf <= resL[31];
-						zf <= resL[31:0]==32'h00000000;
-					end
-				default:	;
-				endcase
-			end
-		FU_ADDQ:
-			begin
-				case(sz)
-				2'b00:
-					begin
-						 xf <= resL[8];
-						 cf <= resL[8];
-//						 vf <= resL[8]!=resL[7];
-						vf <= fnAddOverflow(resL[7],dd[7],s[7]);
-						 zf <= resL[7:0]==8'd0;
-						 nf <= resL[7];
-					end
-				2'b01:
-					begin
-						 xf <= resL[16];
-						 cf <= resL[16];
-						vf <= fnAddOverflow(resL[15],dd[15],s[15]);
-						 //vf <= resW[16]!=resW[15];
-						 zf <= resL[15:0]==16'd0;
-						 nf <= resL[15];
-					end
-				2'b10:
-					begin
-						 xf <= resL[32];
-						 cf <= resL[32];
-						vf <= fnAddOverflow(resL[31],dd[31],s[31]);
-						// vf <= resL[32]!=resL[31];
-						 zf <= resL[31:0]==32'd0;
-						 nf <= resL[31];
-					end
-				default:	;
-				endcase
-			end
-		FU_SUBQ:
-			begin
-				case(sz)
-				2'b00:
-					begin
-						 xf <= resL[8];
-						 cf <= resL[8];
-						 vf <= resL[8]!=resL[7];
-						vf <= fnSubOverflow(resL[7],dd[7],s[7]);
-						 zf <= resL[7:0]==8'd0;
-						 nf <= resL[7];
-					end
-				2'b01:
-					begin
-						 xf <= resL[16];
-						 cf <= resL[16];
-						vf <= fnSubOverflow(resL[15],dd[15],s[15]);
-						 //vf <= resW[16]!=resW[15];
-						 zf <= resL[15:0]==16'd0;
-						 nf <= resL[15];
-					end
-				2'b10:
-					begin
-						 xf <= resL[32];
-						 cf <= resL[32];
-						vf <= fnSubOverflow(resL[31],dd[31],s[31]);
-						// vf <= resL[32]!=resL[31];
-						 zf <= resL[31:0]==32'd0;
-						 nf <= resL[31];
-					end
-				default:	;
-				endcase
-			end
-		FU_MOVEQ:
-			begin
-				vf <= 1'b0;
-				cf <= 1'b0;
-				nf <= resL[7];
-				zf <= resL[7:0]==8'h00;
-			end
-		FU_ADDI:
-			begin
-				case(ir[11:8])
-				4'h0,4'h2,4'hA:
-					begin	// ORI,ANDI,EORI
-						cf <= 1'b0;
-						vf <= 1'b0;
-						case(sz)
-						2'b00:	zf <= resL[7:0]==8'h00;
-						2'b01:	zf <= resL[15:0]==16'h00;
-						2'b10:	zf <= resL[31:0]==32'd0;
-						default:	;
-						endcase
-						case(sz)
-						2'b00:	nf <= resL[7];
-						2'b01:	nf <= resL[15];
-						2'b10:	nf <= resL[31];
-						default:	;
-						endcase
-					end
-				4'h4:	// SUBI
-					case(sz)
-					2'b00:
-						begin
-							xf <= resL[8];
-							cf <= resL[8];
-							vf <= fnSubOverflow(resL[7],dd[7],immx[7]);
-							//vf <= resB[8]!=resB[7];
-							zf <= resL[7:0]==8'd0;
-							nf <= resL[7];
-						end
-					2'b01:
-						begin
-							xf <= resL[16];
-							cf <= resL[16];
-							vf <= fnSubOverflow(resL[15],dd[15],immx[15]);
-							//vf <= resW[16]!=resW[15];
-							zf <= resL[15:0]==16'd0;
-							nf <= resL[15];
-						end
-					2'b10:
-						begin
-							xf <= resL[32];
-							cf <= resL[32];
-							vf <= fnSubOverflow(resL[31],dd[31],immx[31]);
-							//vf <= resL[32]!=resL[31];
-							zf <= resL[31:0]==32'd0;
-							nf <= resL[31];
-						end
-					default:	;
-					endcase
-				4'h6:	// ADDI
-					case(sz)
-					2'b00:
-						begin
-							xf <= resL[8];
-							cf <= resL[8];
-							vf <= fnAddOverflow(resL[7],dd[7],immx[7]);
-							//vf <= resB[8]!=resB[7];
-							zf <= resL[7:0]==8'd0;
-							nf <= resL[7];
-						end
-					2'b01:
-						begin
-							xf <= resL[16];
-							cf <= resL[16];
-							vf <= fnAddOverflow(resL[15],dd[15],immx[15]);
-							//vf <= resW[16]!=resW[15];
-							zf <= resL[15:0]==16'd0;
-							nf <= resL[15];
-						end
-					2'b10:
-						begin
-							xf <= resL[32];
-							cf <= resL[32];
-							vf <= fnAddOverflow(resL[31],dd[31],immx[31]);
-							//vf <= resL[32]!=resL[31];
-							zf <= resL[31:0]==32'd0;
-							nf <= resL[31];
-						end
-					default:	;
-					endcase
-				4'hC:	// CMPI
-					case(sz)
-					2'b00:
-						begin
-							cf <= resL[8];
-							vf <= fnSubOverflow(resL[7],dd[7],immx[7]);
-							zf <= resL[7:0]==8'd0;
-							nf <= resL[7];
-						end
-					2'b01:
-						begin
-							cf <= resL[16];
-							vf <= fnSubOverflow(resL[15],dd[15],immx[15]);
-							//vf <= resW[16]!=resW[15];
-							zf <= resL[15:0]==16'd0;
-							nf <= resL[15];
-						end
-					2'b10:
-						begin
-							cf <= resL[32];
-							vf <= fnSubOverflow(resL[31],dd[31],immx[31]);
-							//vf <= resL[32]!=resL[31];
-							zf <= resL[31:0]==32'd0;
-							nf <= resL[31];
-						end
-					default:	;
-					endcase
-				endcase
-			end
-		FU_ANDI_CCR:
-			begin
-				cf <= cf & imm[0];
-				vf <= vf & imm[1];
-				zf <= zf & imm[2];
-				nf <= nf & imm[3];
-				xf <= xf & imm[4];
-			end
-		FU_ANDI_SR:
-			begin
-				cf <= cf & imm[0];
-				vf <= vf & imm[1];
-				zf <= zf & imm[2];
-				nf <= nf & imm[3];
-				xf <= xf & imm[4];
-				gie <= 1'b1;
-				im[0] <= im[0] & imm[8];
-				im[1] <= im[1] & imm[9];
-				im[2] <= im[2] & imm[10];
-				mf <= mf & imm[12];
-				sf <= sf & imm[13];
-				tf <= tf & imm[15];
-				casez({sf,mf}&imm[13:12])
-				2'b0?:	sp <= usp;
-				2'b10:	sp <= isp;
-				2'b11:	sp <= ssp;
-				endcase
-			end
-		FU_ANDI_SRX:
-			begin
-				cf <= cf & imm[0];
-				vf <= vf & imm[1];
-				zf <= zf & imm[2];
-				nf <= nf & imm[3];
-				xf <= xf & imm[4];
-				gie <= 1'b1;
-				im[0] <= im[0] & imm[8];
-				im[1] <= im[1] & imm[9];
-				im[2] <= im[2] & imm[10];
-				mf <= mf & imm[12];
-				sf <= sf & imm[13];
-				casez({sf,mf}&imm[13:12])
-				2'b0?:	sp <= usp;
-				2'b10:	sp <= isp;
-				2'b11:	sp <= ssp;
-				endcase
-				tf <= tf & imm[15];
-			end
-		FU_EORI_CCR:
-			begin
-				cf <= cf ^ imm[0];
-				vf <= vf ^ imm[1];
-				zf <= zf ^ imm[2];
-				nf <= nf ^ imm[3];
-				xf <= xf ^ imm[4];
-			end
-		FU_EORI_SR:
-			begin
-				cf <= cf ^ imm[0];
-				vf <= vf ^ imm[1];
-				zf <= zf ^ imm[2];
-				nf <= nf ^ imm[3];
-				xf <= xf ^ imm[4];
-				gie <= 1'b1;
-				im[0] <= im[0] ^ imm[8];
-				im[1] <= im[1] ^ imm[9];
-				im[2] <= im[2] ^ imm[10];
-				mf <= mf ^ imm[12];
-				sf <= sf ^ imm[13];
-				casez({sf,mf}^imm[13:12])
-				2'b0?:	sp <= usp;
-				2'b10:	sp <= isp;
-				2'b11:	sp <= ssp;
-				endcase
-				tf <= tf ^ imm[15];
-			end
-		FU_EORI_SRX:
-			begin
-				cf <= cf ^ imm[0];
-				vf <= vf ^ imm[1];
-				zf <= zf ^ imm[2];
-				nf <= nf ^ imm[3];
-				xf <= xf ^ imm[4];
-				gie <= 1'b1;
-				im[0] <= im[0] ^ imm[8];
-				im[1] <= im[1] ^ imm[9];
-				im[2] <= im[2] ^ imm[10];
-				mf <= mf ^ imm[12];
-				sf <= sf ^ imm[13];
-				casez({sf,mf}^imm[13:12])
-				2'b0?:	sp <= usp;
-				2'b10:	sp <= isp;
-				2'b11:	sp <= ssp;
-				endcase
-				tf <= tf ^ imm[15];
-			end
-		FU_ORI_CCR:
-			begin
-				cf <= cf | imm[0];
-				vf <= vf | imm[1];
-				zf <= zf | imm[2];
-				nf <= nf | imm[3];
-				xf <= xf | imm[4];
-			end
-		FU_ORI_SR:
-			begin
-				cf <= cf | imm[0];
-				vf <= vf | imm[1];
-				zf <= zf | imm[2];
-				nf <= nf | imm[3];
-				xf <= xf | imm[4];
-				gie <= 1'b1;
-				im[0] <= im[0] | imm[8];
-				im[1] <= im[1] | imm[9];
-				im[2] <= im[2] | imm[10];
-				mf <= mf | imm[12];
-				sf <= sf | imm[13];
-				casez({sf,mf}|imm[13:12])
-				2'b0?:	sp <= usp;
-				2'b10:	sp <= isp;
-				2'b11:	sp <= ssp;
-				endcase
-				tf <= tf | imm[15];
-			end
-		FU_ORI_SRX:
-			begin
-				cf <= cf | imm[0];
-				vf <= vf | imm[1];
-				zf <= zf | imm[2];
-				nf <= nf | imm[3];
-				xf <= xf | imm[4];
-				gie <= 1'b1;
-				im[0] <= im[0] | imm[8];
-				im[1] <= im[1] | imm[9];
-				im[2] <= im[2] | imm[10];
-				mf <= mf | imm[12];
-				sf <= sf | imm[13];
-				casez({sf,mf}|imm[13:12])
-				2'b0?:	sp <= usp;
-				2'b10:	sp <= isp;
-				2'b11:	sp <= ssp;
-				endcase
-				tf <= tf | imm[15];
-			end
-		FU_MOVE2CCR:
-			begin
-				cf <= s[0];
-				vf <= s[1];
-				zf <= s[2];
-				nf <= s[3];
-				xf <= s[4];
-				ccr57 <= s[7:5];
-			end	
-		FU_MOVE2SR:
-			begin
-				cf <= s[0];
-				vf <= s[1];
-				zf <= s[2];
-				nf <= s[3];
-				xf <= s[4];
-				ccr57 <= s[7:5];
-				gie <= 1'b1;
-				im[0] <= s[8];
-				im[1] <= s[9];
-				im[2] <= s[10];
-				sr11 <= s[11];
-				mf <= s[12];
-				sf <= s[13];
-				casez(s[13:12])
-				2'b0?:	sp <= usp;
-				2'b10:	sp <= isp;
-				2'b11:	sp <= ssp;
-				endcase
-				sr14 <= s[14];
-				tf <= s[15];
-			end
-		FU_MOVE2SRX:
-			begin
-				cf <= s[0];
-				vf <= s[1];
-				zf <= s[2];
-				nf <= s[3];
-				xf <= s[4];
-				ccr57 <= s[7:5];
-				gie <= 1'b1;
-				im[0] <= s[8];
-				im[1] <= s[9];
-				im[2] <= s[10];
-				sr11 <= s[11];
-				mf <= s[12];
-				sf <= s[13];
-				casez(s[13:12])
-				2'b0?:	sp <= usp;
-				2'b10:	sp <= isp;
-				2'b11:	sp <= ssp;
-				endcase
-				sr14 <= s[14];
-				tf <= s[15];
-			end
-		FU_SHIFT:
-			case(sz)
-			2'b00:	begin zf <= resL[7:0]== 8'h00; nf <= resL[ 7]; end
-			2'b01:	begin zf <= resL[15:0]==16'h00; nf <= resL[15]; end
-			2'b10:	begin zf <= resL[31:0]==32'h00; nf <= resL[31]; end
-			2'b11:	begin zf <= resL[15:0]==16'h00; nf <= resL[15]; end
-			endcase
-		default:	;
-		endcase
 		goto (IFETCH_ACK);
-		flag_update <= FU_NONE;
 		MMMRRR <= 1'b0;
 		rtr <= 1'b0;
 		bsr <= 1'b0;
@@ -2860,7 +2884,7 @@ IFETCH:
 		end
 		else 
 		*/
-		if (gie && (ipl_i > im || ipl_i==3'd7)) begin
+		if ((gie && ~|bank_pfx) && (ipl_i > im || ipl_i==3'd7)) begin
 			is_irq <= 1'b1;
 			pcyc_o <= LOW;
 			pstb_o <= LOW;
@@ -2913,6 +2937,8 @@ IFETCH_ACK:
 		mmm <= amode_e'(iri[5:3]);
 		rrr <= iri[2:0];
 		rrrr <= iri[3:0];
+		rrrbnk <= bank_pfx[1:0];
+		rrrrbnk <= bank_pfx[1:0];
 `ifdef SUPPORT_NANO_CACHE			
 		for (n = 0; n < 7; n = n + 1) begin
 			fetchbuf_tag[n+1] <= fetchbuf_tag[n];
@@ -3037,7 +3063,7 @@ DECODE:
 		default:	
 			if (mmm==AM_AN && ir[8]) begin
 				push(MOVEP);
-				fs_data(AM_D16,rrr,FETCH_NOP_WORD,S);
+				fs_data(AM_D16,{1'b1,rrrbnk,rrr},FETCH_NOP_WORD,S);
 			end
 			else
 				goto (BIT);
@@ -3048,7 +3074,7 @@ DECODE:
 	5'h1:	
 		begin
 			push(STORE_IN_DEST);
-			fs_data(mmm,rrr,FETCH_BYTE,S);
+			fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_BYTE,S);
 		end
 //-----------------------------------------------------------------------------
 // MOVE.L
@@ -3056,7 +3082,7 @@ DECODE:
   5'h2:    
    	begin
 			push(STORE_IN_DEST);
-    	fs_data(mmm,rrr,FETCH_LWORD,S);
+    	fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_LWORD,S);
     end
 //-----------------------------------------------------------------------------
 // MOVE.W
@@ -3064,7 +3090,7 @@ DECODE:
 	5'h3:
 		begin
 			push(STORE_IN_DEST);
-			fs_data(mmm,rrr,FETCH_WORD,S);
+			fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_WORD,S);
 		end
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
@@ -3072,14 +3098,14 @@ DECODE:
 		casez(ir[11:3])
 		9'b0000?????:
 			case(sz)
-			2'b00:	begin push(NEGX); fs_data(mmm,rrr,FETCH_BYTE,D); end
-			2'b01:	begin push(NEGX); fs_data(mmm,rrr,FETCH_WORD,D); end
-			2'b10:	begin push(NEGX); fs_data(mmm,rrr,FETCH_LWORD,D); end
+			2'b00:	begin push(NEGX); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_BYTE,D); end
+			2'b01:	begin push(NEGX); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_WORD,D); end
+			2'b10:	begin push(NEGX); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_LWORD,D); end
 			2'b11:	// MOVE sr,<ea>
 				if (sf) begin 
 					d <= sr;
 					resL <= sr;
-					fs_data(mmm,rrr,STORE_WORD,S);
+					fs_data(mmm,{mmm[0],rrrbnk,rrr},STORE_WORD,S);
 				end
 				else
 					tPrivilegeViolation();
@@ -3088,44 +3114,41 @@ DECODE:
 				if (sf) begin
 					d <= srx;
 					resL <= srx;
-					fs_data(mmm,rrr,STORE_LWORD,S);
+					fs_data(mmm,{mmm[0],rrrbnk,rrr},STORE_LWORD,S);
 				end	
 				else
 					tPrivilegeViolation();
 		9'b0010?????:
 			begin		// 42xx	CLR
-				flag_update <= FU_CLR;
 				d <= 32'd0;
 //				resB <= 9'd0;
 //				resW <= 17'd0;
 				resL <= 33'd0;
 				case(sz)
-				2'b00:	fs_data(mmm,rrr,STORE_BYTE,D);
-				2'b01:	fs_data(mmm,rrr,STORE_WORD,D);
-				2'b10:	fs_data(mmm,rrr,STORE_LWORD,D);
+				2'b00:	fs_data(mmm,{mmm[0],rrrbnk,rrr},STORE_BYTE,D);
+				2'b01:	fs_data(mmm,{mmm[0],rrrbnk,rrr},STORE_WORD,D);
+				2'b10:	fs_data(mmm,{mmm[0],rrrbnk,rrr},STORE_LWORD,D);
 				default:	tIllegal();
 				endcase
 			end
 		9'b0100?????:
 			casez(sz)
-			2'b00:	begin push(NEG); fs_data(mmm,rrr,FETCH_BYTE,D); end
-			2'b01:	begin push(NEG); fs_data(mmm,rrr,FETCH_WORD,D); end
-			2'b10:	begin push(NEG); fs_data(mmm,rrr,FETCH_LWORD,D); end
+			2'b00:	begin push(NEG); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_BYTE,D); end
+			2'b01:	begin push(NEG); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_WORD,D); end
+			2'b10:	begin push(NEG); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_LWORD,D); end
 			2'b11:	// MOVE <src>,ccr
 				begin
-					flag_update <= FU_MOVE2CCR;
-					fs_data(mmm,rrr,FETCH_WORD,S);
+					fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_WORD,S);
 				end
 			endcase
 		9'b0110?????:
 			case(sz)
-			2'b00:	begin push(NOT); fs_data(mmm,rrr,FETCH_BYTE,D); end
-			2'b01:	begin push(NOT); fs_data(mmm,rrr,FETCH_WORD,D); end
-			2'b10:	begin push(NOT); fs_data(mmm,rrr,FETCH_LWORD,D); end
+			2'b00:	begin push(NOT); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_BYTE,D); end
+			2'b01:	begin push(NOT); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_WORD,D); end
+			2'b10:	begin push(NOT); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_LWORD,D); end
 			2'b11:	
 				if (sf) begin	// MOVE <src>,sr
-					flag_update <= FU_MOVE2SR;
-					fs_data(mmm,rrr,FETCH_WORD,S);
+					fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_WORD,S);
 				end
 				else
 					tPrivilegeViolation();
@@ -3139,7 +3162,7 @@ DECODE:
 			2'b11:	
 				if (sf) begin	// MOVE <src>,srx
 					flag_update <= FU_MOVE2SRX;
-					fs_data(mmm,rrr,FETCH_LWORD,S);
+					fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_LWORD,S);
 				end
 				else
 					tPrivilegeViolation();
@@ -3148,16 +3171,14 @@ DECODE:
 */			
 		9'b10001?000:
 			if (ir[6]) begin	// EXT.L
-				flag_update <= FU_EXT;
 				rfwrL <= 1'b1;
-				Rt <= {1'b0,ir[2:0]};
+				Rt <= {1'b0,bank_pfx[1:0],rrr};
 				resL <= {{16{rfoRnn[15]}},rfoRnn[15:0]};
 				ret();
 			end
 			else begin	// EXT.W
-				flag_update <= FU_EXT;
 				rfwrW <= 1'b1;
-				Rt <= {1'b0,ir[2:0]};
+				Rt <= {1'b0,bank_pfx[1:0],rrr};
 				resL <= {rfoRnn[31:16],{8{rfoRnn[7]}},rfoRnn[7:0]};
 				ret();
 			end
@@ -3166,14 +3187,13 @@ DECODE:
 			begin
 				bcdneg <= 1'b1;
 				push(BCD1);
-				fs_data(mmm,rrr,FETCH_BYTE,D);
+				fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_BYTE,D);
 			end
 `endif			
 		9'b100001000:	// 484x		SWAP
 			begin	
-				flag_update <= FU_SWAP;
 				resL <= {rfoDnn[15:0],rfoDnn[31:16]};
-				Rt <= {1'b0,rrr};
+				Rt <= {1'b0,bank_pfx[1:0],rrr};
 				rfwrL <= 1'b1;
 				ret();
 			end
@@ -3189,10 +3209,10 @@ DECODE:
 				tIllegal();
 			else
 				case(sz)
-				2'b00:	begin flag_update <= FU_TST; fs_data(mmm,rrr,FETCH_BYTE,D); end
-				2'b01:	begin flag_update <= FU_TST; fs_data(mmm,rrr,FETCH_WORD,D); end
-				2'b10:	begin flag_update <= FU_TST; fs_data(mmm,rrr,FETCH_LWORD,D); end
-				2'b11:	begin push(TAS); fs_data(mmm,rrr,LFETCH_BYTE,D); end		// TAS
+				2'b00:	begin push(TST1); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_BYTE,D); end
+				2'b01:	begin push(TST1); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_WORD,D); end
+				2'b10:	begin push(TST1); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_LWORD,D); end
+				2'b11:	begin push(TAS); fs_data(mmm,{mmm[0],rrrbnk,rrr},LFETCH_BYTE,D); end		// TAS
 				endcase
 		9'b11100100?:
 			goto (TRAP);
@@ -3207,7 +3227,7 @@ DECODE:
 		9'b11100110?:
 			if (ir[3]) begin
 				ret();
-				Rt <= {1'b1,rrr};
+				Rt <= {1'b1,rrrbnk,rrr};
 				rfwrL <= 1'b1;
 				resL <= usp;
 			end
@@ -3268,12 +3288,12 @@ DECODE:
 		9'b111010???:	// JSR		
 			begin
 				push(JSR);
-				fs_data(mmm,rrr,FETCH_NOP_LWORD,D);
+				fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_NOP_LWORD,D);
 			end
 		9'b111011???:	// JMP
 			begin
 				push(JMP);
-				fs_data(mmm,rrr,FETCH_NOP_LWORD,D);
+				fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_NOP_LWORD,D);
 			end
 		9'b1?001????:
 			begin
@@ -3292,7 +3312,7 @@ DECODE:
 			begin	// CHK
 				d <= rfoDn;
 				push(CHK);
-				fs_data(mmm,rrr,FETCH_WORD,S);
+				fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_WORD,S);
 			end
 		default:
 			tIllegal();
@@ -3330,11 +3350,11 @@ DECODE:
 					d <= {32{takb}};
 					if (mmm==AM_DN) begin
 						rfwrB <= 1'b1;
-						Rt <= {1'b0,rrr};
+						Rt <= {1'b0,bank_pfx[1:0],rrr};
 						ret();
 					end
 					else begin
-						fs_data(mmm,rrr,STORE_BYTE,S);
+						fs_data(mmm,{mmm[0],rrrbnk,rrr},STORE_BYTE,S);
 					end
 				end
 			default:
@@ -3344,9 +3364,9 @@ DECODE:
 					default:	begin imm <= {29'd0,QQQ}; immx <= {29'd0,QQQ}; end
 					endcase
 					case(sz)
-					2'b00:	begin push(ADDQ); fs_data(mmm,rrr,FETCH_BYTE,D); end
-					2'b01:	begin push(ADDQ); fs_data(mmm,rrr,FETCH_WORD,D); end
-					2'b10:	begin push(ADDQ); fs_data(mmm,rrr,FETCH_LWORD,D); end
+					2'b00:	begin push(ADDQ); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_BYTE,D); end
+					2'b01:	begin push(ADDQ); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_WORD,D); end
+					2'b10:	begin push(ADDQ); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_LWORD,D); end
 					default:	tIllegal();
 					endcase
 				end
@@ -3410,10 +3430,13 @@ DECODE:
 		// MOVEQ only if ir[8]==0, but it is otherwise not used for the 68k.
 		// So some decode and fmax is saved by not decoding ir[8]
 		//if (ir[8]==1'b0) 
-		begin
-			flag_update <= FU_MOVEQ;
+		if (ir[8]) begin
+			bank_pfx <= ir;
+			ret();
+		end
+		else begin
 			rfwrL <= 1'b1;
-			Rt <= {1'b0,ir[11:9]};
+			Rt <= {1'b0,bank_pfx[1:0],ir[11:9]};
 			resL <= {{24{ir[7]}},ir[7:0]};
 			ret();
 		end
@@ -3429,7 +3452,7 @@ DECODE:
 					divs <= ir[8];
 					d <= rfoDn;
 					push(DIV1);
-					fs_data(mmm,rrr,FETCH_WORD,S);
+					fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_WORD,S);
 				end
 `endif
 `ifdef SUPPORT_BCD				
@@ -3448,9 +3471,9 @@ DECODE:
 			default:	
 				begin
 	        case(sz)
-	        2'b00:    begin push(OR); fs_data(mmm,rrr,FETCH_BYTE,ir[8]?D:S); end
-	        2'b01:    begin push(OR); fs_data(mmm,rrr,FETCH_WORD,ir[8]?D:S); end
-	        2'b10:    begin push(OR); fs_data(mmm,rrr,FETCH_LWORD,ir[8]?D:S); end
+	        2'b00:    begin push(OR); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_BYTE,ir[8]?D:S); end
+	        2'b01:    begin push(OR); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_WORD,ir[8]?D:S); end
+	        2'b10:    begin push(OR); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_LWORD,ir[8]?D:S); end
 	        default:	;	// can't get here, picked off by DIV
 					endcase
 				end
@@ -3495,21 +3518,21 @@ DECODE:
 	        begin
 		        d <= rfoAna;
 		        push(SUB);
-		        if (ir[8]) fs_data(mmm,rrr,FETCH_LWORD,S);
-		        else fs_data(mmm,rrr,FETCH_WORD,S);
+		        if (ir[8]) fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_LWORD,S);
+		        else fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_WORD,S);
 	        end
 				endcase
       else
 	      case(sz)
-	      2'b00:    begin push(SUB); fs_data(mmm,rrr,FETCH_BYTE,ir[8]?D:S); end
-	      2'b01:    begin push(SUB); fs_data(mmm,rrr,FETCH_WORD,ir[8]?D:S); end
-	      2'b10:    begin push(SUB); fs_data(mmm,rrr,FETCH_LWORD,ir[8]?D:S); end
+	      2'b00:    begin push(SUB); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_BYTE,ir[8]?D:S); end
+	      2'b01:    begin push(SUB); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_WORD,ir[8]?D:S); end
+	      2'b10:    begin push(SUB); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_LWORD,ir[8]?D:S); end
 	      2'b11:
 	        begin
 		        d <= rfoAna;
 		        push(SUB);
-		        if (ir[8]) fs_data(mmm,rrr,FETCH_LWORD,S);
-		        else fs_data(mmm,rrr,FETCH_WORD,S);
+		        if (ir[8]) fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_LWORD,S);
+		        else fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_WORD,S);
 	        end
 	      endcase
     end
@@ -3533,25 +3556,25 @@ DECODE:
 			if (ir[8]) begin	// EOR
 				if (mmm==AM_AN)
 					case(sz)
-					2'b00:	begin push(CMPM); fs_data(AM_POST,rrr,FETCH_BYTE,S); end
-					2'b01:	begin push(CMPM); fs_data(AM_POST,rrr,FETCH_WORD,S); end
-					2'b10:	begin push(CMPM); fs_data(AM_POST,rrr,FETCH_LWORD,S); end
-					2'b11:	begin d <= rfoAna; push(CMPA); fs_data(mmm,rrr,FETCH_LWORD,S); end	// CMPA
+					2'b00:	begin push(CMPM); fs_data(AM_POST,{1'b0,rrrbnk,rrr},FETCH_BYTE,S); end
+					2'b01:	begin push(CMPM); fs_data(AM_POST,{1'b0,rrrbnk,rrr},FETCH_WORD,S); end
+					2'b10:	begin push(CMPM); fs_data(AM_POST,{1'b0,rrrbnk,rrr},FETCH_LWORD,S); end
+					2'b11:	begin d <= rfoAna; push(CMPA); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_LWORD,S); end	// CMPA
 					endcase
 				else
 					case(sz)
-					2'b00:	begin push(EOR); fs_data(mmm,rrr,FETCH_BYTE,D); end
-					2'b01:	begin push(EOR); fs_data(mmm,rrr,FETCH_WORD,D); end
-					2'b10:	begin push(EOR); fs_data(mmm,rrr,FETCH_LWORD,D); end
-					2'b11:	begin d <= rfoAna; push(CMPA); fs_data(mmm,rrr,FETCH_LWORD,S); end	// CMPA
+					2'b00:	begin push(EOR); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_BYTE,D); end
+					2'b01:	begin push(EOR); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_WORD,D); end
+					2'b10:	begin push(EOR); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_LWORD,D); end
+					2'b11:	begin d <= rfoAna; push(CMPA); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_LWORD,S); end	// CMPA
 					endcase
 			end
 			else	// CMP
 				case(sz)
-				2'b00:	begin d <= rfoDn; push(CMP); fs_data(mmm,rrr,FETCH_BYTE,S); end
-				2'b01:	begin d <= rfoDn; push(CMP); fs_data(mmm,rrr,FETCH_WORD,S); end
-				2'b10:	begin d <= rfoDn; push(CMP); fs_data(mmm,rrr,FETCH_LWORD,S); end
-				2'b11:	begin d <= rfoAna; push(CMPA); fs_data(mmm,rrr,FETCH_WORD,S); end	// CMPA
+				2'b00:	begin d <= rfoDn; push(CMP); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_BYTE,S); end
+				2'b01:	begin d <= rfoDn; push(CMP); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_WORD,S); end
+				2'b10:	begin d <= rfoDn; push(CMP); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_LWORD,S); end
+				2'b11:	begin d <= rfoAna; push(CMPA); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_WORD,S); end	// CMPA
 				endcase
 		end
 //-----------------------------------------------------------------------------
@@ -3573,11 +3596,11 @@ DECODE:
 			12'b????_11??_????:	// MULS / MULU
 				begin
 					push(ir[8] ? MULS1 : MULU1);
-					fs_data(mmm,rrr,FETCH_WORD,S);
+					fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_WORD,S);
 				end
 			12'b???1_0100_0???:	// EXG	Dx,Dy
 			begin
-				Rt <= {1'b0,DDD};
+				Rt <= {1'b0,bank_pfx[3:2],DDD};
 				rfwrL <= 1'b1;
 				resL <= rfoRnn;
 				s <= rfoDn;
@@ -3585,7 +3608,7 @@ DECODE:
 			end
 			12'b???1_0100_1???:	// EXG Ax,Ay
 			begin
-				Rt <= {1'b1,AAA};
+				Rt <= {1'b1,bank_pfx[3:2],AAA};
 				rfwrL <= 1'b1;
 				resL <= rfoRnn;
 				s <= rfoAna;
@@ -3593,7 +3616,7 @@ DECODE:
 			end
 			12'b???1_1000_1???:	// EXG Dx,Ay
 			begin
-				Rt <= {1'b0,DDD};
+				Rt <= {1'b0,bank_pfx[3:2],DDD};
 				rfwrL <= 1'b1;
 				resL <= rfoRnn;
 				s <= rfoDn;
@@ -3601,9 +3624,9 @@ DECODE:
 			end
 			default:
 				case(sz)
-				2'b00:	begin push(AND); fs_data(mmm,rrr,FETCH_BYTE,ir[8]?D:S); end
-				2'b01:	begin push(AND); fs_data(mmm,rrr,FETCH_WORD,ir[8]?D:S); end
-				2'b10:	begin push(AND); fs_data(mmm,rrr,FETCH_LWORD,ir[8]?D:S); end
+				2'b00:	begin push(AND); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_BYTE,ir[8]?D:S); end
+				2'b01:	begin push(AND); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_WORD,ir[8]?D:S); end
+				2'b10:	begin push(AND); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_LWORD,ir[8]?D:S); end
 				default:	;	// Can't get here, picked off by MUL
 				endcase
 			endcase
@@ -3648,21 +3671,21 @@ DECODE:
 					begin
 						d <= rfoAna;
 						push(ADD);
-						if (ir[8]) fs_data(mmm,rrr,FETCH_LWORD,S);
-						else fs_data(mmm,rrr,FETCH_WORD,S);
+						if (ir[8]) fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_LWORD,S);
+						else fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_WORD,S);
 					end
 				endcase
 			else
 				case(sz)
-				2'b00:	begin push(ADD); fs_data(mmm,rrr,FETCH_BYTE,ir[8]?D:S); end
-				2'b01:	begin push(ADD); fs_data(mmm,rrr,FETCH_WORD,ir[8]?D:S); end
-				2'b10:	begin push(ADD); fs_data(mmm,rrr,FETCH_LWORD,ir[8]?D:S); end
+				2'b00:	begin push(ADD); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_BYTE,ir[8]?D:S); end
+				2'b01:	begin push(ADD); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_WORD,ir[8]?D:S); end
+				2'b10:	begin push(ADD); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_LWORD,ir[8]?D:S); end
 				2'b11:
 					begin
 						d <= rfoAna;
 						push(ADD);
-						if (ir[8]) fs_data(mmm,rrr,FETCH_LWORD,S);
-						else fs_data(mmm,rrr,FETCH_WORD,S);
+						if (ir[8]) fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_LWORD,S);
+						else fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_WORD,S);
 					end
 				endcase
 		end
@@ -3685,7 +3708,7 @@ DECODE:
 					cnt <= 6'd1;	// memory shifts only by one
 					shift_op <= {ir[8],ir[10:9]};
 					push(SHIFT1);
-					fs_data(mmm,rrr,FETCH_WORD,D);
+					fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_WORD,D);
 				end
 				else begin
 					shift_op <= {ir[8],ir[4:3]};
@@ -3784,7 +3807,7 @@ DECODE:
 				16'h0003:
 					begin
 						push(CCHK);
-						fs_data(mmm,rrr,FETCH_LWORD,S);
+						fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_LWORD,S);
 					end
 				default:	tIllegal();
 				endcase
@@ -3814,19 +3837,19 @@ DECODE:
 				push (BITFLD);
 				if ({2'b0,bfoffs} + {2'd0,bfwidth} <= 7'd8) begin
 					bf_size <= FETCH_BYTE;
-					fs_data(mmm,rrr,FETCH_BYTE,S);
+					fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_BYTE,S);
 				end
 				else if ({2'b0,bfoffs} + {2'd0,bfwidth} <= 7'd16) begin
 					bf_size <= FETCH_WORD;
-					fs_data(mmm,rrr,FETCH_WORD,S);
+					fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_WORD,S);
 				end
 				else if ({2'b0,bfoffs} + {2'd0,bfwidth} <= 7'd32) begin
 					bf_size <= FETCH_LWORD;
-					fs_data(mmm,rrr,FETCH_LWORD,S);
+					fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_LWORD,S);
 				end
 				else begin
 					bf_size <= FETCH_OCTA;
-					fs_data(mmm,rrr,FETCH_OCTA,S);
+					fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_OCTA,S);
 				end
 			end
 		endcase
@@ -3912,45 +3935,45 @@ DECODE:
 							3'b000:	
 								begin
 									d <= pmmu_tc;
-									fs_data(mmm,rrr,STORE_LWORD,D);	// Translation control reg
+									fs_data(mmm,{mmm[0],rrrbnk,rrr},STORE_LWORD,D);	// Translation control reg
 								end
 							3'b001:
 								begin
 									push(PMOVE1);
 									d <= pmmu_dma_root[63:32];
-									fs_data(mmm,rrr,STORE_LWORD,D);	// DMA root pointer
+									fs_data(mmm,{mmm[0],rrrbnk,rrr},STORE_LWORD,D);	// DMA root pointer
 								end
 							3'b010:	
 								begin
 									push(PMOVE1);
 									d <= pmmu_sys_root[63:32];
-									fs_data(mmm,rrr,STORE_LWORD,D);	// System root pointer
+									fs_data(mmm,{mmm[0],rrrbnk,rrr},STORE_LWORD,D);	// System root pointer
 								end
 							3'b011:
 								begin
 									push(PMOVE1);
 									d <= pmmu_cpu_root[63:32];
-									fs_data(mmm,rrr,STORE_LWORD,D);	// CPU root pointer
+									fs_data(mmm,{mmm[0],rrrbnk,rrr},STORE_LWORD,D);	// CPU root pointer
 								end
 							3'b100:
 								begin
 									d <= {4{pmmu_cal}};
-									fs_data(mmm,rrr,STORE_BYTE,D);	// Current access level
+									fs_data(mmm,{mmm[0],rrrbnk,rrr},STORE_BYTE,D);	// Current access level
 								end
 							3'b101:
 								begin
 									d <= {4{pmmu_val}};
-									fs_data(mmm,rrr,STORE_BYTE,D);	// Valid access level
+									fs_data(mmm,{mmm[0],rrrbnk,rrr},STORE_BYTE,D);	// Valid access level
 								end
 							3'b110:
 								begin
 									d <= {4{pmmu_scc}};
-									fs_data(mmm,rrr,STORE_BYTE,D);	// Stack change control
+									fs_data(mmm,{mmm[0],rrrbnk,rrr},STORE_BYTE,D);	// Stack change control
 								end
 							3'b111:
 								begin
 									d <= {4{pmmu_acr}};
-									fs_data(mmm,rrr,STORE_BYTE,D);	// Access control
+									fs_data(mmm,{mmm[0],rrrbnk,rrr},STORE_BYTE,D);	// Access control
 								end
 							endcase
 						end
@@ -3959,42 +3982,42 @@ DECODE:
 							3'b000:	
 								begin
 									push(PMOVE1);
-									fs_data(mmm,rrr,FETCH_LWORD,S);	// Translation control reg
+									fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_LWORD,S);	// Translation control reg
 								end
 							3'b001:
 								begin
 									push(PMOVE1);
-									fs_data(mmm,rrr,FETCH_LWORD,S);	// DMA root pointer
+									fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_LWORD,S);	// DMA root pointer
 								end
 							3'b010:
 								begin
 									push(PMOVE1);
-									fs_data(mmm,rrr,FETCH_LWORD,S);	// System root pointer
+									fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_LWORD,S);	// System root pointer
 								end
 							3'b011:
 								begin
 									push(PMOVE1);
-									fs_data(mmm,rrr,FETCH_LWORD,S);	// CPU root pointer
+									fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_LWORD,S);	// CPU root pointer
 								end
 							3'b100:
 								begin
 									push(PMOVE1);
-									fs_data(mmm,rrr,FETCH_BYTE,S);	// Current access level
+									fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_BYTE,S);	// Current access level
 								end
 							3'b101:
 								begin
 									push(PMOVE1);
-									fs_data(mmm,rrr,FETCH_BYTE,S);	// Valid access level
+									fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_BYTE,S);	// Valid access level
 								end
 							3'b110:
 								begin
 									push(PMOVE1);
-									fs_data(mmm,rrr,FETCH_BYTE,S);	// Stack change control
+									fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_BYTE,S);	// Stack change control
 								end
 							3'b111:
 								begin
 									push(PMOVE1);
-									fs_data(mmm,rrr,FETCH_BYTE,S);	// Access control
+									fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_BYTE,S);	// Access control
 								end
 							endcase
 					end
@@ -4005,22 +4028,22 @@ DECODE:
 						3'b000:
 							begin
 								d <= pmmu_sr;
-								fs_data(mmm,rrr,STORE_WORD,D);	// breakpoint data
+								fs_data(mmm,{mmm[0],rrrbnk,rrr},STORE_WORD,D);	// breakpoint data
 							end
 						3'b001:
 							begin
 								d <= pmmu_csr;
-								fs_data(mmm,rrr,STORE_WORD,D);	// breakpoint data
+								fs_data(mmm,{mmm[0],rrrbnk,rrr},STORE_WORD,D);	// breakpoint data
 							end
 						3'b100:
 							begin
 								d <= pmmu_bad[ir2[4:2]];
-								fs_data(mmm,rrr,STORE_WORD,D);	// breakpoint data
+								fs_data(mmm,{mmm[0],rrrbnk,rrr},STORE_WORD,D);	// breakpoint data
 							end
 						3'b101:
 							begin
 								d <= pmmu_bac[ir2[4:2]];
-								fs_data(mmm,rrr,STORE_WORD,D);	// breakpoint data
+								fs_data(mmm,{mmm[0],rrrbnk,rrr},STORE_WORD,D);	// breakpoint data
 							end
 						default:	tIllegal();
 						endcase
@@ -4031,7 +4054,7 @@ DECODE:
 						default:
 							begin
 								push(PMOVE3);
-								fs_data(mmm,rrr,FETCH_WORD,S);	// Valid access level
+								fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_WORD,S);	// Valid access level
 							end
 						endcase
 					end
@@ -4069,7 +4092,7 @@ DECODE:
 									d <= dfp96To32o;
 								else if (SUPPORT_BINFLT)
 									d <= fp96To32o;
-								fs_data(mmm,rrr,STORE_LWORD,D);
+								fs_data(mmm,{mmm[0],rrrbnk,rrr},STORE_LWORD,D);
 							end
 						3'b101:	// double
 							begin
@@ -4077,12 +4100,12 @@ DECODE:
 									fpd <= dfp96To64o;
 								else if (SUPPORT_BINFLT)
 									fpd <= fp96To64o;
-								fs_data(mmm,rrr,STORE_OCTA,D);
+								fs_data(mmm,{mmm[0],rrrbnk,rrr},STORE_OCTA,D);
 							end
 						default:
 							begin
 								fpd <= rfoFpdst;
-								fs_data(mmm,rrr,STORE_HEXI1,D);
+								fs_data(mmm,{mmm[0],rrrbnk,rrr},STORE_HEXI1,D);
 							end
 						endcase
 					end
@@ -4094,12 +4117,12 @@ DECODE:
 							3'b001:	// FPIAR
 								begin
 									d <= fpiar;
-									fs_data(mmm,rrr,STORE_LWORD,D);
+									fs_data(mmm,{mmm[0],rrrbnk,rrr},STORE_LWORD,D);
 								end
 							3'b010:	// FPSR
 								begin
 									d <= fpsr;
-									fs_data(mmm,rrr,STORE_LWORD,D);
+									fs_data(mmm,{mmm[0],rrrbnk,rrr},STORE_LWORD,D);
 								end
 							3'b100:	tIllegal();// FPCR
 							default:	tIllegal();
@@ -4273,23 +4296,22 @@ DECODE:
 	endcase
 	end
 
-//-----------------------------------------------------------------------------
-//-----------------------------------------------------------------------------
 `ifdef SUPPORT_010
 MOVES:
 	begin
 		ir2 <= imm[15:0];
 		rrrr <= imm[15:12];
-		Rt <= imm[15:12];
+		rrrrbnk <= bank_pfx[5:4];
+		Rt <= imm[15] ? {3'b100,imm[14:12]} : {1'b0,bank_pfx[5:4],imm[14:12]};
 		if (imm[11])
 			goto (MOVES2);
 		else begin
 			push(MOVES3);
 			use_sfc <= 1'b1;
 			case(sz)
-			2'd0:	fs_data(mmm,rrr,FETCH_BYTE,S);
-			2'd1:	fs_data(mmm,rrr,FETCH_WORD,S);
-			2'd2:	fs_data(mmm,rrr,FETCH_LWORD,S);
+			2'd0:	fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_BYTE,S);
+			2'd1:	fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_WORD,S);
+			2'd2:	fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_LWORD,S);
 			endcase
 		end
 	end
@@ -4298,9 +4320,9 @@ MOVES2:
 		d <= rfoRnn;
 		use_dfc <= 1'b1;
 		case(sz)
-		2'd0:	fs_data(mmm,rrr,STORE_BYTE,D);
-		2'd1:	fs_data(mmm,rrr,STORE_WORD,D);
-		2'd2:	fs_data(mmm,rrr,STORE_LWORD,D);
+		2'd0:	fs_data(mmm,{mmm[0],rrrbnk,rrr},STORE_BYTE,D);
+		2'd1:	fs_data(mmm,{mmm[0],rrrbnk,rrr},STORE_WORD,D);
+		2'd2:	fs_data(mmm,{mmm[0],rrrbnk,rrr},STORE_LWORD,D);
 		default:	tIllegal();
 		endcase
 	end
@@ -4328,6 +4350,12 @@ MOVES3:
 	end
 `endif
 
+TST1:
+	begin
+		resL <= d;
+		ret();
+	end
+
 //-----------------------------------------------------------------------------
 // BCD arithmetic
 // ABCD / SBCD / NBCD
@@ -4336,13 +4364,13 @@ MOVES3:
 BCD:
 	begin
 		push(BCD0);
-		fs_data(AM_PRE,rrr,FETCH_BYTE,S);
+		fs_data(AM_PRE,{1'b0,rrrbnk,rrr},FETCH_BYTE,S);
 	end
 BCD0:
 	begin
 		if (ir[3]) begin
 			push(BCD1);
-			fs_data(AM_PRE,RRR,FETCH_BYTE,D);
+			fs_data(AM_PRE,{1'b0,DDDbnk,DDD},FETCH_BYTE,D);
 		end
 		else
 			goto (BCD1);
@@ -4361,23 +4389,18 @@ BCD2:
 BCD3:	goto (BCD4);	// clock to load binary to BCD conversion
 BCD4:
 	if (dd_done) begin
+		resL <= bcdreso[11:0];
 		if (ir[3] || (bcdneg && mmm!=AM_DN && mmm != AM_AN))
 			goto (STORE_BYTE);
 		else begin
 			rfwrB <= 1'b1;
 			if (bcdneg)
-				Rt <= {1'b0,rrr};
+				Rt <= {1'b0,rrrbnk,rrr};
 			else
-				Rt <= {1'b0,RRR};
-			resL <= bcdreso[7:0];
+				Rt <= {1'b0,DDDbnk,DDD};
 			ret();
 		end
 		d <= bcdreso[7:0];
-		cf <= |bcdreso[11:8];
-		xf <= |bcdreso[11:8];
-		nf <= bcdreso[7];
-		if (bcdreso[7:0]!=8'h00)
-			zf <= 1'b0;
 	end
 `endif		
 
@@ -4389,11 +4412,6 @@ STOP:
 	end
 STOP1:
 	begin
-		cf <= imm[0];
-		vf <= imm[1];
-		zf <= imm[2];
-		nf <= imm[3];
-		xf <= imm[4];
 		im[0] <= imm[8];
 		im[1] <= imm[9];
 		im[2] <= imm[10];
@@ -4419,9 +4437,8 @@ MULS2:
 	end
 MULS3:
 	begin
-		flag_update <= FU_MUL;
 		rfwrL <= 1'b1;
-		Rt <= {1'b0,DDD};
+		Rt <= {1'b0,DDDbnk,DDD};
 		resL <= resMS2;
 		ret();
 	end
@@ -4437,9 +4454,8 @@ MULU2:
 	end
 MULU3:
 	begin
-		flag_update <= FU_MUL;
 		rfwrL <= 1'b1;
-		Rt <= {1'b0,DDD};
+		Rt <= {1'b0,DDDbnk,DDD};
 		resL <= resMU2;
 		ret();
 	end
@@ -4455,7 +4471,6 @@ DIV1:
 		isr <= srx;
 		tf <= 1'b0;
 		sf <= 1'b1;
-		cf <= 1'b0;
 		vecno <= `DBZ_VEC;
 		goto (TRAP3);
 	end
@@ -4463,18 +4478,10 @@ DIV1:
 		goto (DIV2);
 DIV2:
 	if (dvdone) begin
-		cf <= 1'b0;		// always cleared
-		nf <= divq[15];
-		zf <= divq[15:0]==16'h0000;
-		Rt <= {1'b0,DDD};
+		Rt <= {1'b0,DDDbnk,DDD};
 		resL <= {divr[15:0],divq[15:0]};
-		if (dvovf) begin
-			vf <= 1'b1;
-		end
-		else begin
-			vf <= 1'b0;
+		if (!dvovf)
 			rfwrL <= 1'b1;
-		end
 		ret();
 	end
 
@@ -4483,13 +4490,10 @@ DIV2:
 //-----------------------------------------------------------------------------
 NOT:
 	begin
-//		resB <= ~d[7:0];
-//		resW <= ~d[15:0];
 		resL <= ~d;
 		d <= ~d;
-		flag_update <= FU_LOGIC;
 		if (mmm==AM_DN) begin
-			Rt <= {1'b0,rrr};
+			Rt <= {1'b0,rrrbnk,rrr};
 			case(sz)
 			2'b00:	rfwrB <= 1'b1;
 			2'b01:	rfwrW <= 1'b1;
@@ -4515,29 +4519,40 @@ NOT:
 //-----------------------------------------------------------------------------
 NEG:
 	begin
-		resL <= -d;
-//		resW <= -d[15:0];
-//		resB <= -d[7:0];
-		d <= -d;
+		case(sz)
+		2'b00:	resL <= -d[7:0];
+		2'b01:	resL <= -d[15:0];
+		default:	resL <= -d;
+		endcase
+		case(sz)
+		2'b00:	d <= -d[7:0];
+		2'b01:	d <= -d[15:0];
+		default:	d <= -d;
+		endcase
 		s <= d;
 		dd <= 'd0;
 		goto (NEGX1);
 	end
 NEGX:
 	begin
-		resL <= -d - xf;
-//		resW <= -d[15:0] - xf;
-//		resB <= -d[7:0] - xf;
-		d <= -d - xf;
+		case(sz)
+		2'b00:	resL <= -d[7:0] - xf;
+		2'b01:	resL <= -d[15:0] - xf;
+		default:	resL <= -d - xf;
+		endcase
+		case(sz)
+		2'b00:	d <= -d[7:0] - xf;
+		2'b01:	d <= -d[15:0] - xf;
+		default:	d <= -d - xf;
+		endcase
 		s <= d + xf;
 		dd <= 'd0;
 		goto (NEGX1);
 	end
 NEGX1:
 	begin
-		flag_update <= FU_NEGX;
 		if (mmm==AM_DN) begin
-			Rt <= {1'b0,rrr};
+			Rt <= {1'b0,rrrbnk,rrr};
 			case(sz)
 			2'b00:	rfwrB <= 1'b1;
 			2'b01:	rfwrW <= 1'b1;
@@ -4561,11 +4576,8 @@ NEGX1:
 //-----------------------------------------------------------------------------
 TAS:
 	begin
-		resL <= {4{{1'b1,d[6:0]}}};
-		cf <= 1'b0;
-		vf <= 1'b0;
-		zf <= d[7:0]==8'h00;
-		nf <= d[7];
+		resL <= {1'b1,d[6:0]};
+		dd <= d;
 		d <= {1'b1,d[6:0]};
 		goto(USTORE_BYTE);
 	end
@@ -4587,7 +4599,7 @@ LINK2:
 	begin
 		resL <= sp - 32'd4;
 		rfwrL <= 1'b1;
-		Rt <= {1'b1,rrr};
+		Rt <= {1'b1,rrrbnk,rrr};
 		sp <= sp + imm - 32'd4;
 		ret();		
 	end
@@ -4598,11 +4610,11 @@ LINK2:
 LEA:
 	begin
 		push(LEA2);
-		fs_data(mmm,rrr,FETCH_NOP_LWORD,S);
+		fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_NOP_LWORD,S);
 	end
 LEA2:
 	begin
-		Rt <= {1'b1,AAA};
+		Rt <= {3'b100,AAA};
 		rfwrL <= 1'b1;
 		resL <= ea;
 		ret();
@@ -4614,7 +4626,7 @@ LEA2:
 PEA1:
 	begin
 		push(PEA2);
-		fs_data(mmm,rrr,FETCH_NOP_LWORD,S);
+		fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_NOP_LWORD,S);
 	end
 PEA2:
 	begin
@@ -4637,7 +4649,7 @@ DBRA:
 `endif
 	begin
 		resL <= rfoDnn - 4'd1;
-		Rt <= {1'b0,rrr};
+		Rt <= {1'b0,rrrbnk,rrr};
 		rfwrW <= 1'b1;
 		if (rfoDnn[15:0]!=0)
 			pc <= opc + imm;
@@ -4655,7 +4667,7 @@ EXG1:
 	begin
 		rfwrL <= 1'b1;
 		resL <= s;
-		Rt <= rrrr;
+		Rt <= rrrr[3] ? {1'b1,rrrrbnk,rrr} : {1'b0,rrrrbnk,rrr};
 		ret();
 	end
 
@@ -4667,23 +4679,11 @@ EXG1:
 STORE_IN_DEST:
 	begin
 		resL <= s;
-//		resW <= s[15:0];
-//		resB <= s[7:0];
 		d <= s;
-		if (ir[8:6]!=3'b001) begin
-			case(ir[15:12])
-			4'd1:	begin zf <= s[ 7:0]== 8'h00; nf <= s[7]; end
-			4'd3:	begin zf <= s[15:0]==16'h00; nf <= s[15]; end
-			4'd2:	begin zf <= s[31:0]==32'd0;  nf <= s[31]; end
-			default:	;
-			endcase
-			cf <= 1'b0;
-			vf <= 1'b0;
-		end
 		case(ir[15:12])
-		4'd1:	fs_data(MMM,RRR,STORE_BYTE,D);
-		4'd2:	fs_data(MMM,RRR,STORE_LWORD,D);
-		4'd3:	fs_data(MMM,RRR,STORE_WORD,D);
+		4'd1:	fs_data(MMM,{MMM[0],DDDbnk,DDD},STORE_BYTE,D);
+		4'd2:	fs_data(MMM,{MMM[0],DDDbnk,DDD},STORE_LWORD,D);
+		4'd3:	fs_data(MMM,{MMM[0],DDDbnk,DDD},STORE_WORD,D);
 		default:	;	// cant get here
 		endcase
 	end
@@ -4694,7 +4694,6 @@ STORE_IN_DEST:
 //-----------------------------------------------------------------------------
 CMP:
 	begin
-		flag_update <= FU_CMP;
 		case(sz)
 		2'b00:	resL <= d[ 7:0] - s[ 7:0];
 		2'b01:	resL <= d[15:0] - s[15:0];
@@ -4706,7 +4705,6 @@ CMP:
 
 CMPA:
 	begin
-		flag_update <= FU_CMP;
 		case(ir[8])
 		1'b0:	resL <= d[31:0] - {{16{s[15]}},s[15:0]};
 		1'b1:	resL <= d[31:0] - s[31:0];
@@ -4718,9 +4716,9 @@ CMPM:
 	begin
 		push (CMP);
 		case(sz)
-		2'd0:	fs_data(AM_POST,RRR,FETCH_BYTE,D);
-		2'd1:	fs_data(AM_POST,RRR,FETCH_WORD,D);
-		2'd2:	fs_data(AM_POST,RRR,FETCH_LWORD,D);
+		2'd0:	fs_data(AM_POST,{1'b0,DDDbnk,DDD},FETCH_BYTE,D);
+		2'd1:	fs_data(AM_POST,{1'b0,DDDbnk,DDD},FETCH_WORD,D);
+		2'd2:	fs_data(AM_POST,{1'b0,DDDbnk,DDD},FETCH_LWORD,D);
 		default:	;	// cant get here
 		endcase
 	end
@@ -4731,16 +4729,6 @@ CMPM:
 //-----------------------------------------------------------------------------
 SHIFT1:
 	begin
-		vf <= 1'b0;
-		case(shift_op)
-		3'b010,	// ROXL, ROXR
-		3'b110:	cf <= xf;
-		default:
-			begin
-				if (cnt=='d0)
-					cf <= 1'b0;
-			end
-		endcase
 		// Extend by a bit for ASL overflow detection.
 		case(sz)
 		2'b00:	resL <= {d[7],d[7:0]};
@@ -4748,11 +4736,6 @@ SHIFT1:
 		2'b10:	resL <= {d[31],d[31:0]};
 		2'b11:	resL <= {d[15],d[15:0]};
 		endcase
-		/*
-		resB <= {d[7],d[7:0]};
-		resW <= {d[15],d[15:0]};
-		resL <= {d[31],d[31:0]};
-		*/
 		state <= SHIFT;
 	end
 SHIFT:
@@ -4761,76 +4744,63 @@ SHIFT:
 		case(shift_op)
 		3'b000:	// ASR
 			case(sz)
-			2'b00:	begin resL <= {resL[ 7],resL[ 7:1]}; cf <= resL[0]; xf <= resL[0]; end
-			2'b01:	begin resL <= {resL[15],resL[15:1]}; cf <= resL[0]; xf <= resL[0]; end
-			2'b10:	begin resL <= {resL[31],resL[31:1]}; cf <= resL[0]; xf <= resL[0]; end
-			2'b11:	begin resL <= {resL[15],resL[15:1]}; cf <= resL[0]; xf <= resL[0]; end
+			2'b00:	begin resL <= {resL[ 7],resL[ 7:1]}; end
+			2'b01:	begin resL <= {resL[15],resL[15:1]}; end
+			2'b10:	begin resL <= {resL[31],resL[31:1]}; end
+			2'b11:	begin resL <= {resL[15],resL[15:1]}; end
 			endcase
 		3'b001:	// LSR
 			case(sz)
-			2'b00:	begin resL <= {1'b0,resL[ 7:1]}; cf <= resL[0]; xf <= resL[0]; end
-			2'b01:	begin resL <= {1'b0,resL[15:1]}; cf <= resL[0]; xf <= resL[0]; end
-			2'b10:	begin resL <= {1'b0,resL[31:1]}; cf <= resL[0]; xf <= resL[0]; end
-			2'b11:	begin resL <= {1'b0,resL[15:1]}; cf <= resL[0]; xf <= resL[0]; end
+			2'b00:	begin resL <= {1'b0,resL[ 7:1]}; end
+			2'b01:	begin resL <= {1'b0,resL[15:1]}; end
+			2'b10:	begin resL <= {1'b0,resL[31:1]}; end
+			2'b11:	begin resL <= {1'b0,resL[15:1]}; end
 			endcase
 		3'b010:	// ROXR
 			case(sz)
-			2'b00:	begin resL <= {xf,resL[ 7:1]}; cf <= resL[0]; xf <= resL[0]; end
-			2'b01:	begin resL <= {xf,resL[15:1]}; cf <= resL[0]; xf <= resL[0]; end
-			2'b10:	begin resL <= {xf,resL[31:1]}; cf <= resL[0]; xf <= resL[0]; end
-			2'b11:	begin resL <= {xf,resL[15:1]}; cf <= resL[0]; xf <= resL[0]; end
+			2'b00:	begin resL <= {xf,resL[ 7:1]}; end
+			2'b01:	begin resL <= {xf,resL[15:1]}; end
+			2'b10:	begin resL <= {xf,resL[31:1]}; end
+			2'b11:	begin resL <= {xf,resL[15:1]}; end
 			endcase
 		3'b011:	// ROR
 			case(sz)
-			2'b00:	begin resL <= {resL[0],resL[ 7:1]}; cf <= resL[0]; end
-			2'b01:	begin resL <= {resL[0],resL[15:1]}; cf <= resL[0]; end
-			2'b10:	begin resL <= {resL[0],resL[31:1]}; cf <= resL[0]; end
-			2'b11:	begin resL <= {resL[0],resL[15:1]}; cf <= resL[0]; end
+			2'b00:	begin resL <= {resL[0],resL[ 7:1]}; end
+			2'b01:	begin resL <= {resL[0],resL[15:1]}; end
+			2'b10:	begin resL <= {resL[0],resL[31:1]}; end
+			2'b11:	begin resL <= {resL[0],resL[15:1]}; end
 			endcase
 		3'b100:	// ASL
 			case(sz)
-			2'b00:	begin resL <= {resL[ 7:0],1'b0}; cf <= resL[ 7]; xf <= resL[ 7]; if (resL[ 7] != resL[ 8]) vf <= 1'b1; end
-			2'b01:	begin resL <= {resL[15:0],1'b0}; cf <= resL[15]; xf <= resL[15]; if (resL[15] != resL[16]) vf <= 1'b1; end
-			2'b10:	begin resL <= {resL[31:0],1'b0}; cf <= resL[31]; xf <= resL[31]; if (resL[31] != resL[32]) vf <= 1'b1; end
-			2'b11:	begin resL <= {resL[15:0],1'b0}; cf <= resL[15]; xf <= resL[15]; if (resL[15] != resL[16]) vf <= 1'b1; end
+			2'b00:	begin resL <= {resL[ 7:0],1'b0}; end
+			2'b01:	begin resL <= {resL[15:0],1'b0}; end
+			2'b10:	begin resL <= {resL[31:0],1'b0}; end
+			2'b11:	begin resL <= {resL[15:0],1'b0}; end
 			endcase
 		3'b101:	// LSL
 			case(sz)
-			2'b00:	begin resL <= {resL[ 7:0],1'b0}; cf <= resL[ 7]; xf <= resL[ 7]; end
-			2'b01:	begin resL <= {resL[15:0],1'b0}; cf <= resL[15]; xf <= resL[15]; end
-			2'b10:	begin resL <= {resL[31:0],1'b0}; cf <= resL[31]; xf <= resL[31]; end
-			2'b11:	begin resL <= {resL[15:0],1'b0}; cf <= resL[15]; xf <= resL[15]; end
+			2'b00:	begin resL <= {resL[ 7:0],1'b0}; end
+			2'b01:	begin resL <= {resL[15:0],1'b0}; end
+			2'b10:	begin resL <= {resL[31:0],1'b0}; end
+			2'b11:	begin resL <= {resL[15:0],1'b0}; end
 			endcase
 		3'b110:	// ROXL
 			case(sz)
-			2'b00:	begin resL <= {resL[ 7:0],xf}; cf <= resL[ 7]; xf <= resL[ 7]; end
-			2'b01:	begin resL <= {resL[15:0],xf}; cf <= resL[15]; xf <= resL[15]; end
-			2'b10:	begin resL <= {resL[31:0],xf}; cf <= resL[31]; xf <= resL[31]; end
-			2'b11:	begin resL <= {resL[15:0],xf}; cf <= resL[15]; xf <= resL[15]; end
+			2'b00:	begin resL <= {resL[ 7:0],xf}; end
+			2'b01:	begin resL <= {resL[15:0],xf}; end
+			2'b10:	begin resL <= {resL[31:0],xf}; end
+			2'b11:	begin resL <= {resL[15:0],xf}; end
 			endcase
 		3'b111: // ROL
 			case(sz)
-			2'b00:	begin resL <= {resL[ 7:0],resL[ 7]}; cf <= resL[ 7]; end
-			2'b01:	begin resL <= {resL[15:0],resL[15]}; cf <= resL[15]; end
-			2'b10:	begin resL <= {resL[31:0],resL[31]}; cf <= resL[31]; end
-			2'b11:	begin resL <= {resL[15:0],resL[15]}; cf <= resL[15]; end
+			2'b00:	begin resL <= {resL[ 7:0],resL[ 7]}; end
+			2'b01:	begin resL <= {resL[15:0],resL[15]}; end
+			2'b10:	begin resL <= {resL[31:0],resL[31]}; end
+			2'b11:	begin resL <= {resL[15:0],resL[15]}; end
 			endcase
 		endcase
 	end
 	else begin
-		if (shift_op==3'b100)	// ASL
-			case(sz)
-			2'b00:	if (resL[ 7] != resL[ 8]) vf <= 1'b1;
-			2'b01:	if (resL[15] != resL[16]) vf <= 1'b1;
-			2'b10:	if (resL[31] != resL[32]) vf <= 1'b1;
-			2'b11:	if (resL[15] != resL[16]) vf <= 1'b1;
-			/*
-			2'b00:	vf <= resL[ 7] != d[ 7];
-			2'b01:	vf <= resL[15] != d[15];
-			2'b10:	vf <= resL[31] != d[31];
-			2'b11:	vf <= resL[15] != d[15];
-			*/
-			endcase
 		d <= resL;
 		/*
 		case(sz)
@@ -4840,13 +4810,12 @@ SHIFT:
 		2'b11:	d <= resW;
 		endcase
 		*/
-		flag_update <= FU_SHIFT;
-		Rt <= {1'b0,rrr};
+		Rt <= {1'b0,rrrbnk,rrr};
 		case(sz)
 		2'b00:	begin rfwrB <= 1'b1; ret(); end
 		2'b01:	begin rfwrW <= 1'b1; ret(); end
 		2'b10:	begin rfwrL <= 1'b1; ret(); end
-		2'b11:	fs_data(mmm,rrr,STORE_WORD,D);	// word operations only if memory operate
+		2'b11:	fs_data(mmm,{mmm[0],rrrbnk,rrr},STORE_WORD,D);	// word operations only if memory operate
 		endcase
 	end
 	
@@ -4855,7 +4824,6 @@ SHIFT:
 //-----------------------------------------------------------------------------
 ADD:
 	begin
-		flag_update <= FU_ADD;
 		case(sz)
 		2'b00:	resL <= d[7:0] + s[7:0];
 		2'b01:	resL <= d[15:0] + s[15:0];
@@ -4868,8 +4836,7 @@ ADD:
 		endcase
 		dd <= d;
 		if (sz==2'b11) begin
-			flag_update <= FU_NONE;
-			Rt <= {1'b1,AAA};
+			Rt <= {3'b100,AAA};
 			if (ir[8])
 				rfwrL <= 1'b1;
 			else
@@ -4878,7 +4845,7 @@ ADD:
 		end
 		else if (ir[8]) begin
 			if (mmm==AM_DN || mmm==AM_AN) begin
-				Rt <= {mmm[0],rrr};
+				Rt <= mmm[0] ? {1'b1,rrrbnk,rrr} : {1'b0,rrrbnk,rrr};
 				case(sz)
 				2'b00:	rfwrB <= 1'b1;
 				2'b01:	rfwrW <= 1'b1;
@@ -4897,7 +4864,7 @@ ADD:
 			end
 		end
 		else begin
-			Rt <= {1'b0,DDD};
+			Rt <= {1'b0,DDDbnk,DDD};
 			case(sz)
 			2'b00:	rfwrB <= 1'b1;
 			2'b01:	rfwrW <= 1'b1;
@@ -4912,7 +4879,6 @@ ADD:
 //-----------------------------------------------------------------------------
 SUB:
 	begin
-		flag_update <= FU_SUB;
 		case(sz)
 		2'b00:	resL <= d[7:0] - s[7:0];
 		2'b01:	resL <= d[15:0] - s[15:0];
@@ -4925,8 +4891,7 @@ SUB:
 		endcase
 		dd <= d;
 		if (sz==2'b11) begin
-			flag_update <= FU_NONE;
-			Rt <= {1'b1,AAA};
+			Rt <= {3'b100,AAA};
 			if (ir[8])
 				rfwrL <= 1'b1;
 			else
@@ -4935,7 +4900,7 @@ SUB:
 		end
 		else if (ir[8]) begin
 			if (mmm==AM_DN || mmm==AM_AN) begin
-				Rt <= {mmm[0],rrr};
+				Rt <= mmm[0] ? {1'b1,rrrbnk,rrr} : {1'b0,rrrbnk,rrr};
 				case(sz)
 				2'b00:	rfwrB <= 1'b1;
 				2'b01:	rfwrW <= 1'b1;
@@ -4954,7 +4919,7 @@ SUB:
 			end
 		end
 		else begin
-			Rt <= {1'b0,DDD};
+			Rt <= {1'b0,DDDbnk,DDD};
 			case(sz)
 			2'b00:	rfwrB <= 1'b1;
 			2'b01:	rfwrW <= 1'b1;
@@ -4969,9 +4934,9 @@ ADDX:
 	begin
 		push (ADDX2);
 		case(sz)
-		2'd0:	fs_data(AM_PRE,rrr,FETCH_BYTE,S);
-		2'd1:	fs_data(AM_PRE,rrr,FETCH_WORD,S);
-		2'd2:	fs_data(AM_PRE,rrr,FETCH_LWORD,S);
+		2'd0:	fs_data(AM_PRE,{1'b0,rrrbnk,rrr},FETCH_BYTE,S);
+		2'd1:	fs_data(AM_PRE,{1'b0,rrrbnk,rrr},FETCH_WORD,S);
+		2'd2:	fs_data(AM_PRE,{1'b0,rrrbnk,rrr},FETCH_LWORD,S);
 		default:	tIllegal();
 		endcase
 	end
@@ -4979,15 +4944,14 @@ ADDX2:
 	begin
 		push(ADDX3);
 		case(sz)
-		2'd0:	fs_data(AM_PRE,RRR,FETCH_BYTE,D);
-		2'd1:	fs_data(AM_PRE,RRR,FETCH_WORD,D);
-		2'd2:	fs_data(AM_PRE,RRR,FETCH_LWORD,D);
+		2'd0:	fs_data(AM_PRE,{1'b0,DDDbnk,DDD},FETCH_BYTE,D);
+		2'd1:	fs_data(AM_PRE,{1'b0,DDDbnk,DDD},FETCH_WORD,D);
+		2'd2:	fs_data(AM_PRE,{1'b0,DDDbnk,DDD},FETCH_LWORD,D);
 		default:	tIllegal();
 		endcase
 	end
 ADDX3:
 	begin
-		flag_update <= FU_ADDX;
 		case(sz)
 		2'b00:	resL <= d[7:0] + s[7:0] + xf;
 		2'b01:	resL <= d[15:0] + s[15:0] + xf;
@@ -5007,7 +4971,7 @@ ADDX3:
 			default:	tIllegal();
 			endcase
 		else begin
-			Rt <= {1'b0,RRR};
+			Rt <= {1'b0,DDDbnk,DDD};
 			case(sz)
 			2'd0:	rfwrB <= 1'b1;
 			2'd1:	rfwrW <= 1'b1;
@@ -5022,9 +4986,9 @@ SUBX:
 	begin
 		push (SUBX2);
 		case(sz)
-		2'd0:	fs_data(AM_PRE,rrr,FETCH_BYTE,S);
-		2'd1:	fs_data(AM_PRE,rrr,FETCH_WORD,S);
-		2'd2:	fs_data(AM_PRE,rrr,FETCH_LWORD,S);
+		2'd0:	fs_data(AM_PRE,{1'b0,rrrbnk,rrr},FETCH_BYTE,S);
+		2'd1:	fs_data(AM_PRE,{1'b0,rrrbnk,rrr},FETCH_WORD,S);
+		2'd2:	fs_data(AM_PRE,{1'b0,rrrbnk,rrr},FETCH_LWORD,S);
 		default:	;
 		endcase
 	end
@@ -5032,15 +4996,14 @@ SUBX2:
 	begin
 		push(SUBX3);
 		case(sz)
-		2'd0:	fs_data(AM_PRE,RRR,FETCH_BYTE,D);
-		2'd1:	fs_data(AM_PRE,RRR,FETCH_WORD,D);
-		2'd2:	fs_data(AM_PRE,RRR,FETCH_LWORD,D);
+		2'd0:	fs_data(AM_PRE,{1'b0,DDDbnk,DDD},FETCH_BYTE,D);
+		2'd1:	fs_data(AM_PRE,{1'b0,DDDbnk,DDD},FETCH_WORD,D);
+		2'd2:	fs_data(AM_PRE,{1'b0,DDDbnk,DDD},FETCH_LWORD,D);
 		default:	;
 		endcase
 	end
 SUBX3:
 	begin
-		flag_update <= FU_SUBX;
 		case(sz)
 		2'b00:	resL <= d[7:0] - s[7:0] - xf;
 		2'b01:	resL <= d[15:0] - s[15:0] - xf;
@@ -5060,7 +5023,7 @@ SUBX3:
 			default:	tIllegal();
 			endcase
 		else begin
-			Rt <= {1'b0,RRR};
+			Rt <= {1'b0,DDDbnk,DDD};
 			case(sz)
 			2'd0:	rfwrB <= 1'b1;
 			2'd1:	rfwrW <= 1'b1;
@@ -5075,12 +5038,11 @@ SUBX3:
 //-----------------------------------------------------------------------------
 AND:
 	begin
-		flag_update <= FU_LOGIC;
 		if (ir[8]) begin
 			resL <= d & rfoDn;
 			d <= d & rfoDn;
 			if (mmm==AM_DN || mmm==AM_AN) begin
-				Rt <= {mmm[0],rrr};
+				Rt <= mmm[0] ? {1'b1,rrrbnk,rrr} : {1'b0,rrrbnk,rrr};
 				case(sz)
 				2'b00:	rfwrB <= 1'b1;
 				2'b01:	rfwrW <= 1'b1;
@@ -5099,7 +5061,7 @@ AND:
 			end
 		end
 		else begin
-			Rt <= {1'b0,DDD};
+			Rt <= {1'b0,DDDbnk,DDD};
 			resL <= rfoDn & s;
 			case(sz)
 			2'b00:	rfwrB <= 1'b1;
@@ -5116,12 +5078,11 @@ AND:
 //-----------------------------------------------------------------------------
 OR:
 	begin
-		flag_update <= FU_LOGIC;
 		if (ir[8]) begin
 			resL <= d | rfoDn;
 			d <= d | rfoDn;
 			if (mmm==AM_DN || mmm==AM_AN) begin
-				Rt <= {mmm[0],rrr};
+				Rt <= mmm[0] ? {1'b1,rrrbnk,rrr} : {1'b0,rrrbnk,rrr};
 				case(sz)
 				2'b00:	rfwrB <= 1'b1;
 				2'b01:	rfwrW <= 1'b1;
@@ -5140,7 +5101,7 @@ OR:
 			end
 		end
 		else begin
-			Rt <= {1'b0,DDD};
+			Rt <= {1'b0,DDDbnk,DDD};
 			resL <= rfoDn | s;
 			case(sz)
 			2'b00:	rfwrB <= 1'b1;
@@ -5157,11 +5118,10 @@ OR:
 //-----------------------------------------------------------------------------
 EOR:
 	begin
-		flag_update <= FU_LOGIC;
 		resL <= d ^ rfoDn;
 		d <= d ^ rfoDn;
 		if (mmm==AM_DN || mmm==AM_AN) begin
-			Rt <= {mmm[0],rrr};
+			Rt <= mmm[0] ? {1'b1,rrrbnk,rrr} : {1'b0,rrrbnk,rrr};
 			case(sz)
 			2'b00:	rfwrB <= 1'b1;
 			2'b01:	rfwrW <= 1'b1;
@@ -5188,8 +5148,6 @@ EOR:
 ADDQ:
 	begin
 		if (ir[8]) begin
-			if (mmm!=AM_AN)
-				flag_update <= FU_SUBQ;
 			case(sz)
 			2'b00:	resL <= d[7:0] - immx[7:0];
 			2'b01:	resL <= d[15:0] - immx[15:0];
@@ -5204,8 +5162,6 @@ ADDQ:
 			s <= immx;
 		end
 		else begin
-			if (mmm!=AM_AN)
-				flag_update <= FU_ADDQ;
 			case(sz)
 			2'b00:	resL <= d[7:0] + immx[7:0];
 			2'b01:	resL <= d[15:0] + immx[15:0];
@@ -5221,7 +5177,7 @@ ADDQ:
 		end
 		if (mmm==AM_DN) begin
 			ret();
-			Rt <= {mmm[0],rrr};
+			Rt <= {1'b0,rrrbnk,rrr};
 			case(sz)
 			2'b00:	rfwrB <= 1'b1;
 			2'b01:	rfwrW <= 1'b1;
@@ -5232,7 +5188,7 @@ ADDQ:
 		// If the target is an address register, the entire register is updated.
 		else if (mmm==AM_AN) begin
 			ret();
-			Rt <= {mmm[0],rrr};
+			Rt <= {1'b1,rrrbnk,rrr};
 			case(sz)
 			2'b01:	rfwrW <= 1'b1;
 			2'b10:	rfwrL <= 1'b1;
@@ -5262,15 +5218,14 @@ ADDI2:
 	begin
 	immx <= imm;
 	case(sz)
-	2'b00:	begin push(ADDI3); fs_data(mmm,rrr,FETCH_BYTE,D); end
-	2'b01:	begin push(ADDI3); fs_data(mmm,rrr,FETCH_WORD,D); end
-	2'b10:	begin push(ADDI3); fs_data(mmm,rrr,FETCH_LWORD,D); end
+	2'b00:	begin push(ADDI3); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_BYTE,D); end
+	2'b01:	begin push(ADDI3); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_WORD,D); end
+	2'b10:	begin push(ADDI3); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_LWORD,D); end
 	default:	;	// Cant get here
 	endcase
 	end
 ADDI3:
 	begin
-		flag_update <= FU_ADDI;
 		dd <= d;
 		s <= immx;
 		// Odd numbers are BIT insns.
@@ -5319,17 +5274,17 @@ ADDI3:
 			2'b10:	rfwrL <= 1'b1;
 			default:	;
 			endcase
-			Rt <= {mmm[0],rrr};
+			Rt <= {1'b0,rrrbnk,rrr};
 			ret();
 		end
 		else if (mmm==AM_AN) begin
+			Rt <= {1'b1,rrrbnk,rrr};
+			ret();
 			case(sz)
 			2'b01:	rfwrW <= 1'b1;
 			2'b10:	rfwrL <= 1'b1;
 			default:	tIllegal();
 			endcase
-			Rt <= {mmm[0],rrr};
-			ret();
 		end
 		else
 			case(sz)
@@ -5345,23 +5300,23 @@ ADDI3:
 //-----------------------------------------------------------------------------
 //
 ANDI_CCR:
-	begin flag_update <= FU_ANDI_CCR; goto(FETCH_IMM8); end
+	begin goto(FETCH_IMM8); end
 ANDI_SR:
-	begin flag_update <= FU_ANDI_SR; goto(FETCH_IMM16); end
+	begin goto(FETCH_IMM16); end
 ANDI_SRX:
-	begin flag_update <= FU_ANDI_SRX; goto(FETCH_IMM32); end
+	begin goto(FETCH_IMM32); end
 EORI_CCR:
-	begin flag_update <= FU_EORI_CCR; goto(FETCH_IMM8); end
+	begin goto(FETCH_IMM8); end
 EORI_SR:
-	begin flag_update <= FU_EORI_SR; goto(FETCH_IMM16); end
+	begin goto(FETCH_IMM16); end
 EORI_SRX:
-	begin flag_update <= FU_EORI_SRX; goto(FETCH_IMM32); end
+	begin goto(FETCH_IMM32); end
 ORI_CCR:
-	begin flag_update <= FU_ORI_CCR; goto(FETCH_IMM8); end
+	begin goto(FETCH_IMM8); end
 ORI_SR:
-	begin flag_update <= FU_ORI_SR; goto(FETCH_IMM16); end
+	begin goto(FETCH_IMM16); end
 ORI_SRX:
-	begin flag_update <= FU_ORI_SRX; goto(FETCH_IMM32); end
+	begin goto(FETCH_IMM32); end
 
 //-----------------------------------------------------------------------------
 // Bit manipulation
@@ -5388,7 +5343,7 @@ BIT1:
 			push(BIT2);
 			// This might fetch an immediate
 			// might also alter mmm
-			fs_data(mmm,rrr,FETCH_BYTE,D);
+			fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_BYTE,D);
 		end
 	end
 // ToDo: Speed this up by a clock cycle by placing the update in IFETCH.
@@ -5400,75 +5355,62 @@ BIT2:
 			2'b00:	// BTST
 				begin
 `ifdef SUPPORT_BITPAIRS					
-					if (bit2test[7]) begin
-						zf <= (d >> {bit2test[3:0],1'b0} & 4'd3) == 2'b00;
-						cf <= (d >> {bit2test[3:0],1'b0} & 4'd3) == 2'b01;
-						nf <= (d >> {bit2test[3:0],1'b0} & 4'd3) == 2'b10;
-						vf <= (d >> {bit2test[3:0],1'b0} & 4'd3) == 2'b11;
-					end
+					if (bit2test[7])
+						dd <= (d >> {bit2test[3:0],1'b0} & 4'd3);
 					else
 `endif					
-						zf <= ~d[bit2test[4:0]];
+						dd <= ~d[bit2test[4:0]] ? 2'b00 : 2'b11;
 					ret();
 				end
 			2'b01:	// BCHG
 				begin
 `ifdef SUPPORT_BITPAIRS					
 					if (bit2test[7]) begin
-						zf <= (d >> {bit2test[3:0],1'b0} & 4'd3) == 2'b00;
-						cf <= (d >> {bit2test[3:0],1'b0} & 4'd3) == 2'b01;
-						nf <= (d >> {bit2test[3:0],1'b0} & 4'd3) == 2'b10;
-						vf <= (d >> {bit2test[3:0],1'b0} & 4'd3) == 2'b11;
+						dd <= (d >> {bit2test[3:0],1'b0} & 4'd3);
 						resL <= d ^ (32'd3 << {bit2test[3:0],1'b0});
 					end
 					else
 `endif					
 					begin
-						zf <= ~d[bit2test[4:0]];
+						dd <= ~d[bit2test[4:0]] ? 2'b00 : 2'b11;
 						resL <= d ^  (32'd1 << bit2test[4:0]);
 					end
 					rfwrL <= 1'b1;
-					Rt <= {1'b0,rrr};
+					Rt <= {1'b0,rrrbnk,rrr};
 					ret();
 				end
 			2'b10:	// BCLR
 				begin
 `ifdef SUPPORT_BITPAIRS					
 					if (bit2test[7]) begin
-						zf <= (d >> {bit2test[3:0],1'b0} & 4'd3) == 2'b00;
-						cf <= (d >> {bit2test[3:0],1'b0} & 4'd3) == 2'b01;
-						nf <= (d >> {bit2test[3:0],1'b0} & 4'd3) == 2'b10;
-						vf <= (d >> {bit2test[3:0],1'b0} & 4'd3) == 2'b11;
+						dd <= (d >> {bit2test[3:0],1'b0} & 4'd3);
 						resL <= d & ~(32'd3 << {bit2test[3:0],1'b0});
 					end
 					else
 `endif					
 					begin
-						zf <= ~d[bit2test[4:0]];
+						dd <= ~d[bit2test[4:0]] ? 2'b00 : 2'b11;
 						resL <= d & ~(32'd1 << bit2test[4:0]);
 					end
 					rfwrL <= 1'b1;
-					Rt <= {1'b0,rrr};
+					Rt <= {1'b0,rrrbnk,rrr};
 					ret();
 				end
 			2'b11:	// BSET
 				begin
 `ifdef SUPPORT_BITPAIRS					
 					if (bit2test[7]) begin
-						zf <= (d >> {bit2test[3:0],1'b0} & 4'd3) == 2'b00;
-						cf <= (d >> {bit2test[3:0],1'b0} & 4'd3) == 2'b01;
-						nf <= (d >> {bit2test[3:0],1'b0} & 4'd3) == 2'b10;
-						vf <= (d >> {bit2test[3:0],1'b0} & 4'd3) == 2'b11;
+						dd <= (d >> {bit2test[3:0],1'b0} & 4'd3);
 						resL <= (d & ~(32'd3 << {bit2test[3:0],1'b0})) | (bit2test[5:4] << {bit2test[3:0],1'b0});
 					end
 					else
 `endif					
 					begin
-						zf <= ~d[bit2test[4:0]];
+						dd <= ~d[bit2test[4:0]] ? 2'b00 : 2'b11;
 						resL <= d |  (32'd1 << bit2test[4:0]);
 					end
 					rfwrL <= 1'b1;
-					Rt <= {1'b0,rrr};
+					Rt <= {1'b0,rrrbnk,rrr};
 					ret();
 				end
 			endcase
@@ -5478,31 +5420,24 @@ BIT2:
 			2'b00:	// BTST
 				begin
 `ifdef SUPPORT_BITPAIRS					
-					if (bit2test[7]) begin
-						zf <= (d >> {bit2test[1:0],1'b0} & 4'd3) == 2'b00;
-						cf <= (d >> {bit2test[1:0],1'b0} & 4'd3) == 2'b01;
-						nf <= (d >> {bit2test[1:0],1'b0} & 4'd3) == 2'b10;
-						vf <= (d >> {bit2test[1:0],1'b0} & 4'd3) == 2'b11;
-					end
+					if (bit2test[7])
+						dd <= (d >> {bit2test[1:0],1'b0} & 4'd3);
 					else
 `endif					
-						zf <= ~d[bit2test[2:0]];
+						dd <= ~d[bit2test[2:0]] ? 2'b00 : 2'b11;
 					ret();
 				end
 			2'b01:	// BCHG
 				begin
 `ifdef SUPPORT_BITPAIRS					
 					if (bit2test[7]) begin
-						zf <= (d >> {bit2test[1:0],1'b0} & 4'd3) == 2'b00;
-						cf <= (d >> {bit2test[1:0],1'b0} & 4'd3) == 2'b01;
-						nf <= (d >> {bit2test[1:0],1'b0} & 4'd3) == 2'b10;
-						vf <= (d >> {bit2test[1:0],1'b0} & 4'd3) == 2'b11;
+						dd <= (d >> {bit2test[1:0],1'b0} & 4'd3);
 						d <= d ^ (32'd3 << {bit2test[1:0],1'b0});
 					end
 					else
 `endif					
 					begin
-						zf <= ~d[bit2test[2:0]];
+						dd <= ~d[bit2test[2:0]] ? 2'b00 : 2'b11;
 						d <= d ^  (32'd1 << bit2test[2:0]);
 					end
 					goto(STORE_BYTE);
@@ -5511,16 +5446,13 @@ BIT2:
 				begin
 `ifdef SUPPORT_BITPAIRS					
 					if (bit2test[7]) begin
-						zf <= (d >> {bit2test[1:0],1'b0} & 4'd3) == 2'b00;
-						cf <= (d >> {bit2test[1:0],1'b0} & 4'd3) == 2'b01;
-						nf <= (d >> {bit2test[1:0],1'b0} & 4'd3) == 2'b10;
-						vf <= (d >> {bit2test[1:0],1'b0} & 4'd3) == 2'b11;
+						dd <= (d >> {bit2test[1:0],1'b0} & 4'd3);
 						d <= d & ~(32'd3 << {bit2test[1:0],1'b0});
 					end
 					else
 `endif					
 					begin
-						zf <= ~d[bit2test[2:0]];
+						dd <= ~d[bit2test[2:0]] ? 2'b00 : 2'b11;
 						d <= d & ~(32'd1 << bit2test[2:0]);
 					end
 					goto(STORE_BYTE);
@@ -5529,16 +5461,13 @@ BIT2:
 				begin
 `ifdef SUPPORT_BITPAIRS					
 					if (bit2test[7]) begin
-						zf <= (d >> {bit2test[1:0],1'b0} & 4'd3) == 2'b00;
-						cf <= (d >> {bit2test[1:0],1'b0} & 4'd3) == 2'b01;
-						nf <= (d >> {bit2test[1:0],1'b0} & 4'd3) == 2'b10;
-						vf <= (d >> {bit2test[1:0],1'b0} & 4'd3) == 2'b11;
+						dd <= (d >> {bit2test[1:0],1'b0} & 4'd3);
 						d <= (d & ~(32'd3 << {bit2test[1:0],1'b0})) | (bit2test[5:4] << {bit2test[1:0],1'b0});
 					end
 					else 
 `endif					
 					begin
-						zf <= ~d[bit2test[2:0]];
+						dd <= ~d[bit2test[2:0]] ? 2'b00 : 2'b11;
 						d <= d |  (32'd1 << bit2test[2:0]);
 					end
 					goto(STORE_BYTE);
@@ -5956,6 +5885,7 @@ FETCH_NDX_ACK:
 		disp <= {{24{iri[7]}},iri[7:0]};
 		mmm <= amode_e'({2'b00,iri[15]});	// to get reg
 		rrr <= iri[14:12];
+		rrrbnk <= bank_pfx[5:4];
 		wl <= iri[11];
 		iis <= iri[2:0];
 		bdsz <= iri[5:4];
@@ -6933,9 +6863,9 @@ UNLNK:
 		call (FETCH_LWORD,UNLNK2);
 	end
 UNLNK2:
-	if (dec_unlink) begin
+	begin
 		rfwrL <= 1'b1;
-		Rt <= {1'b1,rrr};
+		Rt <= {1'b1,rrrbnk,rrr};
 		resL <= s;
 		ret();
 	end
@@ -7022,11 +6952,6 @@ RTE2:
 		ea <= sp;
 		sp <= sp + 4'd4;
 		isr <= sr;
-		cf <= s[0];
-		vf <= s[1];
-		zf <= s[2];
-		nf <= s[3];
-		xf <= s[4];
 		ccr57 <= s[7:5];
 		if (!rtr) begin
 			ie_cntdwn <= 3'd3;
@@ -7173,14 +7098,14 @@ MOVEM_Xn2D:
 `ifdef OPT_PERF
 	if (imm[15:0]!=16'h0000) begin
 		push(MOVEM_Xn2D2);
-		fs_data(mmm,rrr,fmovem ? FETCH_NOP_HEXI : ir[6] ? FETCH_NOP_LWORD : FETCH_NOP_WORD,D);
+		fs_data(mmm,{1'b0,rrrbnk,rrr},fmovem ? FETCH_NOP_HEXI : ir[6] ? FETCH_NOP_LWORD : FETCH_NOP_WORD,D);
 	end
 	else
-		fs_data(mmm,rrr,fmovem ? FETCH_NOP_HEXI : ir[6] ? FETCH_NOP_LWORD : FETCH_NOP_WORD,D);
+		fs_data(mmm,{1'b0,rrrbnk,rrr},fmovem ? FETCH_NOP_HEXI : ir[6] ? FETCH_NOP_LWORD : FETCH_NOP_WORD,D);
 `else
 	begin
 		push(MOVEM_Xn2D2);
-		fs_data(mmm,rrr,fmovem ? FETCH_NOP_HEXI : ir[6] ? FETCH_NOP_LWORD : FETCH_NOP_WORD,D);
+		fs_data(mmm,{1'b0,rrrbnk,rrr},fmovem ? FETCH_NOP_HEXI : ir[6] ? FETCH_NOP_LWORD : FETCH_NOP_WORD,D);
 	end
 `endif
 MOVEM_Xn2D2:
@@ -7191,7 +7116,7 @@ MOVEM_Xn2D2:
 			case(mmm)
 			3'b100:	// -(An)
 				begin
-					Rt <= {1'b1,rrr};
+					Rt <= {1'b1,rrrbnk,rrr};
 					resL <= ea + (fmovem ? 32'd12 : ir[6] ? 32'd4 : 32'd2);
 					rfwrL <= 1'b1;
 				end
@@ -7269,13 +7194,13 @@ MOVEM_Xn2D4:
 			case(mmm)
 			AM_POST:
 				begin
-					Rt <= {1'b1,rrr};
+					Rt <= {1'b1,rrrbnk,rrr};
 					resL <= ea + (fmovem ? 32'd12 : ir[6] ? 32'd4 : 32'd2);
 					rfwrL <= 1'b1;
 				end
 			AM_PRE:
 				begin
-					Rt <= {1'b1,rrr};
+					Rt <= {1'b1,rrrbnk,rrr};
 					resL <= ea;
 					rfwrL <= 1'b1;
 				end
@@ -7335,14 +7260,14 @@ MOVEM_s2Xn:
 `ifdef OPT_PERF
 	if (imm[15:0]!=16'h0000) begin
 		push(MOVEM_s2Xn2);
-		fs_data(mmm,rrr,fmovem ? FETCH_NOP_HEXI : ir[6] ? FETCH_NOP_LWORD : FETCH_NOP_WORD,S);
+		fs_data(mmm,{1'b0,rrrbnk,rrr},fmovem ? FETCH_NOP_HEXI : ir[6] ? FETCH_NOP_LWORD : FETCH_NOP_WORD,S);
 	end
 	else
-		fs_data(mmm,rrr,fmovem ? FETCH_NOP_HEXI : ir[6] ? FETCH_NOP_LWORD : FETCH_NOP_WORD,S);
+		fs_data(mmm,{1'b0,rrrbnk,rrr},fmovem ? FETCH_NOP_HEXI : ir[6] ? FETCH_NOP_LWORD : FETCH_NOP_WORD,S);
 `else
 	begin
 		push(MOVEM_s2Xn2);
-		fs_data(mmm,rrr,fmovem ? FETCH_NOP_HEXI : ir[6] ? FETCH_NOP_LWORD : FETCH_NOP_WORD,S);
+		fs_data(mmm,{1'b0,rrrbnk,rrr},fmovem ? FETCH_NOP_HEXI : ir[6] ? FETCH_NOP_LWORD : FETCH_NOP_WORD,S);
 	end
 `endif
 MOVEM_s2Xn2:
@@ -7354,13 +7279,13 @@ MOVEM_s2Xn2:
 		case(mmm)
 		AM_POST:	// (An)+
 			begin
-				Rt <= {1'b1,rrr};
+				Rt <= {1'b1,rrrbnk,rrr};
 				resL <= ea;
 				rfwrL <= 1'b1;
 			end
 		AM_PRE:	// -(An)
 			begin
-				Rt <= {1'b1,rrr};
+				Rt <= {1'b1,rrrbnk,rrr};
 				resL <= ea + (fmovem ? 32'd12 : ir[6] ? 32'd4 : 32'd2);
 				rfwrL <= 1'b1;
 			end
@@ -7386,44 +7311,44 @@ MOVEM_s2Xn3:
 		resF <= fps;
 		if (mmm!=AM_PRE) begin
 			case(flo)
-			5'd0: begin imm[0] <= 1'b0; Rt <= 4'd0 ^ {3{fmovem}}; end
-			5'd1: begin imm[1] <= 1'b0; Rt <= 4'd1 ^ {3{fmovem}};	end
-			5'd2: begin	imm[2] <= 1'b0; Rt <= 4'd2 ^ {3{fmovem}};	end
-			5'd3: begin	imm[3] <= 1'b0;	Rt <= 4'd3 ^ {3{fmovem}};	end
-			5'd4: begin	imm[4] <= 1'b0;	Rt <= 4'd4 ^ {3{fmovem}};	end
-			5'd5: begin	imm[5] <= 1'b0;	Rt <= 4'd5 ^ {3{fmovem}};	end
-			5'd6: begin	imm[6] <= 1'b0;	Rt <= 4'd6 ^ {3{fmovem}};	end
-			5'd7: begin	imm[7] <= 1'b0;	Rt <= 4'd7 ^ {3{fmovem}};	end
-			5'd8: begin	imm[8] <= 1'b0;	Rt <= 4'd8;	end
-			5'd9: begin	imm[9] <= 1'b0;	Rt <= 4'd9;	end
-			5'd10: begin imm[10] <= 1'b0;	Rt <= 4'd10; end
-			5'd11: begin imm[11] <= 1'b0;	Rt <= 4'd11; end
-			5'd12: begin imm[12] <= 1'b0;	Rt <= 4'd12; end
-			5'd13: begin imm[13] <= 1'b0;	Rt <= 4'd13; end
-			5'd14: begin imm[14] <= 1'b0;	Rt <= 4'd14; end
-			5'd15: begin imm[15] <= 1'b0; Rt <= 4'd15; end
+			5'd0: begin imm[0] <= 1'b0; Rt <= {1'b0,rrrbnk,3'd0} ^ {3{fmovem}}; end
+			5'd1: begin imm[1] <= 1'b0; Rt <= {1'b0,rrrbnk,3'd1} ^ {3{fmovem}};	end
+			5'd2: begin	imm[2] <= 1'b0; Rt <= {1'b0,rrrbnk,3'd2} ^ {3{fmovem}};	end
+			5'd3: begin	imm[3] <= 1'b0;	Rt <= {1'b0,rrrbnk,3'd3} ^ {3{fmovem}};	end
+			5'd4: begin	imm[4] <= 1'b0;	Rt <= {1'b0,rrrbnk,3'd4} ^ {3{fmovem}};	end
+			5'd5: begin	imm[5] <= 1'b0;	Rt <= {1'b0,rrrbnk,3'd5} ^ {3{fmovem}};	end
+			5'd6: begin	imm[6] <= 1'b0;	Rt <= {1'b0,rrrbnk,3'd6} ^ {3{fmovem}};	end
+			5'd7: begin	imm[7] <= 1'b0;	Rt <= {1'b0,rrrbnk,3'd7} ^ {3{fmovem}};	end
+			5'd8: begin	imm[8] <= 1'b0;	Rt <= 6'd32;	end
+			5'd9: begin	imm[9] <= 1'b0;	Rt <= 6'd33;	end
+			5'd10: begin imm[10] <= 1'b0;	Rt <= 6'd34; end
+			5'd11: begin imm[11] <= 1'b0;	Rt <= 6'd35; end
+			5'd12: begin imm[12] <= 1'b0;	Rt <= 6'd36; end
+			5'd13: begin imm[13] <= 1'b0;	Rt <= 6'd37; end
+			5'd14: begin imm[14] <= 1'b0;	Rt <= 6'd38; end
+			5'd15: begin imm[15] <= 1'b0; Rt <= 6'd39; end
 			default:	;
 			endcase
 			
 		end
 		else begin
 			case(flo)
-			5'd0: begin imm[0] <= 1'b0; Rt <= 4'd15 ^ {4{fmovem}}; end
-			5'd1: begin imm[1] <= 1'b0; Rt <= 4'd14 ^ {4{fmovem}}; end
-			5'd2: begin	imm[2] <= 1'b0;	Rt <= 4'd13 ^ {4{fmovem}}; end
-			5'd3: begin imm[3] <= 1'b0; Rt <= 4'd12 ^ {4{fmovem}}; end
-			5'd4: begin imm[4] <= 1'b0; Rt <= 4'd11 ^ {4{fmovem}}; end
-			5'd5: begin imm[5] <= 1'b0; Rt <= 4'd10 ^ {4{fmovem}}; end
-			5'd6: begin imm[6] <= 1'b0; Rt <= 4'd9 ^ {4{fmovem}}; end
-			5'd7: begin imm[7] <= 1'b0;	Rt <= 4'd8 ^ {4{fmovem}}; end
-			5'd8: begin	imm[8] <= 1'b0; Rt <= 4'd7;	end
-			5'd9: begin imm[9] <= 1'b0; Rt <= 4'd6; end
-			5'd10: begin imm[10] <= 1'b0; Rt <= 4'd5; end
-			5'd11: begin imm[11] <= 1'b0; Rt <= 4'd4; end
-			5'd12: begin imm[12] <= 1'b0;	Rt <= 4'd3; end
-			5'd13: begin imm[13] <= 1'b0; Rt <= 4'd2; end
-			5'd14: begin imm[14] <= 1'b0; Rt <= 4'd1; end
-			5'd15: begin imm[15] <= 1'b0; Rt <= 4'd0; end
+			5'd0: begin imm[0] <= 1'b0; Rt <= 6'd39 ^ {3{fmovem}}; end
+			5'd1: begin imm[1] <= 1'b0; Rt <= 6'd38 ^ {3{fmovem}}; end
+			5'd2: begin	imm[2] <= 1'b0;	Rt <= 6'd37 ^ {3{fmovem}}; end
+			5'd3: begin imm[3] <= 1'b0; Rt <= 6'd36 ^ {3{fmovem}}; end
+			5'd4: begin imm[4] <= 1'b0; Rt <= 6'd35 ^ {3{fmovem}}; end
+			5'd5: begin imm[5] <= 1'b0; Rt <= 6'd34 ^ {3{fmovem}}; end
+			5'd6: begin imm[6] <= 1'b0; Rt <= 6'd33 ^ {3{fmovem}}; end
+			5'd7: begin imm[7] <= 1'b0;	Rt <= 6'd32 ^ {3{fmovem}}; end
+			5'd8: begin	imm[8] <= 1'b0; Rt <= {1'b0,rrrbnk,3'd7};	end
+			5'd9: begin imm[9] <= 1'b0; Rt <= {1'b0,rrrbnk,3'd6}; end
+			5'd10: begin imm[10] <= 1'b0; Rt <= {1'b0,rrrbnk,3'd5}; end
+			5'd11: begin imm[11] <= 1'b0; Rt <= {1'b0,rrrbnk,3'd4}; end
+			5'd12: begin imm[12] <= 1'b0;	Rt <= {1'b0,rrrbnk,3'd3}; end
+			5'd13: begin imm[13] <= 1'b0; Rt <= {1'b0,rrrbnk,3'd2}; end
+			5'd14: begin imm[14] <= 1'b0; Rt <= {1'b0,rrrbnk,3'd1}; end
+			5'd15: begin imm[15] <= 1'b0; Rt <= {1'b0,rrrbnk,3'd0}; end
 			endcase
 			
 		end
@@ -7483,7 +7408,7 @@ MOVEP1:
 			resL[23:16] <= dat_i >> {ea[1:0]+4'd2,3'b0};
 		else
 			resL[7:0] <= dat_i >> {ea[1:0]+4'd2,3'b0};
-		Rt <= {1'b0,DDD};
+		Rt <= {1'b0,DDDbnk,DDD};
 		if (ir[6])
 			goto (MOVEP2);
 		else begin
@@ -7533,7 +7458,7 @@ MOVEP3:
 		pwe_o <= `LOW;
 		psel_o <= 4'h0;
 		resL[7:0] <= dat_i >> {ea[1:0]+4'd2,3'b0};
-		Rt <= {1'b0,DDD};
+		Rt <= {1'b0,DDDbnk,DDD};
 		rfwrL <= ~ir[7];
 		ret();
 	end
@@ -7561,6 +7486,7 @@ RETRY2:
 MOVERn2Rc:
 	begin
 		rrrr <= imm[15:12];
+		rrrrbnk <= bank_pfx[5:4];
 		goto (MOVERn2Rc2);
 	end
 MOVERn2Rc2:
@@ -7607,13 +7533,14 @@ MOVERn2Rc2:
 	default:	tIllegal();
 	endcase
 MOVERc2Rn:
+	begin
 	case(imm[11:0])
-	12'h000:	begin resL <= sfc; Rt <= imm[15:12]; rfwrL <= 1'b1; ret(); end
-	12'h001:	begin resL <= dfc; Rt <= imm[15:12]; rfwrL <= 1'b1; ret(); end
-	12'h003:  begin resL <= {24'h0,asid}; Rt <= imm[15:12]; rfwrL <= 1'b1; ret(); end
-	12'h010:  begin resL <= apc; Rt <= imm[15:12]; rfwrL <= 1'b1; ret(); end
-	12'h011:  begin resL <= {24'h0,cpl}; Rt <= imm[15:12]; rfwrL <= 1'b1; ret(); end
-	12'h012:  begin resL <= tr; Rt <= imm[15:12]; rfwrL <= 1'b1; ret(); end
+	12'h000:	begin resL <= sfc; rfwrL <= 1'b1; ret(); end
+	12'h001:	begin resL <= dfc; rfwrL <= 1'b1; ret(); end
+	12'h003:  begin resL <= {24'h0,asid}; rfwrL <= 1'b1; ret(); end
+	12'h010:  begin resL <= apc; rfwrL <= 1'b1; ret(); end
+	12'h011:  begin resL <= {24'h0,cpl}; rfwrL <= 1'b1; ret(); end
+	12'h012:  begin resL <= tr; rfwrL <= 1'b1; ret(); end
 	12'h013:  begin resL <= tcba; Rt <= imm[15:12]; rfwrL <= 1'b1; ret(); end
 	12'h014:  begin resL <= mmus; Rt <= imm[15:12]; rfwrL <= 1'b1; ret(); end
 	12'h015:  begin resL <= ios; Rt <= imm[15:12]; rfwrL <= 1'b1; ret(); end
@@ -7631,16 +7558,18 @@ MOVERc2Rn:
 	12'hFF8:	begin resL <= icnt; Rt <= imm[15:12]; rfwrL <= 1'b1; ret(); end
 	default:	tIllegal();
 	endcase
+	Rt <= imm[15] ? {1'b1,bank_pfx[5:4],imm[14:12]} : {1'b0,bank_pfx[5:4],imm[14:12]}; 
+	end
 
 BIN2BCD1:
 	goto (BIN2BCD2);
 BIN2BCD2:
 	if (dd32done) begin
-		zf <= dd32in==32'h0;
-		vf <= dd32out[39:32]!=8'h00;
+		s <= dd32in;
+		d <= dd32out[39:32];
 		resL <= dd32out[31:0];
 		rfwrL <= 1'b1;
-		Rt <= {1'b0,rrr};
+		Rt <= {1'b0,rrrbnk,rrr};
 		ret();
 	end
 BCD2BIN1:
@@ -7666,7 +7595,7 @@ BCD2BIN3:
 	begin
 		resL <= resL2;
 		rfwrL <= 1'b1;
-		Rt <= {1'b0,rrr};
+		Rt <= {1'b0,rrrbnk,rrr};
 		ret();
 	end
 CCHK:
@@ -7684,12 +7613,12 @@ CCHK:
 FADD:
 	begin
 		case(ir2[12:10])
-		3'b000:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_LWORD,S); end
-		3'b001:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_LWORD,S); end
-		3'b100:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_WORD,S); end
-		3'b101:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_OCTA,S); end
-		3'b110:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_BYTE,S); end
-		default:	fs_data(mmm,rrr,FETCH_HEXI1,S);
+		3'b000:	begin push(FCVTI1); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_LWORD,S); end
+		3'b001:	begin push(FCVTI1); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_LWORD,S); end
+		3'b100:	begin push(FCVTI1); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_WORD,S); end
+		3'b101:	begin push(FCVTI1); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_OCTA,S); end
+		3'b110:	begin push(FCVTI1); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_BYTE,S); end
+		default:	fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_HEXI1,S);
 		endcase
 	end
 FADD1:
@@ -7702,7 +7631,7 @@ FADD1:
 				fvf <= dfaddsubo[94:90]==5'b11110;
 				fnanf <= dfaddsubo[94:90]==5'b11111;
 				resF <= dfaddsubo;
-				Rt <= {1'b0,FLTDST};
+				Rt <= {3'b0,FLTDST};
 				rfwrF <= 1'b1;
 				ret();
 			end
@@ -7714,7 +7643,7 @@ FADD1:
 				fvf <= dfmao_overflow;
 				fnanf <= dfmao_nan;
 				resF <= dfmao;
-				Rt <= {1'b0,FLTDST};
+				Rt <= {3'b0,FLTDST};
 				rfwrF <= 1'b1;
 				ret();
 			end
@@ -7723,12 +7652,12 @@ FADD1:
 FINTRZ:
 	begin
 		case(ir2[12:10])
-		3'b000:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_LWORD,S); end
-		3'b001:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_LWORD,S); end
-		3'b100:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_WORD,S); end
-		3'b101:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_OCTA,S); end
-		3'b110:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_BYTE,S); end
-		default:	fs_data(mmm,rrr,FETCH_HEXI1,S);
+		3'b000:	begin push(FCVTI1); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_LWORD,S); end
+		3'b001:	begin push(FCVTI1); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_LWORD,S); end
+		3'b100:	begin push(FCVTI1); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_WORD,S); end
+		3'b101:	begin push(FCVTI1); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_OCTA,S); end
+		3'b110:	begin push(FCVTI1); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_BYTE,S); end
+		default:	fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_HEXI1,S);
 		endcase
 	end
 FINTRZ1:	// Also FINT
@@ -7739,14 +7668,14 @@ FINTRZ1:	// Also FINT
 				resF <= dftrunco;
 				fzf <= dftrunco[94:0]==95'd0;
 				fnf <= dftrunco[95];
-				Rt <= {1'b0,FLTDST};
+				Rt <= {3'b0,FLTDST};
 				rfwrF <= 1'b1;
 			end
 			else if (SUPPORT_BINFLT) begin
 				resF <= dtrunco;
 				fzf <= dtrunco[95:0]==95'd0;
 				fnf <= dtrunco[95];
-				Rt <= {1'b0,FLTDST};
+				Rt <= {3'b0,FLTDST};
 				rfwrF <= 1'b1;
 			end
 			ret();
@@ -7755,12 +7684,12 @@ FINTRZ1:	// Also FINT
 FSCALE:
 	begin
 		case(ir2[12:10])
-		3'b000:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_LWORD,S); end
-		3'b001:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_LWORD,S); end
-		3'b100:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_WORD,S); end
-		3'b101:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_OCTA,S); end
-		3'b110:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_BYTE,S); end
-		default:	fs_data(mmm,rrr,FETCH_LWORD,S);	// ToDo: convert to int first
+		3'b000:	begin push(FCVTI1); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_LWORD,S); end
+		3'b001:	begin push(FCVTI1); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_LWORD,S); end
+		3'b100:	begin push(FCVTI1); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_WORD,S); end
+		3'b101:	begin push(FCVTI1); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_OCTA,S); end
+		3'b110:	begin push(FCVTI1); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_BYTE,S); end
+		default:	fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_LWORD,S);	// ToDo: convert to int first
 		endcase
 	end
 FSCALE1:
@@ -7773,7 +7702,7 @@ FSCALE1:
 				fvf <= dfscaleo[94:90]==5'b11110;
 				fnanf <= dfscaleo[94:90]==5'b11111;
 				resF <= dfscaleo;
-				Rt <= {1'b0,FLTDST};
+				Rt <= {3'b0,FLTDST};
 				rfwrF <= 1'b1;
 			end
 			else if (SUPPORT_BINFLT) begin
@@ -7782,7 +7711,7 @@ FSCALE1:
 				fvf <= dscaleo_overflow;
 				fnanf <= dscaleo_nan;
 				resF <= dscaleo;
-				Rt <= {1'b0,FLTDST};
+				Rt <= {3'b0,FLTDST};
 				rfwrF <= 1'b1;
 			end
 			ret();
@@ -7791,12 +7720,12 @@ FSCALE1:
 FNEG:
 	begin
 		case(ir2[12:10])
-		3'b000:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_LWORD,S); end
-		3'b001:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_LWORD,S); end
-		3'b100:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_WORD,S); end
-		3'b101:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_OCTA,S); end
-		3'b110:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_BYTE,S); end
-		default:	fs_data(mmm,rrr,FETCH_HEXI1,S);
+		3'b000:	begin push(FCVTI1); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_LWORD,S); end
+		3'b001:	begin push(FCVTI1); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_LWORD,S); end
+		3'b100:	begin push(FCVTI1); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_WORD,S); end
+		3'b101:	begin push(FCVTI1); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_OCTA,S); end
+		3'b110:	begin push(FCVTI1); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_BYTE,S); end
+		default:	fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_HEXI1,S);
 		endcase
 	end
 FNEG1:	// Also FABS
@@ -7805,14 +7734,14 @@ FNEG1:	// Also FABS
 			resF <= {~fps[95] & ~fabs,fps[94:0]};
 			fzf <= fps[94:0]==95'd0;
 			fnf <= ~fps[95] & ~fabs;
-			Rt <= {1'b0,FLTDST};
+			Rt <= {3'b0,FLTDST};
 			rfwrF <= 1'b1;
 		end
 		else if (SUPPORT_BINFLT) begin
 			resF <= {~fps[95] & ~fabs,fps[94:0]};
 			fzf <= fps[94:0]==95'd0;
 			fnf <= ~fps[95] & ~fabs;
-			Rt <= {1'b0,FLTDST};
+			Rt <= {3'b0,FLTDST};
 			rfwrF <= 1'b1;
 		end
 		ret();
@@ -7820,12 +7749,12 @@ FNEG1:	// Also FABS
 FMUL:
 	begin
 		case(ir2[12:10])
-		3'b000:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_LWORD,S); end
-		3'b001:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_LWORD,S); end
-		3'b100:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_WORD,S); end
-		3'b101:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_OCTA,S); end
-		3'b110:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_BYTE,S); end
-		default:	fs_data(mmm,rrr,FETCH_HEXI1,S);
+		3'b000:	begin push(FCVTI1); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_LWORD,S); end
+		3'b001:	begin push(FCVTI1); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_LWORD,S); end
+		3'b100:	begin push(FCVTI1); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_WORD,S); end
+		3'b101:	begin push(FCVTI1); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_OCTA,S); end
+		3'b110:	begin push(FCVTI1); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_BYTE,S); end
+		default:	fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_HEXI1,S);
 		endcase
 	end	
 FMUL1:
@@ -7842,7 +7771,7 @@ FMUL2:
 			fvf <= dfmulo[94:90]==5'b11110;
 			fnanf <= dfmulo[94:90]==5'b11111;
 			resF <= dfmulo;
-			Rt <= {1'b0,FLTDST};
+			Rt <= {3'b0,FLTDST};
 			rfwrF <= 1'b1;
 			ret();
 		end
@@ -7855,7 +7784,7 @@ FMUL2:
 			fvf <= dfmao[94:80]==15'h7fff && dfmao[79:0]==80'd0;
 			fnanf <= dfmao[94:80]==15'h7fff && dfmao[79:0]!=80'd0;
 			resF <= dfmao;
-			Rt <= {1'b0,FLTDST};
+			Rt <= {3'b0,FLTDST};
 			rfwrF <= 1'b1;
 			ret();
 		end
@@ -7868,12 +7797,12 @@ FMUL2:
 FDIV:
 	begin	
 		case(ir2[12:10])
-		3'b000:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_LWORD,S); end
-		3'b001:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_LWORD,S); end
-		3'b100:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_WORD,S); end
-		3'b101:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_OCTA,S); end
-		3'b110:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_BYTE,S); end
-		default:	fs_data(mmm,rrr,FETCH_HEXI1,S);
+		3'b000:	begin push(FCVTI1); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_LWORD,S); end
+		3'b001:	begin push(FCVTI1); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_LWORD,S); end
+		3'b100:	begin push(FCVTI1); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_WORD,S); end
+		3'b101:	begin push(FCVTI1); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_OCTA,S); end
+		3'b110:	begin push(FCVTI1); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_BYTE,S); end
+		default:	fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_HEXI1,S);
 		endcase
 	end
 FDIV1:
@@ -7898,7 +7827,7 @@ FDIV3:
 			fvf <= dfdivo[94:90]==5'b11110;
 			fnanf <= dfdivo[94:90]==5'b11111;
 			resF <= dfdivo;
-			Rt <= {1'b0,FLTDST};
+			Rt <= {3'b0,FLTDST};
 			rfwrF <= 1'b1;
 			quotient_bits <= {dfdivo[95],dfdivo[6:0]};
 			quotient_bitshi <= {dfdivo[9:7]};
@@ -7912,7 +7841,7 @@ FDIV3:
 			fvf <= ddivo[94:80]==15'h7fff && ddivo[79:0]==80'd0;
 			fnanf <= ddivo[94:80]==15'h7fff && ddivo[79:0]!=80'd0;
 			resF <= ddivo;
-			Rt <= {1'b0,FLTDST};
+			Rt <= {3'b0,FLTDST};
 			rfwrF <= 1'b1;
 			quotient_bits <= {ddivo[95],ddivo[6:0]};
 			quotient_bitshi <= {ddivo[9:7]};
@@ -7969,12 +7898,12 @@ FCVTI2:
 FCMP:
 	begin
 		case(ir2[12:10])
-		3'b000:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_LWORD,S); end
-		3'b001:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_LWORD,S); end
-		3'b100:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_WORD,S); end
-		3'b101:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_OCTA,S); end
-		3'b110:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_BYTE,S); end
-		default:	fs_data(mmm,rrr,FETCH_HEXI1,S);
+		3'b000:	begin push(FCVTI1); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_LWORD,S); end
+		3'b001:	begin push(FCVTI1); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_LWORD,S); end
+		3'b100:	begin push(FCVTI1); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_WORD,S); end
+		3'b101:	begin push(FCVTI1); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_OCTA,S); end
+		3'b110:	begin push(FCVTI1); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_BYTE,S); end
+		default:	fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_HEXI1,S);
 		endcase
 	end
 FCMP1:
@@ -7996,12 +7925,12 @@ FCMP1:
 FMOVE:
 	begin
 		case(ir2[12:10])
-		3'b000:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_LWORD,S); end
-		3'b001:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_LWORD,S); end
-		3'b100:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_WORD,S); end
-		3'b101:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_OCTA,S); end
-		3'b110:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_BYTE,S); end
-		default:	fs_data(mmm,rrr,FETCH_HEXI1,S);
+		3'b000:	begin push(FCVTI1); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_LWORD,S); end
+		3'b001:	begin push(FCVTI1); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_LWORD,S); end
+		3'b100:	begin push(FCVTI1); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_WORD,S); end
+		3'b101:	begin push(FCVTI1); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_OCTA,S); end
+		3'b110:	begin push(FCVTI1); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_BYTE,S); end
+		default:	fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_HEXI1,S);
 		endcase
 	end
 FMOVE1:
@@ -8010,7 +7939,7 @@ FMOVE1:
 			resF <= fps[95:0];
 			fzf <= fps[94:0]==95'd0;
 			fnf <= fps[95];
-			Rt <= {1'b0,FLTDST};
+			Rt <= {3'b0,FLTDST};
 			rfwrF <= 1'b1;
 			ret();
 		end
@@ -8028,7 +7957,7 @@ FMOVE1:
 						resF <= fpss[63:0];
 						fzf <= fpss[62:0]==63'd0;
 						fnf <= fpss[63];
-						Rt <= {1'b0,FLTDST};
+						Rt <= {3'b0,FLTDST};
 						rfwrF <= 1'b1;
 						ret();
 					end
@@ -8047,7 +7976,7 @@ FMOVE1:
 						resF <= fps[63:0];
 						fzf <= fps[62:0]==63'd0;
 						fnf <= fps[63];
-						Rt <= {1'b0,FLTDST};
+						Rt <= {3'b0,FLTDST};
 						rfwrF <= 1'b1;
 						ret();
 					end
@@ -8056,7 +7985,7 @@ FMOVE1:
 				resF <= fps[63:0];
 				fzf <= fps[62:0]==63'd0;
 				fnf <= fps[63];
-				Rt <= {1'b0,FLTDST};
+				Rt <= {3'b0,FLTDST};
 				rfwrF <= 1'b1;
 				ret();
 			end
@@ -8075,7 +8004,7 @@ I2DF2:
 				resF <= i2dfo;
 				fzf <= i2dfo[94:0]==95'd0;
 				fnf <= i2dfo[95];
-				Rt <= {1'b0,FLTDST};
+				Rt <= {3'b0,FLTDST};
 				rfwrF <= 1'b1;
 				ret();
 			end
@@ -8085,7 +8014,7 @@ I2DF2:
 				resF <= i2do;
 				fzf <= i2do[94:0]==95'd0;
 				fnf <= i2do[95];
-				Rt <= {1'b0,FLTDST};
+				Rt <= {3'b0,FLTDST};
 				rfwrF <= 1'b1;
 				ret();
 			end
@@ -8105,9 +8034,9 @@ DF2I2:
 			if (df2idone) begin
 				if (ir2[14])
 					case(ir2[12:10])
-					3'b000:	fs_data(mmm,rrr,STORE_LWORD,D);
-					3'b100:	fs_data(mmm,rrr,STORE_WORD,D);
-					3'b110:	fs_data(mmm,rrr,STORE_BYTE,D);
+					3'b000:	fs_data(mmm,{mmm[0],rrrbnk,rrr},STORE_LWORD,D);
+					3'b100:	fs_data(mmm,{mmm[0],rrrbnk,rrr},STORE_WORD,D);
+					3'b110:	fs_data(mmm,{mmm[0],rrrbnk,rrr},STORE_BYTE,D);
 					default:	ret();
 					endcase
 				else begin
@@ -8132,9 +8061,9 @@ DF2I2:
 		else if (SUPPORT_BINFLT) begin
 			if (d2i_done) begin
 				case(ir2[12:10])
-				3'b000:	fs_data(mmm,rrr,STORE_LWORD,D);
-				3'b100:	fs_data(mmm,rrr,STORE_WORD,D);
-				3'b110:	fs_data(mmm,rrr,STORE_BYTE,D);
+				3'b000:	fs_data(mmm,{mmm[0],rrrbnk,rrr},STORE_LWORD,D);
+				3'b100:	fs_data(mmm,{mmm[0],rrrbnk,rrr},STORE_WORD,D);
+				3'b110:	fs_data(mmm,{mmm[0],rrrbnk,rrr},STORE_BYTE,D);
 				default:	ret();
 				endcase
 				resF <= d2io;
@@ -8157,12 +8086,12 @@ DF2I2:
 FTST:
 	begin
 		case(ir2[12:10])
-		3'b000:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_LWORD,S); end
-		3'b001:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_LWORD,S); end
-		3'b100:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_WORD,S); end
-		3'b101:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_OCTA,S); end
-		3'b110:	begin push(FCVTI1); fs_data(mmm,rrr,FETCH_BYTE,S); end
-		default:	fs_data(mmm,rrr,FETCH_HEXI1,S);
+		3'b000:	begin push(FCVTI1); fs_data(mmm,{1'b0,rrrbnk,rrr},FETCH_LWORD,S); end
+		3'b001:	begin push(FCVTI1); fs_data(mmm,{1'b0,rrrbnk,rrr},FETCH_LWORD,S); end
+		3'b100:	begin push(FCVTI1); fs_data(mmm,{1'b0,rrrbnk,rrr},FETCH_WORD,S); end
+		3'b101:	begin push(FCVTI1); fs_data(mmm,{1'b0,rrrbnk,rrr},FETCH_OCTA,S); end
+		3'b110:	begin push(FCVTI1); fs_data(mmm,{1'b0,rrrbnk,rrr},FETCH_BYTE,S); end
+		default:	fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_HEXI1,S);
 		endcase
 	end
 FTST1:
@@ -8214,7 +8143,7 @@ PDBCC:
 PDBCC1:
 	if (~takb) begin
 		resL <= rfoDnn - 4'd1;
-		Rt <= {1'b0,rrr};
+		Rt <= {1'b0,rrrbnk,rrr};
 		rfwrW <= 1'b1;
 		if (rfoDnn[15:0]!=0)
 			pc <= opc + imm;
@@ -8249,7 +8178,7 @@ PTRAPCC1:
 PSCC:
 	begin
 		d <= {32{ptakb}};
-		fs_data(mmm,rrr,STORE_BYTE,D);
+		fs_data(mmm,{1'b0,rrrbnk,rrr},STORE_BYTE,D);
 	end
 
 //-----------------------------------------------------------------------------
@@ -8259,7 +8188,7 @@ PSCC:
 PFLUSH1:
 	begin
 		push(PFLUSH2);
-		fs_data(mmm,rrr,FETCH_NOP_LWORD,S);
+		fs_data(mmm,{1'b0,rrrbnk,rrr},FETCH_NOP_LWORD,S);
 	end
 PFLUSH2:
 	begin
@@ -8281,9 +8210,9 @@ PLOAD:
 			tPMMUIllop();
 		else begin
 			if (ir2[9])
-				fs_data(mmm,rrr,FETCH_NOP_BYTE,S);	// Translation control reg
+				fs_data(mmm,{1'b0,rrrbnk,rrr},FETCH_NOP_BYTE,S);	// Translation control reg
 			else
-				fs_data(mmm,rrr,STORE_NOP_BYTE,D);	// Translation control reg
+				fs_data(mmm,{1'b0,rrrbnk,rrr},STORE_NOP_BYTE,D);	// Translation control reg
 		end
 	end
 
@@ -8294,7 +8223,7 @@ PTEST:
 	begin
 		pmmu_ptest_lvl <= ir2[12:10];
 		push(PTEST1);
-		fs_data(mmm,rrr,FETCH_NOP_BYTE,S);	// Compute effective address
+		fs_data(mmm,{1'b0,rrrbnk,rrr},FETCH_NOP_BYTE,S);	// Compute effective address
 		casez(ir2[4:0])
 		5'b00000:	pmmu_fc <= sfc;
 		5'b00001:	pmmu_fc <= dfc;
@@ -8358,7 +8287,7 @@ PTEST1:
 PVALID:
 	begin
 		push(PVALID1);
-		fs_data(mmm,rrr,FETCH_NOP_BYTE,S);
+		fs_data(mmm,{1'b0,rrrbnk,rrr},FETCH_NOP_BYTE,S);
 	end
 PVALID1:
 	begin
@@ -8520,7 +8449,7 @@ PMOVE3:
 PSAVE:
 	begin
 	    lea <= `TRUE;
-		fs_data(mmm,rrr,STORE_BYTE,D);	// Calc address
+		fs_data(mmm,{mmm[0],rrrbnk,rrr},STORE_BYTE,D);	// Calc address
 		case(pmmu_format)
 		8'h00:	ret();	// NULL
 		8'h20:	begin pmmu_smask <= 32'h83F40001; goto(PSAVE1); end
@@ -8567,7 +8496,7 @@ PRESTORE:
 	begin
 		lea <= `TRUE;
 		pmmu_smask <= 32'h00000001;
-		fs_data(mmm,rrr,FETCH_BYTE,S);	// Calc address
+		fs_data(mmm,{1'b0,rrrbnk,rrr},FETCH_BYTE,S);	// Calc address
 	end
 PRESTORE1:
 	begin
@@ -8625,10 +8554,8 @@ BITFLD:
 						for (bf1 = 0; bf1 < 32; bf1 = bf1 + 1)
 							if (bf1 >= bfwidth)
 								d[bf1] <= s[bfoffs+bfwidth-1];
-						cf <= 1'b0;
-						vf <= 1'b0;
-						nf <= s[bfoffs+bfwidth-1];
-						zf <= (s & bfmask)==32'd0;
+						bf_nf <= s[bfoffs+bfwidth-1];
+						bf_zf <= (s & bfmask)==32'd0;
 					end
 				4'b1001:	// BFEXTU
 					begin
@@ -8636,10 +8563,8 @@ BITFLD:
 						for (bf1 = 0; bf1 < 32; bf1 = bf1 + 1)
 							if (bf1 >= bfwidth)
 								d[bf1] <= 1'b0;
-						cf <= 1'b0;
-						vf <= 1'b0;
-						nf <= s[bfoffs+bfwidth-1];
-						zf <= (s & bfmask)==32'd0;
+						bf_nf <= s[bfoffs+bfwidth-1];
+						bf_zf <= (s & bfmask)==32'd0;
 					end
 				4'b1101:	// BFFFO
 					begin
@@ -8650,33 +8575,27 @@ BITFLD:
 									d <= bf1;
 									break;
 								end
-						cf <= 1'b0;
-						vf <= 1'b0;
-						nf <= s[bfoffs+bfwidth-1];
-						zf <= (s & bfmask)==32'd0;
+						bf_nf <= s[bfoffs+bfwidth-1];
+						bf_zf <= (s & bfmask)==32'd0;
 					end
 				4'b1111:	// BFINS
 					begin
 						d <= (s & ~bfmask) | (bfdat & (bfmask >> bfoffs) << bfoffs);
-						zf <= (bfdat & (bfmask >> bfoffs))==32'd0;
-						nf <= bfdat[bfwidth-1];
-						cf <= 1'b0;
-						vf <= 1'b0;
+						bf_zf <= (bfdat & (bfmask >> bfoffs))==32'd0;
+						bf_nf <= bfdat[bfwidth-1];
 					end
 				4'b1000:
 					begin
-						nf <= s[bfoffs+bfwidth-1];
-						zf <= (s & bfmask)==32'd0;
-						cf <= 1'b0;
-						vf <= 1'b0;
+						bf_nf <= s[bfoffs+bfwidth-1];
+						bf_zf <= (s & bfmask)==32'd0;
 						ret();
 					end
 				default:
 				begin
-					zf <= TRUE;
+					bf_zf <= TRUE;
 					for (bf1 = 0; bf1 < 32; bf1 = bf1 + 1)
 						if (bf1 < bfoffs && bf1 < bfoffs + bfwidth-1) begin
-							zf <= zf & ~s[bf1];
+							bf_zf <= zf & ~s[bf1];
 							case(ir[11:8])
 							4'b1010:	d[bf1] <= s[bf1] ^ 1'b1;
 							4'b1100:	d[bf1] <= 1'b0;
@@ -8686,9 +8605,7 @@ BITFLD:
 						end
 						else
 							d[bf1] <= s[bf1];
-					cf <= 1'b0;
-					vf <= 1'b0;
-					nf <= s[bfoffs+bfwidth-1];
+					bf_nf <= s[bfoffs+bfwidth-1];
 				end
 				endcase
 			end
@@ -8701,10 +8618,8 @@ BITFLD:
 						for (bf1 = 0; bf1 < 32; bf1 = bf1 + 1)
 							if (bf1 >= bfwidth)
 								fpd[bf1] <= fps[bfoffs+bfwidth-1];
-						cf <= 1'b0;
-						vf <= 1'b0;
-						nf <= fps[bfoffs+bfwidth-1];
-						zf <= (fps & bfmask)==64'd0;
+						bf_nf <= fps[bfoffs+bfwidth-1];
+						bf_zf <= (fps & bfmask)==64'd0;
 					end
 				4'b1001:
 					begin
@@ -8712,10 +8627,8 @@ BITFLD:
 						for (bf1 = 0; bf1 < 32; bf1 = bf1 + 1)
 							if (bf1 >= bfwidth)
 								fpd[bf1] <= 1'b0;
-						cf <= 1'b0;
-						vf <= 1'b0;
-						nf <= fps[bfoffs+bfwidth-1];
-						zf <= (fps & bfmask)==64'd0;
+						bf_nf <= fps[bfoffs+bfwidth-1];
+						bf_zf <= (fps & bfmask)==64'd0;
 					end
 				4'b1101:
 					begin
@@ -8726,33 +8639,27 @@ BITFLD:
 									fpd <= bf1;
 									break;
 								end
-						cf <= 1'b0;
-						vf <= 1'b0;
-						nf <= fps[bfoffs+bfwidth-1];
-						zf <= (fps & bfmask)==64'd0;
+						bf_nf <= fps[bfoffs+bfwidth-1];
+						bf_zf <= (fps & bfmask)==64'd0;
 					end
 				4'b1111:	// BFINS
 					begin
 						fpd <= (fps & ~bfmask) | (bfdat & (bfmask >> bfoffs) << bfoffs);
-						zf <= (bfdat & (bfmask >> bfoffs))==64'd0;
-						nf <= bfdat[bfwidth-1];
-						cf <= 1'b0;
-						vf <= 1'b0;
+						bf_zf <= (bfdat & (bfmask >> bfoffs))==64'd0;
+						bf_nf <= bfdat[bfwidth-1];
 					end
 				4'b1000:
 					begin
-						nf <= fps[bfoffs+bfwidth-1];
-						zf <= (fps & bfmask)==64'd0;
-						cf <= 1'b0;
-						vf <= 1'b0;
+						bf_nf <= fps[bfoffs+bfwidth-1];
+						bf_zf <= (fps & bfmask)==64'd0;
 						ret();
 					end
 				default:
 				begin
-					zf <= TRUE;
+					bf_zf <= TRUE;
 					for (bf1 = 0; bf1 < 64; bf1 = bf1 + 1)
 						if (bf1 < bfoffs && bf1 < bfoffs + bfwidth-1) begin
-							zf <= zf & ~fps[bf1];
+							bf_zf <= zf & ~fps[bf1];
 							case(ir[11:8])
 							4'b1010:	fpd[bf1] <= fps[bf1] ^ 1'b1;
 							4'b1100:	fpd[bf1] <= 1'b0;
@@ -8762,9 +8669,7 @@ BITFLD:
 						end
 						else
 							fpd[bf1] <= fps[bf1];
-					cf <= 1'b0;
-					vf <= 1'b0;
-					nf <= fps[bfoffs+bfwidth-1];
+					bf_nf <= fps[bfoffs+bfwidth-1];
 				end
 				endcase
 			end
@@ -8773,13 +8678,13 @@ BITFLD:
 	end
 BITFLD_UPDATE:
 	if (ir[11:8]==4'b1011 || ir[11:8]==4'b1001 || ir[11:8]==4'b1101) begin
-		Rt <= {1'b0,ir2[14:12]};
+		Rt <= {1'b0,bank_pfx[5:4],ir2[14:12]};
 		rfwrL <= TRUE;
 		resL <= bf_size==FETCH_OCTA ? fpd[31:0] : d[31:0];
 		ret();
 	end
 	else
-		fs_data(mmm,rrr,bf_size,D);
+		fs_data(mmm,{1'b0,rrrbnk,rrr},bf_size,D);
 
 // Do breakpoint acknowledge cycle
 BREAKPOINT:
@@ -8818,13 +8723,13 @@ BREAKPOINT_ACK:
 CAS:
 	begin
 		case(ir[10:9])
-		2'b01:	begin lock_o <= HIGH; push(CAS1); fs_data(mmm,rrr,FETCH_BYTE,D); end
-		2'b10:	begin lock_o <= HIGH; push(CAS1); fs_data(mmm,rrr,FETCH_WORD,D); end
-		2'b11:	begin lock_o <= HIGH; push(CAS1); fs_data(mmm,rrr,FETCH_LWORD,D); end
+		2'b01:	begin lock_o <= HIGH; push(CAS1); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_BYTE,D); end
+		2'b10:	begin lock_o <= HIGH; push(CAS1); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_WORD,D); end
+		2'b11:	begin lock_o <= HIGH; push(CAS1); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_LWORD,D); end
 		default:	tIllegal();
 		endcase
-		Dc <= fnReg({1'b0,ir2[2:0]});
-		Du <= fnReg({1'b0,ir2[8:6]});
+		Dc <= fnReg({3'b0,ir2[2:0]});
+		Du <= fnReg({3'b0,ir2[8:6]});
 	end
 // Compare
 CAS1:
@@ -8837,31 +8742,7 @@ CAS1:
 // Update flags
 CAS2:
 	begin
-		case(ir[10:9])
-		2'b01:
-			begin
-				zf <= resL[7:0]==8'd0;
-				nf <= resL[7];
-				cf <= resL[8];
-				vf <= fnSubOverflow(resL[7],d[7],Dc[7]);
-			end
-		2'b10:
-			begin
-				zf <= resL[15:0]==16'd0;
-				nf <= resL[15];
-				cf <= resL[16];
-				vf <= fnSubOverflow(resL[15],d[15],Dc[15]);
-			end
-		2'b11:
-			begin
-				zf <= resL[31:0]==32'd0;
-				nf <= resL[31];
-				cf <= resL[32];
-				vf <= fnSubOverflow(resL[31],d[31],Dc[31]);
-			end
-		default:	;
-		endcase
-		goto (CAS3);
+		call (DELAY1,CAS3);
 	end
 // Conditionally store
 CAS3:
@@ -8876,7 +8757,7 @@ CAS3:
 			endcase
 		else begin
 			lock_o <= LOW;
-			Rt <= ir2[8:6];
+			Rt <= {3'd0,ir2[8:6]};
 			resL <= d;
 			case(ir[10:9])
 			2'b01:	rfwrB <= TRUE;
@@ -8900,56 +8781,39 @@ CASO:
 	begin
 		ds <= D;
 		case(ir[10:9])
-		2'b01:	begin ea <= fnReg(ir2[15:12]); lock_o <= HIGH; call (FETCH_BYTE,CASO1); end
-		2'b10:	begin ea <= fnReg(ir2[15:12]); lock_o <= HIGH; call (FETCH_WORD,CASO1); end
-		2'b11:	begin ea <= fnReg(ir2[15:12]); lock_o <= HIGH; call (FETCH_LWORD,CASO1); end
+		2'b01:	begin ea <= fnReg({ir2[15],bank_pfx[5:4],ir2[14:12]}); lock_o <= HIGH; call (FETCH_BYTE,CASO1); end
+		2'b10:	begin ea <= fnReg({ir2[15],bank_pfx[5:4],ir2[14:12]}); lock_o <= HIGH; call (FETCH_WORD,CASO1); end
+		2'b11:	begin ea <= fnReg({ir2[15],bank_pfx[5:4],ir2[14:12]}); lock_o <= HIGH; call (FETCH_LWORD,CASO1); end
 		default:	tIllegal();
 		endcase
-		Dc1 <= fnReg({1'b0,ir2[2:0]});
-		Du1 <= fnReg({1'b0,ir2[8:6]});
+		Dc1 <= fnReg({3'b0,ir2[2:0]});
+		Du1 <= fnReg({3'b0,ir2[8:6]});
 	end
 CASO1:
 	begin
 		dd <= d;
 		case(ir[10:9])
-		2'b01:	begin ea <= fnReg(imm[15:12]); lock_o <= HIGH; call (FETCH_BYTE,CASO2); end
-		2'b10:	begin ea <= fnReg(imm[15:12]); lock_o <= HIGH; call (FETCH_WORD,CASO2); end
-		2'b11:	begin ea <= fnReg(imm[15:12]); lock_o <= HIGH; call (FETCH_LWORD,CASO2); end
+		2'b01:	begin ea <= fnReg({imm[15],bank_pfx[5:4],imm[14:12]}); lock_o <= HIGH; call (FETCH_BYTE,CASO2); end
+		2'b10:	begin ea <= fnReg({imm[15],bank_pfx[5:4],imm[14:12]}); lock_o <= HIGH; call (FETCH_WORD,CASO2); end
+		2'b11:	begin ea <= fnReg({imm[15],bank_pfx[5:4],imm[14:12]}); lock_o <= HIGH; call (FETCH_LWORD,CASO2); end
 		default:	tIllegal();
 		endcase
-		Dc2 <= fnReg({1'b0,imm[2:0]});
-		Du2 <= fnReg({1'b0,imm[8:6]});
+		Dc2 <= fnReg({3'b0,imm[2:0]});
+		Du2 <= fnReg({3'b0,imm[8:6]});
 	end
 // Compare
 CASO2:
 	begin
 		case(ir[10:9])
 		2'b10:	resL <= {dd[15:0],d[15:0]} - {Dc1[15:0],Dc2[15:0]};
-		2'b11:	resO <= {dd,d} - {Dc1,Dc2};
+		2'b11:	{resO,resL[31:0]} <= {dd,d} - {Dc1,Dc2};
 		endcase
 		goto (CASO3);
 	end
 // Update flags
 CASO3:
 	begin
-		case(ir[10:9])
-		2'b10:
-			begin
-				zf <= resL[31:0]==32'd0;
-				nf <= resL[31];
-				cf <= resL[32];
-				vf <= fnSubOverflow(resL[31],dd[15],Dc1[15]);
-			end
-		2'b11:
-			begin
-				zf <= resO[63:0]==64'd0;
-				nf <= resO[63];
-				cf <= resO[64];
-				vf <= fnSubOverflow(resO[63],dd[31],Dc1[31]);
-			end
-		default:	;
-		endcase
-		goto (CASO4);
+		call (DELAY1, CASO4);
 	end
 // Conditionally store
 CASO4:
@@ -8957,13 +8821,13 @@ CASO4:
 		d <= Du1;
 		if (zf)
 			case(ir[10:9])
-			2'b10:	begin ea <= fnReg(ir2[15:12]); call (STORE_WORD,CASO5); end
-			2'b11:	begin ea <= fnReg(ir2[15:12]); call (STORE_LWORD,CASO5); end
+			2'b10:	begin ea <= fnReg({ir2[15],bank_pfx[5:4],ir2[14:12]}); call (STORE_WORD,CASO5); end
+			2'b11:	begin ea <= fnReg({ir2[15],bank_pfx[5:4],ir2[14:12]}); call (STORE_LWORD,CASO5); end
 			default:	tIllegal();
 			endcase
 		else begin
 			lock_o <= LOW;
-			Rt <= ir2[8:6];
+			Rt <= {3'b0,ir2[8:6]};
 //			resW <= d[15:0];
 			resL <= d;
 			case(ir[10:9])
@@ -8979,13 +8843,13 @@ CASO5:
 		d <= Du2;
 		if (zf)
 			case(ir[10:9])
-			2'b10:	begin ea <= fnReg(imm[15:12]); call (STORE_WORD,CASO6); end
-			2'b11:	begin ea <= fnReg(imm[15:12]); call (STORE_LWORD,CASO6); end
+			2'b10:	begin ea <= fnReg({imm[15],bank_pfx[5:4],imm[14:12]}); call (STORE_WORD,CASO6); end
+			2'b11:	begin ea <= fnReg({imm[15],bank_pfx[5:4],imm[14:12]}); call (STORE_LWORD,CASO6); end
 			default:	;
 			endcase
 		else begin
 			lock_o <= LOW;
-			Rt <= imm[8:6];
+			Rt <= {3'b0,imm[8:6]};
 //			resW <= d[15:0];
 			resL <= d;
 			case(ir[10:9])
@@ -9023,6 +8887,9 @@ FMOVEM1:
 		else
 			goto(MOVEM_s2Xn);
 	end
+
+DELAY1:
+	ret();
 
 default:
 	goto(RESET);
@@ -9600,7 +9467,7 @@ end
 //-----------------------------------------------------------------------------
 task fs_data;
 input amode_e mmm;
-input [2:0] rrr;
+input [5:0] rrr;
 input state_t size_state;
 input dsi;
 begin
@@ -9617,51 +9484,51 @@ begin
 				case(size_state)
 				STORE_LWORD:
 					begin
-						Rt <= {mmm[0],rrr};
+						Rt <= rrr;
 						rfwrL <= 1'b1;
 					end
 				STORE_WORD:
 					begin
-						Rt <= {mmm[0],rrr};
+						Rt <= rrr;
 						rfwrW <= 1'b1;
 					end
 				STORE_BYTE:
 					begin
-						Rt <= {mmm[0],rrr};
+						Rt <= rrr;
 						rfwrB <= 1'b1;
 					end
 				default:	;
 				endcase
 				goto(RETSTATE);
 			end	// Dn
+
 	AM_AN:
 		begin
 				if (dsi==D)
-					d <= rfob;
+					d <= MMMRRR ? rfoAna : rfob;
 				else
-					s <= rfob;
+					s <= MMMRRR ? rfoAna : rfob;
 				case(size_state)
 				STORE_LWORD:
 					begin
-						Rt <= {mmm[0],rrr};
+						Rt <= rrr;
 						rfwrL <= 1'b1;
 					end
 				STORE_WORD:
 					begin
-						Rt <= {mmm[0],rrr};
+						Rt <= rrr;
 						rfwrW <= 1'b1;
 					end
 				STORE_BYTE:
-					if (mmm[0])
-						tIllegal();	// Only if storing in An
-					else begin
-						Rt <= {mmm[0],rrr};
+					begin
+						Rt <= rrr;
 						rfwrB <= 1'b1;
 					end
 				default:	;
 				endcase
 				goto(RETSTATE);
 				end	// An
+
 	AM_IND:	begin	//(An)
 				ea <= MMMRRR ? rfoAna : rfoAn;
 				goto(size_state);
@@ -9669,7 +9536,7 @@ begin
 	AM_POST:	begin	// (An)+
 				ea <= (MMMRRR ? rfoAna : rfoAn);
 				if (!lea && !pload) begin
-					Rt <= {1'b1,rrr};
+					Rt <= {1'b1,rrr[4:0]};
 					rfwrL <= 1'b1;
 				end			
 				case(size_state)
@@ -9683,7 +9550,7 @@ begin
 			end
 	AM_PRE:	begin	// -(An)
 				if (!lea && !pload) begin
-					Rt <= {1'b1,rrr};
+					Rt <= {1'b1,rrr[4:0]};
 					rfwrL <= 1'b1;
 				end
 				case(size_state)
@@ -9719,7 +9586,7 @@ begin
 				goto (FSDATA2);
 			end
 	AM_MISC:	begin
-				case(rrr)
+				case(rrr[2:0])
 				3'd0:	begin	// abs short
 							ea <= 32'd0;
 							mmmx <= mmm;
@@ -9772,7 +9639,7 @@ endtask
 
 task fs_data2;
 input amode_e mmm;
-input [2:0] rrr;
+input [5:0] rrr;
 input state_t size_state;
 input dsi;
 begin
@@ -9787,7 +9654,7 @@ begin
 				call(FETCH_NDX,size_state);
 			end
 	AM_MISC:	begin
-				case(rrr)
+				case(rrr[2:0])
 				3'd0:	begin	// abs short
 							ea <= 32'd0;
 							call(FETCH_D16,size_state);
@@ -9930,9 +9797,14 @@ begin
 	// TRAP will come back here for a second try at returning. If trace is on
 	// then a return is not done, instead flow goes to the TRAP sequence which
 	// will then do a ret(), but this time trace will be off.
-	if (state_stk1==IFETCH && tf && ir != 16'h4E73) begin
-		is_trace <= 1'b1;
-		state <= TRAP;
+	if (state_stk1==IFETCH) begin
+		if (!(ir[15:12]==4'd7 && ir[8])) begin	// not a BANK instruction
+			bank_pfx <= 16'h0000;
+			if (tf && ir != 16'h4E73) begin
+				is_trace <= 1'b1;
+				state <= TRAP;
+			end
+		end
 	end
 	else begin
 		state <= state_stk1;

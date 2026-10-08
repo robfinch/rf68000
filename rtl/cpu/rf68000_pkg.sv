@@ -34,4 +34,38 @@ typedef struct packed
 	logic [7:0] al;				// access level
 } mod_stack_frame_t;		// 5x32 bits
 
+typedef enum logic [5:0] {
+	FU_NONE = 6'd0,
+	FU_MOVE, FU_MUL, FU_SHIFT, FU_SHIFT1,
+	FU_TST, FU_ADDX, FU_SUBX, FU_NEGX,
+	FU_CMP, FU_ADD, FU_SUB, FU_LOGIC, FU_ADDQ, FU_SUBQ,
+	FU_ADDI, FU_ANDI_CCR, FU_ANDI_SR, FU_EORI_CCR,
+	FU_ANDI_SRX, FU_EORI_SRX, FU_ORI_SRX, FU_MOVE2SRX,
+	FU_EORI_SR, FU_ORI_CCR, FU_ORI_SR, FU_MOVE2CCR,
+	FU_MOVE2SR, FU_MOVEQ, FU_CLR, FU_EXT, FU_SWAP, FU_CAS, FU_CASO,
+	FU_BCD, FU_STOP, FU_DIV, FU_TAS, FU_BTST, FU_RTE,
+	FU_BITFLD, FU_BIN2BCD
+} flag_update_e;
+
+// These functions take the MSBs of the operands and results and return an
+// overflow status.
+
+// If the signs of the operands are the same, and the sign of the result does
+// not match the operands sign.
+function fnAddOverflow;
+input r;
+input a;
+input b;
+	fnAddOverflow = (r ^ b) & (1'b1 ^ a ^ b);
+endfunction
+
+// If the signs of the operands are different and sign of the result does not
+// match the first operand.
+function fnSubOverflow;
+input r;
+input a;
+input b;
+	fnSubOverflow = (r ^ a) & (a ^ b);
+endfunction
+
 endpackage
