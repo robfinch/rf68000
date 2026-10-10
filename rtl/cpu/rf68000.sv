@@ -51,8 +51,6 @@ import rf68851_pkg::*;
 `define SUPPORT_MUL	1'b1
 `define SUPPORT_DIV	1'b1
 `define SUPPORT_BCD	1'b1
-`define SUPPORT_010	1'b1
-//`define SUPPORT_020 1'b1
 `define SUPPORT_PMMU 1'b1
 `define SUPPORT_BITPAIRS 1'b1
 
@@ -154,7 +152,12 @@ module rf68000(coreno_i, clken_i, rst_i, rst_o, clk_i, dfclk_i, nmi_i, ipl_i, vp
 parameter SUPPORT_DECFLT = 1'b1;
 parameter SUPPORT_BINFLT = 1'b0;
 parameter SUPPORT_PMMU = 1'b1;
-parameter SUPPORT_68020 = 1'b0;
+parameter SUPPORT_010 = 1'b1;
+parameter SUPPORT_020 = 1'b0;
+parameter SUPPORT_B24 = 1'b0;
+parameter SUPPORT_OPER2 = 1'b1;
+parameter SUPPORT_FAR = 1'b1;
+parameter SUPPORT_LONG = 1'b1;
 parameter IOPS_ADDR = 32'hFDE00000;
 parameter MMU_ADDR = 32'hFDC00000;
 // Number of ATC entries
@@ -625,7 +628,12 @@ typedef enum logic [9:0] {
 	FETCH_BRDISP32a,
 	// 360
 	DELAY1,
-	TST1
+	TST1,
+	MULS4,
+	MULU4,
+	LFETCH_WORD,
+	USTORE_WORD,
+	USTORE_WORD_ACK
 } state_t;
 
 typedef enum logic [4:0] {
@@ -646,8 +654,9 @@ typedef enum logic [2:0] {
 	AM_MISC = 3'd7
 } amode_e;
 
-parameter S = 1'b0;
-parameter D = 1'b1;
+parameter S = 2'b00;
+parameter S2 = 2'b01;
+parameter D = 2'b10;
 
 input [31:0] coreno_i;
 input clken_i;
@@ -690,7 +699,7 @@ bus_stat_t bus_stat;
 reg em;							// emulation mode
 reg [15:0] ir;
 reg [15:0] ir2;			// second word for ir
-reg [15:0] bank_pfx;
+reg [15:0] bank_pfx, fp_bank_pfx, src2_pfx;
 `ifdef SUPPORT_NANO_CACHE
 reg [15:0] fetchbuf [0:7];
 reg [31:0] fetchbuf_tag [0:7];
@@ -711,46 +720,46 @@ state_t state_stk6;
 state_t state_stk7;
 state_t sz_state;
 flag_update_e flag_updated;
-reg [31:0] d0 = 'd0;
-reg [31:0] d1 = 'd0;
-reg [31:0] d2 = 'd0;
-reg [31:0] d3 = 'd0;
-reg [31:0] d4 = 'd0;
-reg [31:0] d5 = 'd0;
-reg [31:0] d6 = 'd0;
-reg [31:0] d7 = 'd0;
-reg [31:0] d8 = 'd0;
-reg [31:0] d9 = 'd0;
-reg [31:0] d10 = 'd0;
-reg [31:0] d11 = 'd0;
-reg [31:0] d12 = 'd0;
-reg [31:0] d13 = 'd0;
-reg [31:0] d14 = 'd0;
-reg [31:0] d15 = 'd0;
-reg [31:0] d16 = 'd0;
-reg [31:0] d17 = 'd0;
-reg [31:0] d18 = 'd0;
-reg [31:0] d19 = 'd0;
-reg [31:0] d20 = 'd0;
-reg [31:0] d21 = 'd0;
-reg [31:0] d22 = 'd0;
-reg [31:0] d23 = 'd0;
-reg [31:0] d24 = 'd0;
-reg [31:0] d25 = 'd0;
-reg [31:0] d26 = 'd0;
-reg [31:0] d27 = 'd0;
-reg [31:0] d28 = 'd0;
-reg [31:0] d29 = 'd0;
-reg [31:0] d30 = 'd0;
-reg [31:0] d31 = 'd0;
-reg [31:0] a0 = 'd0;
-reg [31:0] a1 = 'd0;
-reg [31:0] a2 = 'd0;
-reg [31:0] a3 = 'd0;
-reg [31:0] a4 = 'd0;
-reg [31:0] a5 = 'd0;
-reg [31:0] a6 = 'd0;
-reg [31:0] sp = 'd0;
+reg [63:0] d0 = 'd0;
+reg [63:0] d1 = 'd0;
+reg [63:0] d2 = 'd0;
+reg [63:0] d3 = 'd0;
+reg [63:0] d4 = 'd0;
+reg [63:0] d5 = 'd0;
+reg [63:0] d6 = 'd0;
+reg [63:0] d7 = 'd0;
+reg [63:0] d8 = 'd0;
+reg [63:0] d9 = 'd0;
+reg [63:0] d10 = 'd0;
+reg [63:0] d11 = 'd0;
+reg [63:0] d12 = 'd0;
+reg [63:0] d13 = 'd0;
+reg [63:0] d14 = 'd0;
+reg [63:0] d15 = 'd0;
+reg [63:0] d16 = 'd0;
+reg [63:0] d17 = 'd0;
+reg [63:0] d18 = 'd0;
+reg [63:0] d19 = 'd0;
+reg [63:0] d20 = 'd0;
+reg [63:0] d21 = 'd0;
+reg [63:0] d22 = 'd0;
+reg [63:0] d23 = 'd0;
+reg [63:0] d24 = 'd0;
+reg [63:0] d25 = 'd0;
+reg [63:0] d26 = 'd0;
+reg [63:0] d27 = 'd0;
+reg [63:0] d28 = 'd0;
+reg [63:0] d29 = 'd0;
+reg [63:0] d30 = 'd0;
+reg [63:0] d31 = 'd0;
+reg [63:0] a0 = 'd0;
+reg [63:0] a1 = 'd0;
+reg [63:0] a2 = 'd0;
+reg [63:0] a3 = 'd0;
+reg [63:0] a4 = 'd0;
+reg [63:0] a5 = 'd0;
+reg [63:0] a6 = 'd0;
+reg [63:0] sp = 'd0;
 reg [95:0] fp0 = 'd0;
 reg [95:0] fp1 = 'd0;
 reg [95:0] fp2 = 'd0;
@@ -759,6 +768,14 @@ reg [95:0] fp4 = 'd0;
 reg [95:0] fp5 = 'd0;
 reg [95:0] fp6 = 'd0;
 reg [95:0] fp7 = 'd0;
+reg [95:0] fp8 = 'd0;
+reg [95:0] fp9 = 'd0;
+reg [95:0] fp10 = 'd0;
+reg [95:0] fp11 = 'd0;
+reg [95:0] fp12 = 'd0;
+reg [95:0] fp13 = 'd0;
+reg [95:0] fp14 = 'd0;
+reg [95:0] fp15 = 'd0;
 reg [31:0] d0i;
 reg [31:0] d1i;
 reg [31:0] d2i;
@@ -795,7 +812,7 @@ wire [31:0] a6o;
 wire [31:0] spo;
 wire [31:0] flagso;
 wire [31:0] pco;
-function [31:0] fnReg;
+function [63:0] fnReg;
 input [5:0] rg;
 begin
 	case(rg)
@@ -1052,14 +1069,16 @@ reg pload, ptest=1'b0;
 reg [15:0] pid_stack [0:15];
 reg [3:0] pid_sp;
 wire cf,vf,nf,zf,xf;
+wire lmf;			// long mode indicator
+reg lm;
 reg sf,mf,tf;
 reg movemf;
 reg gie;
 reg [2:0] im;
-reg [2:0] ccr57;
+reg [2:0] ccr67;
 reg sr11;
 reg sr14;
-wire [15:0] sr = {tf,sr14,sf,mf,sr11,im,ccr57,xf,nf,zf,vf,cf};
+wire [15:0] sr = {tf,sr14,sf,mf,sr11,im,ccr67,lm,xf,nf,zf,vf,cf};
 wire [31:0] srx = {sr};
 reg fnf,fzf,fvf,fnanf;
 wire finff = fvf;
@@ -1073,19 +1092,23 @@ reg [11:0] fpcnt;
 reg [31:0] pc;
 reg [31:0] opc;			// pc for branch references
 reg [31:0] fpiar;
-reg [31:0] ssp,usp,isp;
-reg [31:0] disp;
-reg [31:0] s,d,dd,imm,immx;
+reg [63:0] ssp,usp,isp;
+reg [63:0] disp;
+reg [63:0] s,s2,d,dd,imm,immx;
+reg has_s2 = 1'b0;
+reg is_far = 1'b0;
+reg is_long = 1'b0;
+reg is_short = FALSE;
 reg [31:0] bit2test;
 reg wl;
-reg ds;
+reg [1:0] ds;
 reg [5:0] cnt;				// shift count
 reg [31:0] ea;				// effective address
 reg [31:0] vector;
 reg [7:0] vecno;
 reg [5:0] Rt;
 wire [1:0] sz = ir[7:6];
-reg dsix;
+reg [1:0] dsix;
 amode_e mmm,mmmx,mmm_save=AM_DN;
 reg [2:0] rrr;
 reg [5:0] rrrx;
@@ -1103,25 +1126,24 @@ reg xword_format;
 reg [1:0] scale;
 
 amode_e MMM = amode_e'(ir[8:6]);
-wire [2:0] RRR = ir[11:9];
 wire [2:0] QQQ = ir[11:9];
 wire [2:0] DDD = ir[11:9];
 wire [2:0] AAA = ir[11:9];
 reg [10:0] tracendx,tracendx2;
 reg [31:0] tracebuf [0:2047];
 
-reg [1:0] rrrbnk,AAAbnk,DDDbnk,rrrrbnk,RRRbnk;
-reg [2:0] FLTSRC;
-reg [2:0] FLTDST;
+reg [1:0] rrrbnk,AAAbnk,DDDbnk,rrrrbnk,fpDSTbnk,fpSRCbnk;
+reg [4:0] FLTSRC;
+reg [4:0] FLTDST;
 reg MMMRRR;
 wire Anabit;
 wire [31:0] sp_dec = sp - 32'd2;
 reg [31:0] rfoAn;
 always_comb
-	rfoAn = fnReg({3'b1,rrrbnk,rrr});
+	rfoAn = fnReg({1'b1,rrrbnk,rrr});
 reg [31:0] rfoAna;
 always_comb
-	rfoAna = fnReg({3'b1,AAAbnk,AAA});
+	rfoAna = fnReg({1'b1,AAAbnk,AAA});
 //wire [31:0] rfoAn =	rrr==3'b111 ? sp : regfile[{1'b1,rrr}];
 reg [31:0] rfoDn;
 always_comb
@@ -1171,25 +1193,41 @@ generate begin : gFLTSrcDst
 if (SUPPORT_DECFLT) begin
 always_comb
 case(FLTDST)
-3'd0:   rfoFpdst <= fp0;
-3'd1:   rfoFpdst <= fp1;
-3'd2:   rfoFpdst <= fp2;
-3'd3:   rfoFpdst <= fp3;
-3'd4:   rfoFpdst <= fp4;
-3'd5:   rfoFpdst <= fp5;
-3'd6:   rfoFpdst <= fp6;
-3'd7:   rfoFpdst <= fp7;
+5'd0:   rfoFpdst <= fp0;
+5'd1:   rfoFpdst <= fp1;
+5'd2:   rfoFpdst <= fp2;
+5'd3:   rfoFpdst <= fp3;
+5'd4:   rfoFpdst <= fp4;
+5'd5:   rfoFpdst <= fp5;
+5'd6:   rfoFpdst <= fp6;
+5'd7:   rfoFpdst <= fp7;
+5'd8:   rfoFpdst <= fp8;
+5'd9:   rfoFpdst <= fp9;
+5'd10:   rfoFpdst <= fp10;
+5'd11:   rfoFpdst <= fp11;
+5'd12:   rfoFpdst <= fp12;
+5'd13:   rfoFpdst <= fp13;
+5'd14:   rfoFpdst <= fp14;
+5'd15:   rfoFpdst <= fp15;
 endcase
 always_comb
 case(FLTSRC)
-3'd0:   rfoFpsrc <= fp0;
-3'd1:   rfoFpsrc <= fp1;
-3'd2:   rfoFpsrc <= fp2;
-3'd3:   rfoFpsrc <= fp3;
-3'd4:   rfoFpsrc <= fp4;
-3'd5:   rfoFpsrc <= fp5;
-3'd6:   rfoFpsrc <= fp6;
-3'd7:   rfoFpsrc <= fp7;
+5'd0:   rfoFpsrc <= fp0;
+5'd1:   rfoFpsrc <= fp1;
+5'd2:   rfoFpsrc <= fp2;
+5'd3:   rfoFpsrc <= fp3;
+5'd4:   rfoFpsrc <= fp4;
+5'd5:   rfoFpsrc <= fp5;
+5'd6:   rfoFpsrc <= fp6;
+5'd7:   rfoFpsrc <= fp7;
+5'd8:   rfoFpsrc <= fp8;
+5'd9:   rfoFpsrc <= fp9;
+5'd10:   rfoFpsrc <= fp10;
+5'd11:   rfoFpsrc <= fp11;
+5'd12:   rfoFpsrc <= fp12;
+5'd13:   rfoFpsrc <= fp13;
+5'd14:   rfoFpsrc <= fp14;
+5'd15:   rfoFpsrc <= fp15;
 endcase
 end
 end
@@ -1200,20 +1238,20 @@ endgenerate
 //wire [31:0] rfob = {mmm[0],rrr}==4'b1111 ? sp : regfile[{mmm[0],rrr}];
 //wire [31:0] rfoDnn = regfile[{1'b0,rrr}];
 //wire [31:0] rfoRnn = rrrr==4'b1111 ? sp : regfile[rrrr];
-reg rfwrL,rfwrB,rfwrW;
+reg rfwrL,rfwrB,rfwrW,rfwrQ;
 reg rfwrF;
 reg takb, ftakb, ptakb;
-reg [32:0] resL;
+reg [64:0] resL;
 reg [31:0] resO;		// high order of 64-bit word
 reg [95:0] resF;
-reg [95:0] fps, fpd;
+reg [95:0] fps, fps2, fpd;
 (* USE_DSP = "no" *)
 reg [32:0] resL1,resL2;
 reg [32:0] resMS1,resMS2,resMU1,resMU2;
 reg [31:0] st_data;
 wire [11:0] bcdaddo,bcdsubo,bcdnego;
 wire bcdaddoc,bcdsuboc,bcdnegoc;
-reg [31:0] bad_addr;
+reg [63:0] bad_addr;
 reg [15:0] mac_cycle_type;
 reg prev_nmi;
 reg pe_nmi;
@@ -1489,7 +1527,7 @@ rf68000_divider udiv1
 	.abort(1'b0),
 	.sgn(divs),
 	.sgnus(1'b0),
-	.a(d),
+	.a(s2),
 	.b(divs? {{16{s[15]}},s[15:0]}:{16'd0,s[15:0]}),
 	.qo(divq),
 	.ro(divr),
@@ -1571,7 +1609,7 @@ fpFMA96nrL8 ufdma1 (
 	.ce(1'b1),
 	.op(fsub),
 	.rm(3'b0),
-	.a(fpd),
+	.a(fps2),
 	.b(state==FADD ? 96'h3FFF00000000000000000000 : fpss),	// FADD/FSUB - multiply by one
 	.c((state==FMUL1||state==FMUL2) ? 96'd0 : fpss),								// FMUL - add zero
 	.o(dfmao1),
@@ -1596,8 +1634,8 @@ fpDivide96 uddiv1
 	.ce(1'b1),
 	.ld(state==FDIV1),
 	.op(1'b0),
-	.a(fpd),
-	.b(fpss),
+	.a(has_s2 ? fpss : fpd),
+	.b(has_s2 ? fps2 : fpss),
 	.o(ddivo1),
 	.done(ddiv_done),
 	.sign_exe(),
@@ -1625,7 +1663,7 @@ fpScaleb96 udscale1
 (
 	.clk(dfclk_i),
 	.ce(1'b1),
-	.a(fpd),
+	.a(fps2),
 	.b(s[31:0]),
 	.o(dscaleo1)
 );
@@ -1745,8 +1783,8 @@ DFPAddsub96nr ufaddsub1
 	.ce(1'b1),
 	.rm(3'b0),
 	.op(fsub),
-	.a(fpd),
-	.b(fps),
+	.a(fps),
+	.b(fps2),
 	.o(dfaddsubo1)
 );
 
@@ -1759,8 +1797,8 @@ DFPMultiply96nr udfmul1
 	.clk(dfclk_i),
 	.ce(1'b1),
 	.ld(state==FMUL1),
-	.a(fpd),
-	.b(fps),
+	.a(fps),
+	.b(fps2),
 	.o(dfmulo1),
 	.rm(3'b000),
 	.sign_exe(),
@@ -1789,8 +1827,8 @@ DFPDivide96nr udfdiv1
 	.ce(1'b1),
 	.ld(state==FDIV1),
 	.op(1'b0),
-	.a(fpd),
-	.b(fps),
+	.a(has_s2 ? fps : fps2),
+	.b(has_s2 ? fps2 : fps),
 	.o(dfdivo1),
 	.rm(3'b000),
 	.done(dfdivdone1),
@@ -2043,12 +2081,18 @@ rf68000_ccr uccr1 (
 	.cnt(cnt),
 	.shift_op(shift_op),
 	.flag_update(flag_update),
+	.flag_updated(flag_updated),
 	.cf(cf),
 	.vf(vf),
 	.nf(nf),
 	.zf(zf),
-	.xf(xf)
+	.xf(xf),
+	.lm(lmf)
 );
+
+reg is_prefix;
+always_comb is_prefix = ir[15:12]==4'h7 && ir[8];
+always_comb lm = lmf & ~is_short;
 
 always_comb
 begin
@@ -2097,16 +2141,7 @@ DECODE:
 			end
 		9'b100001001:	;	// 484x		Breakpoint
 		9'b100001???:	;	// PEA
-		9'b1010?????:	// TST / TAS
-			if (ir==16'h4AFC)	// 4AFC	Illegal
-				;
-			else
-				case(sz)
-				2'b00:	begin flag_update = FU_TST; end
-				2'b01:	begin flag_update = FU_TST; end
-				2'b10:	begin flag_update = FU_TST; end
-				2'b11:	;
-				endcase
+		9'b1010?????:	;	// TST / TAS
 		9'b11100100?:	;
 		9'b111001010:	;
 		9'b111001011:	;
@@ -2136,10 +2171,8 @@ DECODE:
 // MOVEQ
 //-----------------------------------------------------------------------------
 	5'h7:
-		// MOVEQ only if ir[8]==0, but it is otherwise not used for the 68k.
-		// So some decode and fmax is saved by not decoding ir[8]
-		//if (ir[8]==1'b0) 
-		flag_update = FU_MOVEQ;
+		if (ir[8]==1'b0) 	// MOVEQ
+			flag_update = FU_MOVEQ;
 
 //-----------------------------------------------------------------------------
 // OR / DIVU / DIVS / SBCD
@@ -2185,14 +2218,6 @@ DECODE:
 	5'h1F:	;
 	endcase
 	end
-//-----------------------------------------------------------------------------
-//-----------------------------------------------------------------------------
-`ifdef SUPPORT_010
-MOVES:	;
-MOVES2:	;
-MOVES3:	;
-`endif
-
 //-----------------------------------------------------------------------------
 // BCD arithmetic
 // ABCD / SBCD / NBCD
@@ -2404,6 +2429,9 @@ TST1:	flag_update = FU_TST;
 
 RTE2:	flag_update = FU_RTE;
 
+TRAP:	if (is_rst)
+				flag_update = FU_RESET;
+
 BIN2BCD2:
 	if (dd32done) begin
 		flag_update = FU_BIN2BCD;
@@ -2412,9 +2440,8 @@ BIN2BCD2:
 //-----------------------------------------------------------------------------
 // 68020 - 
 //-----------------------------------------------------------------------------
-`ifdef SUPPORT_020
 BITFLD:
-	begin
+	if (SUPPORT_020) begin
 		case(bf_size)
 		FETCH_BYTE,FETCH_WORD,FETCH_LWORD:	
 			begin
@@ -2490,7 +2517,8 @@ CAS2:
 CASO3:
 		flag_update = FU_CASO;
 
-`endif
+default:	
+		flag_update = FU_NONE;
 	endcase
 end
 
@@ -2523,6 +2551,7 @@ if (rst_i) begin
 	rfwrB <= 1'b0;
 	rfwrW <= 1'b0;
 	rfwrL <= 1'b0;
+	rfwrQ <= 1'b0;
 	rfwrF <= 1'b0;
 	gie <= 1'b0;
 	im <= 3'b111;
@@ -2592,10 +2621,16 @@ if (rst_i) begin
 	bus_stat <= 8'h00;
 	resO <= 32'h0;
 	bank_pfx <= 16'h0000;
+	fp_bank_pfx <= 16'h0000;
+	src2_pfx <= 16'h0000;
 	rrrbnk <= 2'b00;
 	rrrrbnk <= 2'b00;
 	AAAbnk <= 2'b00;
 	DDDbnk <= 2'b00;
+	has_s2 <= FALSE;
+	is_far <= FALSE;
+	is_long <= FALSE;
+	is_short <= FALSE;
 end
 else begin
 
@@ -2620,25 +2655,54 @@ if (nmi_i & !prev_nmi)
 rfwrB <= 1'b0;
 rfwrW <= 1'b0;
 rfwrL <= 1'b0;
+rfwrQ <= 1'b0;
 rfwrF <= 1'b0;
-if (rfwrL) begin
+if (rfwrQ) begin
   case(Rt)
-  6'd0:   d0 <= resL[31:0];
-  6'd1:   d1 <= resL[31:0];
-  6'd2:   d2 <= resL[31:0];
-  6'd3:   d3 <= resL[31:0];
-  6'd4:   d4 <= resL[31:0];
-  6'd5:   d5 <= resL[31:0];
-  6'd6:   d6 <= resL[31:0];
-  6'd7:   d7 <= resL[31:0];
-  6'd8:   d8 <= resL[31:0];
-  6'd9:   d9 <= resL[31:0];
-  6'd10:   d10 <= resL[31:0];
-  6'd11:   d11 <= resL[31:0];
-  6'd12:   d12 <= resL[31:0];
-  6'd13:   d13 <= resL[31:0];
-  6'd14:   d14 <= resL[31:0];
-  6'd15:   d15 <= resL[31:0];
+  6'd0:   d0 <= resL;
+  6'd1:   d1 <= resL;
+  6'd2:   d2 <= resL;
+  6'd3:   d3 <= resL;
+  6'd4:   d4 <= resL;
+  6'd5:   d5 <= resL;
+  6'd6:   d6 <= resL;
+  6'd7:   d7 <= resL;
+  6'd8:   d8 <= resL;
+  6'd9:   d9 <= resL;
+  6'd10:   d10 <= resL;
+  6'd11:   d11 <= resL;
+  6'd12:   d12 <= resL;
+  6'd13:   d13 <= resL;
+  6'd14:   d14 <= resL;
+  6'd15:   d15 <= resL;
+  6'd32:  a0 <= resL;
+  6'd33:  a1 <= resL;
+  6'd34:  a2 <= resL;
+  6'd35:  a3 <= resL;
+  6'd36:  a4 <= resL;
+  6'd37:  a5 <= resL;
+  6'd38:  a6 <= resL;
+  6'd39:  sp <= resL;
+  endcase
+end
+else if (rfwrL) begin
+  case(Rt)
+  6'd0:   d0[31:0] <= resL[31:0];
+  6'd1:   d1[31:0] <= resL[31:0];
+  6'd2:   d2[31:0] <= resL[31:0];
+  6'd3:   d3[31:0] <= resL[31:0];
+  6'd4:   d4[31:0] <= resL[31:0];
+  6'd5:   d5[31:0] <= resL[31:0];
+  6'd6:   d6[31:0] <= resL[31:0];
+  6'd7:   d7[31:0] <= resL[31:0];
+  6'd8:   d8[31:0] <= resL[31:0];
+  6'd9:   d9[31:0] <= resL[31:0];
+  6'd10:   d10[31:0] <= resL[31:0];
+  6'd11:   d11[31:0] <= resL[31:0];
+  6'd12:   d12[31:0] <= resL[31:0];
+  6'd13:   d13[31:0] <= resL[31:0];
+  6'd14:   d14[31:0] <= resL[31:0];
+  6'd15:   d15[31:0] <= resL[31:0];
   6'd32:  a0 <= resL[31:0];
   6'd33:  a1 <= resL[31:0];
   6'd34:  a2 <= resL[31:0];
@@ -2711,8 +2775,6 @@ else if (rfwrB)
 	default:	;
 	endcase
 	
-	flag_updated <= flag_update;
-
 	pmmu_flush_cmd <= 2'd0;	// NOP
 
 	case(flag_updated)
@@ -2808,7 +2870,7 @@ else if (rfwrB)
 		end
 	FU_MOVE2SR:
 		begin
-			ccr57 <= s[7:5];
+			ccr67 <= s[7:6];
 			gie <= 1'b1;
 			im[0] <= s[8];
 			im[1] <= s[9];
@@ -2826,7 +2888,7 @@ else if (rfwrB)
 		end
 	FU_MOVE2SRX:
 		begin
-			ccr57 <= s[7:5];
+			ccr67 <= s[7:6];
 			gie <= 1'b1;
 			im[0] <= s[8];
 			im[1] <= s[9];
@@ -2884,7 +2946,7 @@ IFETCH:
 		end
 		else 
 		*/
-		if ((gie && ~|bank_pfx) && (ipl_i > im || ipl_i==3'd7)) begin
+		if ((gie && ~is_prefix) && (ipl_i > im || ipl_i==3'd7)) begin
 			is_irq <= 1'b1;
 			pcyc_o <= LOW;
 			pstb_o <= LOW;
@@ -2939,6 +3001,9 @@ IFETCH_ACK:
 		rrrr <= iri[3:0];
 		rrrbnk <= bank_pfx[1:0];
 		rrrrbnk <= bank_pfx[1:0];
+		fpDSTbnk = fp_bank_pfx[1:0];
+		fpSRCbnk = fp_bank_pfx[3:2];
+		FLTSRC <= iri[4:0];
 `ifdef SUPPORT_NANO_CACHE			
 		for (n = 0; n < 7; n = n + 1) begin
 			fetchbuf_tag[n+1] <= fetchbuf_tag[n];
@@ -2956,8 +3021,8 @@ IFETCH2:
 			ext_ir <= 1'b1;
 			ir2 <= fetchbuf_ir;
 			pmmu_cond <= fetchbuf_ir[5:0];
-			FLTSRC <= fetchbuf_ir[12:10];
-			FLTDST <= fetchbuf_ir[ 9: 7];
+			FLTSRC <= {fpSRCbnk,fetchbuf_ir[12:10]};
+			FLTDST <= {fpDSTbnk,fetchbuf_ir[ 9: 7]};
 			goto (DECODE);
 		end
 		else
@@ -2978,8 +3043,8 @@ IFETCH2:
 				psel_o <= 2'b00;
 				ext_ir <= 1'b1;
 				ir2 <= iri;
-				FLTSRC <= iri[12:10];
-				FLTDST <= iri[ 9: 7];
+				FLTSRC <= {fpSRCbnk,iri[12:10]};
+				FLTDST <= {fpDSTbnk,iri[ 9: 7]};
 				pmmu_cond <= iri[5:0];
 `ifdef SUPPORT_NANO_CACHE			
 				for (n = 0; n < 7; n = n + 1) begin
@@ -3054,12 +3119,11 @@ DECODE:
 			default:	state <= ADDI;	// EORI
 			endcase
 		4'hC:	state <= ADDI;	// CMPI
-`ifdef SUPPORT_010		
 		4'hE:	// MOVES
-			begin
+			if (SUPPORT_010)
 				call(FETCH_IMM16,MOVES);
-			end
-`endif			
+			else
+				tIllegal();
 		default:	
 			if (mmm==AM_AN && ir[8]) begin
 				push(MOVEP);
@@ -3259,9 +3323,15 @@ DECODE:
 			3'b101:
 				begin
 					ea <= sp;
-					sp <= sp + 4'd4;
 					ds <= S;
-					call (FETCH_LWORD,RTS1);
+					if (is_far) begin
+						sp <= sp + 4'd8;
+						call (FETCH_OCTA,RTS1);
+					end
+					else begin
+						sp <= sp + 4'd4;
+						call (FETCH_LWORD,RTS1);
+					end
 				end
 			3'b110:
 				if (vf) begin
@@ -3331,7 +3401,7 @@ DECODE:
 			// the code size. It is slower, but more hardware efficient to just always
 			// fetch the displacement.
 			5'b11001:					// DBRA
-`ifdef OPT_PERF			
+`ifdef OPT_PERF
 				if (~takb) begin
 					call(FETCH_IMM16,DBRA);
 				end
@@ -3341,7 +3411,7 @@ DECODE:
 				end
 `else
 				call(FETCH_IMM16,DBRA);				
-`endif				
+`endif
 			5'b11???:		// Scc
 				begin
 					resL <= {32{takb}};
@@ -3375,64 +3445,89 @@ DECODE:
 		
 //-----------------------------------------------------------------------------
 // Branches
+//
+// There are four different branch displacements: 8, 16, 24, and 32 bits.
 //-----------------------------------------------------------------------------
 	5'h6:
 		begin
 //			opc <= pc + 4'd2;
 			ea <= pc + {{24{ir[7]}},ir[7:1],1'b0} + 4'd2;
-			if (ir[11:0]==12'h100) begin		// 6100 = BSR
-				bsr <= 1'b1;
-				call(FETCH_BRDISP,JSR);
+			if (ir[11:8]==4'h1) begin		// 61xx = BSR subroutine call
+				if (ir[7:0]==7'h00) begin		// 6100 = BSR 16 bits
+					bsr <= 1'b1;
+					call(FETCH_BRDISP,JSR);
+				end
+				else if (ir[7:0]==8'hFF) begin		// 61FF = BSR long word 32 bits
+					bsr <= 1'b1;
+					call (FETCH_BRDISP32,JSR);
+				end
+				else if (SUPPORT_B24 && ir[0]) begin
+					bsr <= 1'b1;
+					call(FETCH_BRDISP,JSR);
+				end
+				else
+					goto (JSR);
 			end
-			else if (ir[11:0]==12'h1FF) begin		// 61FF = BSR long word
-				bsr <= 1'b1;
-				call (FETCH_BRDISP32,JSR);
-			end
-			else if (ir[11:8]==4'h1)	// 61xx = BSR
-				goto(JSR);
-			else
+			else begin
 				if (takb) begin
 					// If branch back to self, trap
 				  if (ir[7:0]==8'hFE)
 				  	tBadBranchDisp();
-					else
-`ifdef SUPPORT_B24			
-					if (ir[7:0]==8'h00 || ir[0]) begin
-`else				
-					if (ir[7:0]==8'h00) begin
-`endif
+					else if (ir[7:0]==8'h00)
 						goto(FETCH_BRDISP);
-					end
 					else if (ir[7:0]==8'hFF)
 						goto (FETCH_BRDISP32);
+					else if (SUPPORT_B24 && ir[0])
+						goto(FETCH_BRDISP);
 					else begin
 						pc <= pc + {{24{ir[7]}},ir[7:1],1'b0} + 4'd2;
 						ret();
 					end
 				end
 				else begin
-`ifdef SUPPORT_B24			
-					if (ir[7:0]==8'h00 || ir[0])		// skip over long displacement
-`else
 					if (ir[7:0]==8'h00)		// skip over long displacement
-`endif			
 						pc <= pc + 4'd4;
 					else if (ir[7:0]==8'hFF)
 						pc <= pc + 4'd6;
+					else if (SUPPORT_B24 && ir[0])
+						pc <= pc + 4'd4;
 					ret();
 				end
+			end
 		end
 
 //-----------------------------------------------------------------------------
-// MOVEQ
+// MOVEQ / PREFIX
 //-----------------------------------------------------------------------------
 	5'h7:
 		// MOVEQ only if ir[8]==0, but it is otherwise not used for the 68k.
 		// So some decode and fmax is saved by not decoding ir[8]
 		//if (ir[8]==1'b0) 
 		if (ir[8]) begin
-			bank_pfx <= ir;
-			ret();
+			case(ir[11:9])
+			3'b000:
+				begin
+					bank_pfx <= ir;
+					ret();
+				end
+			3'b001:
+				begin
+					fp_bank_pfx <= ir;
+					ret();
+				end
+			3'b010:
+				case(ir[7:0])
+				8'h00:		if (SUPPORT_FAR) is_far <= TRUE;
+				8'h01:		if (SUPPORT_LONG) is_long <= TRUE;
+				8'h02:		if (SUPPORT_LONG) is_short <= TRUE;
+				default:	tIllegal();
+				endcase
+			3'b011:	if (SUPPORT_OPER2) begin fs_data(amode_e'(ir[7:5]),ir[4:0],FETCH_HEXI1,S2); has_s2 <= TRUE; end else ret();	// Float s2
+			3'b100:	if (SUPPORT_OPER2) begin fs_data(amode_e'(ir[7:5]),ir[4:0],FETCH_BYTE,S2); has_s2 <= TRUE; end else ret();
+			3'b101:	if (SUPPORT_OPER2) begin fs_data(amode_e'(ir[7:5]),ir[4:0],FETCH_WORD,S2); has_s2 <= TRUE; end else ret();
+			3'b110:	if (SUPPORT_OPER2) begin fs_data(amode_e'(ir[7:5]),ir[4:0],FETCH_LWORD,S2); has_s2 <= TRUE; end else ret();
+			default:	ret();
+			endcase
 		end
 		else begin
 			rfwrL <= 1'b1;
@@ -3440,6 +3535,7 @@ DECODE:
 			resL <= {{24{ir[7]}},ir[7:0]};
 			ret();
 		end
+
 //-----------------------------------------------------------------------------
 // OR / DIVU / DIVS / SBCD
 //-----------------------------------------------------------------------------
@@ -3450,7 +3546,8 @@ DECODE:
 			12'b????_11??_????:	// DIVU / DIVS
 				begin
 					divs <= ir[8];
-					d <= rfoDn;
+					if (!has_s2)
+						s2 <= rfoDn;
 					push(DIV1);
 					fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_WORD,S);
 				end
@@ -3600,7 +3697,7 @@ DECODE:
 				end
 			12'b???1_0100_0???:	// EXG	Dx,Dy
 			begin
-				Rt <= {1'b0,bank_pfx[3:2],DDD};
+				Rt <= {1'b0,DDDbnk,DDD};
 				rfwrL <= 1'b1;
 				resL <= rfoRnn;
 				s <= rfoDn;
@@ -3608,7 +3705,7 @@ DECODE:
 			end
 			12'b???1_0100_1???:	// EXG Ax,Ay
 			begin
-				Rt <= {1'b1,bank_pfx[3:2],AAA};
+				Rt <= {1'b1,AAAbnk,AAA};
 				rfwrL <= 1'b1;
 				resL <= rfoRnn;
 				s <= rfoAna;
@@ -3616,7 +3713,7 @@ DECODE:
 			end
 			12'b???1_1000_1???:	// EXG Dx,Ay
 			begin
-				Rt <= {1'b0,bank_pfx[3:2],DDD};
+				Rt <= {1'b0,DDDbnk,DDD};
 				rfwrL <= 1'b1;
 				resL <= rfoRnn;
 				s <= rfoDn;
@@ -4171,6 +4268,8 @@ DECODE:
 					7'b0100000:	// FDIV
 						if (ir2[14]) begin	// RM
 							fpd <= rfoFpdst;
+							if (!has_s2)
+								fps2 <= rfoFpdst;
 							push(FDIV1);
 							goto(FDIV);
 						end
@@ -4182,29 +4281,39 @@ DECODE:
 					7'b0100010:	// FADD
 						if (ir2[14]) begin	// RM
 							fpd <= rfoFpdst;
+							if (!has_s2)
+								fps2 <= rfoFpdst;
 							push(FADD1);
 							goto(FADD);
 						end
 						else begin
 							fpd <= rfoFpdst;
 							fps <= rfoFpsrc;
+							if (!has_s2)
+								fps2 <= rfoFpdst;
 							goto(FADD1);
 						end
 					7'b0100011:	// FMUL
 						if (ir2[14]) begin	// RM
 							fpd <= rfoFpdst;
+							if (!has_s2)
+								fps2 <= rfoFpdst;
 							push(FMUL1);
 							goto(FMUL);
 						end
 						else begin
 							fpd <= rfoFpdst;
 							fps <= rfoFpsrc;
+							if (!has_s2)
+								fps2 <= rfoFpdst;
 							goto(FMUL1);
 						end
 					7'b0101000:	// FSUB
 						if (ir2[14]) begin	// RM
 							fsub <= 1'b1;
 							fpd <= rfoFpdst;
+							if (!has_s2)
+								fps2 <= rfoFpdst;
 							push(FADD1);
 							goto(FADD);
 						end
@@ -4212,6 +4321,8 @@ DECODE:
 							fsub <= 1'b1;
 							fpd <= rfoFpdst;
 							fps <= rfoFpsrc;
+							if (!has_s2)
+								fps2 <= rfoFpdst;
 							goto(FADD1);
 						end
 					7'b0011000:	// FABS
@@ -4257,12 +4368,16 @@ DECODE:
 					7'b0100110:	// FSCALE
 						if (ir2[14]) begin	// RM
 							fpd <= rfoFpdst;
+							if (!has_s2)
+								fps2 <= rfoFpdst;
 							push(FSCALE1);
 							goto(FSCALE);
 						end
 						else begin
 							fpd <= rfoFpdst;
 							fps <= rfoFpsrc;
+							if (!has_s2)
+								fps2 <= rfoFpdst;
 							goto(FSCALE1);
 						end
 /*						
@@ -4296,9 +4411,13 @@ DECODE:
 	endcase
 	end
 
-`ifdef SUPPORT_010
+//-----------------------------------------------------------------------------
+// MOVES
+// MOVE to an address space defined by either the source or destination
+// function code.
+//-----------------------------------------------------------------------------
 MOVES:
-	begin
+	if (SUPPORT_010) begin
 		ir2 <= imm[15:0];
 		rrrr <= imm[15:12];
 		rrrrbnk <= bank_pfx[5:4];
@@ -4312,11 +4431,12 @@ MOVES:
 			2'd0:	fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_BYTE,S);
 			2'd1:	fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_WORD,S);
 			2'd2:	fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_LWORD,S);
+			default:	tIllegal();
 			endcase
 		end
 	end
 MOVES2:
-	begin
+	if (SUPPORT_010) begin
 		d <= rfoRnn;
 		use_dfc <= 1'b1;
 		case(sz)
@@ -4327,29 +4447,19 @@ MOVES2:
 		endcase
 	end
 MOVES3:
-	begin
+	if (SUPPORT_010) begin
+		resL <= s[31:0];
 		case(sz)
-		2'd0:
-			begin
-				resL <= s[7:0];
-				rfwrB <= 1'b1;
-			end
-		2'd1:
-			begin
-				resL <= s[15:0];
-				rfwrW <= 1'b1;
-			end
-		2'd2:
-			begin
-				resL <= s[31:0];
-				rfwrL <= 1'b1;
-			end
+		2'd0:	rfwrB <= 1'b1;
+		2'd1:	rfwrW <= 1'b1;
+		2'd2:	rfwrL <= 1'b1;
 		default:	;
 		endcase
 		ret();
 	end
-`endif
 
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
 TST1:
 	begin
 		resL <= d;
@@ -4427,15 +4537,26 @@ STOP1:
 //-----------------------------------------------------------------------------
 MULS1:
 	begin
-		resMS1 <= $signed(rfoDn[15:0]) * $signed(s[15:0]);
-		goto (MULS2);
+		if (has_s2) begin
+			resMS1 <= $signed(s2[15:0]) * $signed(s[15:0]);
+			goto (MULS3);
+		end
+		else begin
+			s2 <= $signed(rfoDn[15:0]);
+			goto (MULS2);
+		end
 	end
 MULS2:
 	begin
-		resMS2 <= resMS1;
-		goto (MULS3);
+		resMS1 <= $signed(s2[15:0]) * $signed(s[15:0]);
+		goto (MULS4);
 	end
 MULS3:
+	begin
+		resMS2 <= resMS1;
+		goto (MULS4);
+	end
+MULS4:
 	begin
 		rfwrL <= 1'b1;
 		Rt <= {1'b0,DDDbnk,DDD};
@@ -4444,15 +4565,26 @@ MULS3:
 	end
 MULU1:
 	begin
-		resMU1 <= rfoDn[15:0] * s[15:0];
-		goto (MULU2);
+		if (has_s2) begin
+			resMU1 <= s2[15:0] * s[15:0];
+			goto (MULU3);
+		end
+		else begin
+			s2 <= rfoDn[15:0];
+			goto (MULU2);
+		end
 	end
 MULU2:
 	begin
-		resMU2 <= resMU1;
+		resMU1 <= s2[15:0] * s[15:0];
 		goto (MULU3);
 	end
 MULU3:
+	begin
+		resMU2 <= resMU1;
+		goto (MULU4);
+	end
+MULU4:
 	begin
 		rfwrL <= 1'b1;
 		Rt <= {1'b0,DDDbnk,DDD};
@@ -4494,10 +4626,13 @@ NOT:
 		d <= ~d;
 		if (mmm==AM_DN) begin
 			Rt <= {1'b0,rrrbnk,rrr};
-			case(sz)
-			2'b00:	rfwrB <= 1'b1;
-			2'b01:	rfwrW <= 1'b1;
-			2'b10:	rfwrL <= 1'b1;
+			case({lm,sz})
+			3'b000:	rfwrB <= 1'b1;
+			3'b001:	rfwrW <= 1'b1;
+			3'b010:	rfwrL <= 1'b1;
+			3'b100:	rfwrW <= 1'b1;
+			3'b101:	rfwrL <= 1'b1;
+			3'b110:	rfwrQ <= 1'b1;
 			default:	;
 			endcase
 			ret();
@@ -4505,10 +4640,13 @@ NOT:
 		else if (mmm==AM_AN)
 			ret();
 		else begin
-			case(sz)
-			2'b00:	begin goto(STORE_BYTE); end
-			2'b01:	begin goto(STORE_WORD); end
-			2'b10:	begin goto(STORE_LWORD); end
+			case({lm,sz})
+			3'b000:	begin goto(STORE_BYTE); end
+			3'b001:	begin goto(STORE_WORD); end
+			3'b010:	begin goto(STORE_LWORD); end
+			3'b100:	begin goto(STORE_WORD); end
+			3'b101:	begin goto(STORE_LWORD); end
+			3'b110:	begin goto(STORE_OCTA); end
 			default:	;
 			endcase
 		end
@@ -4519,15 +4657,21 @@ NOT:
 //-----------------------------------------------------------------------------
 NEG:
 	begin
-		case(sz)
-		2'b00:	resL <= -d[7:0];
-		2'b01:	resL <= -d[15:0];
-		default:	resL <= -d;
+		case({lm,sz})
+		3'b000:	resL <= -d[7:0];
+		3'b001:	resL <= -d[15:0];
+		3'b010,3'b011:	resL <= -d[31:0];
+		3'b100:	resL <= -d[15:0];
+		3'b101:	resL <= -d[31:0];
+		3'b110,3'b111:	resL <= -d;
 		endcase
-		case(sz)
-		2'b00:	d <= -d[7:0];
-		2'b01:	d <= -d[15:0];
-		default:	d <= -d;
+		case({lm,sz})
+		3'b000:	d <= -d[7:0];
+		3'b001:	d <= -d[15:0];
+		3'b010,3'b011:	d <= -d[31:0];
+		3'b100:	d <= -d[15:0];
+		3'b101:	d <= -d[31:0];
+		3'b110,3'b111:	d <= -d;
 		endcase
 		s <= d;
 		dd <= 'd0;
@@ -4535,17 +4679,23 @@ NEG:
 	end
 NEGX:
 	begin
-		case(sz)
-		2'b00:	resL <= -d[7:0] - xf;
-		2'b01:	resL <= -d[15:0] - xf;
-		default:	resL <= -d - xf;
+		case({lm,sz})
+		3'b000:	resL <= -d[7:0] - xf;
+		3'b001:	resL <= -d[15:0] - xf;
+		3'b010,3'b011:	resL <= -d[31:0] - xf;
+		3'b100:	resL <= -d[15:0] - xf;
+		3'b101:	resL <= -d[31:0] - xf;
+		3'b110,3'b111:	resL <= -d - xf;
 		endcase
-		case(sz)
-		2'b00:	d <= -d[7:0] - xf;
-		2'b01:	d <= -d[15:0] - xf;
-		default:	d <= -d - xf;
+		case({lm,sz})
+		3'b000:	d <= -d[7:0] - xf;
+		3'b001:	d <= -d[15:0] - xf;
+		3'b010,3'b011:	d <= -d[31:0] - xf;
+		3'b100:	d <= -d[15:0] - xf;
+		3'b101:	d <= -d[31:0] - xf;
+		3'b110,3'b111:	d <= -d - xf;
 		endcase
-		s <= d + xf;
+		s <= d - xf;
 		dd <= 'd0;
 		goto (NEGX1);
 	end
@@ -4553,10 +4703,13 @@ NEGX1:
 	begin
 		if (mmm==AM_DN) begin
 			Rt <= {1'b0,rrrbnk,rrr};
-			case(sz)
-			2'b00:	rfwrB <= 1'b1;
-			2'b01:	rfwrW <= 1'b1;
-			2'b10:	rfwrL <= 1'b1;
+			case({lm,sz})
+			3'b000:	rfwrB <= 1'b1;
+			3'b001:	rfwrW <= 1'b1;
+			3'b010:	rfwrL <= 1'b1;
+			3'b100:	rfwrW <= 1'b1;
+			3'b101:	rfwrL <= 1'b1;
+			3'b110:	rfwrQ <= 1'b1;
 			default:	;
 			endcase
 			ret();
@@ -4564,10 +4717,13 @@ NEGX1:
 		else if (mmm==AM_AN)
 			ret();
 		else
-			case(sz)
-			2'b00:	begin goto(STORE_BYTE); end
-			2'b01:	begin goto(STORE_WORD); end
-			2'b10:	begin goto(STORE_LWORD); end
+			case({lm,sz})
+			3'b000:	begin goto(STORE_BYTE); end
+			3'b001:	begin goto(STORE_WORD); end
+			3'b010:	begin goto(STORE_LWORD); end
+			3'b100:	begin goto(STORE_WORD); end
+			3'b101:	begin goto(STORE_LWORD); end
+			3'b110:	begin goto(STORE_OCTA); end
 			default:	;
 			endcase
 	end
@@ -4575,7 +4731,13 @@ NEGX1:
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
 TAS:
-	begin
+	if (lm) begin
+		resL <= {1'b1,d[14:0]};
+		dd <= d;
+		d <= {1'b1,d[14:0]};
+		goto(USTORE_WORD);
+	end
+	else begin
 		resL <= {1'b1,d[6:0]};
 		dd <= d;
 		d <= {1'b1,d[6:0]};
@@ -4642,6 +4804,9 @@ PEA3:
 
 //-----------------------------------------------------------------------------
 // DBRA
+//
+// Either a word or a long word counter may be used, signalled by the LSB of
+// the displacement.
 //-----------------------------------------------------------------------------
 DBRA:
 `ifndef OPT_PERF
@@ -4650,9 +4815,16 @@ DBRA:
 	begin
 		resL <= rfoDnn - 4'd1;
 		Rt <= {1'b0,rrrbnk,rrr};
-		rfwrW <= 1'b1;
-		if (rfoDnn[15:0]!=0)
-			pc <= opc + imm;
+		if (imm[0]) begin
+			rfwrL <= 1'b1;
+			if (rfoDnn[31:0]!=32'd0)
+				pc <= opc + {imm[63:1],1'b0};
+		end
+		else begin
+			rfwrW <= 1'b1;
+			if (rfoDnn[15:0]!=0)
+				pc <= opc + imm;
+		end
 		ret();
 	end
 `ifndef OPT_PERF
@@ -4664,10 +4836,16 @@ DBRA:
 // EXG
 //-----------------------------------------------------------------------------
 EXG1:
-	begin
+	if (lm) begin
+		rfwrQ <= 1'b1;
+		resL <= s;
+		Rt <= {rrrr[3],rrrrbnk,rrrr[2:0]};
+		ret();
+	end
+	else begin
 		rfwrL <= 1'b1;
 		resL <= s;
-		Rt <= rrrr[3] ? {1'b1,rrrrbnk,rrr} : {1'b0,rrrrbnk,rrr};
+		Rt <= {rrrr[3],rrrrbnk,rrrr[2:0]};
 		ret();
 	end
 
@@ -4680,10 +4858,13 @@ STORE_IN_DEST:
 	begin
 		resL <= s;
 		d <= s;
-		case(ir[15:12])
-		4'd1:	fs_data(MMM,{MMM[0],DDDbnk,DDD},STORE_BYTE,D);
-		4'd2:	fs_data(MMM,{MMM[0],DDDbnk,DDD},STORE_LWORD,D);
-		4'd3:	fs_data(MMM,{MMM[0],DDDbnk,DDD},STORE_WORD,D);
+		case({lm,ir[15:12]})
+		5'd1:	fs_data(MMM,{MMM[0],DDDbnk,DDD},STORE_BYTE,D);
+		5'd2:	fs_data(MMM,{MMM[0],DDDbnk,DDD},STORE_LWORD,D);
+		5'd3:	fs_data(MMM,{MMM[0],DDDbnk,DDD},STORE_WORD,D);
+		5'd17:fs_data(MMM,{MMM[0],DDDbnk,DDD},STORE_WORD,D);
+		5'd18:fs_data(MMM,{MMM[0],DDDbnk,DDD},STORE_OCTA,D);
+		5'd19:fs_data(MMM,{MMM[0],DDDbnk,DDD},STORE_LWORD,D);
 		default:	;	// cant get here
 		endcase
 	end
@@ -4694,20 +4875,26 @@ STORE_IN_DEST:
 //-----------------------------------------------------------------------------
 CMP:
 	begin
-		case(sz)
-		2'b00:	resL <= d[ 7:0] - s[ 7:0];
-		2'b01:	resL <= d[15:0] - s[15:0];
-		2'b10:	resL <= d[31:0] - s[31:0];
-		2'b11:	;
+		case({lm,sz})
+		3'b000:	resL <= d[ 7:0] - s[ 7:0];
+		3'b001:	resL <= d[15:0] - s[15:0];
+		3'b010:	resL <= d[31:0] - s[31:0];
+		3'b011:	;
+		3'b100:	resL <= d[15:0] - s[15:0];
+		3'b101:	resL <= d[31:0] - s[31:0];
+		3'b110:	resL <= d[63:0] - s[63:0];
+		3'b111:	;
 		endcase
 		ret();
 	end
 
 CMPA:
 	begin
-		case(ir[8])
-		1'b0:	resL <= d[31:0] - {{16{s[15]}},s[15:0]};
-		1'b1:	resL <= d[31:0] - s[31:0];
+		case({lm,ir[8]})
+		2'b00:	resL <= d[63:0] - {{48{s[15]}},s[15:0]};
+		2'b01:	resL <= d[63:0] - {{32{s[31]}},s[31:0]};
+		2'b10:	resL <= d[63:0] - {{32{s[31]}},s[31:0]};
+		2'b11:	resL <= d[63:0] - s[63:0];
 		endcase
 		ret();
 	end
@@ -4715,10 +4902,13 @@ CMPA:
 CMPM:
 	begin
 		push (CMP);
-		case(sz)
-		2'd0:	fs_data(AM_POST,{1'b0,DDDbnk,DDD},FETCH_BYTE,D);
-		2'd1:	fs_data(AM_POST,{1'b0,DDDbnk,DDD},FETCH_WORD,D);
-		2'd2:	fs_data(AM_POST,{1'b0,DDDbnk,DDD},FETCH_LWORD,D);
+		case({lm,sz})
+		3'd0:	fs_data(AM_POST,{1'b0,DDDbnk,DDD},FETCH_BYTE,D);
+		3'd1:	fs_data(AM_POST,{1'b0,DDDbnk,DDD},FETCH_WORD,D);
+		3'd2:	fs_data(AM_POST,{1'b0,DDDbnk,DDD},FETCH_LWORD,D);
+		3'd4:	fs_data(AM_POST,{1'b0,DDDbnk,DDD},FETCH_WORD,D);
+		3'd5:	fs_data(AM_POST,{1'b0,DDDbnk,DDD},FETCH_LWORD,D);
+		3'd6:	fs_data(AM_POST,{1'b0,DDDbnk,DDD},FETCH_OCTA,D);
 		default:	;	// cant get here
 		endcase
 	end
@@ -4730,12 +4920,28 @@ CMPM:
 SHIFT1:
 	begin
 		// Extend by a bit for ASL overflow detection.
-		case(sz)
-		2'b00:	resL <= {d[7],d[7:0]};
-		2'b01:	resL <= {d[15],d[15:0]};
-		2'b10:	resL <= {d[31],d[31:0]};
-		2'b11:	resL <= {d[15],d[15:0]};
-		endcase
+		if (has_s2)
+			case({lm,sz})
+			3'b000:	resL <= {s2[ 7],s2[ 7:0]};
+			3'b001:	resL <= {s2[15],s2[15:0]};
+			3'b010:	resL <= {s2[31],s2[31:0]};
+			3'b011:	resL <= {s2[15],s2[15:0]};
+			3'b100:	resL <= {s2[15],s2[15:0]};
+			3'b101:	resL <= {s2[31],s2[31:0]};
+			3'b110:	resL <= {s2[63],s2[63:0]};
+			3'b111:	resL <= {s2[31],s2[31:0]};
+			endcase
+		else
+			case({lm,sz})
+			3'b000:	resL <= {d[ 7],d[ 7:0]};
+			3'b001:	resL <= {d[15],d[15:0]};
+			3'b010:	resL <= {d[31],d[31:0]};
+			3'b011:	resL <= {d[15],d[15:0]};
+			3'b100:	resL <= {d[15],d[15:0]};
+			3'b101:	resL <= {d[31],d[31:0]};
+			3'b110:	resL <= {d[63],d[63:0]};
+			3'b111:	resL <= {d[31],d[31:0]};
+			endcase
 		state <= SHIFT;
 	end
 SHIFT:
@@ -4743,60 +4949,92 @@ SHIFT:
 		cnt <= cnt - 2'd1;
 		case(shift_op)
 		3'b000:	// ASR
-			case(sz)
-			2'b00:	begin resL <= {resL[ 7],resL[ 7:1]}; end
-			2'b01:	begin resL <= {resL[15],resL[15:1]}; end
-			2'b10:	begin resL <= {resL[31],resL[31:1]}; end
-			2'b11:	begin resL <= {resL[15],resL[15:1]}; end
+			case({lm,sz})
+			3'b000:	begin resL <= {resL[ 7],resL[ 7:1]}; end
+			3'b001:	begin resL <= {resL[15],resL[15:1]}; end
+			3'b010:	begin resL <= {resL[31],resL[31:1]}; end
+			3'b011:	begin resL <= {resL[15],resL[15:1]}; end
+			3'b100:	begin resL <= {resL[15],resL[15:1]}; end
+			3'b101:	begin resL <= {resL[31],resL[31:1]}; end
+			3'b110:	begin resL <= {resL[63],resL[63:1]}; end
+			3'b111:	begin resL <= {resL[31],resL[31:1]}; end
 			endcase
 		3'b001:	// LSR
-			case(sz)
-			2'b00:	begin resL <= {1'b0,resL[ 7:1]}; end
-			2'b01:	begin resL <= {1'b0,resL[15:1]}; end
-			2'b10:	begin resL <= {1'b0,resL[31:1]}; end
-			2'b11:	begin resL <= {1'b0,resL[15:1]}; end
+			case({lm,sz})
+			3'b000:	begin resL <= {1'b0,resL[ 7:1]}; end
+			3'b001:	begin resL <= {1'b0,resL[15:1]}; end
+			3'b010:	begin resL <= {1'b0,resL[31:1]}; end
+			3'b011:	begin resL <= {1'b0,resL[15:1]}; end
+			3'b100:	begin resL <= {1'b0,resL[15:1]}; end
+			3'b101:	begin resL <= {1'b0,resL[31:1]}; end
+			3'b110:	begin resL <= {1'b0,resL[63:1]}; end
+			3'b111:	begin resL <= {1'b0,resL[31:1]}; end
 			endcase
 		3'b010:	// ROXR
-			case(sz)
-			2'b00:	begin resL <= {xf,resL[ 7:1]}; end
-			2'b01:	begin resL <= {xf,resL[15:1]}; end
-			2'b10:	begin resL <= {xf,resL[31:1]}; end
-			2'b11:	begin resL <= {xf,resL[15:1]}; end
+			case({lm,sz})
+			3'b000:	begin resL <= {xf,resL[ 7:1]}; end
+			3'b001:	begin resL <= {xf,resL[15:1]}; end
+			3'b010:	begin resL <= {xf,resL[31:1]}; end
+			3'b011:	begin resL <= {xf,resL[15:1]}; end
+			3'b100:	begin resL <= {xf,resL[15:1]}; end
+			3'b101:	begin resL <= {xf,resL[31:1]}; end
+			3'b110:	begin resL <= {xf,resL[63:1]}; end
+			3'b111:	begin resL <= {xf,resL[31:1]}; end
 			endcase
 		3'b011:	// ROR
-			case(sz)
-			2'b00:	begin resL <= {resL[0],resL[ 7:1]}; end
-			2'b01:	begin resL <= {resL[0],resL[15:1]}; end
-			2'b10:	begin resL <= {resL[0],resL[31:1]}; end
-			2'b11:	begin resL <= {resL[0],resL[15:1]}; end
+			case({lm,sz})
+			3'b000:	begin resL <= {resL[0],resL[ 7:1]}; end
+			3'b001:	begin resL <= {resL[0],resL[15:1]}; end
+			3'b010:	begin resL <= {resL[0],resL[31:1]}; end
+			3'b011:	begin resL <= {resL[0],resL[15:1]}; end
+			3'b100:	begin resL <= {resL[0],resL[15:1]}; end
+			3'b101:	begin resL <= {resL[0],resL[31:1]}; end
+			3'b110:	begin resL <= {resL[0],resL[63:1]}; end
+			3'b111:	begin resL <= {resL[0],resL[31:1]}; end
 			endcase
 		3'b100:	// ASL
-			case(sz)
-			2'b00:	begin resL <= {resL[ 7:0],1'b0}; end
-			2'b01:	begin resL <= {resL[15:0],1'b0}; end
-			2'b10:	begin resL <= {resL[31:0],1'b0}; end
-			2'b11:	begin resL <= {resL[15:0],1'b0}; end
+			case({lm,sz})
+			3'b000:	begin resL <= {resL[ 7:0],1'b0}; end
+			3'b001:	begin resL <= {resL[15:0],1'b0}; end
+			3'b010:	begin resL <= {resL[31:0],1'b0}; end
+			3'b011:	begin resL <= {resL[15:0],1'b0}; end
+			3'b100:	begin resL <= {resL[15:0],1'b0}; end
+			3'b101:	begin resL <= {resL[31:0],1'b0}; end
+			3'b110:	begin resL <= {resL[63:0],1'b0}; end
+			3'b111:	begin resL <= {resL[31:0],1'b0}; end
 			endcase
 		3'b101:	// LSL
-			case(sz)
-			2'b00:	begin resL <= {resL[ 7:0],1'b0}; end
-			2'b01:	begin resL <= {resL[15:0],1'b0}; end
-			2'b10:	begin resL <= {resL[31:0],1'b0}; end
-			2'b11:	begin resL <= {resL[15:0],1'b0}; end
+			case({lm,sz})
+			3'b000:	begin resL <= {resL[ 7:0],1'b0}; end
+			3'b001:	begin resL <= {resL[15:0],1'b0}; end
+			3'b010:	begin resL <= {resL[31:0],1'b0}; end
+			3'b011:	begin resL <= {resL[15:0],1'b0}; end
+			3'b100:	begin resL <= {resL[15:0],1'b0}; end
+			3'b101:	begin resL <= {resL[31:0],1'b0}; end
+			3'b110:	begin resL <= {resL[63:0],1'b0}; end
+			3'b111:	begin resL <= {resL[31:0],1'b0}; end
 			endcase
 		3'b110:	// ROXL
-			case(sz)
-			2'b00:	begin resL <= {resL[ 7:0],xf}; end
-			2'b01:	begin resL <= {resL[15:0],xf}; end
-			2'b10:	begin resL <= {resL[31:0],xf}; end
-			2'b11:	begin resL <= {resL[15:0],xf}; end
+			case({lm,sz})
+			3'b000:	begin resL <= {resL[ 7:0],xf}; end
+			3'b001:	begin resL <= {resL[15:0],xf}; end
+			3'b010:	begin resL <= {resL[31:0],xf}; end
+			3'b011:	begin resL <= {resL[15:0],xf}; end
+			3'b100:	begin resL <= {resL[15:0],xf}; end
+			3'b101:	begin resL <= {resL[31:0],xf}; end
+			3'b110:	begin resL <= {resL[63:0],xf}; end
+			3'b111:	begin resL <= {resL[31:0],xf}; end
 			endcase
 		3'b111: // ROL
-			case(sz)
-			2'b00:	begin resL <= {resL[ 7:0],resL[ 7]}; end
-			2'b01:	begin resL <= {resL[15:0],resL[15]}; end
-			2'b10:	begin resL <= {resL[31:0],resL[31]}; end
-			2'b11:	begin resL <= {resL[15:0],resL[15]}; end
+			case({lm,sz})
+			3'b000:	begin resL <= {resL[ 7:0],resL[ 7]}; end
+			3'b001:	begin resL <= {resL[15:0],resL[15]}; end
+			3'b010:	begin resL <= {resL[31:0],resL[31]}; end
+			3'b011:	begin resL <= {resL[15:0],resL[15]}; end
+			3'b100:	begin resL <= {resL[15:0],resL[15]}; end
+			3'b101:	begin resL <= {resL[31:0],resL[31]}; end
+			3'b110:	begin resL <= {resL[63:0],resL[63]}; end
+			3'b111:	begin resL <= {resL[31:0],resL[31]}; end
 			endcase
 		endcase
 	end
@@ -4811,11 +5049,15 @@ SHIFT:
 		endcase
 		*/
 		Rt <= {1'b0,rrrbnk,rrr};
-		case(sz)
-		2'b00:	begin rfwrB <= 1'b1; ret(); end
-		2'b01:	begin rfwrW <= 1'b1; ret(); end
-		2'b10:	begin rfwrL <= 1'b1; ret(); end
-		2'b11:	fs_data(mmm,{mmm[0],rrrbnk,rrr},STORE_WORD,D);	// word operations only if memory operate
+		case({lm,sz})
+		3'b000:	begin rfwrB <= 1'b1; ret(); end
+		3'b001:	begin rfwrW <= 1'b1; ret(); end
+		3'b010:	begin rfwrL <= 1'b1; ret(); end
+		3'b011:	fs_data(mmm,{mmm[0],rrrbnk,rrr},STORE_WORD,D);	// word operations only if memory operate
+		3'b100:	begin rfwrW <= 1'b1; ret(); end
+		3'b101:	begin rfwrL <= 1'b1; ret(); end
+		3'b110:	begin rfwrQ <= 1'b1; ret(); end
+		3'b111:	fs_data(mmm,{mmm[0],rrrbnk,rrr},STORE_LWORD,D);	// word operations only if memory operate
 		endcase
 	end
 	
@@ -4824,51 +5066,95 @@ SHIFT:
 //-----------------------------------------------------------------------------
 ADD:
 	begin
-		case(sz)
-		2'b00:	resL <= d[7:0] + s[7:0];
-		2'b01:	resL <= d[15:0] + s[15:0];
-		default:	resL <= d + s;
-		endcase
-		case(sz)
-		2'b00:	d <= d[7:0] + s[7:0];
-		2'b01:	d <= d[15:0] + s[15:0];
-		default:	d <= d + s;
-		endcase
-		dd <= d;
+		if (has_s2) begin
+			case({lm,sz})
+			3'b000:	resL <= s2[7:0] + s[7:0];
+			3'b001:	resL <= s2[15:0] + s[15:0];
+			3'b010:	resL <= s2[31:0] + s[31:0];
+			3'b011:	resL <= s2 + s;
+			3'b100:	resL <= s2[15:0] + s[15:0];
+			3'b101:	resL <= s2[31:0] + s[31:0];
+			default:	resL <= s2 + s;
+			endcase
+			case({lm,sz})
+			3'b000:	d <= s2[7:0] + s[7:0];
+			3'b001:	d <= s2[15:0] + s[15:0];
+			3'b010:	d <= s2[31:0] + s[31:0];
+			3'b011:	d <= s2 + s;
+			3'b100:	d <= s2[15:0] + s[15:0];
+			3'b101:	d <= s2[31:0] + s[31:0];
+			default:	d <= s2 + s;
+			endcase
+			dd <= s2;
+		end
+		else begin
+			case({lm,sz})
+			3'b000:	resL <= d[ 7:0] + s[ 7:0];
+			3'b001:	resL <= d[15:0] + s[15:0];
+			3'b010:	resL <= d[31:0] + s[31:0];
+			3'b011:	resL <= d + s;
+			3'b100:	resL <= d[15:0] + s[15:0];
+			3'b101:	resL <= d[31:0] + s[31:0];
+			3'b110:	resL <= d + s;
+			3'b111:	resL <= d + s;
+			endcase
+			case({lm,sz})
+			3'b000:	d <= d[ 7:0] + s[ 7:0];
+			3'b001:	d <= d[15:0] + s[15:0];
+			3'b010:	d <= d[31:0] + s[31:0];
+			3'b011:	d <= d + s;
+			3'b100:	d <= d[15:0] + s[15:0];
+			3'b101:	d <= d[31:0] + s[31:0];
+			3'b110:	d <= d + s;
+			3'b111:	d <= d + s;
+			endcase
+			dd <= d;
+		end
 		if (sz==2'b11) begin
-			Rt <= {3'b100,AAA};
-			if (ir[8])
-				rfwrL <= 1'b1;
-			else
-				rfwrW <= 1'b1;
+			Rt <= {3'b1,AAAbnk,AAA};
+			case({lm,ir[8]})
+			2'b00:	rfwrW <= 1'b1;
+			2'b01:	rfwrL <= 1'b1;
+			2'b10:	rfwrL <= 1'b1;
+			2'b11:	rfwrQ <= 1'b1;
+			endcase
 			ret();
 		end
 		else if (ir[8]) begin
 			if (mmm==AM_DN || mmm==AM_AN) begin
 				Rt <= mmm[0] ? {1'b1,rrrbnk,rrr} : {1'b0,rrrbnk,rrr};
-				case(sz)
-				2'b00:	rfwrB <= 1'b1;
-				2'b01:	rfwrW <= 1'b1;
-				2'b10:	rfwrL <= 1'b1;
+				case({lm,sz})
+				3'b000:	rfwrB <= 1'b1;
+				3'b001:	rfwrW <= 1'b1;
+				3'b010:	rfwrL <= 1'b1;
+				3'b100:	rfwrW <= 1'b1;
+				3'b101:	rfwrL <= 1'b1;
+				3'b110:	rfwrQ <= 1'b1;
 				default:	;
 				endcase
 				ret();
 			end
 			else begin
-				case(sz)
-				2'b00:	goto(STORE_BYTE);
-				2'b01:	goto(STORE_WORD);
-				2'b10:	goto(STORE_LWORD);
+				case({lm,sz})
+				3'b000:	goto(STORE_BYTE);
+				3'b001:	goto(STORE_WORD);
+				3'b010:	goto(STORE_LWORD);
+				3'b100:	goto(STORE_WORD);
+				3'b101:	goto(STORE_LWORD);
+				3'b110:	goto(STORE_OCTA);
 				default:	tIllegal();
 				endcase
 			end
 		end
 		else begin
 			Rt <= {1'b0,DDDbnk,DDD};
-			case(sz)
-			2'b00:	rfwrB <= 1'b1;
-			2'b01:	rfwrW <= 1'b1;
-			2'b10:	rfwrL <= 1'b1;
+			case({lm,sz})
+			3'b000:	rfwrB <= 1'b1;
+			3'b001:	rfwrW <= 1'b1;
+			3'b010:	rfwrL <= 1'b1;
+			3'b100:	rfwrW <= 1'b1;
+			3'b101:	rfwrL <= 1'b1;
+			3'b110:	rfwrQ <= 1'b1;
 			default:	;
 			endcase
 			ret();
@@ -4879,51 +5165,95 @@ ADD:
 //-----------------------------------------------------------------------------
 SUB:
 	begin
-		case(sz)
-		2'b00:	resL <= d[7:0] - s[7:0];
-		2'b01:	resL <= d[15:0] - s[15:0];
-		default:	resL <= d - s;
-		endcase
-		case(sz)
-		2'b00:	d <= d[7:0] - s[7:0];
-		2'b01:	d <= d[15:0] - s[15:0];
-		default:	d <= d - s;
-		endcase
-		dd <= d;
+		if (has_s2) begin
+			case({lm,sz})
+			3'b000:	resL <= s2[7:0] - s[7:0];
+			3'b001:	resL <= s2[15:0] - s[15:0];
+			3'b010:	resL <= s2[31:0] - s[31:0];
+			3'b011:	resL <= s2 - s;
+			3'b100:	resL <= s2[15:0] - s[15:0];
+			3'b101:	resL <= s2[31:0] - s[31:0];
+			default:	resL <= s2 - s;
+			endcase
+			case({lm,sz})
+			3'b000:	d <= s2[7:0] - s[7:0];
+			3'b001:	d <= s2[15:0] - s[15:0];
+			3'b010:	d <= s2[31:0] - s[31:0];
+			3'b011:	d <= s2 - s;
+			3'b100:	d <= s2[15:0] - s[15:0];
+			3'b101:	d <= s2[31:0] - s[31:0];
+			default:	d <= s2 - s;
+			endcase
+			dd <= s2;
+		end
+		else begin
+			case({lm,sz})
+			3'b000:	resL <= d[ 7:0] - s[ 7:0];
+			3'b001:	resL <= d[15:0] - s[15:0];
+			3'b010:	resL <= d[31:0] - s[31:0];
+			3'b011:	resL <= d - s;
+			3'b100:	resL <= d[15:0] - s[15:0];
+			3'b101:	resL <= d[31:0] - s[31:0];
+			3'b110:	resL <= d - s;
+			3'b111:	resL <= d - s;
+			endcase
+			case({lm,sz})
+			3'b000:	d <= d[ 7:0] - s[ 7:0];
+			3'b001:	d <= d[15:0] - s[15:0];
+			3'b010:	d <= d[31:0] - s[31:0];
+			3'b011:	d <= d - s;
+			3'b100:	d <= d[15:0] - s[15:0];
+			3'b101:	d <= d[31:0] - s[31:0];
+			3'b110:	d <= d - s;
+			3'b111:	d <= d - s;
+			endcase
+			dd <= d;
+		end
 		if (sz==2'b11) begin
-			Rt <= {3'b100,AAA};
-			if (ir[8])
-				rfwrL <= 1'b1;
-			else
-				rfwrW <= 1'b1;
+			Rt <= {3'b1,AAAbnk,AAA};
+			case({lm,ir[8]})
+			2'b00:	rfwrW <= 1'b1;
+			2'b01:	rfwrL <= 1'b1;
+			2'b10:	rfwrL <= 1'b1;
+			2'b11:	rfwrQ <= 1'b1;
+			endcase
 			ret();
 		end
 		else if (ir[8]) begin
 			if (mmm==AM_DN || mmm==AM_AN) begin
 				Rt <= mmm[0] ? {1'b1,rrrbnk,rrr} : {1'b0,rrrbnk,rrr};
-				case(sz)
-				2'b00:	rfwrB <= 1'b1;
-				2'b01:	rfwrW <= 1'b1;
-				2'b10:	rfwrL <= 1'b1;
+				case({lm,sz})
+				3'b000:	rfwrB <= 1'b1;
+				3'b001:	rfwrW <= 1'b1;
+				3'b010:	rfwrL <= 1'b1;
+				3'b100:	rfwrW <= 1'b1;
+				3'b101:	rfwrL <= 1'b1;
+				3'b110:	rfwrQ <= 1'b1;
 				default:	;
 				endcase
 				ret();
 			end
 			else begin
-				case(sz)
-				2'b00:	goto(STORE_BYTE);
-				2'b01:	goto(STORE_WORD);
-				2'b10:	goto(STORE_LWORD);
+				case({lm,sz})
+				3'b000:	goto(STORE_BYTE);
+				3'b001:	goto(STORE_WORD);
+				3'b010:	goto(STORE_LWORD);
+				3'b100:	goto(STORE_WORD);
+				3'b101:	goto(STORE_LWORD);
+				3'b110:	goto(STORE_OCTA);
 				default:	tIllegal();
 				endcase
 			end
 		end
 		else begin
 			Rt <= {1'b0,DDDbnk,DDD};
-			case(sz)
-			2'b00:	rfwrB <= 1'b1;
-			2'b01:	rfwrW <= 1'b1;
-			2'b10:	rfwrL <= 1'b1;
+			case({lm,sz})
+			3'b000:	rfwrB <= 1'b1;
+			3'b001:	rfwrW <= 1'b1;
+			3'b010:	rfwrL <= 1'b1;
+			3'b100:	rfwrW <= 1'b1;
+			3'b101:	rfwrL <= 1'b1;
+			3'b110:	rfwrQ <= 1'b1;
 			default:	;
 			endcase
 			ret();
@@ -4932,50 +5262,98 @@ SUB:
 
 ADDX:
 	begin
-		push (ADDX2);
-		case(sz)
-		2'd0:	fs_data(AM_PRE,{1'b0,rrrbnk,rrr},FETCH_BYTE,S);
-		2'd1:	fs_data(AM_PRE,{1'b0,rrrbnk,rrr},FETCH_WORD,S);
-		2'd2:	fs_data(AM_PRE,{1'b0,rrrbnk,rrr},FETCH_LWORD,S);
+		if (has_s2)
+			push (ADDX3);
+		else
+			push (ADDX2);
+		case({lm,sz})
+		3'd0:	fs_data(AM_PRE,{1'b0,rrrbnk,rrr},FETCH_BYTE,S);
+		3'd1:	fs_data(AM_PRE,{1'b0,rrrbnk,rrr},FETCH_WORD,S);
+		3'd2:	fs_data(AM_PRE,{1'b0,rrrbnk,rrr},FETCH_LWORD,S);
+		3'd4:	fs_data(AM_PRE,{1'b0,rrrbnk,rrr},FETCH_WORD,S);
+		3'd5:	fs_data(AM_PRE,{1'b0,rrrbnk,rrr},FETCH_LWORD,S);
+		3'd6:	fs_data(AM_PRE,{1'b0,rrrbnk,rrr},FETCH_OCTA,S);
 		default:	tIllegal();
 		endcase
 	end
 ADDX2:
 	begin
 		push(ADDX3);
-		case(sz)
-		2'd0:	fs_data(AM_PRE,{1'b0,DDDbnk,DDD},FETCH_BYTE,D);
-		2'd1:	fs_data(AM_PRE,{1'b0,DDDbnk,DDD},FETCH_WORD,D);
-		2'd2:	fs_data(AM_PRE,{1'b0,DDDbnk,DDD},FETCH_LWORD,D);
+		case({lm,sz})
+		3'd0:	fs_data(AM_PRE,{1'b0,DDDbnk,DDD},FETCH_BYTE,D);
+		3'd1:	fs_data(AM_PRE,{1'b0,DDDbnk,DDD},FETCH_WORD,D);
+		3'd2:	fs_data(AM_PRE,{1'b0,DDDbnk,DDD},FETCH_LWORD,D);
+		3'd4:	fs_data(AM_PRE,{1'b0,DDDbnk,DDD},FETCH_WORD,D);
+		3'd5:	fs_data(AM_PRE,{1'b0,DDDbnk,DDD},FETCH_LWORD,D);
+		3'd6:	fs_data(AM_PRE,{1'b0,DDDbnk,DDD},FETCH_OCTA,D);
 		default:	tIllegal();
 		endcase
 	end
 ADDX3:
 	begin
-		case(sz)
-		2'b00:	resL <= d[7:0] + s[7:0] + xf;
-		2'b01:	resL <= d[15:0] + s[15:0] + xf;
-		default:	resL <= d + s + xf;
-		endcase
-		case(sz)
-		2'b00:	d <= d[7:0] + s[7:0] + xf;
-		2'b01:	d <= d[15:0] + s[15:0] + xf;
-		default:	d <= d + s + xf;
-		endcase
-		dd <= d;
+		if (has_s2) begin
+			case({lm,sz})
+			3'b000:	resL <= s2[7:0] + s[7:0] + xf;
+			3'b001:	resL <= s2[15:0] + s[15:0] + xf;
+			3'b010:	resL <= s2[31:0] + s[31:0] + xf;
+			3'b011:	resL <= s2 + s + xf;
+			3'b100:	resL <= s2[15:0] + s[15:0] + xf;
+			3'b101:	resL <= s2[31:0] + s[31:0] + xf;
+			default:	resL <= s2 + s + xf;
+			endcase
+			case({lm,sz})
+			3'b000:	d <= s2[7:0] + s[7:0] + xf;
+			3'b001:	d <= s2[15:0] + s[15:0] + xf;
+			3'b010:	d <= s2[31:0] + s[31:0] + xf;
+			3'b011:	d <= s2 + s + xf;
+			3'b100:	d <= s2[15:0] + s[15:0] + xf;
+			3'b101:	d <= s2[31:0] + s[31:0] + xf;
+			default:	d <= s2 + s + xf;
+			endcase
+			dd <= s2;
+		end
+		else begin
+			case({lm,sz})
+			3'b000:	resL <= d[ 7:0] + s[ 7:0] + xf;
+			3'b001:	resL <= d[15:0] + s[15:0] + xf;
+			3'b010:	resL <= d[31:0] + s[31:0] + xf;
+			3'b011:	resL <= d + s + xf;
+			3'b100:	resL <= d[15:0] + s[15:0] + xf;
+			3'b101:	resL <= d[31:0] + s[31:0] + xf;
+			3'b110:	resL <= d + s + xf;
+			3'b111:	resL <= d + s + xf;
+			endcase
+			case({lm,sz})
+			3'b000:	d <= d[ 7:0] + s[ 7:0] + xf;
+			3'b001:	d <= d[15:0] + s[15:0] + xf;
+			3'b010:	d <= d[31:0] + s[31:0] + xf;
+			3'b011:	d <= d + s + xf;
+			3'b100:	d <= d[15:0] + s[15:0] + xf;
+			3'b101:	d <= d[31:0] + s[31:0] + xf;
+			3'b110:	d <= d + s + xf;
+			3'b111:	d <= d + s + xf;
+			endcase
+			dd <= d;
+		end
 		if (ir[3])
-			case(sz)
-			2'b00:	goto(STORE_BYTE);
-			2'b01:	goto(STORE_WORD);
-			2'b10:	goto(STORE_LWORD);
+			case({lm,sz})
+			3'b000:	goto(STORE_BYTE);
+			3'b001:	goto(STORE_WORD);
+			3'b010:	goto(STORE_LWORD);
+			3'b100:	goto(STORE_WORD);
+			3'b101:	goto(STORE_LWORD);
+			3'b110:	goto(STORE_OCTA);
 			default:	tIllegal();
 			endcase
 		else begin
 			Rt <= {1'b0,DDDbnk,DDD};
-			case(sz)
-			2'd0:	rfwrB <= 1'b1;
-			2'd1:	rfwrW <= 1'b1;
-			2'd2:	rfwrL <= 1'b1;
+			case({lm,sz})
+			3'd0:	rfwrB <= 1'b1;
+			3'd1:	rfwrW <= 1'b1;
+			3'd2:	rfwrL <= 1'b1;
+			3'd4:	rfwrW <= 1'b1;
+			3'd5:	rfwrL <= 1'b1;
+			3'd6:	rfwrQ <= 1'b1;
 			default:	;
 			endcase
 			ret();
@@ -4984,50 +5362,98 @@ ADDX3:
 
 SUBX:
 	begin
-		push (SUBX2);
-		case(sz)
-		2'd0:	fs_data(AM_PRE,{1'b0,rrrbnk,rrr},FETCH_BYTE,S);
-		2'd1:	fs_data(AM_PRE,{1'b0,rrrbnk,rrr},FETCH_WORD,S);
-		2'd2:	fs_data(AM_PRE,{1'b0,rrrbnk,rrr},FETCH_LWORD,S);
-		default:	;
+		if (has_s2)
+			push (SUBX3);
+		else
+			push (SUBX2);
+		case({lm,sz})
+		3'd0:	fs_data(AM_PRE,{1'b0,rrrbnk,rrr},FETCH_BYTE,S);
+		3'd1:	fs_data(AM_PRE,{1'b0,rrrbnk,rrr},FETCH_WORD,S);
+		3'd2:	fs_data(AM_PRE,{1'b0,rrrbnk,rrr},FETCH_LWORD,S);
+		3'd4:	fs_data(AM_PRE,{1'b0,rrrbnk,rrr},FETCH_WORD,S);
+		3'd5:	fs_data(AM_PRE,{1'b0,rrrbnk,rrr},FETCH_LWORD,S);
+		3'd6:	fs_data(AM_PRE,{1'b0,rrrbnk,rrr},FETCH_OCTA,S);
+		default:	tIllegal();
 		endcase
 	end
 SUBX2:
 	begin
 		push(SUBX3);
-		case(sz)
-		2'd0:	fs_data(AM_PRE,{1'b0,DDDbnk,DDD},FETCH_BYTE,D);
-		2'd1:	fs_data(AM_PRE,{1'b0,DDDbnk,DDD},FETCH_WORD,D);
-		2'd2:	fs_data(AM_PRE,{1'b0,DDDbnk,DDD},FETCH_LWORD,D);
-		default:	;
+		case({lm,sz})
+		3'd0:	fs_data(AM_PRE,{1'b0,DDDbnk,DDD},FETCH_BYTE,D);
+		3'd1:	fs_data(AM_PRE,{1'b0,DDDbnk,DDD},FETCH_WORD,D);
+		3'd2:	fs_data(AM_PRE,{1'b0,DDDbnk,DDD},FETCH_LWORD,D);
+		3'd4:	fs_data(AM_PRE,{1'b0,DDDbnk,DDD},FETCH_WORD,D);
+		3'd5:	fs_data(AM_PRE,{1'b0,DDDbnk,DDD},FETCH_LWORD,D);
+		3'd6:	fs_data(AM_PRE,{1'b0,DDDbnk,DDD},FETCH_OCTA,D);
+		default:	tIllegal();
 		endcase
 	end
 SUBX3:
 	begin
-		case(sz)
-		2'b00:	resL <= d[7:0] - s[7:0] - xf;
-		2'b01:	resL <= d[15:0] - s[15:0] - xf;
-		default:	resL <= d - s - xf;
-		endcase
-		case(sz)
-		2'b00:	d <= d[7:0] - s[7:0] - xf;
-		2'b01:	d <= d[15:0] - s[15:0] - xf;
-		default:	d <= d - s - xf;
-		endcase
-		dd <= d;
+		if (has_s2) begin
+			case({lm,sz})
+			3'b000:	resL <= s2[7:0] - s[7:0] - xf;
+			3'b001:	resL <= s2[15:0] - s[15:0] - xf;
+			3'b010:	resL <= s2[31:0] - s[31:0] - xf;
+			3'b011:	resL <= s2 - s - xf;
+			3'b100:	resL <= s2[15:0] - s[15:0] - xf;
+			3'b101:	resL <= s2[31:0] - s[31:0] - xf;
+			default:	resL <= s2 - s - xf;
+			endcase
+			case({lm,sz})
+			3'b000:	d <= s2[7:0] - s[7:0] - xf;
+			3'b001:	d <= s2[15:0] - s[15:0] - xf;
+			3'b010:	d <= s2[31:0] - s[31:0] - xf;
+			3'b011:	d <= s2 - s - xf;
+			3'b100:	d <= s2[15:0] - s[15:0] - xf;
+			3'b101:	d <= s2[31:0] - s[31:0] - xf;
+			default:	d <= s2 - s - xf;
+			endcase
+			dd <= s2;
+		end
+		else begin
+			case({lm,sz})
+			3'b000:	resL <= d[ 7:0] - s[ 7:0] - xf;
+			3'b001:	resL <= d[15:0] - s[15:0] - xf;
+			3'b010:	resL <= d[31:0] - s[31:0] - xf;
+			3'b011:	resL <= d - s - xf;
+			3'b100:	resL <= d[15:0] - s[15:0] - xf;
+			3'b101:	resL <= d[31:0] - s[31:0] - xf;
+			3'b110:	resL <= d - s - xf;
+			3'b111:	resL <= d - s - xf;
+			endcase
+			case({lm,sz})
+			3'b000:	d <= d[ 7:0] - s[ 7:0] - xf;
+			3'b001:	d <= d[15:0] - s[15:0] - xf;
+			3'b010:	d <= d[31:0] - s[31:0] - xf;
+			3'b011:	d <= d - s - xf;
+			3'b100:	d <= d[15:0] - s[15:0] - xf;
+			3'b101:	d <= d[31:0] - s[31:0] - xf;
+			3'b110:	d <= d - s - xf;
+			3'b111:	d <= d - s - xf;
+			endcase
+			dd <= d;
+		end
 		if (ir[3])
-			case(sz)
-			2'b00:	goto(STORE_BYTE);
-			2'b01:	goto(STORE_WORD);
-			2'b10:	goto(STORE_LWORD);
+			case({lm,sz})
+			3'b000:	goto(STORE_BYTE);
+			3'b001:	goto(STORE_WORD);
+			3'b010:	goto(STORE_LWORD);
+			3'b100:	goto(STORE_WORD);
+			3'b101:	goto(STORE_LWORD);
+			3'b110:	goto(STORE_OCTA);
 			default:	tIllegal();
 			endcase
 		else begin
 			Rt <= {1'b0,DDDbnk,DDD};
-			case(sz)
-			2'd0:	rfwrB <= 1'b1;
-			2'd1:	rfwrW <= 1'b1;
-			2'd2:	rfwrL <= 1'b1;
+			case({lm,sz})
+			3'd0:	rfwrB <= 1'b1;
+			3'd1:	rfwrW <= 1'b1;
+			3'd2:	rfwrL <= 1'b1;
+			3'd4:	rfwrW <= 1'b1;
+			3'd5:	rfwrL <= 1'b1;
+			3'd6:	rfwrQ <= 1'b1;
 			default:	;
 			endcase
 			ret();
@@ -5039,23 +5465,35 @@ SUBX3:
 AND:
 	begin
 		if (ir[8]) begin
-			resL <= d & rfoDn;
-			d <= d & rfoDn;
+			if (has_s2) begin
+				resL <= s2 & rfoDn;
+				d <= s2 & rfoDn;
+			end
+			else begin
+				resL <= d & rfoDn;
+				d <= d & rfoDn;
+			end
 			if (mmm==AM_DN || mmm==AM_AN) begin
 				Rt <= mmm[0] ? {1'b1,rrrbnk,rrr} : {1'b0,rrrbnk,rrr};
-				case(sz)
-				2'b00:	rfwrB <= 1'b1;
-				2'b01:	rfwrW <= 1'b1;
-				2'b10:	rfwrL <= 1'b1;
+				case({lm,sz})
+				3'd0:	rfwrB <= 1'b1;
+				3'd1:	rfwrW <= 1'b1;
+				3'd2:	rfwrL <= 1'b1;
+				3'd4:	rfwrW <= 1'b1;
+				3'd5:	rfwrL <= 1'b1;
+				3'd6:	rfwrQ <= 1'b1;
 				default:	;
 				endcase
 				ret();
 			end
 			else begin
-				case(sz)
-				2'b00:	goto(STORE_BYTE);
-				2'b01:	goto(STORE_WORD);
-				2'b10:	goto(STORE_LWORD);
+				case({lm,sz})
+				3'b000:	goto(STORE_BYTE);
+				3'b001:	goto(STORE_WORD);
+				3'b010:	goto(STORE_LWORD);
+				3'b100:	goto(STORE_WORD);
+				3'b101:	goto(STORE_LWORD);
+				3'b110:	goto(STORE_OCTA);
 				default:	tIllegal();
 				endcase
 			end
@@ -5063,10 +5501,13 @@ AND:
 		else begin
 			Rt <= {1'b0,DDDbnk,DDD};
 			resL <= rfoDn & s;
-			case(sz)
-			2'b00:	rfwrB <= 1'b1;
-			2'b01:	rfwrW <= 1'b1;
-			2'b10:	rfwrL <= 1'b1;
+			case({lm,sz})
+			3'd0:	rfwrB <= 1'b1;
+			3'd1:	rfwrW <= 1'b1;
+			3'd2:	rfwrL <= 1'b1;
+			3'd4:	rfwrW <= 1'b1;
+			3'd5:	rfwrL <= 1'b1;
+			3'd6:	rfwrQ <= 1'b1;
 			default:	;
 			endcase
 			ret();
@@ -5079,34 +5520,49 @@ AND:
 OR:
 	begin
 		if (ir[8]) begin
-			resL <= d | rfoDn;
-			d <= d | rfoDn;
+			if (has_s2) begin
+				resL <= s2 | rfoDn;
+				d <= s2 | rfoDn;
+			end
+			else begin
+				resL <= d | rfoDn;
+				d <= d | rfoDn;
+			end
 			if (mmm==AM_DN || mmm==AM_AN) begin
 				Rt <= mmm[0] ? {1'b1,rrrbnk,rrr} : {1'b0,rrrbnk,rrr};
-				case(sz)
-				2'b00:	rfwrB <= 1'b1;
-				2'b01:	rfwrW <= 1'b1;
-				2'b10:	rfwrL <= 1'b1;
-				default:	;	// DIV
+				case({lm,sz})
+				3'd0:	rfwrB <= 1'b1;
+				3'd1:	rfwrW <= 1'b1;
+				3'd2:	rfwrL <= 1'b1;
+				3'd4:	rfwrW <= 1'b1;
+				3'd5:	rfwrL <= 1'b1;
+				3'd6:	rfwrQ <= 1'b1;
+				default:	;
 				endcase
 				ret();
 			end
 			else begin
-				case(sz)
-				2'b00:	goto(STORE_BYTE);
-				2'b01:	goto(STORE_WORD); 
-				2'b10:	goto(STORE_LWORD);
-				default:	tIllegal();	// DIV
+				case({lm,sz})
+				3'b000:	goto(STORE_BYTE);
+				3'b001:	goto(STORE_WORD);
+				3'b010:	goto(STORE_LWORD);
+				3'b100:	goto(STORE_WORD);
+				3'b101:	goto(STORE_LWORD);
+				3'b110:	goto(STORE_OCTA);
+				default:	tIllegal();
 				endcase
 			end
 		end
 		else begin
 			Rt <= {1'b0,DDDbnk,DDD};
 			resL <= rfoDn | s;
-			case(sz)
-			2'b00:	rfwrB <= 1'b1;
-			2'b01:	rfwrW <= 1'b1;
-			2'b10:	rfwrL <= 1'b1;
+			case({lm,sz})
+			3'd0:	rfwrB <= 1'b1;
+			3'd1:	rfwrW <= 1'b1;
+			3'd2:	rfwrL <= 1'b1;
+			3'd4:	rfwrW <= 1'b1;
+			3'd5:	rfwrL <= 1'b1;
+			3'd6:	rfwrQ <= 1'b1;
 			default:	;
 			endcase
 			ret();
@@ -5118,23 +5574,35 @@ OR:
 //-----------------------------------------------------------------------------
 EOR:
 	begin
-		resL <= d ^ rfoDn;
-		d <= d ^ rfoDn;
+		if (has_s2) begin
+			resL <= s2 ^ rfoDn;
+			d <= s2 ^ rfoDn;
+		end
+		else begin
+			resL <= d ^ rfoDn;
+			d <= d ^ rfoDn;
+		end
 		if (mmm==AM_DN || mmm==AM_AN) begin
 			Rt <= mmm[0] ? {1'b1,rrrbnk,rrr} : {1'b0,rrrbnk,rrr};
-			case(sz)
-			2'b00:	rfwrB <= 1'b1;
-			2'b01:	rfwrW <= 1'b1;
-			2'b10:	rfwrL <= 1'b1;
+			case({lm,sz})
+			3'd0:	rfwrB <= 1'b1;
+			3'd1:	rfwrW <= 1'b1;
+			3'd2:	rfwrL <= 1'b1;
+			3'd4:	rfwrW <= 1'b1;
+			3'd5:	rfwrL <= 1'b1;
+			3'd6:	rfwrQ <= 1'b1;
 			default:	;
 			endcase
 			ret();
 		end
 		else begin
-			case(sz)
-			2'b00:	goto(STORE_BYTE);
-			2'b01:	goto(STORE_WORD);
-			2'b10:	goto(STORE_LWORD);
+			case({lm,sz})
+			3'b000:	goto(STORE_BYTE);
+			3'b001:	goto(STORE_WORD);
+			3'b010:	goto(STORE_LWORD);
+			3'b100:	goto(STORE_WORD);
+			3'b101:	goto(STORE_LWORD);
+			3'b110:	goto(STORE_OCTA);
 			default:	tIllegal();
 			endcase
 		end
@@ -5148,40 +5616,133 @@ EOR:
 ADDQ:
 	begin
 		if (ir[8]) begin
-			case(sz)
-			2'b00:	resL <= d[7:0] - immx[7:0];
-			2'b01:	resL <= d[15:0] - immx[15:0];
-			default:	resL <= d - immx;
-			endcase
-			case(sz)
-			2'b00:	d <= d[7:0] - immx[7:0];
-			2'b01:	d <= d[15:0] - immx[15:0];
-			default:	d <= d - immx;
-			endcase
-			dd <= d;
+			if (has_s2) begin
+				case({lm,sz})
+				3'b000:	resL <= s2[7:0] - immx[7:0];
+				3'b001:	resL <= s2[15:0] - immx[15:0];
+				3'b010:	resL <= s2[31:0] - immx[31:0];
+				3'b011:	resL <= s2 - immx;
+				3'b100:	resL <= s2[15:0] - immx[15:0];
+				3'b101:	resL <= s2[31:0] - immx[31:0];
+				default:	resL <= s2 - immx;
+				endcase
+				case({lm,sz})
+				3'b000:	d <= s2[7:0] - immx[7:0];
+				3'b001:	d <= s2[15:0] - immx[15:0];
+				3'b010:	d <= s2[31:0] - immx[31:0];
+				3'b011:	d <= s2 - immx;
+				3'b100:	d <= s2[15:0] - immx[15:0];
+				3'b101:	d <= s2[31:0] - immx[31:0];
+				default:	d <= s2 - immx;
+				endcase
+				dd <= s2;
+			end
+			else begin
+				case({lm,sz})
+				3'b000:	resL <= d[7:0] - immx[7:0];
+				3'b001:	resL <= d[15:0] - immx[15:0];
+				3'b010:	resL <= d[31:0] - immx[31:0];
+				3'b011:	resL <= d - immx;
+				3'b100:	resL <= d[15:0] - immx[15:0];
+				3'b101:	resL <= d[31:0] - immx[31:0];
+				default:	resL <= d - immx;
+				endcase
+				case({lm,sz})
+				3'b000:	d <= d[7:0] - immx[7:0];
+				3'b001:	d <= d[15:0] - immx[15:0];
+				3'b010:	d <= d[31:0] - immx[31:0];
+				3'b011:	d <= d - immx;
+				3'b100:	d <= d[15:0] - immx[15:0];
+				3'b101:	d <= d[31:0] - immx[31:0];
+				default:	d <= d - immx;
+				endcase
+				dd <= d;
+			end
 			s <= immx;
 		end
 		else begin
-			case(sz)
-			2'b00:	resL <= d[7:0] + immx[7:0];
-			2'b01:	resL <= d[15:0] + immx[15:0];
-			default:	resL <= d + immx;
-			endcase
-			case(sz)
-			2'b00:	d <= d[7:0] + immx[7:0];
-			2'b01:	d <= d[15:0] + immx[15:0];
-			default:	d <= d + immx;
-			endcase
-			dd <= d;
+			if (has_s2) begin
+				case({lm,sz})
+				3'b000:	resL <= s2[7:0] + immx[7:0];
+				3'b001:	resL <= s2[15:0] + immx[15:0];
+				3'b010:	resL <= s2[31:0] + immx[31:0];
+				3'b011:	resL <= s2 + immx;
+				3'b100:	resL <= s2[15:0] + immx[15:0];
+				3'b101:	resL <= s2[31:0] + immx[31:0];
+				default:	resL <= s2 + immx;
+				endcase
+				case({lm,sz})
+				3'b000:	d <= s2[7:0] + immx[7:0];
+				3'b001:	d <= s2[15:0] + immx[15:0];
+				3'b010:	d <= s2[31:0] + immx[31:0];
+				3'b011:	d <= s2 + immx;
+				3'b100:	d <= s2[15:0] + immx[15:0];
+				3'b101:	d <= s2[31:0] + immx[31:0];
+				default:	d <= s2 + immx;
+				endcase
+				dd <= s2;
+			end
+			else begin
+				case({lm,sz})
+				3'b000:	resL <= d[7:0] + immx[7:0];
+				3'b001:	resL <= d[15:0] + immx[15:0];
+				3'b010:	resL <= d[31:0] + immx[31:0];
+				3'b011:	resL <= d + immx;
+				3'b100:	resL <= d[15:0] + immx[15:0];
+				3'b101:	resL <= d[31:0] + immx[31:0];
+				default:	resL <= d + immx;
+				endcase
+				case({lm,sz})
+				3'b000:	d <= d[7:0] + immx[7:0];
+				3'b001:	d <= d[15:0] + immx[15:0];
+				3'b010:	d <= d[31:0] + immx[31:0];
+				3'b011:	d <= d + immx;
+				3'b100:	d <= d[15:0] + immx[15:0];
+				3'b101:	d <= d[31:0] + immx[31:0];
+				default:	d <= d + immx;
+				endcase
+				dd <= d;
+			end
+			/*
+			if (has_s2) begin
+				case(sz)
+				2'b00:	resL <= s2[7:0] + immx[7:0];
+				2'b01:	resL <= s2[15:0] + immx[15:0];
+				default:	resL <= s2 + immx;
+				endcase
+				case(sz)
+				2'b00:	d <= s2[7:0] + immx[7:0];
+				2'b01:	d <= s2[15:0] + immx[15:0];
+				default:	d <= s2 + immx;
+				endcase
+				dd <= s2;
+			end
+			else begin
+				case(sz)
+				2'b00:	resL <= d[7:0] + immx[7:0];
+				2'b01:	resL <= d[15:0] + immx[15:0];
+				default:	resL <= d + immx;
+				endcase
+				case(sz)
+				2'b00:	d <= d[7:0] + immx[7:0];
+				2'b01:	d <= d[15:0] + immx[15:0];
+				default:	d <= d + immx;
+				endcase
+				dd <= d;
+			end
+			*/
 			s <= immx;
 		end
 		if (mmm==AM_DN) begin
 			ret();
 			Rt <= {1'b0,rrrbnk,rrr};
-			case(sz)
-			2'b00:	rfwrB <= 1'b1;
-			2'b01:	rfwrW <= 1'b1;
-			2'b10:	rfwrL <= 1'b1;
+			case({lm,sz})
+			3'd0:	rfwrB <= 1'b1;
+			3'd1:	rfwrW <= 1'b1;
+			3'd2:	rfwrL <= 1'b1;
+			3'd4:	rfwrW <= 1'b1;
+			3'd5:	rfwrL <= 1'b1;
+			3'd6:	rfwrQ <= 1'b1;
 			default:	;
 			endcase
 		end
@@ -5189,18 +5750,23 @@ ADDQ:
 		else if (mmm==AM_AN) begin
 			ret();
 			Rt <= {1'b1,rrrbnk,rrr};
-			case(sz)
-			2'b01:	rfwrW <= 1'b1;
-			2'b10:	rfwrL <= 1'b1;
+			case({lm,sz})
+			3'd1:	rfwrW <= 1'b1;
+			3'd2:	rfwrL <= 1'b1;
+			3'd5:	rfwrL <= 1'b1;
+			3'd6:	rfwrQ <= 1'b1;
 			default:	tIllegal();
 			endcase
 		end
 		else
-			case(sz)
-			2'b00:	goto(STORE_BYTE);
-			2'b01:	goto(STORE_WORD);
-			2'b10:	goto(STORE_LWORD);
-			default:	tIllegal();	// Scc / DBRA
+			case({lm,sz})
+			3'b000:	goto(STORE_BYTE);
+			3'b001:	goto(STORE_WORD);
+			3'b010:	goto(STORE_LWORD);
+			3'b100:	goto(STORE_WORD);
+			3'b101:	goto(STORE_LWORD);
+			3'b110:	goto(STORE_OCTA);
+			default:	tIllegal();
 			endcase
 	end
 
@@ -5208,70 +5774,156 @@ ADDQ:
 // ADDI / SUBI / CMPI / ANDI / ORI / EORI
 //-----------------------------------------------------------------------------
 ADDI:
-	case(sz)
-	2'b00:	call(FETCH_IMM8,ADDI2);
-	2'b01:	call(FETCH_IMM16,ADDI2);
-	2'b10:	call(FETCH_IMM32,ADDI2);
+	case({lm,sz})
+	3'b100:	call(FETCH_IMM8,ADDI2);
+	3'b101:	call(FETCH_IMM16,ADDI2);
+	3'b110:	call(FETCH_IMM32,ADDI2);
+	3'b100:	call(FETCH_IMM16,ADDI2);
+	3'b101:	call(FETCH_IMM32,ADDI2);
+	3'b110:	call(FETCH_IMM64,ADDI2);
 	default:	tIllegal();
 	endcase
 ADDI2:
 	begin
 	immx <= imm;
-	case(sz)
-	2'b00:	begin push(ADDI3); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_BYTE,D); end
-	2'b01:	begin push(ADDI3); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_WORD,D); end
-	2'b10:	begin push(ADDI3); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_LWORD,D); end
-	default:	;	// Cant get here
-	endcase
+	if (has_s2)
+		goto (ADDI3);
+	else
+		case({lm,sz})
+		3'b000:	begin push(ADDI3); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_BYTE,D); end
+		3'b001:	begin push(ADDI3); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_WORD,D); end
+		3'b010:	begin push(ADDI3); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_LWORD,D); end
+		3'b100:	begin push(ADDI3); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_WORD,D); end
+		3'b101:	begin push(ADDI3); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_LWORD,D); end
+		3'b110:	begin push(ADDI3); fs_data(mmm,{mmm[0],rrrbnk,rrr},FETCH_OCTA,D); end
+		default:	;	// Cant get here
+		endcase
 	end
 ADDI3:
 	begin
-		dd <= d;
 		s <= immx;
-		// Odd numbers are BIT insns.
-		case(ir[11:8])
-		4'h0:	resL <= d | immx;	// ORI
-		4'h2:	resL <= d & immx;	// ANDI
-		4'h4,4'hC:	// SUBI / CMPI
-			case(sz)
-			2'b00:	resL = d[7:0] - immx[7:0];
-			2'b01:	resL = d[15:0] - immx[15:0];
-			default:	resL <= d - immx;
+		if (has_s2) begin
+			dd <= s2;
+			// Odd numbers are BIT insns.
+			case(ir[11:8])
+			4'h0:	resL <= s2 | immx;	// ORI
+			4'h2:	resL <= s2 & immx;	// ANDI
+			4'h4,4'hC:	// SUBI / CMPI
+				case({lm,sz})
+				3'b000:	resL <= s2[ 7:0] - immx[ 7:0];
+				3'b001:	resL <= s2[15:0] - immx[15:0];
+				3'b010:	resL <= s2[31:0] - immx[31:0];
+				3'b011:	resL <= s2[31:0] - immx[31:0];
+				3'b100:	resL <= s2[15:0] - immx[15:0];
+				3'b101:	resL <= s2[31:0] - immx[31:0];
+				default:	resL <= s2 - immx;
+				endcase
+			4'h6:
+				case({lm,sz})
+				3'b000:	resL <= s2[ 7:0] + immx[ 7:0];
+				3'b001:	resL <= s2[15:0] + immx[15:0];
+				3'b010:	resL <= s2[31:0] + immx[31:0];
+				3'b011:	resL <= s2[31:0] + immx[31:0];
+				3'b100:	resL <= s2[15:0] + immx[15:0];
+				3'b101:	resL <= s2[31:0] + immx[31:0];
+				default:	resL <= s2 + immx;
+				endcase
+			4'hA:	resL <= s2 ^ immx;	// EORI
+			default:	;
 			endcase
-		4'h6:
-			case(sz)
-			2'b00:	resL = d[7:0] + immx[7:0];
-			2'b01:	resL = d[15:0] + immx[15:0];
-			default:	resL <= d + immx;
+			case(ir[11:8])
+			4'h0:	d <= s2 | immx;	// ORI
+			4'h2:	d <= s2 & immx;	// ANDI
+			4'h4,4'hC:	// SUBI / CMPI
+				case({lm,sz})
+				3'b000:	resL <= d[ 7:0] - immx[ 7:0];
+				3'b001:	resL <= d[15:0] - immx[15:0];
+				3'b010:	resL <= d[31:0] - immx[31:0];
+				3'b011:	resL <= d[31:0] - immx[31:0];
+				3'b100:	resL <= d[15:0] - immx[15:0];
+				3'b101:	resL <= d[31:0] - immx[31:0];
+				default:	resL <= d - immx;
+				endcase
+			4'h6:
+				case({lm,sz})
+				3'b000:	resL <= d[ 7:0] + immx[ 7:0];
+				3'b001:	resL <= d[15:0] + immx[15:0];
+				3'b010:	resL <= d[31:0] + immx[31:0];
+				3'b011:	resL <= d[31:0] + immx[31:0];
+				3'b100:	resL <= d[15:0] + immx[15:0];
+				3'b101:	resL <= d[31:0] + immx[31:0];
+				default:	resL <= d + immx;
+				endcase
+			4'hA:	d <= s2 ^ immx;	// EORI
+			default:	;
 			endcase
-		4'hA:	resL <= d ^ immx;	// EORI
-		default:	;
-		endcase
-		case(ir[11:8])
-		4'h0:	d <= d | immx;	// ORI
-		4'h2:	d <= d & immx;	// ANDI
-		4'h4,4'hC:	// SUBI / CMPI
-			case(sz)
-			2'b00:	d = d[7:0] - immx[7:0];
-			2'b01:	d = d[15:0] - immx[15:0];
-			default:	d <= d - immx;
+		end
+		else begin
+			dd <= d;
+			// Odd numbers are BIT insns.
+			case(ir[11:8])
+			4'h0:	resL <= d | immx;	// ORI
+			4'h2:	resL <= d & immx;	// ANDI
+			4'h4,4'hC:	// SUBI / CMPI
+				case({lm,sz})
+				3'b000:	resL <= d[ 7:0] - immx[ 7:0];
+				3'b001:	resL <= d[15:0] - immx[15:0];
+				3'b010:	resL <= d[31:0] - immx[31:0];
+				3'b011:	resL <= d[31:0] - immx[31:0];
+				3'b100:	resL <= d[15:0] - immx[15:0];
+				3'b101:	resL <= d[31:0] - immx[31:0];
+				default:	resL <= d - immx;
+				endcase
+			4'h6:
+				case({lm,sz})
+				3'b000:	resL <= d[ 7:0] + immx[ 7:0];
+				3'b001:	resL <= d[15:0] + immx[15:0];
+				3'b010:	resL <= d[31:0] + immx[31:0];
+				3'b011:	resL <= d[31:0] + immx[31:0];
+				3'b100:	resL <= d[15:0] + immx[15:0];
+				3'b101:	resL <= d[31:0] + immx[31:0];
+				default:	resL <= d + immx;
+				endcase
+			4'hA:	resL <= d ^ immx;	// EORI
+			default:	;
 			endcase
-		4'h6:
-			case(sz)
-			2'b00:	d = d[7:0] + immx[7:0];
-			2'b01:	d = d[15:0] + immx[15:0];
-			default:	d <= d + immx;
+			case(ir[11:8])
+			4'h0:	d <= d | immx;	// ORI
+			4'h2:	d <= d & immx;	// ANDI
+			4'h4,4'hC:	// SUBI / CMPI
+				case({lm,sz})
+				3'b000:	d <= d[ 7:0] - immx[ 7:0];
+				3'b001:	d <= d[15:0] - immx[15:0];
+				3'b010:	d <= d[31:0] - immx[31:0];
+				3'b011:	d <= d[31:0] - immx[31:0];
+				3'b100:	d <= d[15:0] - immx[15:0];
+				3'b101:	d <= d[31:0] - immx[31:0];
+				default:	d <= d - immx;
+				endcase
+			4'h6:
+				case({lm,sz})
+				3'b000:	d <= d[ 7:0] + immx[ 7:0];
+				3'b001:	d <= d[15:0] + immx[15:0];
+				3'b010:	d <= d[31:0] + immx[31:0];
+				3'b011:	d <= d[31:0] + immx[31:0];
+				3'b100:	d <= d[15:0] + immx[15:0];
+				3'b101:	d <= d[31:0] + immx[31:0];
+				default:	d <= d + immx;
+				endcase
+			4'hA:	d <= d ^ immx;	// EORI
+			default:	;
 			endcase
-		4'hA:	d <= d ^ immx;	// EORI
-		default:	;
-		endcase
+		end
 		if (ir[11:8]==4'hC)
 			ret();
 		else if (mmm==AM_DN) begin
-			case(sz)
-			2'b00:	rfwrB <= 1'b1;
-			2'b01:	rfwrW <= 1'b1;
-			2'b10:	rfwrL <= 1'b1;
+			case({lm,sz})
+			3'd0:	rfwrB <= 1'b1;
+			3'd1:	rfwrW <= 1'b1;
+			3'd2:	rfwrL <= 1'b1;
+			3'd4:	rfwrW <= 1'b1;
+			3'd5:	rfwrL <= 1'b1;
+			3'd6:	rfwrQ <= 1'b1;
 			default:	;
 			endcase
 			Rt <= {1'b0,rrrbnk,rrr};
@@ -5280,17 +5932,22 @@ ADDI3:
 		else if (mmm==AM_AN) begin
 			Rt <= {1'b1,rrrbnk,rrr};
 			ret();
-			case(sz)
-			2'b01:	rfwrW <= 1'b1;
-			2'b10:	rfwrL <= 1'b1;
+			case({lm,sz})
+			3'd1:	rfwrW <= 1'b1;
+			3'd2:	rfwrL <= 1'b1;
+			3'd5:	rfwrL <= 1'b1;
+			3'd6:	rfwrQ <= 1'b1;
 			default:	tIllegal();
 			endcase
 		end
 		else
-			case(sz)
-			2'b00:	goto(STORE_BYTE);
-			2'b01:	goto(STORE_WORD);
-			2'b10:	goto(STORE_LWORD);
+			case({lm,sz})
+			3'b000:	goto(STORE_BYTE);
+			3'b001:	goto(STORE_WORD);
+			3'b010:	goto(STORE_LWORD);
+			3'b100:	goto(STORE_WORD);
+			3'b101:	goto(STORE_LWORD);
+			3'b110:	goto(STORE_OCTA);
 			default:	ret();
 			endcase
 	end
@@ -5530,14 +6187,11 @@ FETCH_BRDISP_ACK:
 FETCH_BRDISPa:
 	if (!ack_i) begin
 		// Record 'd' for bsr
-`ifdef SUPPORT_B24		
-		if (ir[0]) begin
-			d <= pc + {{9{ir[7]}},ir[7:1],d[15:0],1'b0};
-			ea <= pc + {{9{ir[7]}},ir[7:1],d[15:0],1'b0};
+		if (SUPPORT_B24 && ir[0] && ir[7:0]!=8'hFF) begin
+			d <= pc + {{8{d[15]}},d[15:0],ir[7:1],1'b0};
+			ea <= pc + {{8{d[15]}},d[15:0],ir[7:1],1'b0};
 		end
-		else
-`endif
-		begin		
+		else begin		
 			d <= pc + {{16{d[15]}},d[15:0]};
 			ea <= pc + {{16{d[15]}},d[15:0]};
 		end
@@ -5546,11 +6200,9 @@ FETCH_BRDISPa:
 			pc <= pc + 4'd2;
 		// else branch
 		else begin
-`ifdef SUPPORT_B24			
-			if (ir[0])
-				pc <= pc + {{9{ir[7]}},ir[7:1],d[15:0],1'b0};
+			if (SUPPORT_B24 && ir[0] && ir[7:0]!=8'hFF)
+				pc <= pc + {{8{d[15]}},d[15:0],ir[7:1],1'b0};
 			else
-`endif			
 				pc <= pc + {{16{d[15]}},d[15:0]};
 		end
 		ret();
@@ -5586,10 +6238,12 @@ FETCH_IMM8_ACK:
 		pstb_o <= 1'b0;
 		psel_o <= 4'b00;
 		imm <= {{24{iri[7]}},iri[7:0]};
-		if (ds==D)
-			d <= {{24{iri[7]}},iri[7:0]};
-		else
-			s <= {{24{iri[7]}},iri[7:0]};
+		case(ds)
+		D:	d <= {{24{iri[7]}},iri[7:0]};
+		S:	s <= {{24{iri[7]}},iri[7:0]};
+		S2:	s2 <= {{24{iri[7]}},iri[7:0]};
+		default:	;
+		endcase
 		goto (FETCH_IMM8a);
 	end
 FETCH_IMM8a:
@@ -5618,10 +6272,12 @@ FETCH_IMM16_ACK:
 		pstb_o <= 1'b0;
 		psel_o <= 4'b00;
 		imm <= {{16{iri[15]}},iri};
-		if (ds==D)
-			d <= {{16{iri[15]}},iri};
-		else
-			s <= {{16{iri[15]}},iri};
+		case(ds)
+		D:	d <= {{16{iri[15]}},iri};
+		S:	s <= {{16{iri[15]}},iri};
+		S2:	s2 <= {{16{iri[15]}},iri};
+		default:	;
+		endcase
 		goto (FETCH_IMM16a);
 	end
 FETCH_IMM16a:
@@ -5651,32 +6307,40 @@ FETCH_IMM32_ACK:
 		if (pc[1]) begin
 `ifdef BIG_ENDIAN
 			imm[31:16] <= {dat_i[23:16],dat_i[31:24]};
-			if (ds==D)
-				d[31:16] <= {dat_i[23:16],dat_i[31:24]};
-			else
-				s[31:16] <= {dat_i[23:16],dat_i[31:24]};
+			case(ds)
+			D:	d[31:16] <= {dat_i[23:16],dat_i[31:24]};
+			S:	s[31:16] <= {dat_i[23:16],dat_i[31:24]};
+			S2:	s2[31:16] <= {dat_i[23:16],dat_i[31:24]};
+			default:	;
+			endcase
 `else			
       imm[15:0] <= dat_i[31:16];
-      if (ds==D)
-      	d[15:0] <= dat_i[31:16];
-     	else
-      	s[15:0] <= dat_i[31:16];
+      case(ds)
+      D:	d[15:0] <= dat_i[31:16];
+      S: 	s[15:0] <= dat_i[31:16];
+      S2: s2[15:0] <= dat_i[31:16];
+      default:	;
+    	endcase
 `endif      
 		  call(WAIT_NACK,FETCH_IMM32a);
 		end
 		else begin
 `ifdef BIG_ENDIAN
 			imm <= rbo(dat_i);
-			if (ds==D)
-				d <= rbo(dat_i);
-			else
-				s <= rbo(dat_i);
+			case(ds)
+			D:	d <= rbo(dat_i);
+			S:	s <= rbo(dat_i);
+			S2:	s2 <= rbo(dat_i);
+			default:	;
+			endcase
 `else
       imm <= dat_i;
-      if (ds==D)
-      	d <= dat_i;
-      else
-      	s <= dat_i;
+      case(ds)
+      D:	d <= dat_i;
+      S: 	s <= dat_i;
+      S2: s2 <= dat_i;
+      default:	;
+    	endcase
 `endif      
 		  pcyc_o <= 1'b0;
 		  goto (FETCH_IMM32b);
@@ -5696,16 +6360,20 @@ FETCH_IMM32a_ACK:
 		psel_o <= 4'b00;
 `ifdef BIG_ENDIAN
 		imm[15:0] <= {dat_i[7:0],dat_i[15:8]};
-		if (ds==D)
-			d[15:0] <= {dat_i[7:0],dat_i[15:8]};
-		else
-			s[15:0] <= {dat_i[7:0],dat_i[15:8]};
+		case(ds)
+		D:	d[15:0] <= {dat_i[7:0],dat_i[15:8]};
+		S:	s[15:0] <= {dat_i[7:0],dat_i[15:8]};
+		S2:	s2[15:0] <= {dat_i[7:0],dat_i[15:8]};
+		default:	;
+		endcase
 `else
 		imm[31:16] <= dat_i[15:0];
-		if (ds==D)
-			d[31:16] <= dat_i[15:0];
-		else
-			s[31:16] <= dat_i[15:0];
+		case(ds)
+		D:	d[31:16] <= dat_i[15:0];
+		S:	s[31:16] <= dat_i[15:0];
+		S2:	s2[31:16] <= dat_i[15:0];
+		default:	;
+		endcase
 `endif
 		goto (FETCH_IMM32b);
 	end
@@ -5898,7 +6566,7 @@ FETCH_NDX_ACK:
 FETCH_NDXa:
 	if (!ack_i) begin
 		if (xword_format) begin
-			if (SUPPORT_68020) begin
+			if (SUPPORT_020) begin
 				imm <= 32'd0;
 				base_disp <= 32'd0;
 				outer_disp <= 32'd0;
@@ -5940,44 +6608,56 @@ FETCH_NDXb:
 		// No indirection
 		3'd0:	begin ea <= imm + base_reg + index_reg; ret(); end
 		// Indirect pre-indexed with no outer displacement
-		3'd1:	begin ea <= imm + base_reg + index_reg; ds <= S; call (FETCH_LWORD,FETCH_NDXc); end
+		3'd1:	begin ea <= imm + base_reg + index_reg; ds <= ir[15:12]==4'd7 ? S2 : S; call (FETCH_LWORD,FETCH_NDXc); end
 		// Indirect pre-indxed with word outer displacement
-		3'd2:	begin base_disp <= imm; call (FETCH_IMM16, FETCH_NDXd); end
+		3'd2:	begin base_disp <= imm; ds <= ir[15:12]==4'd7 ? S2 : S; call (FETCH_IMM16, FETCH_NDXd); end
 		// Indirect pre-indxed with long word outer displacement
-		3'd3:	begin base_disp <= imm; call (FETCH_IMM32, FETCH_NDXd); end
+		3'd3:	begin base_disp <= imm; ds <= ir[15:12]==4'd7 ? S2 : S; call (FETCH_IMM32, FETCH_NDXd); end
 		3'd4:	tIllegal();
 		// Indirect post-indexed with no outer displacement
-		3'd5:	begin ea <= imm + base_reg; call(FETCH_LWORD,FETCH_NDXf); end
+		3'd5:	begin ea <= imm + base_reg; ds <= ir[15:12]==4'd7 ? S2 : S; call(FETCH_LWORD,FETCH_NDXf); end
 		// Indirect post-indexed with word outer displacement
-		3'd6:	begin ea <= imm + base_reg; call(FETCH_LWORD,FETCH_NDXg); end
+		3'd6:	begin ea <= imm + base_reg; ds <= ir[15:12]==4'd7 ? S2 : S; call(FETCH_LWORD,FETCH_NDXg); end
 		// Indirect post-indexed with long word outer displacement
-		3'd7:	begin ea <= imm + base_reg; call(FETCH_LWORD,FETCH_NDXi); end
+		3'd7:	begin ea <= imm + base_reg; ds <= ir[15:12]==4'd7 ? S2 : S; call(FETCH_LWORD,FETCH_NDXi); end
 		endcase
 	end
 FETCH_NDXc:
 	if (!ack_i) begin
-		ea <= s;
+		case(ds)
+		S:	ea <= s;
+		S2:	ea <= s2;
+		endcase
 		ret();
 	end
 FETCH_NDXd:
 	begin
 		ea <= base_disp + base_reg + index_reg;
-		ds <= S;
+		ds <= ir[15:12]==4'd7 ? S2 : S; 
 		call (FETCH_LWORD,FETCH_NDXe);
 	end
 FETCH_NDXe:
 	if (!ack_i) begin
-		ea <= s + imm;
+		case(ds)
+		S:	ea <= s + imm;
+		S2:	ea <= s2 + imm;
+		endcase
 		ret();
 	end
 FETCH_NDXf:
 	if (!ack_i) begin
-		ea <= s + index_reg;
+		case(ds)
+		S:	ea <= s + index_reg;
+		S2:	ea <= s2 + index_reg;
+		endcase
 		ret();
 	end
 FETCH_NDXg:
 	begin
-		ea <= s + index_reg;
+		case(ds)
+		S:	ea <= s + index_reg;
+		S2:	ea <= s2 + index_reg;
+		endcase
 		call (FETCH_IMM16,FETCH_NDXh);
 	end
 FETCH_NDXh:
@@ -5987,7 +6667,10 @@ FETCH_NDXh:
 	end
 FETCH_NDXi:
 	begin
-		ea <= s + index_reg;
+		case(ds)
+		S:	ea <= s + index_reg;
+		S2:	ea <= s2 + index_reg;
+		endcase
 		call (FETCH_IMM32,FETCH_NDXh);
 	end
 
@@ -6015,22 +6698,30 @@ FETCH_BYTE_ACK:
 		pcyc_o <= `LOW;
 		pstb_o <= `LOW;
 		psel_o <= 4'b0000;
-		if (ds==D) begin
+		case(ds)
+		D:
 	    case(ea[1:0])
 	    2'b00:  d <= {{24{dat_i[7]}},dat_i[7:0]};
 	    2'b01:  d <= {{24{dat_i[15]}},dat_i[15:8]};
 	    2'b10:  d <= {{24{dat_i[23]}},dat_i[23:16]};
 	    2'b11:  d <= {{24{dat_i[31]}},dat_i[31:24]};
 	    endcase
-		end
-		else begin
+	  S:
 	    case(ea[1:0])
       2'b00:  s <= {{24{dat_i[7]}},dat_i[7:0]};
       2'b01:  s <= {{24{dat_i[15]}},dat_i[15:8]};
       2'b10:  s <= {{24{dat_i[23]}},dat_i[23:16]};
       2'b11:  s <= {{24{dat_i[31]}},dat_i[31:24]};
       endcase
-		end
+	  S2:
+	    case(ea[1:0])
+      2'b00:  s2 <= {{24{dat_i[7]}},dat_i[7:0]};
+      2'b01:  s2 <= {{24{dat_i[15]}},dat_i[15:8]};
+      2'b10:  s2 <= {{24{dat_i[23]}},dat_i[23:16]};
+      2'b11:  s2 <= {{24{dat_i[31]}},dat_i[31:24]};
+      endcase
+    default:	;
+  	endcase
 		goto(WAIT_NACK);
 	end
 
@@ -6062,22 +6753,30 @@ LFETCH_BYTE_ACK:
 		cmd_o <= CMD_NONE;
 		pstb_o <= 1'b0;
 		psel_o <= 4'b0;
-		if (ds==D) begin
-      case(ea[1:0])
-      2'b00:  d <= {{24{dat_i[7]}},dat_i[7:0]};
-      2'b01:  d <= {{24{dat_i[15]}},dat_i[15:8]};
-      2'b10:  d <= {{24{dat_i[23]}},dat_i[23:16]};
-      2'b11:  d <= {{24{dat_i[31]}},dat_i[31:24]};
-      endcase
-    end
-    else begin
-      case(ea[1:0])
+		case(ds)
+		D:
+	    case(ea[1:0])
+	    2'b00:  d <= {{24{dat_i[7]}},dat_i[7:0]};
+	    2'b01:  d <= {{24{dat_i[15]}},dat_i[15:8]};
+	    2'b10:  d <= {{24{dat_i[23]}},dat_i[23:16]};
+	    2'b11:  d <= {{24{dat_i[31]}},dat_i[31:24]};
+	    endcase
+	  S:
+	    case(ea[1:0])
       2'b00:  s <= {{24{dat_i[7]}},dat_i[7:0]};
       2'b01:  s <= {{24{dat_i[15]}},dat_i[15:8]};
       2'b10:  s <= {{24{dat_i[23]}},dat_i[23:16]};
       2'b11:  s <= {{24{dat_i[31]}},dat_i[31:24]};
       endcase
-    end
+	  S2:
+	    case(ea[1:0])
+      2'b00:  s2 <= {{24{dat_i[7]}},dat_i[7:0]};
+      2'b01:  s2 <= {{24{dat_i[15]}},dat_i[15:8]};
+      2'b10:  s2 <= {{24{dat_i[23]}},dat_i[23:16]};
+      2'b11:  s2 <= {{24{dat_i[31]}},dat_i[31:24]};
+      endcase
+    default:	;
+  	endcase
 		goto(WAIT_NACK);
 	end
 
@@ -6104,17 +6803,39 @@ FETCH_WORD_ACK:
 		pstb_o <= 1'b0;
 		psel_o <= 4'b00;
 `ifdef BIG_ENDIAN
-		if (ds==D)
-		  d <= ea[1] ? {{16{dat_i[23]}},dat_i[23:16],dat_i[31:24]} : {{16{dat_i[7]}},dat_i[7:0],dat_i[15:8]};
-		else
-		  s <= ea[1] ? {{16{dat_i[23]}},dat_i[23:16],dat_i[31:24]} : {{16{dat_i[7]}},dat_i[7:0],dat_i[15:8]};
+		case(ds)
+		D: d <= ea[1] ? {{16{dat_i[23]}},dat_i[23:16],dat_i[31:24]} : {{16{dat_i[7]}},dat_i[7:0],dat_i[15:8]};
+		S: s <= ea[1] ? {{16{dat_i[23]}},dat_i[23:16],dat_i[31:24]} : {{16{dat_i[7]}},dat_i[7:0],dat_i[15:8]};
+		S2: s2 <= ea[1] ? {{16{dat_i[23]}},dat_i[23:16],dat_i[31:24]} : {{16{dat_i[7]}},dat_i[7:0],dat_i[15:8]};
+		default:	;
+		endcase
 `else
-		if (ds==D)
-		  d <= ea[1] ? {{16{dat_i[31]}},dat_i[31:16]} : {{16{dat_i[15]}},dat_i[15:0]};
-		else
-		  s <= ea[1] ? {{16{dat_i[31]}},dat_i[31:16]} : {{16{dat_i[15]}},dat_i[15:0]};
+		case(ds)
+		D: d <= ea[1] ? {{16{dat_i[31]}},dat_i[31:16]} : {{16{dat_i[15]}},dat_i[15:0]};
+		S: s <= ea[1] ? {{16{dat_i[31]}},dat_i[31:16]} : {{16{dat_i[15]}},dat_i[15:0]};
+		S2: s2 <= ea[1] ? {{16{dat_i[31]}},dat_i[31:16]} : {{16{dat_i[15]}},dat_i[15:0]};
+		default:	;
+		endcase
 `endif		  
 		goto(WAIT_NACK);
+	end
+LFETCH_WORD:
+	if (!cyc_o) begin
+		if (use_sfc)
+			pfc_o <= sfc[2:0];
+		else if (use_dfc)
+			pfc_o <= dfc[2:0];
+		else
+			pfc_o <= {sf,2'b01};
+		pcyc_o <= `HIGH;
+		pstb_o <= `HIGH;
+		lock_o <= HIGH;
+		padr_o <= ea;
+		case(ea[1])
+		1'b0:	psel_o <= 4'b0011;
+		1'b1:	psel_o <= 4'b1100;
+		endcase
+		goto (FETCH_WORD_ACK);
 	end
 
 FETCH_LWORD:
@@ -6140,30 +6861,38 @@ FETCH_LWORD_ACK:
 		psel_o <= 4'b00;
 		if (ea[1]) begin
 `ifdef BIG_ENDIAN
-      if (ds==D)
-        d[31:16] <= {dat_i[23:16],dat_i[31:24]};
-      else
-        s[31:16] <= {dat_i[23:16],dat_i[31:24]};
-`else			
-      if (ds==D)
-        d[15:0] <= dat_i[31:16];
-      else
-        s[15:0] <= dat_i[31:16];
+			case (ds)
+      D:	d[31:16] <= {dat_i[23:16],dat_i[31:24]};
+      S:  s[31:16] <= {dat_i[23:16],dat_i[31:24]};
+      S2:  s2[31:16] <= {dat_i[23:16],dat_i[31:24]};
+      default:	;
+    	endcase
+`else	
+			case(ds)		
+      D:	d[15:0] <= dat_i[31:16];
+      S:  s[15:0] <= dat_i[31:16];
+      S2: s2[15:0] <= dat_i[31:16];
+      default:	;
+    	endcase
 `endif          
   		goto (FETCH_LWORDa);
     end
     else begin
       pcyc_o <= `LOW;
 `ifdef BIG_ENDIAN
-      if (ds==D)
-        d <= rbo(dat_i);
-      else
-        s <= rbo(dat_i);
-`else        
-      if (ds==D)
-        d <= dat_i;
-      else
-        s <= dat_i;
+			case(ds)
+			D:	d <= rbo(dat_i);
+      S:  s <= rbo(dat_i);
+      S2: s2 <= rbo(dat_i);
+      default:	;
+    	endcase
+`else 
+			case(ds)       
+      D:	d <= dat_i;
+      S:  s <= dat_i;
+      S2: s2 <= dat_i;
+      default:	;
+    	endcase
 `endif            
 			goto(WAIT_NACK);
     end
@@ -6182,15 +6911,19 @@ FETCH_LWORDa_ACK:
 		pstb_o <= 1'b0;
 		psel_o <= 4'b00;
 `ifdef BIG_ENDIAN
-		if (ds==D)
-			d[15:0] <= {dat_i[7:0],dat_i[15:8]};
-		else
-			s[15:0] <= {dat_i[7:0],dat_i[15:8]};
+		case(ds)
+		D:	d[15:0] <= {dat_i[7:0],dat_i[15:8]};
+		S:	s[15:0] <= {dat_i[7:0],dat_i[15:8]};
+		S2:	s2[15:0] <= {dat_i[7:0],dat_i[15:8]};
+		default:	;
+		endcase
 `else		
-		if (ds==D)
-			d[31:16] <= dat_i[15:0];
-		else
-			s[31:16] <= dat_i[15:0];
+		case(ds)
+		D:	d[31:16] <= dat_i[15:0];
+		S:	s[31:16] <= dat_i[15:0];
+		S2:	s2[31:16] <= dat_i[15:0];
+		default:	;
+		endcase
 `endif			
 		goto(WAIT_NACK);
 	end
@@ -6203,15 +6936,19 @@ FETCH_OCTA:
 FETCH_OCTA1:
 	begin
 `ifdef BIG_ENDIAN
-		if (ds==S)
-			fps[63:32] <= s;
-		else
-			fpd[63:32] <= d;
+		case(ds)
+		D:	fpd[63:32] <= d;
+		S:	fps[63:32] <= s;
+		S2:	fps2[63:32] <= s2;
+		default:	;
+		endcase
 `else
-		if (ds==S)
-			fps[31: 0] <= s;
-		else
-			fpd[31: 0] <= d;
+		case(ds)
+		D:	fpd[31: 0] <= d;
+		S:	fps[31: 0] <= s;
+		S2:	fps2[31: 0] <= s2;
+		default:	;
+		endcase
 `endif
 		ea <= ea + 4'd4;			
 		call (FETCH_LWORD,FETCH_OCTA2);
@@ -6219,15 +6956,19 @@ FETCH_OCTA1:
 FETCH_OCTA2:
 	begin
 `ifdef BIG_ENDIAN
-		if (ds==S)
-			fps[31:0] <= s;
-		else
-			fpd[31:0] <= d;
+		case(ds)
+		D:	fpd[31:0] <= d;
+		S:	fps[31:0] <= s;
+		S2:	fps2[31:0] <= s2;
+		default:	;
+		endcase
 `else
-		if (ds==S)
-			fps[63:32] <= s;
-		else
-			fpd[63:32] <= d;
+		case(ds)
+		D:	fpd[63:32] <= d;
+		S:	fps[63:32] <= s;
+		S2:	fps2[63:32] <= s2;
+		default:	;
+		endcase	
 `endif
 		ea <= ea - 4'd4;
 		goto(WAIT_NACK);
@@ -6238,15 +6979,19 @@ FETCH_HEXI1:
 FETCH_HEXI2:
 	begin
 `ifdef BIG_ENDIAN
-		if (ds==S)
-			fps[95:64] <= s;
-		else
-			fpd[95:64] <= d;
+		case(ds)
+		D:	fpd[95:64] <= d;
+		S:	fps[95:64] <= s;
+		S2:	fps2[95:64] <= s2;
+		default:	;
+		endcase	
 `else
-		if (ds==S)
-			fps[31: 0] <= s;
-		else
-			fpd[31: 0] <= d;
+		case(ds)
+		D:	fpd[31: 0] <= d;
+		S:	fps[31: 0] <= s;
+		S2:	fps2[31: 0] <= s2;
+		default:	;
+		endcase	
 `endif
 		ea <= ea + 4'd4;			
 		call (FETCH_LWORD,FETCH_HEXI3);
@@ -6254,15 +6999,19 @@ FETCH_HEXI2:
 FETCH_HEXI3:
 	begin
 `ifdef BIG_ENDIAN
-		if (ds==S)
-			fps[63:32] <= s;
-		else
-			fpd[63:32] <= d;
+		case(ds)
+		D:	fpd[63:32] <= d;
+		S:	fps[63:32] <= s;
+		S2:	fps2[63:32] <= s2;
+		default:	;
+		endcase
 `else
-		if (ds==S)
-			fps[63:32] <= s;
-		else
-			fpd[63:32] <= d;
+		case(ds)
+		D:	fpd[63:32] <= d;
+		S:	fps[63:32] <= s;
+		S2:	fps2[63:32] <= s2;
+		default:	;
+		endcase
 `endif			
 		ea <= ea + 4'd4;
 		call (FETCH_LWORD,FETCH_HEXI4);
@@ -6270,15 +7019,19 @@ FETCH_HEXI3:
 FETCH_HEXI4:
 	begin
 `ifdef BIG_ENDIAN
-		if (ds==S)
-			fps[31: 0] <= s;
-		else
-			fpd[31: 0] <= d;
+		case(ds)
+		D:	fpd[31: 0] <= d;
+		S:	fps[31: 0] <= s;
+		S2:	fps2[31: 0] <= s2;
+		default:	;
+		endcase
 `else
-		if (ds==S)
-			fps[95:64] <= s;
-		else
-			fpd[95:64] <= d;
+		case(ds)
+		D:	fpd[95:64] <= d;
+		S:	fps[95:64] <= s;
+		S2:	fps2[95:64] <= s2;
+		default:	;
+		endcase
 `endif
 		ea <= ea - 4'd8;			
 		goto(WAIT_NACK);
@@ -6441,6 +7194,38 @@ STORE_WORD_ACK:
 		psel_o <= 4'b00;
 		goto(WAIT_NACK);
 	end
+USTORE_WORD:
+	begin
+		if (use_sfc)
+			pfc_o <= sfc[2:0];
+		else if (use_dfc)
+			pfc_o <= dfc[2:0];
+		else
+			pfc_o <= {sf,2'b01};
+		pcyc_o <= 1'b1;
+		pstb_o <= 1'b1;
+		pwe_o <= 1'b1;
+		padr_o <= ea;
+		psel_o <= ea[1] ? 4'b1100 : 4'b0011;
+`ifdef BIG_ENDIAN
+//		pdat_o <= {2{resW[7:0],resW[15:8]}};
+		pdat_o <= {2{d[7:0],d[15:8]}};
+`else		
+//		pdat_o <= {2{resW[15:0]}};
+		pdat_o <= {2{d[15:0]}};
+`endif		
+		goto (USTORE_WORD_ACK);
+	end
+USTORE_WORD_ACK:
+	if (ack_i) begin
+		pcyc_o <= 1'b0;
+		pstb_o <= 1'b0;
+		pwe_o <= 1'b0;
+		psel_o <= 4'b00;
+		lock_o <= LOW;
+		goto(WAIT_NACK);
+	end
+
 
 STORE_LWORD:
 	if (!cyc_o) begin
@@ -6640,10 +7425,17 @@ INTA_ACK:
   end
 TRAP3:
 	begin
+		casez({sf,mf})
+		2'b0?:	;	// illegal
+		2'b10:	sp <= isr[13:12]!=2'b10 ? isp : sp;
+		2'b11:	sp <= isr[13:12]!=2'b11 ? ssp : sp;
+		endcase
+		/*
 		if (mf)
 			sp <= isr[13:12]!=2'b11 ? ssp : sp;
 		else
 			sp <= isr[13:12]!=2'b10 ? isp : sp;
+		*/
 		// If was in user mode, capture stack pointer in usp.
 		casez(isr[13:12])
 		2'b0?:	usp <= sp;
@@ -6652,18 +7444,19 @@ TRAP3:
 		endcase
 		pid_stack[pid_sp-4'd1] <= cpid;
 		pid_sp <= pid_sp - 4'd1;
-`ifdef SUPPORT_010
-		if (is_bus_err | is_adr_err) begin
-   		is_adr_err <= FALSE;
-    	is_bus_err <= FALSE;
-			goto (TRAP20);
+		if (SUPPORT_010) begin
+			if (is_bus_err | is_adr_err) begin
+	   		is_adr_err <= FALSE;
+	    	is_bus_err <= FALSE;
+				goto (TRAP20);
+			end
+			else
+				goto (TRAP3a);
 		end
 		else
-			goto (TRAP3a);
-`else
-		goto (TRAP3b);
-`endif		
+			goto (TRAP3b);
 	end
+// Long exception format
 // First 16 words of internal state are stored
 TRAP20:
 	begin
@@ -6716,20 +7509,20 @@ TRAP26:
 // For the 68010 and above push the format word.
 TRAP3a:
 	begin
-`ifdef SUPPORT_010
-		if (is_bus_err|is_adr_err) begin
-   		is_adr_err <= FALSE;
-    	is_bus_err <= FALSE;
-			d <= {4'b1000,2'b00,vecno,2'b00};
+		if (SUPPORT_010) begin
+			if (is_bus_err|is_adr_err) begin
+	   		is_adr_err <= FALSE;
+	    	is_bus_err <= FALSE;
+				d <= {4'b1000,2'b00,vecno,2'b00};
+			end
+			else		
+				d <= {4'b0000,2'b00,vecno,2'b00};
+			ea <= sp - 4'd2;
+			sp <= sp - 4'd2;
+			call (STORE_WORD, TRAP3b);
 		end
-		else		
-			d <= {4'b0000,2'b00,vecno,2'b00};
-		ea <= sp - 4'd2;
-		sp <= sp - 4'd2;
-		call (STORE_WORD, TRAP3b);
-`else		
-		goto (TRAP3b);
-`endif		
+		else
+			goto (TRAP3b);
 	end
 // Push the program counter
 TRAP3b:
@@ -6746,11 +7539,10 @@ TRAP4:
 		ea <= sp - 4'd2;
 		sp <= sp - 4'd2;
 		s <= sp - 4'd2;
-`ifdef SUPPORT_010
-		call (STORE_WORD, TRAP7);
-`else		
-		call (STORE_WORD, is_bus_err|is_adr_err?TRAP8:TRAP7);
-`endif		
+		if (SUPPORT_010)
+			call (STORE_WORD, TRAP7);
+		else
+			call (STORE_WORD, is_bus_err|is_adr_err?TRAP8:TRAP7);
 	end
 // Push IR
 TRAP8:
@@ -6859,12 +7651,21 @@ UNLNK:
 	begin
 		ds <= S;
 		ea <= sp;
-		sp <= sp + 4'd4;
-		call (FETCH_LWORD,UNLNK2);
+		if (lm) begin
+			sp <= sp + 4'd8;
+			call (FETCH_OCTA,UNLNK2);
+		end
+		else begin
+			sp <= sp + 4'd4;
+			call (FETCH_LWORD,UNLNK2);
+		end
 	end
 UNLNK2:
 	begin
-		rfwrL <= 1'b1;
+		if (lm)
+			rfwrQ <= 1'b1;
+		else
+			rfwrL <= 1'b1;
 		Rt <= {1'b1,rrrbnk,rrr};
 		resL <= s;
 		ret();
@@ -6876,16 +7677,27 @@ UNLNK2:
 
 JMP:
 	begin
-		pc <= ea;
+		if (is_far)
+			pc <= ea;
+		else
+			pc[31:0] <= ea[31:0];
 		ret();
 	end
 JSR:
 	begin
 		d <= pc;
-		pc <= ea;
-		ea <= sp - 4'd4;
-		sp <= sp - 4'd4;
-		goto (STORE_LWORD);
+		if (is_far) begin
+			pc <= ea;
+			ea <= sp - 4'd8;
+			sp <= sp - 4'd8;
+			goto (STORE_OCTA);
+		end
+		else begin
+			pc[31:0] <= ea[31:0];
+			ea <= sp - 4'd4;
+			sp <= sp - 4'd4;
+			goto (STORE_LWORD);
+		end
 	end
 /*
 	if (!cyc_o) begin
@@ -6934,11 +7746,16 @@ JSR:
 	end
 */
 
-//----------------------------------------------------
+//------------------------------------------------------------------------------
 // RTE / RTR
 // Return from exception
-//----------------------------------------------------
+//
+// Return from exception unstacks values from the stack
+// in the reverse order they were placed there by an 
+// exception.
+//------------------------------------------------------------------------------
 
+// Fetch the SR and PC. These two registers are always at the top of the stack.
 RTE1:
 	begin
 		ds <= S;
@@ -6952,7 +7769,7 @@ RTE2:
 		ea <= sp;
 		sp <= sp + 4'd4;
 		isr <= sr;
-		ccr57 <= s[7:5];
+		ccr67 <= s[7:6];
 		if (!rtr) begin
 			ie_cntdwn <= 3'd3;
 			ie_val <= s[10:8];
@@ -6968,12 +7785,13 @@ RTE2:
 		end
 		call (FETCH_LWORD,RTE3);
 	end
+// If supporting the 010 and above there is more to remove from the stack,
+// otherwise we are done.
 RTE3:
 	begin
 		pc <= s;
-`ifdef SUPPORT_010
 		ea <= sp;
-		if (!rtr) begin
+		if (SUPPORT_010 && !rtr) begin
 			sp <= sp + 4'd2;
 			call (FETCH_WORD,RTE4);
 		end
@@ -6982,29 +7800,13 @@ RTE3:
 			pid_sp <= pid_sp + 4'd1;
 			ret();
 		end
-`else
-		if (!rtr) begin
-			case(isr[13:12])
-			2'b10:	isp <= sp;
-			2'b11:	ssp <= sp;
-			default:	;
-			endcase
-			casez({sf,mf})
-			2'b0?:	sp <= usp;
-			2'b10:	sp <= isr[13:12]==2'b11 ? isp : sp;
-			2'b11:	sp <= isr[13:12]==2'b10 ? ssp : sp;
-			endcase
-		end
-		cpid <= pid_stack[pid_sp];
-		pid_sp <= pid_sp + 4'd1;
-		ret();
-`endif		
 	end
 // The core might have been in supervisor mode already when the exception
 // occurred. Reset the working stack pointer accordingly.
 // For '010 and above
 RTE4:
 	begin
+		// long format stack?
 		if (s[15:12]==4'b1000) begin
 			ea <= sp;
 			sp <= sp + 4'd2;
@@ -7038,7 +7840,7 @@ RTE6:
 		bad_addr <= s;
 		ea <= sp;
 		sp <= sp + 4'd2;
-		call(FETCH_WORD,RTE7);
+		call(FETCH_WORD,RTE7);	/// Fetch word and discard
 	end
 RTE7:
 	begin
@@ -7058,7 +7860,7 @@ RTE9:
 		dati_buf <= s;
 		ea <= sp;
 		sp <= sp + 4'd2;
-		call(FETCH_WORD,RTE10);
+		call(FETCH_WORD,RTE10);	// Fetch IR (discard)
 	end
 RTE10:
 	begin
@@ -7089,7 +7891,10 @@ RTE11:
 
 RTS1:
 	begin
-		pc <= s;
+		if (is_far)
+			pc <= s;
+		else
+			pc[31:0] <= s[31:0];
 		ret();
 	end
 
@@ -7098,14 +7903,29 @@ MOVEM_Xn2D:
 `ifdef OPT_PERF
 	if (imm[15:0]!=16'h0000) begin
 		push(MOVEM_Xn2D2);
-		fs_data(mmm,{1'b0,rrrbnk,rrr},fmovem ? FETCH_NOP_HEXI : ir[6] ? FETCH_NOP_LWORD : FETCH_NOP_WORD,D);
+		case({is_long|lm,ir[6]})
+		2'b00:	fs_data(mmm,{1'b0,rrrbnk,rrr},fmovem ? FETCH_NOP_HEXI : FETCH_NOP_WORD,D);
+		2'b01:	fs_data(mmm,{1'b0,rrrbnk,rrr},fmovem ? FETCH_NOP_HEXI : FETCH_NOP_LWORD,D);
+		2'b10:	fs_data(mmm,{1'b0,rrrbnk,rrr},fmovem ? FETCH_NOP_HEXI : FETCH_NOP_LWORD,D);
+		2'b11:	fs_data(mmm,{1'b0,rrrbnk,rrr},fmovem ? FETCH_NOP_HEXI : FETCH_NOP_QUAD,D);
+		endcase
 	end
 	else
-		fs_data(mmm,{1'b0,rrrbnk,rrr},fmovem ? FETCH_NOP_HEXI : ir[6] ? FETCH_NOP_LWORD : FETCH_NOP_WORD,D);
+		case({is_long|lm,ir[6]})
+		2'b00:	fs_data(mmm,{1'b0,rrrbnk,rrr},fmovem ? FETCH_NOP_HEXI : FETCH_NOP_WORD,D);
+		2'b01:	fs_data(mmm,{1'b0,rrrbnk,rrr},fmovem ? FETCH_NOP_HEXI : FETCH_NOP_LWORD,D);
+		2'b10:	fs_data(mmm,{1'b0,rrrbnk,rrr},fmovem ? FETCH_NOP_HEXI : FETCH_NOP_LWORD,D);
+		2'b11:	fs_data(mmm,{1'b0,rrrbnk,rrr},fmovem ? FETCH_NOP_HEXI : FETCH_NOP_QUAD,D);
+		endcase
 `else
 	begin
 		push(MOVEM_Xn2D2);
-		fs_data(mmm,{1'b0,rrrbnk,rrr},fmovem ? FETCH_NOP_HEXI : ir[6] ? FETCH_NOP_LWORD : FETCH_NOP_WORD,D);
+		case({is_long|lm,ir[6]})
+		2'b00:	fs_data(mmm,{1'b0,rrrbnk,rrr},fmovem ? FETCH_NOP_HEXI : FETCH_NOP_WORD,D);
+		2'b01:	fs_data(mmm,{1'b0,rrrbnk,rrr},fmovem ? FETCH_NOP_HEXI : FETCH_NOP_LWORD,D);
+		2'b10:	fs_data(mmm,{1'b0,rrrbnk,rrr},fmovem ? FETCH_NOP_HEXI : FETCH_NOP_LWORD,D);
+		2'b11:	fs_data(mmm,{1'b0,rrrbnk,rrr},fmovem ? FETCH_NOP_HEXI : FETCH_NOP_OCTA,D);
+		endcase
 	end
 `endif
 MOVEM_Xn2D2:
@@ -7117,22 +7937,42 @@ MOVEM_Xn2D2:
 			3'b100:	// -(An)
 				begin
 					Rt <= {1'b1,rrrbnk,rrr};
-					resL <= ea + (fmovem ? 32'd12 : ir[6] ? 32'd4 : 32'd2);
-					rfwrL <= 1'b1;
+					case({is_long|lm,ir[6]})
+					2'b00:
+						begin
+							resL <= ea + (fmovem ? 32'd12 : 32'd2);
+							rfwrL <= 1'b1;
+						end
+					2'b01:
+						begin
+							resL <= ea + (fmovem ? 32'd12 : 32'd4);
+							rfwrL <= 1'b1;
+						end
+					2'b10:
+						begin
+							resL <= ea + (fmovem ? 32'd12 : 32'd4);
+							rfwrL <= 1'b1;
+						end
+					2'b11:
+						begin
+							resL <= ea + (fmovem ? 32'd12 : 32'd8);
+							rfwrQ <= 1'b1;
+						end
+					endcase
 				end
 			endcase
 			ret();
 		end
 		if (mmm!=AM_PRE) begin
 			case(flo)
-			5'd0: begin imm[0] <= 1'b0; rrrr <= 4'd0; FLTSRC <= 3'd7; end
-			5'd1: begin imm[1] <= 1'b0; rrrr <= 4'd1; FLTSRC <= 3'd6; end
-			5'd2: begin imm[2] <= 1'b0; rrrr <= 4'd2; FLTSRC <= 3'd5; end
-			5'd3: begin imm[3] <= 1'b0; rrrr <= 4'd3; FLTSRC <= 3'd4; end
-			5'd4: begin imm[4] <= 1'b0; rrrr <= 4'd4; FLTSRC <= 3'd3; end
-			5'd5: begin imm[5] <= 1'b0; rrrr <= 4'd5; FLTSRC <= 3'd2; end
-			5'd6: begin imm[6] <= 1'b0; rrrr <= 4'd6; FLTSRC <= 3'd1; end
-			5'd7: begin imm[7] <= 1'b0; rrrr <= 4'd7; FLTSRC <= 3'd0; end
+			5'd0: begin imm[0] <= 1'b0; rrrr <= 4'd0; FLTSRC <= 5'd7; end
+			5'd1: begin imm[1] <= 1'b0; rrrr <= 4'd1; FLTSRC <= 5'd6; end
+			5'd2: begin imm[2] <= 1'b0; rrrr <= 4'd2; FLTSRC <= 5'd5; end
+			5'd3: begin imm[3] <= 1'b0; rrrr <= 4'd3; FLTSRC <= 5'd4; end
+			5'd4: begin imm[4] <= 1'b0; rrrr <= 4'd4; FLTSRC <= 5'd3; end
+			5'd5: begin imm[5] <= 1'b0; rrrr <= 4'd5; FLTSRC <= 5'd2; end
+			5'd6: begin imm[6] <= 1'b0; rrrr <= 4'd6; FLTSRC <= 5'd1; end
+			5'd7: begin imm[7] <= 1'b0; rrrr <= 4'd7; FLTSRC <= 5'd0; end
 			5'd8: begin imm[8] <= 1'b0; rrrr <= 4'd8; end
 			5'd9: begin imm[9] <= 1'b0; rrrr <= 4'd9; end
 			5'd10: begin imm[10] <= 1'b0; rrrr <= 4'd10; end
@@ -7147,14 +7987,14 @@ MOVEM_Xn2D2:
 		end
 		else begin
 			case(flo)
-			5'd0: begin imm[0] <= 1'b0; rrrr <= 4'd15; FLTSRC <= 3'd0; end
-			5'd1: begin imm[1] <= 1'b0; rrrr <= 4'd14; FLTSRC <= 3'd1; end
-			5'd2: begin imm[2] <= 1'b0; rrrr <= 4'd13; FLTSRC <= 3'd2; end
-			5'd3: begin imm[3] <= 1'b0; rrrr <= 4'd12; FLTSRC <= 3'd3; end
-			5'd4: begin imm[4] <= 1'b0; rrrr <= 4'd11; FLTSRC <= 3'd4; end
-			5'd5: begin	imm[5] <= 1'b0; rrrr <= 4'd10; FLTSRC <= 3'd5; end
-			5'd6: begin imm[6] <= 1'b0; rrrr <= 4'd9;	FLTSRC <= 3'd6; end
-			5'd7: begin imm[7] <= 1'b0; rrrr <= 4'd8; FLTSRC <= 3'd7; end
+			5'd0: begin imm[0] <= 1'b0; rrrr <= 4'd15; FLTSRC <= 5'd0; end
+			5'd1: begin imm[1] <= 1'b0; rrrr <= 4'd14; FLTSRC <= 5'd1; end
+			5'd2: begin imm[2] <= 1'b0; rrrr <= 4'd13; FLTSRC <= 5'd2; end
+			5'd3: begin imm[3] <= 1'b0; rrrr <= 4'd12; FLTSRC <= 5'd3; end
+			5'd4: begin imm[4] <= 1'b0; rrrr <= 4'd11; FLTSRC <= 5'd4; end
+			5'd5: begin	imm[5] <= 1'b0; rrrr <= 4'd10; FLTSRC <= 5'd5; end
+			5'd6: begin imm[6] <= 1'b0; rrrr <= 4'd9;	FLTSRC <= 5'd6; end
+			5'd7: begin imm[7] <= 1'b0; rrrr <= 4'd8; FLTSRC <= 5'd7; end
 			5'd8: begin imm[8] <= 1'b0; rrrr <= 4'd7; end
 			5'd9: begin imm[9] <= 1'b0; rrrr <= 4'd6; end
 			5'd10: begin imm[10] <= 1'b0; rrrr <= 4'd5; end
@@ -7177,17 +8017,47 @@ MOVEM_Xn2D3:
 		else
 			d <= rfoRnn;
 		ds <= D;
-		call(fmovem ? STORE_HEXI1 : ir[6] ? STORE_LWORD : STORE_WORD,MOVEM_Xn2D4);
+		case({is_long|lm,ir[6]})
+		2'b00:	call(fmovem ? STORE_HEXI1 : STORE_WORD,MOVEM_Xn2D4);
+		2'b01:	call(fmovem ? STORE_HEXI1 : STORE_LWORD,MOVEM_Xn2D4);
+		2'b10:	call(fmovem ? STORE_HEXI1 : STORE_LWORD,MOVEM_Xn2D4);
+		2'b11:	call(fmovem ? STORE_HEXI1 : STORE_OCTA,MOVEM_Xn2D4);
+		endcase
 	end
 MOVEM_Xn2D4:
 	begin
-		case(mmm)
-		// ea is updated by STORE_HEXI1, incremented by 8
-		AM_POST:	ea <= ea + (fmovem ? 32'd12 : ir[6] ? 32'd4 : 32'd2);
-		AM_PRE:	ea <= ea - (fmovem ? 32'd12 : ir[6] ? 32'd4 : 32'd2);
-		default:
-			ea <= ea + (fmovem ? 32'd12 : ir[6] ? 32'd4 : 32'd2);
+		case({is_long|lm,ir[6]})
+		2'b00:
+			case(mmm)
+			// ea is updated by STORE_HEXI1, incremented by 8
+			AM_POST:	ea <= ea + (fmovem ? 32'd12 : 32'd2);
+			AM_PRE:	ea <= ea - (fmovem ? 32'd12 : 32'd2);
+			default:
+				ea <= ea + (fmovem ? 32'd12 : 32'd2);
+			endcase
+		2'b01:
+			case(mmm)
+			AM_POST:	ea <= ea + (fmovem ? 32'd12 : 32'd4);
+			AM_PRE:	ea <= ea - (fmovem ? 32'd12 : 32'd4);
+			default:
+				ea <= ea + (fmovem ? 32'd12 : 32'd4);
+			endcase
+		2'b10:
+			case(mmm)
+			AM_POST:	ea <= ea + (fmovem ? 32'd12 : 32'd4);
+			AM_PRE:	ea <= ea - (fmovem ? 32'd12 : 32'd4);
+			default:
+				ea <= ea + (fmovem ? 32'd12 : 32'd4);
+			endcase
+		2'b11:
+			case(mmm)
+			AM_POST:	ea <= ea + (fmovem ? 32'd12 : 32'd8);
+			AM_PRE:	ea <= ea - (fmovem ? 32'd12 : 32'd8);
+			default:
+				ea <= ea + (fmovem ? 32'd12 : 32'd8);
+			endcase
 		endcase
+		
 		if (imm[15:0]!=16'h0000)
 			state <= MOVEM_Xn2D3;
 		else begin
@@ -7195,14 +8065,25 @@ MOVEM_Xn2D4:
 			AM_POST:
 				begin
 					Rt <= {1'b1,rrrbnk,rrr};
-					resL <= ea + (fmovem ? 32'd12 : ir[6] ? 32'd4 : 32'd2);
-					rfwrL <= 1'b1;
+					case({is_long|lm,ir[6]})
+					2'b00:	resL <= ea + (fmovem ? 32'd12 : 32'd2);
+					2'b01:	resL <= ea + (fmovem ? 32'd12 : 32'd4);
+					2'b10:	resL <= ea + (fmovem ? 32'd12 : 32'd4);
+					2'b11:	resL <= ea + (fmovem ? 32'd12 : 32'd8);
+					endcase
+					if (is_long|lm)
+						rfwrQ <= 1'b1;
+					else
+						rfwrL <= 1'b1;
 				end
 			AM_PRE:
 				begin
 					Rt <= {1'b1,rrrbnk,rrr};
 					resL <= ea;
-					rfwrL <= 1'b1;
+					if (is_long|lm)
+						rfwrQ <= 1'b1;
+					else
+						rfwrL <= 1'b1;
 				end
 			endcase
 			ret();
@@ -7211,14 +8092,14 @@ MOVEM_Xn2D4:
 //			imm[flo[3:0]] <= 1'b0;
 //			rrrr <= flo[3:0];
 			case(flo)
-			5'd0: begin imm[0] <= 1'b0; rrrr <= 4'd0; FLTSRC <= 3'd7; end
-			5'd1: begin imm[1] <= 1'b0; rrrr <= 4'd1; FLTSRC <= 3'd6; end
-			5'd2: begin imm[2] <= 1'b0; rrrr <= 4'd2; FLTSRC <= 3'd5;	end
-			5'd3: begin imm[3] <= 1'b0; rrrr <= 4'd3; FLTSRC <= 3'd4; end
-			5'd4: begin	imm[4] <= 1'b0;	rrrr <= 4'd4;	FLTSRC <= 3'd3;	end
-			5'd5: begin	imm[5] <= 1'b0;	rrrr <= 4'd5;	FLTSRC <= 3'd2;	end
-			5'd6: begin	imm[6] <= 1'b0;	rrrr <= 4'd6;	FLTSRC <= 3'd1;	end
-			5'd7: begin	imm[7] <= 1'b0;	rrrr <= 4'd7;	FLTSRC <= 3'd0;	end
+			5'd0: begin imm[0] <= 1'b0; rrrr <= 4'd0; FLTSRC <= 5'd7; end
+			5'd1: begin imm[1] <= 1'b0; rrrr <= 4'd1; FLTSRC <= 5'd6; end
+			5'd2: begin imm[2] <= 1'b0; rrrr <= 4'd2; FLTSRC <= 5'd5;	end
+			5'd3: begin imm[3] <= 1'b0; rrrr <= 4'd3; FLTSRC <= 5'd4; end
+			5'd4: begin	imm[4] <= 1'b0;	rrrr <= 4'd4;	FLTSRC <= 5'd3;	end
+			5'd5: begin	imm[5] <= 1'b0;	rrrr <= 4'd5;	FLTSRC <= 5'd2;	end
+			5'd6: begin	imm[6] <= 1'b0;	rrrr <= 4'd6;	FLTSRC <= 5'd1;	end
+			5'd7: begin	imm[7] <= 1'b0;	rrrr <= 4'd7;	FLTSRC <= 5'd0;	end
 			5'd8: begin	imm[8] <= 1'b0;	rrrr <= 4'd8;	end
 			5'd9: begin	imm[9] <= 1'b0;	rrrr <= 4'd9;	end
 			5'd10: begin imm[10] <= 1'b0;	rrrr <= 4'd10; end
@@ -7233,14 +8114,14 @@ MOVEM_Xn2D4:
 		end
 		else begin
 			case(flo)
-			5'd0: begin imm[0] <= 1'b0; rrrr <= 4'd15; FLTSRC <= 3'd0; end
-			5'd1: begin	imm[1] <= 1'b0; rrrr <= 4'd14; FLTSRC <= 3'd1; end
-			5'd2: begin imm[2] <= 1'b0; rrrr <= 4'd13; FLTSRC <= 3'd2; end
-			5'd3: begin imm[3] <= 1'b0;	rrrr <= 4'd12; FLTSRC <= 3'd3; end
-			5'd4: begin imm[4] <= 1'b0; rrrr <= 4'd11; FLTSRC <= 3'd4; end
-			5'd5: begin imm[5] <= 1'b0; rrrr <= 4'd10; FLTSRC <= 3'd5; end
-			5'd6: begin imm[6] <= 1'b0; rrrr <= 4'd9; FLTSRC <= 3'd6; end
-			5'd7: begin imm[7] <= 1'b0; rrrr <= 4'd8; FLTSRC <= 3'd7; end
+			5'd0: begin imm[0] <= 1'b0; rrrr <= 4'd15; FLTSRC <= 5'd0; end
+			5'd1: begin	imm[1] <= 1'b0; rrrr <= 4'd14; FLTSRC <= 5'd1; end
+			5'd2: begin imm[2] <= 1'b0; rrrr <= 4'd13; FLTSRC <= 5'd2; end
+			5'd3: begin imm[3] <= 1'b0;	rrrr <= 4'd12; FLTSRC <= 5'd3; end
+			5'd4: begin imm[4] <= 1'b0; rrrr <= 4'd11; FLTSRC <= 5'd4; end
+			5'd5: begin imm[5] <= 1'b0; rrrr <= 4'd10; FLTSRC <= 5'd5; end
+			5'd6: begin imm[6] <= 1'b0; rrrr <= 4'd9; FLTSRC <= 5'd6; end
+			5'd7: begin imm[7] <= 1'b0; rrrr <= 4'd8; FLTSRC <= 5'd7; end
 			5'd8: begin imm[8] <= 1'b0; rrrr <= 4'd7; end
 			5'd9: begin	imm[9] <= 1'b0; rrrr <= 4'd6; end
 			5'd10: begin imm[10] <= 1'b0; rrrr <= 4'd5; end
@@ -7260,20 +8141,40 @@ MOVEM_s2Xn:
 `ifdef OPT_PERF
 	if (imm[15:0]!=16'h0000) begin
 		push(MOVEM_s2Xn2);
-		fs_data(mmm,{1'b0,rrrbnk,rrr},fmovem ? FETCH_NOP_HEXI : ir[6] ? FETCH_NOP_LWORD : FETCH_NOP_WORD,S);
+		case({is_long|lm,ir[6]})
+		2'b00:	fs_data(mmm,{1'b0,rrrbnk,rrr},fmovem ? FETCH_NOP_HEXI : FETCH_NOP_WORD,D);
+		2'b01:	fs_data(mmm,{1'b0,rrrbnk,rrr},fmovem ? FETCH_NOP_HEXI : FETCH_NOP_LWORD,D);
+		2'b10:	fs_data(mmm,{1'b0,rrrbnk,rrr},fmovem ? FETCH_NOP_HEXI : FETCH_NOP_LWORD,D);
+		2'b11:	fs_data(mmm,{1'b0,rrrbnk,rrr},fmovem ? FETCH_NOP_HEXI : FETCH_NOP_QUAD,D);
+		endcase
 	end
 	else
-		fs_data(mmm,{1'b0,rrrbnk,rrr},fmovem ? FETCH_NOP_HEXI : ir[6] ? FETCH_NOP_LWORD : FETCH_NOP_WORD,S);
+		case({is_long|lm,ir[6]})
+		2'b00:	fs_data(mmm,{1'b0,rrrbnk,rrr},fmovem ? FETCH_NOP_HEXI : FETCH_NOP_WORD,D);
+		2'b01:	fs_data(mmm,{1'b0,rrrbnk,rrr},fmovem ? FETCH_NOP_HEXI : FETCH_NOP_LWORD,D);
+		2'b10:	fs_data(mmm,{1'b0,rrrbnk,rrr},fmovem ? FETCH_NOP_HEXI : FETCH_NOP_LWORD,D);
+		2'b11:	fs_data(mmm,{1'b0,rrrbnk,rrr},fmovem ? FETCH_NOP_HEXI : FETCH_NOP_QUAD,D);
+		endcase
 `else
 	begin
-		push(MOVEM_s2Xn2);
-		fs_data(mmm,{1'b0,rrrbnk,rrr},fmovem ? FETCH_NOP_HEXI : ir[6] ? FETCH_NOP_LWORD : FETCH_NOP_WORD,S);
+		push(MOVEM_Xn2D2);
+		case({is_long|lm,ir[6]})
+		2'b00:	fs_data(mmm,{1'b0,rrrbnk,rrr},fmovem ? FETCH_NOP_HEXI : FETCH_NOP_WORD,D);
+		2'b01:	fs_data(mmm,{1'b0,rrrbnk,rrr},fmovem ? FETCH_NOP_HEXI : FETCH_NOP_LWORD,D);
+		2'b10:	fs_data(mmm,{1'b0,rrrbnk,rrr},fmovem ? FETCH_NOP_HEXI : FETCH_NOP_LWORD,D);
+		2'b11:	fs_data(mmm,{1'b0,rrrbnk,rrr},fmovem ? FETCH_NOP_HEXI : FETCH_NOP_OCTA,D);
+		endcase
 	end
 `endif
 MOVEM_s2Xn2:
 	if (imm[15:0] != 16'h0000) begin
 		ds <= S;
-		call(fmovem ? FETCH_HEXI1 : ir[6] ? FETCH_LWORD : FETCH_WORD,MOVEM_s2Xn3);
+		case({is_long|lm,ir[6]})
+		2'b00:	call(fmovem ? STORE_HEXI1 : FETCH_WORD,MOVEM_s2Xn3);
+		2'b01:	call(fmovem ? STORE_HEXI1 : FETCH_LWORD,MOVEM_s2Xn3);
+		2'b10:	call(fmovem ? STORE_HEXI1 : FETCH_LWORD,MOVEM_s2Xn3);
+		2'b11:	call(fmovem ? STORE_HEXI1 : FETCH_OCTA,MOVEM_s2Xn3);
+		endcase
 	end
 	else begin
 		case(mmm)
@@ -7281,13 +8182,25 @@ MOVEM_s2Xn2:
 			begin
 				Rt <= {1'b1,rrrbnk,rrr};
 				resL <= ea;
-				rfwrL <= 1'b1;
+				if (is_long|lm)
+					rfwrQ <= 1'b1;
+				else
+					rfwrL <= 1'b1;
 			end
 		AM_PRE:	// -(An)
 			begin
 				Rt <= {1'b1,rrrbnk,rrr};
-				resL <= ea + (fmovem ? 32'd12 : ir[6] ? 32'd4 : 32'd2);
-				rfwrL <= 1'b1;
+				case({is_long|lm,ir[6]})
+					// This looks wrong, should maybe be ea -?
+				2'b00:	resL <= ea + (fmovem ? 32'd12 : 32'd2);
+				2'b01:	resL <= ea + (fmovem ? 32'd12 : 32'd4);
+				2'b10:	resL <= ea + (fmovem ? 32'd12 : 32'd4);
+				2'b11:	resL <= ea + (fmovem ? 32'd12 : 32'd8);
+				endcase
+				if (is_long|lm)
+					rfwrQ <= 1'b1;
+				else
+					rfwrL <= 1'b1;
 			end
 		endcase
 		ret();
@@ -7295,19 +8208,62 @@ MOVEM_s2Xn2:
 MOVEM_s2Xn3:
 	begin
 		case(mmm)
-		AM_POST:	ea <= ea + (fmovem ? 32'd12 : ir[6] ? 32'd4 : 32'd2);
-		AM_PRE:	ea <= ea - (fmovem ? 32'd12 : ir[6] ? 32'd4 : 32'd2);
+		AM_POST:
+			begin
+				Rt <= {1'b1,rrrbnk,rrr};
+				case({is_long|lm,ir[6]})
+				2'b00:	resL <= ea + (fmovem ? 32'd12 : 32'd2);
+				2'b01:	resL <= ea + (fmovem ? 32'd12 : 32'd4);
+				2'b10:	resL <= ea + (fmovem ? 32'd12 : 32'd4);
+				2'b11:	resL <= ea + (fmovem ? 32'd12 : 32'd8);
+				endcase
+				if (is_long|lm)
+					rfwrQ <= 1'b1;
+				else
+					rfwrL <= 1'b1;
+			end
+		AM_PRE:
+			begin
+				Rt <= {1'b1,rrrbnk,rrr};
+				case({is_long|lm,ir[6]})
+				2'b00:	resL <= ea - (fmovem ? 32'd12 : 32'd2);
+				2'b01:	resL <= ea - (fmovem ? 32'd12 : 32'd4);
+				2'b10:	resL <= ea - (fmovem ? 32'd12 : 32'd4);
+				2'b11:	resL <= ea - (fmovem ? 32'd12 : 32'd8);
+				endcase
+				if (is_long|lm)
+					rfwrQ <= 1'b1;
+				else
+					rfwrL <= 1'b1;
+			end
 		default:
-			ea <= ea + (fmovem ? 32'd12 : ir[6] ? 32'd4 : 32'd2);
+			begin
+				Rt <= {1'b1,rrrbnk,rrr};
+				case({is_long|lm,ir[6]})
+				2'b00:	resL <= ea + (fmovem ? 32'd12 : 32'd2);
+				2'b01:	resL <= ea + (fmovem ? 32'd12 : 32'd4);
+				2'b10:	resL <= ea + (fmovem ? 32'd12 : 32'd4);
+				2'b11:	resL <= ea + (fmovem ? 32'd12 : 32'd8);
+				endcase
+				if (is_long|lm)
+					rfwrQ <= 1'b1;
+				else
+					rfwrL <= 1'b1;
+			end
 		endcase
 		goto (MOVEM_s2Xn2);
 		// Another bizzare gotcha. Word values moved to a data register are sign
 		// extended to long-word width.
-		rfwrL <= 1'b1;
-		if (ir[6])
-			resL <= s;
+		if (is_long|lm)
+			rfwrQ <= 1'b1;
 		else
-			resL <= {{16{s[15]}},s[15:0]};
+			rfwrL <= 1'b1;
+		case({is_long|lm,ir[6]})
+		2'b00:	resL <= {{48{s[15]}},s[15:0]};
+		2'b01:	resL <= {{32{s[31]}},s[31:0]};
+		2'b10:	resL <= {{32{s[31]}},s[31:0]};
+		2'b11:	resL <= s;
+		endcase
 		resF <= fps;
 		if (mmm!=AM_PRE) begin
 			case(flo)
@@ -7515,7 +8471,7 @@ MOVERn2Rc2:
 			zf <= rfoRnn[2];
 			nf <= rfoRnn[3];
 			xf <= rfoRnn[4];
-			ccr57 <= rfoRnn[7:5];
+			ccr67 <= rfoRnn[7:5];
 			if (!rtr) begin
 				im[0] <= rfoRnn[8];
 				im[1] <= rfoRnn[9];
@@ -7631,7 +8587,7 @@ FADD1:
 				fvf <= dfaddsubo[94:90]==5'b11110;
 				fnanf <= dfaddsubo[94:90]==5'b11111;
 				resF <= dfaddsubo;
-				Rt <= {3'b0,FLTDST};
+				Rt <= {1'b0,FLTDST};
 				rfwrF <= 1'b1;
 				ret();
 			end
@@ -7643,7 +8599,7 @@ FADD1:
 				fvf <= dfmao_overflow;
 				fnanf <= dfmao_nan;
 				resF <= dfmao;
-				Rt <= {3'b0,FLTDST};
+				Rt <= {1'b0,FLTDST};
 				rfwrF <= 1'b1;
 				ret();
 			end
@@ -7668,14 +8624,14 @@ FINTRZ1:	// Also FINT
 				resF <= dftrunco;
 				fzf <= dftrunco[94:0]==95'd0;
 				fnf <= dftrunco[95];
-				Rt <= {3'b0,FLTDST};
+				Rt <= {1'b0,FLTDST};
 				rfwrF <= 1'b1;
 			end
 			else if (SUPPORT_BINFLT) begin
 				resF <= dtrunco;
 				fzf <= dtrunco[95:0]==95'd0;
 				fnf <= dtrunco[95];
-				Rt <= {3'b0,FLTDST};
+				Rt <= {1'b0,FLTDST};
 				rfwrF <= 1'b1;
 			end
 			ret();
@@ -7702,7 +8658,7 @@ FSCALE1:
 				fvf <= dfscaleo[94:90]==5'b11110;
 				fnanf <= dfscaleo[94:90]==5'b11111;
 				resF <= dfscaleo;
-				Rt <= {3'b0,FLTDST};
+				Rt <= {1'b0,FLTDST};
 				rfwrF <= 1'b1;
 			end
 			else if (SUPPORT_BINFLT) begin
@@ -7711,7 +8667,7 @@ FSCALE1:
 				fvf <= dscaleo_overflow;
 				fnanf <= dscaleo_nan;
 				resF <= dscaleo;
-				Rt <= {3'b0,FLTDST};
+				Rt <= {1'b0,FLTDST};
 				rfwrF <= 1'b1;
 			end
 			ret();
@@ -7734,14 +8690,14 @@ FNEG1:	// Also FABS
 			resF <= {~fps[95] & ~fabs,fps[94:0]};
 			fzf <= fps[94:0]==95'd0;
 			fnf <= ~fps[95] & ~fabs;
-			Rt <= {3'b0,FLTDST};
+			Rt <= {1'b0,FLTDST};
 			rfwrF <= 1'b1;
 		end
 		else if (SUPPORT_BINFLT) begin
 			resF <= {~fps[95] & ~fabs,fps[94:0]};
 			fzf <= fps[94:0]==95'd0;
 			fnf <= ~fps[95] & ~fabs;
-			Rt <= {3'b0,FLTDST};
+			Rt <= {1'b0,FLTDST};
 			rfwrF <= 1'b1;
 		end
 		ret();
@@ -7771,7 +8727,7 @@ FMUL2:
 			fvf <= dfmulo[94:90]==5'b11110;
 			fnanf <= dfmulo[94:90]==5'b11111;
 			resF <= dfmulo;
-			Rt <= {3'b0,FLTDST};
+			Rt <= {1'b0,FLTDST};
 			rfwrF <= 1'b1;
 			ret();
 		end
@@ -7784,7 +8740,7 @@ FMUL2:
 			fvf <= dfmao[94:80]==15'h7fff && dfmao[79:0]==80'd0;
 			fnanf <= dfmao[94:80]==15'h7fff && dfmao[79:0]!=80'd0;
 			resF <= dfmao;
-			Rt <= {3'b0,FLTDST};
+			Rt <= {1'b0,FLTDST};
 			rfwrF <= 1'b1;
 			ret();
 		end
@@ -7827,7 +8783,7 @@ FDIV3:
 			fvf <= dfdivo[94:90]==5'b11110;
 			fnanf <= dfdivo[94:90]==5'b11111;
 			resF <= dfdivo;
-			Rt <= {3'b0,FLTDST};
+			Rt <= {1'b0,FLTDST};
 			rfwrF <= 1'b1;
 			quotient_bits <= {dfdivo[95],dfdivo[6:0]};
 			quotient_bitshi <= {dfdivo[9:7]};
@@ -7841,7 +8797,7 @@ FDIV3:
 			fvf <= ddivo[94:80]==15'h7fff && ddivo[79:0]==80'd0;
 			fnanf <= ddivo[94:80]==15'h7fff && ddivo[79:0]!=80'd0;
 			resF <= ddivo;
-			Rt <= {3'b0,FLTDST};
+			Rt <= {1'b0,FLTDST};
 			rfwrF <= 1'b1;
 			quotient_bits <= {ddivo[95],ddivo[6:0]};
 			quotient_bitshi <= {ddivo[9:7]};
@@ -7939,7 +8895,7 @@ FMOVE1:
 			resF <= fps[95:0];
 			fzf <= fps[94:0]==95'd0;
 			fnf <= fps[95];
-			Rt <= {3'b0,FLTDST};
+			Rt <= {1'b0,FLTDST};
 			rfwrF <= 1'b1;
 			ret();
 		end
@@ -7957,7 +8913,7 @@ FMOVE1:
 						resF <= fpss[63:0];
 						fzf <= fpss[62:0]==63'd0;
 						fnf <= fpss[63];
-						Rt <= {3'b0,FLTDST};
+						Rt <= {1'b0,FLTDST};
 						rfwrF <= 1'b1;
 						ret();
 					end
@@ -7976,7 +8932,7 @@ FMOVE1:
 						resF <= fps[63:0];
 						fzf <= fps[62:0]==63'd0;
 						fnf <= fps[63];
-						Rt <= {3'b0,FLTDST};
+						Rt <= {1'b0,FLTDST};
 						rfwrF <= 1'b1;
 						ret();
 					end
@@ -7985,7 +8941,7 @@ FMOVE1:
 				resF <= fps[63:0];
 				fzf <= fps[62:0]==63'd0;
 				fnf <= fps[63];
-				Rt <= {3'b0,FLTDST};
+				Rt <= {1'b0,FLTDST};
 				rfwrF <= 1'b1;
 				ret();
 			end
@@ -8004,7 +8960,7 @@ I2DF2:
 				resF <= i2dfo;
 				fzf <= i2dfo[94:0]==95'd0;
 				fnf <= i2dfo[95];
-				Rt <= {3'b0,FLTDST};
+				Rt <= {1'b0,FLTDST};
 				rfwrF <= 1'b1;
 				ret();
 			end
@@ -8014,7 +8970,7 @@ I2DF2:
 				resF <= i2do;
 				fzf <= i2do[94:0]==95'd0;
 				fnf <= i2do[95];
-				Rt <= {3'b0,FLTDST};
+				Rt <= {1'b0,FLTDST};
 				rfwrF <= 1'b1;
 				ret();
 			end
@@ -9469,18 +10425,25 @@ task fs_data;
 input amode_e mmm;
 input [5:0] rrr;
 input state_t size_state;
-input dsi;
+input [1:0] dsi;
 begin
 	ds <= dsi;
 	case(mmm)
 	AM_DN:
 		begin
-				if (dsi==D)
-					d <= MMMRRR ? rfoDn : rfob;
-				else begin
-					s <= MMMRRR ? rfoDn : rfob;
-					fps <= MMMRRR ? rfoDn : rfob;
-				end
+				case(dsi)
+				D:	d <= MMMRRR ? rfoDn : rfob;
+				S:
+					begin
+						s <= MMMRRR ? rfoDn : rfob;
+						fps <= MMMRRR ? rfoDn : rfob;
+					end
+				S2:
+					begin
+						s2 <= MMMRRR ? rfoDn : rfob;
+						fps2 <= rfoFpsrc;
+					end
+				endcase
 				case(size_state)
 				STORE_LWORD:
 					begin
@@ -9504,10 +10467,19 @@ begin
 
 	AM_AN:
 		begin
-				if (dsi==D)
-					d <= MMMRRR ? rfoAna : rfob;
-				else
-					s <= MMMRRR ? rfoAna : rfob;
+				case(dsi)
+				D:	d <= MMMRRR ? rfoAna : rfob;
+				S:
+					begin
+						s <= MMMRRR ? rfoAna : rfob;
+						fps <= MMMRRR ? rfoAna : rfob;
+					end
+				S2:
+					begin
+						s2 <= MMMRRR ? rfoAna : rfob;
+						fps2 <= MMMRRR ? rfoAna : rfob;
+					end
+				endcase
 				case(size_state)
 				STORE_LWORD:
 					begin
@@ -9641,7 +10613,7 @@ task fs_data2;
 input amode_e mmm;
 input [5:0] rrr;
 input state_t size_state;
-input dsi;
+input [1:0] dsi;
 begin
 	ds <= dsi;
 	case(mmm)
@@ -9733,6 +10705,19 @@ begin
 end
 endtask
 
+task pop;
+begin
+	state <= state_stk1;
+	state_stk1 <= state_stk2;
+	state_stk2 <= state_stk3;
+	state_stk3 <= state_stk4;
+	state_stk4 <= state_stk5;
+	state_stk5 <= state_stk6;
+	state_stk6 <= state_stk7;
+	state_stk7 <= RESET;
+end
+endtask
+
 task tPTRAPcc;
 begin
 	vecno <= `TRAPV_VEC;
@@ -9798,23 +10783,24 @@ begin
 	// then a return is not done, instead flow goes to the TRAP sequence which
 	// will then do a ret(), but this time trace will be off.
 	if (state_stk1==IFETCH) begin
-		if (!(ir[15:12]==4'd7 && ir[8])) begin	// not a BANK instruction
+		if (ir[15:12]!=4'd7) begin	// not a prefix instruction
 			bank_pfx <= 16'h0000;
+			has_s2 <= FALSE;
+			is_far <= FALSE;
+			is_long <= FALSE;
+			is_short <= FALSE;
 			if (tf && ir != 16'h4E73) begin
 				is_trace <= 1'b1;
-				state <= TRAP;
+				goto(TRAP);
 			end
+			else
+				pop();
 		end
+		else
+			pop();
 	end
-	else begin
-		state <= state_stk1;
-		state_stk1 <= state_stk2;
-		state_stk2 <= state_stk3;
-		state_stk3 <= state_stk4;
-		state_stk4 <= state_stk5;
-		state_stk5 <= state_stk6;
-		state_stk6 <= state_stk7;
-	end
+	else
+		pop();
 end
 endtask
 
